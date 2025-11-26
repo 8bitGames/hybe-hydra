@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// User roles enum
+enum UserRole {
+  ADMIN
+  PRODUCER
+  VIEWER
+}
+
+// Campaign status enum
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+// Asset type enum
+enum AssetType {
+  IMAGE
+  VIDEO
+  AUDIO
+}
+
+// Video generation status enum
+enum VideoGenerationStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// User model
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  hashedPassword String   @map("hashed_password")
+  role          UserRole  @default(VIEWER)
+  labelIds      String[]  @map("label_ids")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  campaigns         Campaign[]
+  assets            Asset[]
+  videoGenerations  VideoGeneration[]
+
+  @@map("users")
+}
+
+// Label model (HYBE subsidiaries)
+model Label {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  artists Artist[]
+
+  @@map("labels")
+}
+
+// Artist model
+model Artist {
+  id                 String   @id @default(uuid())
+  name               String
+  stageName          String?  @map("stage_name")
+  groupName          String?  @map("group_name")
+  labelId            String   @map("label_id")
+  profileDescription String?  @map("profile_description")
+  profileImageUrl    String?  @map("profile_image_url")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  label     Label      @relation(fields: [labelId], references: [id])
+  campaigns Campaign[]
+
+  @@map("artists")
+}
+
+// Campaign model
+model Campaign {
+  id              String         @id @default(uuid())
+  name            String
+  description     String?
+  artistId        String         @map("artist_id")
+  status          CampaignStatus @default(DRAFT)
+  targetCountries String[]       @map("target_countries")
+  startDate       DateTime?      @map("start_date")
+  endDate         DateTime?      @map("end_date")
+  budgetCode      String?        @map("budget_code")
+  createdBy       String         @map("created_by")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  artist           Artist            @relation(fields: [artistId], references: [id])
+  creator          User              @relation(fields: [createdBy], references: [id])
+  assets           Asset[]
+  videoGenerations VideoGeneration[]
+
+  @@map("campaigns")
+}
+
+// Asset model
+model Asset {
+  id                String    @id @default(uuid())
+  campaignId        String    @map("campaign_id")
+  type              AssetType
+  filename          String
+  originalFilename  String    @map("original_filename")
+  s3Url             String    @map("s3_url")
+  s3Key             String    @map("s3_key")
+  fileSize          Int?      @map("file_size")
+  mimeType          String?   @map("mime_type")
+  vectorEmbeddingId String?   @map("vector_embedding_id")
+  thumbnailUrl      String?   @map("thumbnail_url")
+  metadata          Json?
+  createdBy         String    @map("created_by")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  campaign                  Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  creator                   User              @relation(fields: [createdBy], references: [id])
+  referenceVideoGenerations VideoGeneration[] @relation("ReferenceImage")
+  outputVideoGenerations    VideoGeneration[] @relation("OutputAsset")
+
+  @@map("assets")
+}
+
+// Video Generation model
+model VideoGeneration {
+  id                  String                @id @default(uuid())
+  campaignId          String                @map("campaign_id")
+  prompt              String
+  negativePrompt      String?               @map("negative_prompt")
+  durationSeconds     Int                   @default(5) @map("duration_seconds")
+  aspectRatio         String                @default("9:16") @map("aspect_ratio")
+  referenceImageId    String?               @map("reference_image_id")
+  referenceStyle      String?               @map("reference_style")
+  status              VideoGenerationStatus @default(PENDING)
+  progress            Float                 @default(0)
+  errorMessage        String?               @map("error_message")
+  vertexOperationName String?               @map("vertex_operation_name")
+  vertexRequestId     String?               @map("vertex_request_id")
+  outputAssetId       String?               @map("output_asset_id")
+  outputUrl           String?               @map("output_url")
+  qualityScore        Float?                @map("quality_score")
+  qualityMetadata     Json?                 @map("quality_metadata")
+  createdBy           String                @map("created_by")
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+
+  // Relations
+  campaign       Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  creator        User     @relation(fields: [createdBy], references: [id])
+  referenceImage Asset?   @relation("ReferenceImage", fields: [referenceImageId], references: [id], onDelete: SetNull)
+  outputAsset    Asset?   @relation("OutputAsset", fields: [outputAssetId], references: [id], onDelete: SetNull)
+
+  @@map("video_generations")
+}
