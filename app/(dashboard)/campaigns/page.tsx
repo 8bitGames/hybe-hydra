@@ -3,6 +3,41 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { campaignsApi, artistsApi, Campaign, Artist } from "@/lib/campaigns-api";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Plus,
+  FolderOpen,
+  Eye,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  BarChart3,
+} from "lucide-react";
 
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -15,6 +50,7 @@ export default function CampaignsPage() {
 
   useEffect(() => {
     const loadData = async () => {
+      setLoading(true);
       try {
         const [campaignsResult, artistsResult] = await Promise.all([
           campaignsApi.getAll({
@@ -42,11 +78,11 @@ export default function CampaignsPage() {
     loadData();
   }, [page, statusFilter, artistFilter]);
 
-  const statusColors: Record<string, string> = {
-    draft: "bg-gray-500/20 text-gray-300",
-    active: "bg-green-500/20 text-green-300",
-    completed: "bg-blue-500/20 text-blue-300",
-    archived: "bg-yellow-500/20 text-yellow-300",
+  const statusVariants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
+    draft: "secondary",
+    active: "default",
+    completed: "outline",
+    archived: "outline",
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -58,205 +94,210 @@ export default function CampaignsPage() {
     }
   };
 
+  const clearFilters = () => {
+    setStatusFilter("");
+    setArtistFilter("");
+    setPage(1);
+  };
+
+  const hasFilters = statusFilter || artistFilter;
+
   return (
-    <>
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white">Campaigns</h1>
-          <p className="text-gray-400 mt-1">Manage your video campaigns</p>
+          <h1 className="text-2xl font-bold tracking-tight">Campaigns</h1>
+          <p className="text-muted-foreground">Manage your video campaigns</p>
         </div>
-        <Link
-          href="/campaigns/new"
-          className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:opacity-90 transition-opacity font-medium flex items-center gap-2"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          New Campaign
+        <Link href="/campaigns/new">
+          <Button>
+            <Plus className="h-4 w-4 mr-2" />
+            New Campaign
+          </Button>
         </Link>
       </div>
 
       {/* Filters */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20 mb-6">
-        <div className="flex flex-wrap gap-4">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm text-gray-400 mb-2">Status</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-            >
-              <option value="">All Statuses</option>
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="archived">Archived</option>
-            </select>
-          </div>
-
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm text-gray-400 mb-2">Artist</label>
-            <select
-              value={artistFilter}
-              onChange={(e) => {
-                setArtistFilter(e.target.value);
-                setPage(1);
-              }}
-              className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-            >
-              <option value="">All Artists</option>
-              {artists.map((artist) => (
-                <option key={artist.id} value={artist.id}>
-                  {artist.stage_name || artist.name} {artist.group_name ? `(${artist.group_name})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {(statusFilter || artistFilter) && (
-            <div className="flex items-end">
-              <button
-                onClick={() => {
-                  setStatusFilter("");
-                  setArtistFilter("");
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex-1 min-w-[180px]">
+              <label className="text-sm font-medium mb-2 block">Status</label>
+              <Select
+                value={statusFilter}
+                onValueChange={(value) => {
+                  setStatusFilter(value === "all" ? "" : value);
                   setPage(1);
                 }}
-                className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
               >
-                Clear filters
-              </button>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Campaign List */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
-          </div>
-        ) : campaigns.length === 0 ? (
-          <div className="p-8 text-center">
-            <div className="w-16 h-16 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-medium text-white mb-2">No campaigns found</h3>
-            <p className="text-gray-400 mb-4">
-              {statusFilter || artistFilter
-                ? "Try adjusting your filters"
-                : "Create your first campaign to get started"}
-            </p>
-            {!statusFilter && !artistFilter && (
-              <Link
-                href="/campaigns/new"
-                className="inline-block px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:opacity-90 transition-opacity font-medium"
+            <div className="flex-1 min-w-[180px]">
+              <label className="text-sm font-medium mb-2 block">Artist</label>
+              <Select
+                value={artistFilter}
+                onValueChange={(value) => {
+                  setArtistFilter(value === "all" ? "" : value);
+                  setPage(1);
+                }}
               >
-                Create Campaign
-              </Link>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Artists" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Artists</SelectItem>
+                  {artists.map((artist) => (
+                    <SelectItem key={artist.id} value={artist.id}>
+                      {artist.stage_name || artist.name}
+                      {artist.group_name ? ` (${artist.group_name})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
             )}
           </div>
-        ) : (
-          <>
-            {/* Table Header */}
-            <div className="hidden md:grid grid-cols-12 gap-4 p-4 border-b border-white/10 text-sm text-gray-400 font-medium">
-              <div className="col-span-4">Campaign</div>
-              <div className="col-span-2">Artist</div>
-              <div className="col-span-2">Status</div>
-              <div className="col-span-2">Assets</div>
-              <div className="col-span-2">Actions</div>
+        </CardContent>
+      </Card>
+
+      {/* Campaign List */}
+      <Card>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <Spinner className="h-6 w-6" />
             </div>
+          ) : campaigns.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mx-auto mb-4">
+                <FolderOpen className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h3 className="font-medium mb-2">No campaigns found</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {hasFilters
+                  ? "Try adjusting your filters"
+                  : "Create your first campaign to get started"}
+              </p>
+              {!hasFilters && (
+                <Link href="/campaigns/new">
+                  <Button>Create Campaign</Button>
+                </Link>
+              )}
+            </div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[40%]">Campaign</TableHead>
+                    <TableHead>Artist</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-center">Assets</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {campaigns.map((campaign) => (
+                    <TableRow key={campaign.id}>
+                      <TableCell>
+                        <Link
+                          href={`/campaigns/${campaign.id}`}
+                          className="block hover:underline"
+                        >
+                          <div className="font-medium">{campaign.name}</div>
+                          {campaign.description && (
+                            <div className="text-sm text-muted-foreground truncate max-w-[300px]">
+                              {campaign.description}
+                            </div>
+                          )}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {campaign.artist_stage_name || campaign.artist_name || "-"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={statusVariants[campaign.status]}>
+                          {campaign.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center text-muted-foreground">
+                        {campaign.asset_count ?? 0}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Link href={`/campaigns/${campaign.id}/analytics`}>
+                            <Button variant="ghost" size="icon-sm" title="Analytics">
+                              <BarChart3 className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                          <Link href={`/campaigns/${campaign.id}`}>
+                            <Button variant="ghost" size="icon-sm">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => handleDelete(campaign.id, campaign.name)}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
 
-            {/* Table Body */}
-            <div className="divide-y divide-white/10">
-              {campaigns.map((campaign) => (
-                <div
-                  key={campaign.id}
-                  className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 hover:bg-white/5 transition-colors items-center"
-                >
-                  <div className="col-span-4">
-                    <Link href={`/campaigns/${campaign.id}`} className="block">
-                      <h3 className="text-white font-medium hover:text-purple-400 transition-colors">
-                        {campaign.name}
-                      </h3>
-                      {campaign.description && (
-                        <p className="text-gray-400 text-sm truncate">{campaign.description}</p>
-                      )}
-                    </Link>
-                  </div>
-
-                  <div className="col-span-2">
-                    <span className="text-gray-300">
-                      {campaign.artist_stage_name || campaign.artist_name || "-"}
-                    </span>
-                  </div>
-
-                  <div className="col-span-2">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[campaign.status]}`}>
-                      {campaign.status}
-                    </span>
-                  </div>
-
-                  <div className="col-span-2">
-                    <span className="text-gray-300">{campaign.asset_count ?? 0}</span>
-                  </div>
-
-                  <div className="col-span-2 flex items-center gap-2">
-                    <Link
-                      href={`/campaigns/${campaign.id}`}
-                      className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                      title="View"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    </Link>
-                    <button
-                      onClick={() => handleDelete(campaign.id, campaign.name)}
-                      className="p-2 text-gray-400 hover:text-red-400 hover:bg-white/10 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(page - 1)}
+                    disabled={page === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {page} of {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(page + 1)}
+                    disabled={page === totalPages}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
                 </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="p-4 border-t border-white/10 flex items-center justify-between">
-            <button
-              onClick={() => setPage(page - 1)}
-              disabled={page === 1}
-              className="px-4 py-2 bg-white/10 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
-            >
-              Previous
-            </button>
-            <span className="text-gray-400">
-              Page {page} of {totalPages}
-            </span>
-            <button
-              onClick={() => setPage(page + 1)}
-              disabled={page === totalPages}
-              className="px-4 py-2 bg-white/10 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
-            >
-              Next
-            </button>
-          </div>
-        )}
-      </div>
-    </>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

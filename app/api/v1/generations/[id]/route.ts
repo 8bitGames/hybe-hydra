@@ -32,6 +32,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         outputAsset: {
           select: { id: true, filename: true, s3Url: true },
         },
+        audioAsset: {
+          select: { id: true, filename: true, s3Url: true, originalFilename: true },
+        },
       },
     });
 
@@ -53,6 +56,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       aspect_ratio: generation.aspectRatio,
       reference_image_id: generation.referenceImageId,
       reference_style: generation.referenceStyle,
+      // Audio fields
+      audio_asset_id: generation.audioAssetId,
+      audio_analysis: generation.audioAnalysis,
+      audio_start_time: generation.audioStartTime,
+      audio_duration: generation.audioDuration,
+      composed_output_url: generation.composedOutputUrl,
       status: generation.status.toLowerCase(),
       progress: generation.progress,
       error_message: generation.errorMessage,
@@ -62,6 +71,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       output_url: generation.outputUrl,
       quality_score: generation.qualityScore,
       quality_metadata: generation.qualityMetadata,
+      // Bridge context fields
+      original_input: generation.originalInput,
+      trend_keywords: generation.trendKeywords,
+      reference_urls: generation.referenceUrls,
+      prompt_analysis: generation.promptAnalysis,
+      is_favorite: generation.isFavorite,
+      tags: generation.tags,
       created_by: generation.createdBy,
       created_at: generation.createdAt.toISOString(),
       updated_at: generation.updatedAt.toISOString(),
@@ -77,6 +93,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             id: generation.outputAsset.id,
             filename: generation.outputAsset.filename,
             s3_url: generation.outputAsset.s3Url,
+          }
+        : null,
+      audio_asset: generation.audioAsset
+        ? {
+            id: generation.audioAsset.id,
+            filename: generation.audioAsset.filename,
+            original_filename: generation.audioAsset.originalFilename,
+            s3_url: generation.audioAsset.s3Url,
           }
         : null,
     });

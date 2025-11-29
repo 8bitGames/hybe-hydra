@@ -127,3 +127,24 @@ hybe-hydra/
 ## License
 
 Proprietary - HYBE Corporation
+
+Admin: admin@hydra.com / admin123
+Producer: producer@hydra.com / producer123
+
+
+Initial Hypothesis for pilot - can AI TT content perform better than the as-is non-AI accounts in terms of engagement, conversion to stream. The accounts are all fan accounts (run by BMLG's team), not the artist official. 
+
+Target Artists: 1) Carly Pearce 2) Thomas Rhett 3) The Band Perry — all three of whom are either signed to BMLG (under HYBE) or we have their catalog rights 
+
+Non-AI Catalog accounts for comparison: 
+- https://www.tiktok.com/@carlysnextgirl
+- https://www.tiktok.com/@trfansforever
+
+AI TT accounts: 
+- https://www.tiktok.com/@writteninstonecold
+- https://www.tiktok.com/@talentedtr
+- https://www.tiktok.com/@postcardsfromperry
+
+Non-AI Main accounts from BMLG (not artist- specific): 
+- https://www.tiktok.com/@honkytoktreasures
+- https://www.tiktok.com/@honkytonkwhiskey

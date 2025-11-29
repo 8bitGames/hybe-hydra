@@ -47,7 +47,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       s3_url: asset.s3Url,
       file_size: asset.fileSize,
       mime_type: asset.mimeType,
-      vector_embedding_id: asset.vectorEmbeddingId,
       thumbnail_url: asset.thumbnailUrl,
       metadata: asset.metadata,
       created_by: asset.createdBy,

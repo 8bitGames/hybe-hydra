@@ -1,7 +1,8 @@
 # HYBE HYDRA - 종합 개발 계획서
 
-**문서 버전**: 1.0
+**문서 버전**: 1.2
 **작성일**: 2024-11-27
+**최종 수정일**: 2024-11-28 (Publishing Scheduler 완료)
 **프로젝트명**: HYBE HYDRA (Enterprise AI Video Orchestration Platform)
 
 ---
@@ -67,10 +68,10 @@
 │                                      │                                       │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                      DATA LAYER                                      │   │
-│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────────────┐   │   │
-│  │  │ PostgreSQL │ │  Pinecone/  │ │      AWS S3 / GCS           │   │   │
-│  │  │  (RDBMS)   │ │   Milvus    │ │   (Hot/Cold Storage)        │   │   │
-│  │  └─────────────┘ └─────────────┘ └─────────────────────────────┘   │   │
+│  │  ┌─────────────────────────┐ ┌─────────────────────────────────┐   │   │
+│  │  │      PostgreSQL 16      │ │      AWS S3 / GCS               │   │   │
+│  │  │   (RDBMS + Full-text)   │ │   (Hot/Cold Storage)            │   │   │
+│  │  └─────────────────────────┘ └─────────────────────────────────┘   │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -79,8 +80,8 @@
 
 ```
 ┌──────────┐    ┌──────────────┐    ┌─────────────────┐    ┌──────────────┐
-│  User    │───▶│  Campaign    │───▶│  Asset Locker   │───▶│ Vector DB    │
-│  Input   │    │  Creation    │    │  (RAG System)   │    │ Embedding    │
+│  User    │───▶│  Campaign    │───▶│  Asset Locker   │───▶│  S3/GCS      │
+│  Input   │    │  Creation    │    │  (Metadata DB)  │    │  Storage     │
 └──────────┘    └──────────────┘    └─────────────────┘    └──────────────┘
                                               │
                                               ▼
@@ -119,7 +120,7 @@ Level 0 (Foundation)
 ├── FR-01: Campaign Management & Asset Locker
 │   ├── Campaign CRUD Service
 │   ├── Asset Upload Service
-│   ├── Vector Embedding Service
+│   ├── Metadata Search Service
 │   └── RBAC Integration
 │
 Level 1 (Input & Processing)
@@ -157,15 +158,15 @@ Level 4 (Output)
 
 ### 2.2 서비스 의존성 매트릭스
 
-| 서비스 | PostgreSQL | Vector DB | S3/GCS | Redis | Vertex AI | External APIs |
-|--------|------------|-----------|--------|-------|-----------|---------------|
-| Campaign Service | ✅ | - | ✅ | - | - | - |
-| Asset Locker | ✅ | ✅ | ✅ | - | ✅ (Embedding) | - |
-| Trend Feeder | ✅ | - | - | ✅ | ✅ (Vision) | TikTok, YouTube |
-| Prompt Alchemist | ✅ | ✅ | - | - | ✅ (Gemini) | - |
-| Hydra Engine | ✅ | ✅ | ✅ | ✅ | ✅ (Veo 3) | - |
-| Scoring Service | ✅ | - | ✅ | - | ✅ (ML) | - |
-| Publishing | ✅ | - | ✅ | ✅ | ✅ (LLM) | TikTok, YouTube |
+| 서비스 | PostgreSQL | S3/GCS | Redis | Vertex AI | External APIs |
+|--------|------------|--------|-------|-----------|---------------|
+| Campaign Service | ✅ | ✅ | - | - | - |
+| Asset Locker | ✅ | ✅ | - | - | - |
+| Trend Feeder | ✅ | - | ✅ | ✅ (Vision) | TikTok, YouTube |
+| Prompt Alchemist | ✅ | - | - | ✅ (Gemini) | - |
+| Hydra Engine | ✅ | ✅ | ✅ | ✅ (Veo 3) | - |
+| Scoring Service | ✅ | ✅ | - | ✅ (ML) | - |
+| Publishing | ✅ | ✅ | ✅ | ✅ (LLM) | TikTok, YouTube |
 
 ---
 
@@ -218,9 +219,6 @@ LLM:
   - Gemini 1.5 Pro (Prompt Alchemist)
   - Gemini Pro Vision (Trend Analysis)
 Prompt Engineering: LangChain 0.2+
-Embedding:
-  - text-embedding-004 (Text)
-  - multimodal-embedding-001 (Image/Video)
 Computer Vision:
   - OpenPose (Skeleton Extraction)
   - OpenCV 4.x (Video Processing)
@@ -232,10 +230,8 @@ ML Framework: PyTorch 2.x (Scoring Model)
 
 ```yaml
 RDBMS: PostgreSQL 16
-  - Extensions: pgvector, pg_cron
-Vector Database:
-  - Primary: Pinecone (Managed)
-  - Alternative: Milvus (Self-hosted)
+  - Extensions: pg_trgm (Full-text search), pg_cron
+  - Full-text Search: tsvector + GIN index
 Cache: Redis 7.x
   - Pub/Sub for real-time updates
   - Sorted Sets for job queue
@@ -260,16 +256,16 @@ Secret Management: HashiCorp Vault / Secret Manager
 
 ---
 
-## 4. Phase 1: MVP 개발 계획
+## 4. Phase 1: MVP 개발 계획 ✅ COMPLETED
 
 ### 4.1 Phase 1 목표
-- Asset Locker 구축
-- 기본 프롬프트 입력 → 단일 영상 생성
-- Veo 3 API 연동
+- ✅ Asset Locker 구축
+- ✅ 기본 프롬프트 입력 → 단일 영상 생성
+- ✅ Veo 3 API 연동
 
 ### 4.2 Phase 1 작업 분해 (WBS)
 
-#### Sprint 1-1: 프로젝트 초기화 및 인프라 설정 (1주)
+#### Sprint 1-1: 프로젝트 초기화 및 인프라 설정 (1주) ✅
 
 ```
 Task 1.1.1: 모노레포 구조 설정
@@ -299,7 +295,7 @@ Task 1.1.3: CI/CD 파이프라인 구축
 └── 환경별 설정 분리
 ```
 
-#### Sprint 1-2: 데이터베이스 및 인증 (1주)
+#### Sprint 1-2: 데이터베이스 및 인증 (1주) ✅
 
 ```
 Task 1.2.1: PostgreSQL 스키마 구현
@@ -329,7 +325,7 @@ Task 1.2.2: 인증 시스템 구현
     └── Permission: labelIds 기반 접근 제어
 ```
 
-#### Sprint 1-3: Asset Locker 백엔드 (1.5주)
+#### Sprint 1-3: Asset Locker 백엔드 (1.5주) ✅
 
 ```
 Task 1.3.1: Asset Upload Service
@@ -345,24 +341,15 @@ Task 1.3.1: Asset Upload Service
 │   └── 업로드 완료 콜백
 └── 메타데이터 저장 (PostgreSQL)
 
-Task 1.3.2: Vector Embedding Service
-├── Vertex AI Embedding 연동
-│   ├── 이미지 임베딩 (multimodal-embedding-001)
-│   └── 오디오 임베딩 (text-embedding-004 + 메타데이터)
-├── Pinecone/Milvus 인덱싱
-│   ├── Namespace: campaign_id
-│   └── Metadata: asset_id, type, artist_id
-└── 임베딩 작업 큐 (Celery)
-
-Task 1.3.3: Asset Locker API
+Task 1.3.2: Asset Locker API
 ├── POST /api/v1/campaigns/{id}/assets (업로드)
 ├── GET /api/v1/campaigns/{id}/assets (목록)
 ├── GET /api/v1/assets/{id} (상세)
 ├── DELETE /api/v1/assets/{id} (삭제)
-└── POST /api/v1/assets/search (벡터 검색)
+└── GET /api/v1/assets/search (메타데이터 검색)
 ```
 
-#### Sprint 1-4: 캠페인 관리 시스템 (1주)
+#### Sprint 1-4: 캠페인 관리 시스템 (1주) ✅
 
 ```
 Task 1.4.1: Campaign CRUD API
@@ -384,7 +371,7 @@ Task 1.4.2: Artist Management
     └── 브랜드 가이드라인 (Text)
 ```
 
-#### Sprint 1-5: Veo 3 API 연동 (1주)
+#### Sprint 1-5: Veo 3 API 연동 (1주) ✅
 
 ```
 Task 1.5.1: Vertex AI 클라이언트 설정
@@ -412,7 +399,7 @@ Task 1.5.3: 단일 영상 생성 API
 └── GET /api/v1/projects/{id}/variants (결과 조회)
 ```
 
-#### Sprint 1-6: Frontend MVP (1.5주)
+#### Sprint 1-6: Frontend MVP (1.5주) ✅
 
 ```
 Task 1.6.1: 프로젝트 구조 설정
@@ -468,26 +455,26 @@ Task 1.6.5: 영상 생성 UI (Basic)
 
 ### 4.3 Phase 1 마일스톤
 
-| 주차 | 마일스톤 | 산출물 |
-|------|----------|--------|
-| 1주 | 인프라 완료 | Docker 환경, CI/CD |
-| 2주 | 인증/DB 완료 | 로그인, RBAC 동작 |
-| 3-4주 | Asset Locker | 업로드 → 임베딩 파이프라인 |
-| 5주 | Veo 3 연동 | 단일 영상 생성 |
-| 6주 | Frontend MVP | 전체 플로우 E2E 동작 |
+| 주차 | 마일스톤 | 산출물 | 상태 |
+|------|----------|--------|------|
+| 1주 | 인프라 완료 | Docker 환경, CI/CD | ✅ |
+| 2주 | 인증/DB 완료 | 로그인, RBAC 동작 | ✅ |
+| 3-4주 | Asset Locker | 업로드 → 임베딩 파이프라인 | ✅ |
+| 5주 | Veo 3 연동 | 단일 영상 생성 | ✅ |
+| 6주 | Frontend MVP | 전체 플로우 E2E 동작 | ✅ |
 
 ---
 
-## 5. Phase 2: Automation 개발 계획
+## 5. Phase 2: Automation 개발 계획 🔄 IN PROGRESS
 
 ### 5.1 Phase 2 목표
-- Prompt Alchemist (LLM) 통합
-- 1:N 병렬 생성 엔진
-- AI Scoring 알고리즘 구현
+- ✅ Prompt Alchemist (LLM) 통합
+- ✅ 1:N 병렬 생성 엔진
+- ✅ AI Scoring 알고리즘 구현
 
 ### 5.2 Phase 2 작업 분해 (WBS)
 
-#### Sprint 2-1: Trend Feeder 구현 (1주)
+#### Sprint 2-1: Trend Feeder 구현 (1주) ✅
 
 ```
 Task 2.1.1: External API Integration
@@ -521,7 +508,7 @@ Task 2.1.3: Trend Data Model
 └── API: GET /api/v1/trends?platform=&region=
 ```
 
-#### Sprint 2-2: Prompt Alchemist 구현 (1.5주)
+#### Sprint 2-2: Prompt Alchemist 구현 (1.5주) ✅
 
 ```
 Task 2.2.1: LangChain 기반 Prompt Engine
@@ -551,10 +538,10 @@ Task 2.2.2: Safety Filter 구현
 └── Blocked Response 처리
     └── 사유 제공 + 대안 제시
 
-Task 2.2.3: Asset Locker RAG 연동
+Task 2.2.3: Artist Profile 연동
 ├── Artist Profile 동적 주입
-│   ├── Vector DB 검색 (최신 에셋)
-│   └── 시각적 특성 텍스트화
+│   ├── DB에서 아티스트 프로필 조회
+│   └── profile_description, brand_guidelines 활용
 ├── Negative Prompting 자동 생성
 │   └── "NOT [타 아티스트 특성]"
 └── Image Guidance 파라미터 설정
@@ -570,7 +557,7 @@ Task 2.2.4: Prompt Alchemist API
     └── 프롬프트 승인 → 생성 단계로
 ```
 
-#### Sprint 2-3: Hydra 병렬 생성 엔진 (1.5주)
+#### Sprint 2-3: Hydra 병렬 생성 엔진 (1.5주) ✅
 
 ```
 Task 2.3.1: Style Preset 시스템
@@ -624,7 +611,7 @@ Task 2.3.4: Generation APIs
     └── 생성 완료 이벤트
 ```
 
-#### Sprint 2-4: AI Scoring 알고리즘 (1주)
+#### Sprint 2-4: AI Scoring 알고리즘 (1주) ✅
 
 ```
 Task 2.4.1: Scoring Feature Extraction
@@ -659,7 +646,7 @@ Task 2.4.3: Scoring API
     └── 점수순 정렬
 ```
 
-#### Sprint 2-5: Curation Dashboard (1.5주)
+#### Sprint 2-5: Curation Dashboard (1.5주) ✅
 
 ```
 Task 2.5.1: Mosaic Viewer Component
@@ -697,12 +684,12 @@ Task 2.5.4: Refine (Inpainting) 기능
 
 ### 5.3 Phase 2 마일스톤
 
-| 주차 | 마일스톤 | 산출물 |
-|------|----------|--------|
-| 1주 | Trend Feeder | 트렌드 수집 파이프라인 |
-| 2-3주 | Prompt Alchemist | LLM 기반 프롬프트 최적화 |
-| 4-5주 | 병렬 생성 엔진 | 1:15 동시 생성 |
-| 6주 | AI Scoring + UI | 큐레이션 대시보드 완성 |
+| 주차 | 마일스톤 | 산출물 | 상태 |
+|------|----------|--------|------|
+| 1주 | Trend Feeder | 트렌드 수집 파이프라인 | ✅ |
+| 2-3주 | Prompt Alchemist | LLM 기반 프롬프트 최적화 | ✅ |
+| 4-5주 | 병렬 생성 엔진 | 1:15 동시 생성 | ✅ |
+| 6주 | AI Scoring + UI | 큐레이션 대시보드 완성 | ✅ |
 
 ---
 
@@ -800,6 +787,71 @@ Task 3.3.3: Publishing APIs
 └── Webhook: 게시 완료 통보
 ```
 
+#### Sprint 3-5: Merchandise Reference (굿즈 참조 이미지 생성) (1주)
+
+```
+Task 3.5.1: Merchandise Asset Management
+├── merchandise_items 테이블 설계
+│   ├── id, name, artist_id, campaign_id
+│   ├── type (album, photocard, lightstick, apparel, accessory)
+│   ├── s3_url (이미지 URL)
+│   ├── thumbnail_url
+│   ├── metadata (크기, 색상, 출시일 등)
+│   └── is_active
+├── 굿즈 이미지 업로드 API
+│   ├── POST /api/v1/merchandise (등록)
+│   ├── GET /api/v1/merchandise (목록)
+│   ├── GET /api/v1/merchandise/{id} (상세)
+│   └── DELETE /api/v1/merchandise/{id} (삭제)
+└── 굿즈 라이브러리 UI
+    ├── 그리드 갤러리 뷰
+    ├── 카테고리별 필터
+    └── 드래그 앤 드롭 업로드
+
+Task 3.5.2: Merchandise-to-Prompt Integration
+├── Prompt Alchemist 연동
+│   ├── 굿즈 이미지 → 프롬프트 자동 생성
+│   │   └── Gemini Vision으로 굿즈 특징 분석 (색상, 디자인, 형태)
+│   ├── 굿즈 타입별 프롬프트 템플릿
+│   │   ├── album: "holding [album_name] album with [design_features]"
+│   │   ├── lightstick: "waving [group] official lightstick"
+│   │   ├── photocard: "showing photocard of [artist]"
+│   │   └── apparel: "wearing [merchandise_name] with [design]"
+│   └── 아티스트 + 굿즈 조합 프롬프트 최적화
+├── Reference Image 전달
+│   ├── Veo 3 API image_reference 파라미터 활용
+│   ├── 굿즈 이미지를 참조 이미지로 전달
+│   └── guidance_scale 조절 (굿즈 반영 강도)
+└── 굿즈 컨텍스트 주입
+    ├── 굿즈 메타데이터 → 프롬프트 enrichment
+    └── 브랜드 색상/디자인 요소 자동 추출
+
+Task 3.5.3: Merchandise Generation API
+├── POST /api/v1/prompts/transform (확장)
+│   ├── Input 추가: merchandise_ids[] (참조할 굿즈)
+│   ├── Input 추가: merchandise_context (holding, wearing, showing 등)
+│   └── Output: 굿즈 포함 최적화 프롬프트
+├── POST /api/v1/projects/{id}/generate-with-merchandise
+│   ├── Input: prompt_id, merchandise_ids[], style_presets[]
+│   ├── 굿즈 참조 이미지와 함께 Veo 3 호출
+│   └── Output: 굿즈가 포함된 영상 variants
+└── GET /api/v1/merchandise/suggestions
+    └── 캠페인/아티스트 기반 추천 굿즈
+
+Task 3.5.4: Merchandise Selection UI
+├── 프롬프트 입력 화면 연동
+│   ├── 굿즈 선택 패널 (사이드바)
+│   ├── 선택된 굿즈 미리보기
+│   └── 굿즈 컨텍스트 선택 (들고있기, 입고있기, 보여주기)
+├── 굿즈 라이브러리 브라우저
+│   ├── 아티스트별 필터
+│   ├── 타입별 필터 (앨범, 라이트스틱 등)
+│   └── 최근 사용/인기 굿즈
+└── 프롬프트 미리보기
+    ├── 굿즈 적용 시 프롬프트 변화 실시간 표시
+    └── 예상 결과 설명 (AI 분석)
+```
+
 #### Sprint 3-4: UI/UX 폴리싱 (1주)
 
 ```
@@ -845,7 +897,8 @@ Task 3.4.3: Performance Optimization
 | 1-2주 | Motion Transfer | 스켈레톤 기반 아티스트 교체 |
 | 3주 | Smart Crop + Caption | 자동 크롭 및 캡션 |
 | 4주 | Publishing | SNS 연동 및 스케줄링 |
-| 4주 | UI/UX 완성 | 전체 폴리싱 완료 |
+| 5주 | Merchandise Reference | 굿즈 참조 AI 영상 생성 |
+| 6주 | UI/UX 완성 | 전체 폴리싱 완료 |
 
 ---
 
@@ -911,7 +964,6 @@ CREATE TABLE assets (
     s3_key VARCHAR(500) NOT NULL,
     file_size BIGINT,
     mime_type VARCHAR(100),
-    vector_embedding_id VARCHAR(100), -- Pinecone ID
     metadata JSONB DEFAULT '{}', -- 추가 메타데이터
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -987,7 +1039,40 @@ CREATE TABLE publishing_schedules (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Merchandise Items (굿즈)
+CREATE TABLE merchandise_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    artist_id UUID REFERENCES artists(id),
+    campaign_id UUID REFERENCES campaigns(id),
+    type VARCHAR(50) NOT NULL, -- album, photocard, lightstick, apparel, accessory
+    s3_url TEXT NOT NULL,
+    s3_key VARCHAR(500) NOT NULL,
+    thumbnail_url TEXT,
+    file_size BIGINT,
+    metadata JSONB DEFAULT '{}', -- 크기, 색상, 출시일 등
+    is_active BOOLEAN DEFAULT true,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Project Merchandise References (프로젝트-굿즈 연결)
+CREATE TABLE project_merchandise (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+    merchandise_id UUID REFERENCES merchandise_items(id),
+    context VARCHAR(50) NOT NULL, -- holding, wearing, showing, background
+    guidance_scale DECIMAL(3,2) DEFAULT 0.7, -- 굿즈 반영 강도 (0-1)
+    prompt_addition TEXT, -- 굿즈 관련 추가 프롬프트
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Indexes
+CREATE INDEX idx_merchandise_artist ON merchandise_items(artist_id);
+CREATE INDEX idx_merchandise_campaign ON merchandise_items(campaign_id);
+CREATE INDEX idx_merchandise_type ON merchandise_items(type);
+CREATE INDEX idx_project_merchandise ON project_merchandise(project_id);
 CREATE INDEX idx_campaigns_artist ON campaigns(artist_id);
 CREATE INDEX idx_campaigns_status ON campaigns(status);
 CREATE INDEX idx_assets_campaign ON assets(campaign_id);
@@ -997,27 +1082,6 @@ CREATE INDEX idx_video_variants_project ON video_variants(project_id);
 CREATE INDEX idx_video_variants_score ON video_variants(ai_score DESC);
 CREATE INDEX idx_trend_snapshots_platform ON trend_snapshots(platform, region, collected_at);
 CREATE INDEX idx_publishing_schedules_time ON publishing_schedules(scheduled_at);
-```
-
-### 7.2 Vector DB (Pinecone) Schema
-
-```yaml
-Index: hybe-hydra-assets
-Dimension: 1408  # multimodal-embedding-001 dimension
-Metric: cosine
-Pods: p1.x1 (starter) → p2.x4 (production)
-
-Metadata Schema:
-  - asset_id: string (UUID)
-  - campaign_id: string (UUID)
-  - artist_id: string (UUID)
-  - type: string (image|video|audio)
-  - filename: string
-  - created_at: number (timestamp)
-
-Namespace Strategy:
-  - Per Campaign: campaign_{uuid}
-  - Per Artist: artist_{uuid}
 ```
 
 ---
@@ -1081,7 +1145,7 @@ GET    /campaigns/{id}/assets   # 에셋 목록
 POST   /campaigns/{id}/assets   # 에셋 업로드
 GET    /assets/{id}             # 에셋 상세
 DELETE /assets/{id}             # 에셋 삭제
-POST   /assets/search           # 벡터 검색
+GET    /assets/search           # 메타데이터 검색
 
 # Trends
 GET    /trends                  # 트렌드 목록
@@ -1114,6 +1178,18 @@ POST   /projects/{id}/motion-transfer  # 모션 트랜스퍼 요청
 # Smart Processing
 POST   /variants/{id}/crop      # 스마트 크롭
 POST   /variants/{id}/caption   # 캡션 생성
+
+# Merchandise (굿즈 라이브러리)
+GET    /merchandise             # 굿즈 목록
+POST   /merchandise             # 굿즈 등록
+GET    /merchandise/{id}        # 굿즈 상세
+DELETE /merchandise/{id}        # 굿즈 삭제
+GET    /artists/{id}/merchandise      # 아티스트별 굿즈
+GET    /merchandise/suggestions       # 추천 굿즈 (캠페인/아티스트 기반)
+
+# Merchandise Generation (굿즈 참조 영상 생성)
+POST   /prompts/transform              # (확장) merchandise_ids[], context 추가
+POST   /projects/{id}/generate-with-merchandise  # 굿즈 참조 이미지와 함께 생성
 
 # Publishing
 POST   /variants/{id}/schedule  # 게시 예약
@@ -1251,7 +1327,7 @@ Always include:
 # 1. Artist Profile 동적 주입 전략
 Strategy: Dynamic Profile Injection
 Process:
-  1. Vector DB에서 최신 아티스트 에셋 검색
+  1. DB에서 아티스트 프로필 조회 (profile_description, brand_guidelines)
   2. 시각적 특성 텍스트 추출 (hair, style, etc.)
   3. artist_profile 변수에 동적 주입
 
@@ -1311,7 +1387,7 @@ safety_chain = LLMChain(
 profile_chain = LLMChain(
     llm=gemini_pro,
     prompt=PromptTemplate(
-        input_variables=["artist_name", "vector_db_results"],
+        input_variables=["artist_name", "artist_profile"],
         template=PROFILE_ENRICHMENT_PROMPT
     ),
     output_key="enriched_profile"
@@ -1340,7 +1416,7 @@ optimization_chain = LLMChain(
 # Sequential Chain
 alchemist_chain = SequentialChain(
     chains=[safety_chain, profile_chain, expansion_chain, optimization_chain],
-    input_variables=["user_input", "artist_name", "vector_db_results", "trends"],
+    input_variables=["user_input", "artist_name", "artist_profile", "trends"],
     output_variables=["safety_result", "enriched_profile", "expanded_prompt", "final_prompt"]
 )
 ```
@@ -1767,11 +1843,6 @@ S3_ACCESS_KEY=minioadmin
 S3_SECRET_KEY=minioadmin
 S3_USE_PATH_STYLE=true
 
-# Vector DB (Phase 2)
-PINECONE_API_KEY=your-key
-PINECONE_ENVIRONMENT=us-east-1
-PINECONE_INDEX=hybe-hydra-assets
-
 # Google Cloud / Vertex AI
 GOOGLE_CLOUD_PROJECT=hybe-hydra
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
@@ -1795,12 +1866,49 @@ FEATURE_PUBLISHING=false
 
 ## 부록 C: 개발 일정 요약
 
-| Phase | 기간 | 주요 산출물 |
-|-------|------|------------|
-| **Phase 1 (MVP)** | 6주 | Asset Locker, 단일 영상 생성, Veo 3 연동 |
-| **Phase 2 (Automation)** | 6주 | Prompt Alchemist, 1:15 병렬 생성, AI Scoring |
-| **Phase 3 (Integration)** | 4주 | Motion Transfer, SNS 퍼블리싱, UI/UX 완성 |
-| **총 기간** | **16주 (4개월)** | Enterprise AI Video Platform |
+| Phase | 기간 | 주요 산출물 | 상태 |
+|-------|------|------------|------|
+| **Phase 1 (MVP)** | 6주 | Asset Locker, 단일 영상 생성, Veo 3 연동 | ✅ COMPLETED |
+| **Phase 2 (Automation)** | 6주 | Prompt Alchemist, 1:15 병렬 생성, AI Scoring, Trend Feeder | ✅ COMPLETED |
+| **Phase 3 (Integration)** | 6주 | Motion Transfer, SNS 퍼블리싱, 굿즈 참조 생성, UI/UX 완성 | 🔄 IN PROGRESS |
+| **총 기간** | **18주 (4.5개월)** | Enterprise AI Video Platform | |
+
+### 현재 진행 상황 (2024-11-28 기준)
+
+**✅ 완료된 기능:**
+- Phase 1 전체 (인프라, 인증, Asset Locker, 캠페인 관리, Veo 3 연동, Frontend MVP)
+- Prompt Alchemist (프롬프트 변환 API)
+- Style Presets 시스템 (15개 스타일 프리셋)
+- Batch Generation (1:N 병렬 생성)
+- AI Scoring 알고리즘 (4개 카테고리 점수화)
+- Curation Dashboard (Mosaic View, A/B 비교, Video Detail Modal)
+- Trend Feeder (TrendSnapshot 모델, Trends API, 프롬프트 제안 시스템)
+- Phase 2 전체 완료 ✅
+- Sprint 3-2: Caption Generator (AI 캡션 생성 API, SEO 해시태그, 플랫폼별 최적화, Curation UI 연동) ✅
+- Sprint 3-3: Publishing Scheduler (DB 모델, Social Accounts API, Schedule API, Publishing UI) ✅
+
+**🔄 Phase 3 진행 중:**
+- ✅ Sprint 3-2: Caption Generator - 완료
+- ✅ Sprint 3-3: Publishing Scheduler - 완료 (UI 및 백엔드 구조, SNS API 연동은 자격증명 필요)
+- ✅ Sprint 3-4: UI/UX Polish - 완료
+  - Bridge Dashboard (3-panel layout: Trend Radar, Prompt Interface, Variants Panel)
+  - Skeleton UI 컴포넌트 (CardSkeleton, VideoCardSkeleton, TrendItemSkeleton 등)
+  - Toast 알림 시스템 (success, error, warning, info)
+  - i18n 다국어 지원 (한국어/영어)
+  - Lazy Loading 컴포넌트 (LazyImage, LazyVideo)
+- ⏳ Sprint 3-1: Motion Transfer - 대기 (OpenPose/MediaPipe 연동 필요)
+- ⏳ Sprint 3-2: Smart Crop - 대기 (U^2-Net 연동 필요)
+- ⏳ Sprint 3-5: Merchandise Reference - 대기 (굿즈 참조 AI 영상 생성)
+
+**⏳ 남은 작업:**
+- Motion Transfer (OpenPose 연동)
+- Smart Crop (Saliency Map 기반)
+- SNS API 실제 연동 (TikTok, YouTube, Instagram OAuth)
+- Merchandise Reference (굿즈 참조 AI 영상 생성)
+  - 굿즈 라이브러리 관리 시스템
+  - Gemini Vision 굿즈 특징 분석 → 프롬프트 자동 생성
+  - Veo 3 image_reference로 굿즈 이미지 전달
+  - 굿즈 선택 UI (프롬프트 입력 화면 연동)
 
 ---
 

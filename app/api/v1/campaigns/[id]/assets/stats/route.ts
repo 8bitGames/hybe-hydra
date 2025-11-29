@@ -44,11 +44,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       image: 0,
       video: 0,
       audio: 0,
+      goods: 0,
       total: 0,
     };
 
     counts.forEach((c) => {
-      const type = c.type.toLowerCase() as "image" | "video" | "audio";
+      const type = c.type.toLowerCase() as "image" | "video" | "audio" | "goods";
       stats[type] = c._count;
       stats.total += c._count;
     });

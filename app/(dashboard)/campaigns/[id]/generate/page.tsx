@@ -4,12 +4,54 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { campaignsApi, assetsApi, Campaign, Asset } from "@/lib/campaigns-api";
+import { loadBridgePrompt, clearBridgePrompt } from "@/lib/bridge-storage";
 import {
   videoApi,
+  promptApi,
+  presetsApi,
+  batchApi,
+  scoringApi,
   VideoGeneration,
   VideoGenerationStats,
   VideoGenerationStatus,
+  PromptTransformResponse,
+  StylePreset,
+  ScoringResult,
 } from "@/lib/video-api";
+import {
+  trendsApi,
+  TrendSuggestion,
+  TrendPlatform,
+  formatViewCount,
+  getPlatformIcon,
+  getPlatformColor,
+} from "@/lib/trends-api";
+import {
+  merchandiseApi,
+  merchandiseGenerateApi,
+  MerchandiseReference,
+  MerchandiseItem,
+  MerchandiseContext,
+  getMerchandiseTypeIcon,
+  getContextIcon,
+  MERCHANDISE_CONTEXTS,
+  MERCHANDISE_TYPES,
+  MerchandiseType,
+} from "@/lib/merchandise-api";
+import { Input } from "@/components/ui/input";
+import { Image as ImageIcon, Search, Check, Music, Volume2, Lightbulb } from "lucide-react";
+import {
+  ImageReferenceSection,
+  ImageReferenceData,
+} from "@/components/features/image-reference";
+import { validateImageDescription } from "@/lib/image-prompt-combiner";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { ChevronLeft, Play, Zap, Star, Trash2, X, TrendingUp, ChevronDown, ChevronUp, Sparkles, Package, Layers } from "lucide-react";
 
 const ASPECT_RATIOS = [
   { value: "9:16", label: "9:16 (Vertical)", icon: "portrait" },
@@ -23,13 +65,635 @@ const DURATIONS = [
   { value: 15, label: "15 seconds" },
 ];
 
-const STYLES = [
-  { value: "", label: "Auto" },
-  { value: "cinematic", label: "Cinematic" },
-  { value: "anime", label: "Anime" },
-  { value: "realistic", label: "Realistic" },
-  { value: "artistic", label: "Artistic" },
-];
+// Category labels for style presets
+const CATEGORY_LABELS: Record<string, string> = {
+  contrast: "Contrast",
+  mood: "Mood",
+  motion: "Motion",
+  cinematic: "Cinematic",
+  aesthetic: "Aesthetic",
+  kpop: "K-Pop",
+  effect: "Effects",
+  lighting: "Lighting",
+};
+
+// Audio Selection Section Component - Required for video generation
+interface AudioAsset {
+  id: string;
+  filename: string;
+  original_filename: string;
+  s3_url: string;
+}
+
+function AudioSelectionSection({
+  audioTracks,
+  selectedAudioId,
+  onSelect,
+  campaignId,
+  onAudioUploaded,
+}: {
+  audioTracks: Asset[];
+  selectedAudioId: string;
+  onSelect: (id: string) => void;
+  campaignId: string;
+  onAudioUploaded: (newAudio: Asset) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showUpload, setShowUpload] = useState(audioTracks.length === 0);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("audio/")) {
+      setUploadError("오디오 파일만 업로드할 수 있습니다.");
+      return;
+    }
+
+    // Validate file size (max 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      setUploadError("파일 크기는 50MB 이하만 가능합니다.");
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    setUploadProgress(0);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("type", "audio");
+
+      // Simulate progress for better UX
+      const progressInterval = setInterval(() => {
+        setUploadProgress((prev) => Math.min(prev + 10, 90));
+      }, 200);
+
+      const response = await fetch(`/api/v1/campaigns/${campaignId}/assets`, {
+        method: "POST",
+        body: formData,
+      });
+
+      clearInterval(progressInterval);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "업로드에 실패했습니다.");
+      }
+
+      const newAsset = await response.json();
+      setUploadProgress(100);
+
+      // Notify parent and auto-select the new audio
+      onAudioUploaded(newAsset);
+      setShowUpload(false);
+
+      // Reset input
+      e.target.value = "";
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "업로드에 실패했습니다.");
+    } finally {
+      setUploading(false);
+      setTimeout(() => setUploadProgress(0), 1000);
+    }
+  };
+
+  const selectedAudio = audioTracks.find((a) => a.id === selectedAudioId);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <Label className="flex items-center gap-2">
+          <Music className="w-4 h-4 text-primary" />
+          음원 선택 <span className="text-destructive">*</span>
+        </Label>
+        {audioTracks.length > 0 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowUpload(!showUpload)}
+          >
+            {showUpload ? "목록 보기" : "+ 새 음원 업로드"}
+          </Button>
+        )}
+      </div>
+
+      {/* Selected Audio Display */}
+      {selectedAudio && !showUpload && (
+        <div className="p-3 bg-primary/10 border border-primary/30 rounded-lg flex items-center gap-3">
+          <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center">
+            <Volume2 className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground truncate">
+              {selectedAudio.original_filename}
+            </p>
+            <p className="text-xs text-muted-foreground">선택됨</p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => onSelect("")}
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* Audio Upload Section */}
+      {showUpload && (
+        <div className="p-4 border-2 border-dashed border-border rounded-lg">
+          {uploadError && (
+            <div className="mb-3 p-2 bg-destructive/10 border border-destructive/30 rounded text-destructive text-sm">
+              {uploadError}
+            </div>
+          )}
+
+          <div className="text-center">
+            <Music className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+            <p className="text-sm text-foreground mb-1">음원 파일을 업로드하세요</p>
+            <p className="text-xs text-muted-foreground mb-3">MP3, WAV, AAC 지원 (최대 50MB)</p>
+
+            <label className="relative cursor-pointer">
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={handleFileSelect}
+                disabled={uploading}
+                className="hidden"
+              />
+              <Button type="button" variant="outline" disabled={uploading} asChild>
+                <span>
+                  {uploading ? (
+                    <>
+                      <Spinner className="w-4 h-4 mr-2" />
+                      업로드 중... {uploadProgress}%
+                    </>
+                  ) : (
+                    <>
+                      <Music className="w-4 h-4 mr-2" />
+                      파일 선택
+                    </>
+                  )}
+                </span>
+              </Button>
+            </label>
+          </div>
+
+          {uploading && (
+            <div className="mt-3">
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Audio Track List */}
+      {!showUpload && audioTracks.length > 0 && (
+        <div className="space-y-2 max-h-48 overflow-y-auto p-1">
+          {audioTracks.map((audio) => (
+            <button
+              type="button"
+              key={audio.id}
+              onClick={() => onSelect(audio.id)}
+              className={`w-full p-3 rounded-lg border-2 flex items-center gap-3 transition-all ${
+                selectedAudioId === audio.id
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-muted-foreground hover:bg-muted/50"
+              }`}
+            >
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  selectedAudioId === audio.id
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {selectedAudioId === audio.id ? (
+                  <Check className="w-5 h-5" />
+                ) : (
+                  <Music className="w-5 h-5" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0 text-left">
+                <p className="text-sm font-medium text-foreground truncate">
+                  {audio.original_filename}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(audio.created_at || "").toLocaleDateString()}
+                </p>
+              </div>
+              {/* Audio Preview Button */}
+              <a
+                href={audio.s3_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="p-2 hover:bg-muted rounded-full transition-colors"
+                title="미리 듣기"
+              >
+                <Volume2 className="w-4 h-4 text-muted-foreground" />
+              </a>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!showUpload && audioTracks.length === 0 && (
+        <div className="text-center py-6 text-muted-foreground">
+          <Music className="w-10 h-10 mx-auto mb-2 opacity-50" />
+          <p className="text-sm">업로드된 음원이 없습니다</p>
+          <p className="text-xs">위의 버튼을 클릭하여 음원을 업로드하세요</p>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        영상 생성 시 선택한 음원의 최적 15초 구간이 자동으로 합성됩니다.
+      </p>
+    </div>
+  );
+}
+
+// Reference Source Section Component - combines images and merchandise
+interface SelectedMerchandise extends MerchandiseItem {
+  context: MerchandiseContext;
+  guidance_scale: number;
+}
+
+function ReferenceSourceSection({
+  images,
+  referenceImageId,
+  setReferenceImageId,
+  merchandiseRefs,
+  setMerchandiseRefs,
+  campaignId,
+  artistId,
+}: {
+  images: Asset[];
+  referenceImageId: string;
+  setReferenceImageId: (id: string) => void;
+  merchandiseRefs: MerchandiseReference[];
+  setMerchandiseRefs: (refs: MerchandiseReference[]) => void;
+  campaignId: string;
+  artistId?: string;
+}) {
+  const [activeTab, setActiveTab] = useState<"images" | "merchandise">("images");
+  const [merchandise, setMerchandise] = useState<MerchandiseItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState<MerchandiseType | "all">("all");
+  const [selectedMerchandise, setSelectedMerchandise] = useState<Map<string, SelectedMerchandise>>(new Map());
+  const [editingContextId, setEditingContextId] = useState<string | null>(null);
+  const maxMerchandise = 3;
+
+  // Load merchandise
+  useEffect(() => {
+    const loadMerchandise = async () => {
+      setLoading(true);
+      try {
+        const result = await merchandiseApi.getAll({
+          page_size: 50,
+          active_only: true,
+          artist_id: artistId,
+        });
+        if (result.data) {
+          setMerchandise(result.data.items);
+        }
+      } catch (err) {
+        console.error("Failed to load merchandise:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadMerchandise();
+  }, [artistId]);
+
+  // Sync selected merchandise with parent
+  useEffect(() => {
+    const newMap = new Map<string, SelectedMerchandise>();
+    merchandiseRefs.forEach((ref) => {
+      const item = merchandise.find((m) => m.id === ref.merchandise_id);
+      if (item) {
+        newMap.set(ref.merchandise_id, {
+          ...item,
+          context: ref.context,
+          guidance_scale: ref.guidance_scale || 0.7,
+        });
+      }
+    });
+    setSelectedMerchandise(newMap);
+  }, [merchandiseRefs, merchandise]);
+
+  // Handle merchandise selection
+  const handleSelectMerchandise = (item: MerchandiseItem) => {
+    const newSelected = new Map(selectedMerchandise);
+
+    if (newSelected.has(item.id)) {
+      newSelected.delete(item.id);
+    } else {
+      if (newSelected.size >= maxMerchandise) return;
+
+      // Default context based on type
+      let defaultContext: MerchandiseContext = "holding";
+      if (item.type === "apparel") defaultContext = "wearing";
+
+      newSelected.set(item.id, {
+        ...item,
+        context: defaultContext,
+        guidance_scale: 0.7,
+      });
+    }
+
+    setSelectedMerchandise(newSelected);
+    updateMerchandiseRefs(newSelected);
+  };
+
+  // Handle context change
+  const handleContextChange = (itemId: string, context: MerchandiseContext) => {
+    const newSelected = new Map(selectedMerchandise);
+    const item = newSelected.get(itemId);
+    if (item) {
+      newSelected.set(itemId, { ...item, context });
+      setSelectedMerchandise(newSelected);
+      updateMerchandiseRefs(newSelected);
+    }
+    setEditingContextId(null);
+  };
+
+  // Handle guidance scale change
+  const handleGuidanceChange = (itemId: string, guidance_scale: number) => {
+    const newSelected = new Map(selectedMerchandise);
+    const item = newSelected.get(itemId);
+    if (item) {
+      newSelected.set(itemId, { ...item, guidance_scale });
+      setSelectedMerchandise(newSelected);
+      updateMerchandiseRefs(newSelected);
+    }
+  };
+
+  // Update parent component
+  const updateMerchandiseRefs = (selected: Map<string, SelectedMerchandise>) => {
+    const refs: MerchandiseReference[] = Array.from(selected.values()).map((item) => ({
+      merchandise_id: item.id,
+      context: item.context,
+      guidance_scale: item.guidance_scale,
+    }));
+    setMerchandiseRefs(refs);
+  };
+
+  // Filter merchandise
+  const filteredMerchandise = merchandise.filter((item) => {
+    if (filterType !== "all" && item.type !== filterType) return false;
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      return (
+        item.name.toLowerCase().includes(query) ||
+        item.name_ko?.toLowerCase().includes(query) ||
+        item.artist?.name.toLowerCase().includes(query)
+      );
+    }
+    return true;
+  });
+
+  const selectedArray = Array.from(selectedMerchandise.values());
+
+  return (
+    <div className="space-y-3">
+      <Label className="block">Reference Source (Optional)</Label>
+
+      {/* Tab Buttons */}
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant={activeTab === "images" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveTab("images")}
+          className="flex-1"
+        >
+          <ImageIcon className="w-4 h-4 mr-2" />
+          이미지 ({images.length})
+        </Button>
+        <Button
+          type="button"
+          variant={activeTab === "merchandise" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveTab("merchandise")}
+          className="flex-1"
+        >
+          <Package className="w-4 h-4 mr-2" />
+          굿즈 {selectedArray.length > 0 && `(${selectedArray.length})`}
+        </Button>
+      </div>
+
+      {/* Images Tab */}
+      {activeTab === "images" && (
+        <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto p-1">
+          <button
+            type="button"
+            onClick={() => setReferenceImageId("")}
+            className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-colors ${
+              !referenceImageId
+                ? "border-primary bg-primary/10"
+                : "border-border hover:border-muted-foreground"
+            }`}
+          >
+            <span className="text-muted-foreground text-xs">없음</span>
+          </button>
+          {images.map((image) => (
+            <button
+              type="button"
+              key={image.id}
+              onClick={() => setReferenceImageId(image.id)}
+              className={`aspect-square rounded-lg border-2 overflow-hidden transition-colors ${
+                referenceImageId === image.id
+                  ? "border-primary ring-2 ring-primary/30"
+                  : "border-border hover:border-muted-foreground"
+              }`}
+            >
+              <img
+                src={image.s3_url}
+                alt={image.original_filename}
+                className="w-full h-full object-cover"
+              />
+            </button>
+          ))}
+          {images.length === 0 && (
+            <div className="col-span-3 text-center py-4 text-muted-foreground text-sm">
+              업로드된 이미지가 없습니다
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Merchandise Tab */}
+      {activeTab === "merchandise" && (
+        <div className="space-y-3">
+          {/* Selected Merchandise */}
+          {selectedArray.length > 0 && (
+            <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg space-y-2">
+              <p className="text-xs text-muted-foreground font-medium">선택된 굿즈:</p>
+              {selectedArray.map((item) => (
+                <div key={item.id} className="flex items-center gap-2 p-2 bg-background rounded-lg">
+                  <div className="w-10 h-10 rounded overflow-hidden flex-shrink-0 bg-muted">
+                    {item.thumbnail_url || item.s3_url ? (
+                      <img src={item.thumbnail_url || item.s3_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-lg">
+                        {getMerchandiseTypeIcon(item.type)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{item.name_ko || item.name}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      {editingContextId === item.id ? (
+                        <select
+                          value={item.context}
+                          onChange={(e) => handleContextChange(item.id, e.target.value as MerchandiseContext)}
+                          onBlur={() => setEditingContextId(null)}
+                          autoFocus
+                          className="text-xs bg-muted border border-border rounded px-2 py-0.5"
+                        >
+                          {MERCHANDISE_CONTEXTS.map((ctx) => (
+                            <option key={ctx.value} value={ctx.value}>
+                              {ctx.labelKo}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setEditingContextId(item.id)}
+                          className="px-2 py-0.5 bg-muted text-muted-foreground text-xs rounded hover:bg-muted/80"
+                        >
+                          {getContextIcon(item.context)} {MERCHANDISE_CONTEXTS.find((c) => c.value === item.context)?.labelKo}
+                        </button>
+                      )}
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="1"
+                        step="0.1"
+                        value={item.guidance_scale}
+                        onChange={(e) => handleGuidanceChange(item.id, parseFloat(e.target.value))}
+                        className="w-12 h-1 accent-primary"
+                      />
+                      <span className="text-xs text-muted-foreground">{(item.guidance_scale * 100).toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => handleSelectMerchandise(item)}
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Search & Filter */}
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="굿즈 검색..."
+                className="pl-8 h-9"
+              />
+            </div>
+            <Select value={filterType} onValueChange={(v) => setFilterType(v as MerchandiseType | "all")}>
+              <SelectTrigger className="w-[100px] h-9">
+                <SelectValue placeholder="전체" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체</SelectItem>
+                {MERCHANDISE_TYPES.map((type) => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.labelKo}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Merchandise Grid */}
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner className="w-6 h-6" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1">
+              {filteredMerchandise.map((item) => {
+                const isSelected = selectedMerchandise.has(item.id);
+                const disabled = !isSelected && selectedMerchandise.size >= maxMerchandise;
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    onClick={() => handleSelectMerchandise(item)}
+                    disabled={disabled}
+                    className={`relative rounded-lg border-2 overflow-hidden transition-all ${
+                      isSelected
+                        ? "border-primary ring-2 ring-primary/30"
+                        : disabled
+                        ? "border-border opacity-50 cursor-not-allowed"
+                        : "border-border hover:border-muted-foreground"
+                    }`}
+                  >
+                    <div className="aspect-square bg-muted">
+                      {item.thumbnail_url || item.s3_url ? (
+                        <img src={item.thumbnail_url || item.s3_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-2xl">
+                          {getMerchandiseTypeIcon(item.type)}
+                        </div>
+                      )}
+                      {isSelected && (
+                        <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
+                          <Check className="w-3 h-3 text-primary-foreground" />
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 bg-background/80 backdrop-blur-sm">
+                        <p className="text-xs truncate text-foreground">{item.name_ko || item.name}</p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+              {filteredMerchandise.length === 0 && (
+                <div className="col-span-4 text-center py-8 text-muted-foreground text-sm">
+                  굿즈를 찾을 수 없습니다
+                </div>
+              )}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            최대 {maxMerchandise}개까지 선택 가능. AI가 선택한 굿즈를 영상에 포함합니다.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function VideoGeneratePage() {
   const params = useParams();
@@ -38,11 +702,30 @@ export default function VideoGeneratePage() {
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [images, setImages] = useState<Asset[]>([]);
+  const [audioTracks, setAudioTracks] = useState<Asset[]>([]);  // Audio assets
   const [generations, setGenerations] = useState<VideoGeneration[]>([]);
   const [stats, setStats] = useState<VideoGenerationStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [transforming, setTransforming] = useState(false);
+  const [transformedPrompt, setTransformedPrompt] = useState<PromptTransformResponse | null>(null);
   const [error, setError] = useState("");
+
+  // Style presets state
+  const [presets, setPresets] = useState<StylePreset[]>([]);
+  const [selectedPresetIds, setSelectedPresetIds] = useState<string[]>([]);
+  const [batchGenerating, setBatchGenerating] = useState(false);
+
+  // Scoring state
+  const [scoringId, setScoringId] = useState<string | null>(null);
+  const [scoringAll, setScoringAll] = useState(false);
+  const [scoreDetails, setScoreDetails] = useState<Record<string, ScoringResult>>({});
+  const [expandedScoreId, setExpandedScoreId] = useState<string | null>(null);
+
+  // Trends state
+  const [trendSuggestions, setTrendSuggestions] = useState<TrendSuggestion[]>([]);
+  const [selectedPlatform, setSelectedPlatform] = useState<TrendPlatform | "ALL">("ALL");
+  const [trendsExpanded, setTrendsExpanded] = useState(true);
 
   // Form state
   const [prompt, setPrompt] = useState("");
@@ -50,16 +733,55 @@ export default function VideoGeneratePage() {
   const [duration, setDuration] = useState(5);
   const [aspectRatio, setAspectRatio] = useState("9:16");
   const [referenceImageId, setReferenceImageId] = useState<string>("");
-  const [style, setStyle] = useState("");
+  const [selectedAudioId, setSelectedAudioId] = useState<string>("");  // Required audio track
+
+  // Image Reference for I2V generation (optional)
+  const [imageReference, setImageReference] = useState<ImageReferenceData | null>(null);
+
+  // Merchandise state
+  const [merchandiseRefs, setMerchandiseRefs] = useState<MerchandiseReference[]>([]);
+  const [merchandiseGenerating, setMerchandiseGenerating] = useState(false);
+
+  // Bridge prompt loaded state
+  const [bridgePromptLoaded, setBridgePromptLoaded] = useState(false);
+  const [bridgeContext, setBridgeContext] = useState<{
+    originalInput: string;
+    trendKeywords: string[];
+    promptAnalysis: { intent: string; trend_applied: string[]; suggestions?: string[] } | null;
+  } | null>(null);
+
+  // Load prompt from Bridge on mount
+  useEffect(() => {
+    const bridgeData = loadBridgePrompt(campaignId);
+    if (bridgeData && bridgeData.transformedPrompt.status === "success") {
+      // Pre-fill form with Bridge data
+      setPrompt(bridgeData.originalPrompt);
+      setTransformedPrompt(bridgeData.transformedPrompt);
+      setNegativePrompt(bridgeData.transformedPrompt.negative_prompt);
+      setAspectRatio(bridgeData.transformedPrompt.technical_settings.aspect_ratio);
+      setDuration(bridgeData.transformedPrompt.technical_settings.duration_seconds);
+      setBridgePromptLoaded(true);
+      // Store Bridge context for API call
+      setBridgeContext({
+        originalInput: bridgeData.originalPrompt,
+        trendKeywords: bridgeData.selectedTrends || [],
+        promptAnalysis: bridgeData.transformedPrompt.analysis || null,
+      });
+      // Clear the stored prompt after loading
+      clearBridgePrompt();
+    }
+  }, [campaignId]);
 
   const loadData = useCallback(async () => {
     try {
-      const [campaignResult, assetsResult, generationsResult, statsResult] =
+      const [campaignResult, imageAssetsResult, audioAssetsResult, generationsResult, statsResult, presetsResult] =
         await Promise.all([
           campaignsApi.getById(campaignId),
           assetsApi.getByCampaign(campaignId, { type: "image", page_size: 50 }),
+          assetsApi.getByCampaign(campaignId, { type: "audio", page_size: 50 }),  // Load audio assets
           videoApi.getAll(campaignId, { page_size: 10 }),
           videoApi.getStats(campaignId),
+          presetsApi.getAll({ active_only: true }),
         ]);
 
       if (campaignResult.error) {
@@ -67,10 +789,22 @@ export default function VideoGeneratePage() {
         return;
       }
 
-      if (campaignResult.data) setCampaign(campaignResult.data);
-      if (assetsResult.data) setImages(assetsResult.data.items);
+      if (campaignResult.data) {
+        setCampaign(campaignResult.data);
+        // Load trend suggestions with artist context
+        const trendsResult = await trendsApi.getSuggestions({
+          artist_id: campaignResult.data.artist_id,
+          limit: 15,
+        });
+        if (trendsResult.data) {
+          setTrendSuggestions(trendsResult.data.suggestions);
+        }
+      }
+      if (imageAssetsResult.data) setImages(imageAssetsResult.data.items);
+      if (audioAssetsResult.data) setAudioTracks(audioAssetsResult.data.items);  // Set audio tracks
       if (generationsResult.data) setGenerations(generationsResult.data.items);
       if (statsResult.data) setStats(statsResult.data);
+      if (presetsResult.data) setPresets(presetsResult.data.presets);
     } catch (err) {
       console.error("Failed to load data:", err);
     } finally {
@@ -110,23 +844,123 @@ export default function VideoGeneratePage() {
     return () => clearInterval(interval);
   }, [generations, campaignId]);
 
+  // Transform prompt using Prompt Alchemist
+  const handleTransformPrompt = async () => {
+    if (!prompt.trim()) {
+      setError("Please enter a prompt to optimize");
+      return;
+    }
+
+    setError("");
+    setTransforming(true);
+
+    try {
+      const result = await promptApi.transform({
+        user_input: prompt.trim(),
+        campaign_id: campaignId,
+        safety_level: "high",
+      });
+
+      if (result.error) {
+        setError(result.error.message);
+        return;
+      }
+
+      if (result.data) {
+        setTransformedPrompt(result.data);
+
+        if (result.data.status === "blocked") {
+          setError(result.data.blocked_reason || "Prompt blocked due to safety concerns");
+        } else {
+          // Auto-fill the form with optimized values
+          setNegativePrompt(result.data.negative_prompt);
+          setAspectRatio(result.data.technical_settings.aspect_ratio);
+          setDuration(result.data.technical_settings.duration_seconds);
+        }
+      }
+    } catch (err) {
+      setError("Failed to optimize prompt");
+    } finally {
+      setTransforming(false);
+    }
+  };
+
+  // Use transformed prompt or original prompt
+  const getPromptToUse = () => {
+    if (transformedPrompt?.status === "success" && transformedPrompt.veo_prompt) {
+      return transformedPrompt.veo_prompt;
+    }
+    return prompt.trim();
+  };
+
+  // Toggle preset selection
+  const togglePreset = (presetId: string) => {
+    setSelectedPresetIds((prev) =>
+      prev.includes(presetId)
+        ? prev.filter((id) => id !== presetId)
+        : [...prev, presetId]
+    );
+  };
+
+  // Group presets by category
+  const presetsByCategory = presets.reduce((acc, preset) => {
+    const category = preset.category;
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(preset);
+    return acc;
+  }, {} as Record<string, StylePreset[]>);
+
+  // Single video generation
   const handleGenerate = async () => {
     if (!prompt.trim()) {
       setError("Please enter a prompt");
       return;
     }
 
+    if (!selectedAudioId) {
+      setError("음원을 선택해주세요. 영상 생성에는 음원이 필수입니다.");
+      return;
+    }
+
+    // Validate image description if image is selected
+    if (imageReference) {
+      const validation = validateImageDescription(imageReference.description);
+      if (!validation.valid) {
+        setError(validation.message || "이미지 활용 방법을 입력해주세요");
+        return;
+      }
+    }
+
     setError("");
     setGenerating(true);
 
     try {
+      const promptToUse = getPromptToUse();
+      const negativePromptToUse = negativePrompt.trim() || undefined;
+
+      // Determine if we're using I2V mode (AI-generated image first)
+      const useI2VMode = imageReference && imageReference.description;
+
       const result = await videoApi.create(campaignId, {
-        prompt: prompt.trim(),
-        negative_prompt: negativePrompt.trim() || undefined,
+        prompt: promptToUse,
+        audio_asset_id: selectedAudioId,  // Required audio track
+        negative_prompt: negativePromptToUse,
         duration_seconds: duration,
         aspect_ratio: aspectRatio,
-        reference_image_id: referenceImageId || undefined,
-        reference_style: style || undefined,
+        // If I2V mode with image description, don't use reference_image_id
+        // Backend will generate the image based on the description
+        reference_image_id: useI2VMode ? undefined : (referenceImageId || undefined),
+        // I2V parameters - enable AI image generation first
+        enable_i2v: useI2VMode ? true : undefined,
+        image_description: useI2VMode ? imageReference.description : undefined,
+        // Include Bridge context if available
+        original_input: bridgeContext?.originalInput || prompt.trim(),
+        trend_keywords: bridgeContext?.trendKeywords || [],
+        prompt_analysis: bridgeContext?.promptAnalysis || (transformedPrompt?.analysis ? {
+          intent: transformedPrompt.analysis.intent,
+          trend_applied: transformedPrompt.analysis.trend_applied,
+          suggestions: transformedPrompt.analysis.suggestions,
+        } : undefined),
       });
 
       if (result.error) {
@@ -136,10 +970,14 @@ export default function VideoGeneratePage() {
 
       if (result.data) {
         setGenerations((prev) => [result.data!, ...prev]);
-        // Clear form
+        // Clear form (but keep audio selection for convenience)
         setPrompt("");
         setNegativePrompt("");
         setReferenceImageId("");
+        setImageReference(null);  // Clear image reference
+        setTransformedPrompt(null);
+        setBridgeContext(null);
+        setBridgePromptLoaded(false);
         // Reload stats
         const statsResult = await videoApi.getStats(campaignId);
         if (statsResult.data) setStats(statsResult.data);
@@ -148,6 +986,165 @@ export default function VideoGeneratePage() {
       setError("Failed to start generation");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  // Get selected audio track info
+  const selectedAudio = audioTracks.find(a => a.id === selectedAudioId);
+
+  // Batch generation with style presets
+  const handleBatchGenerate = async () => {
+    if (!prompt.trim()) {
+      setError("Please enter a prompt");
+      return;
+    }
+
+    if (!selectedAudioId) {
+      setError("음원을 선택해주세요. 영상 생성에는 음원이 필수입니다.");
+      return;
+    }
+
+    if (selectedPresetIds.length === 0) {
+      setError("Please select at least one style preset");
+      return;
+    }
+
+    setError("");
+    setBatchGenerating(true);
+
+    try {
+      const promptToUse = getPromptToUse();
+
+      const result = await batchApi.create(campaignId, {
+        base_prompt: promptToUse,
+        audio_asset_id: selectedAudioId,  // Required audio track
+        negative_prompt: negativePrompt.trim() || undefined,
+        style_preset_ids: selectedPresetIds,
+        duration_seconds: duration,
+        aspect_ratio: aspectRatio,
+        reference_image_id: referenceImageId || undefined,
+      });
+
+      if (result.error) {
+        setError(result.error.message);
+        return;
+      }
+
+      if (result.data) {
+        // Add all batch generations to the list
+        setGenerations((prev) => [...result.data!.generations, ...prev]);
+        // Clear form
+        setPrompt("");
+        setNegativePrompt("");
+        setReferenceImageId("");
+        setSelectedPresetIds([]);
+        setTransformedPrompt(null);
+        // Reload stats
+        const statsResult = await videoApi.getStats(campaignId);
+        if (statsResult.data) setStats(statsResult.data);
+      }
+    } catch (err) {
+      setError("Failed to start batch generation");
+    } finally {
+      setBatchGenerating(false);
+    }
+  };
+
+  // Generate with merchandise references
+  const handleMerchandiseGenerate = async () => {
+    if (!prompt.trim()) {
+      setError("Please enter a prompt");
+      return;
+    }
+
+    if (!selectedAudioId) {
+      setError("음원을 선택해주세요. 영상 생성에는 음원이 필수입니다.");
+      return;
+    }
+
+    if (merchandiseRefs.length === 0) {
+      setError("Please select at least one merchandise item");
+      return;
+    }
+
+    setError("");
+    setMerchandiseGenerating(true);
+
+    try {
+      const promptToUse = getPromptToUse();
+
+      const result = await merchandiseGenerateApi.generate(campaignId, {
+        base_prompt: promptToUse,
+        audio_asset_id: selectedAudioId,  // Required audio track
+        negative_prompt: negativePrompt.trim() || undefined,
+        merchandise_references: merchandiseRefs,
+        style_preset_ids: selectedPresetIds.length > 0 ? selectedPresetIds : undefined,
+        duration_seconds: duration,
+        aspect_ratio: aspectRatio,
+        reference_image_id: referenceImageId || undefined,
+      });
+
+      if (result.error) {
+        setError(result.error.message);
+        return;
+      }
+
+      if (result.data) {
+        // Add all generations to the list
+        const newGenerations: VideoGeneration[] = result.data.generations.map((gen) => ({
+          id: gen.id,
+          campaign_id: gen.campaign_id,
+          prompt: gen.prompt,
+          negative_prompt: gen.negative_prompt,
+          duration_seconds: gen.duration_seconds,
+          aspect_ratio: gen.aspect_ratio,
+          reference_image_id: null,
+          reference_style: gen.style_preset?.name || null,
+          // Audio fields
+          audio_asset_id: selectedAudioId,
+          audio_asset: selectedAudio ? {
+            id: selectedAudio.id,
+            filename: selectedAudio.filename,
+            original_filename: selectedAudio.original_filename,
+            s3_url: selectedAudio.s3_url,
+          } : null,
+          audio_analysis: null,
+          audio_start_time: null,
+          audio_duration: null,
+          composed_output_url: null,
+          status: gen.status as VideoGenerationStatus,
+          progress: gen.progress,
+          error_message: null,
+          output_asset_id: null,
+          output_url: null,
+          quality_score: null,
+          // Bridge context fields
+          original_input: null,
+          trend_keywords: [],
+          reference_urls: null,
+          prompt_analysis: null,
+          is_favorite: false,
+          tags: [],
+          created_by: gen.created_by,
+          created_at: gen.created_at,
+          updated_at: gen.created_at,
+        }));
+        setGenerations((prev) => [...newGenerations, ...prev]);
+        // Clear form
+        setPrompt("");
+        setNegativePrompt("");
+        setReferenceImageId("");
+        setSelectedPresetIds([]);
+        setMerchandiseRefs([]);
+        setTransformedPrompt(null);
+        // Reload stats
+        const statsResult = await videoApi.getStats(campaignId);
+        if (statsResult.data) setStats(statsResult.data);
+      }
+    } catch (err) {
+      setError("Failed to start merchandise generation");
+    } finally {
+      setMerchandiseGenerating(false);
     }
   };
 
@@ -171,27 +1168,130 @@ export default function VideoGeneratePage() {
     }
   };
 
-  const getStatusColor = (status: VideoGenerationStatus) => {
+  const getStatusVariant = (status: VideoGenerationStatus): "default" | "secondary" | "destructive" | "outline" => {
     switch (status) {
       case "pending":
-        return "bg-gray-500/20 text-gray-300";
+        return "secondary";
       case "processing":
-        return "bg-blue-500/20 text-blue-300";
+        return "default";
       case "completed":
-        return "bg-green-500/20 text-green-300";
+        return "outline";
       case "failed":
-        return "bg-red-500/20 text-red-300";
+        return "destructive";
       case "cancelled":
-        return "bg-yellow-500/20 text-yellow-300";
+        return "secondary";
       default:
-        return "bg-gray-500/20 text-gray-300";
+        return "secondary";
+    }
+  };
+
+  const getGradeColor = (grade: string) => {
+    switch (grade) {
+      case "S":
+        return "bg-gradient-to-r from-yellow-400 to-amber-500 text-black";
+      case "A":
+        return "bg-green-500 text-white";
+      case "B":
+        return "bg-blue-500 text-white";
+      case "C":
+        return "bg-orange-500 text-white";
+      case "D":
+        return "bg-red-500 text-white";
+      default:
+        return "bg-muted text-muted-foreground";
+    }
+  };
+
+  const getScoreBarColor = (score: number) => {
+    if (score >= 90) return "from-yellow-400 to-amber-500";
+    if (score >= 80) return "from-green-400 to-green-500";
+    if (score >= 70) return "from-blue-400 to-blue-500";
+    if (score >= 60) return "from-orange-400 to-orange-500";
+    return "from-red-400 to-red-500";
+  };
+
+  // Score a single generation
+  const handleScoreGeneration = async (generationId: string) => {
+    setScoringId(generationId);
+    try {
+      const result = await scoringApi.scoreGeneration(generationId);
+      if (result.data) {
+        setScoreDetails((prev) => ({ ...prev, [generationId]: result.data! }));
+        // Update generation list with new score
+        setGenerations((prev) =>
+          prev.map((g) =>
+            g.id === generationId
+              ? { ...g, quality_score: result.data!.total_score }
+              : g
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Failed to score generation:", err);
+    } finally {
+      setScoringId(null);
+    }
+  };
+
+  // Score all completed generations in campaign
+  const handleScoreAll = async () => {
+    setScoringAll(true);
+    try {
+      const result = await scoringApi.scoreAllInCampaign(campaignId, {
+        only_unscored: true,
+      });
+      if (result.data && result.data.scored > 0) {
+        // Update generations list with new scores
+        const scoreMap = new Map(
+          result.data.results.map((r) => [r.generation_id, r.total_score])
+        );
+        setGenerations((prev) =>
+          prev.map((g) =>
+            scoreMap.has(g.id)
+              ? { ...g, quality_score: scoreMap.get(g.id)! }
+              : g
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Failed to score all:", err);
+    } finally {
+      setScoringAll(false);
+    }
+  };
+
+  // Apply trend suggestion to prompt
+  const handleApplyTrend = (suggestion: TrendSuggestion) => {
+    setPrompt(suggestion.prompt_template);
+    setTransformedPrompt(null);
+  };
+
+  // Filter trends by platform
+  const filteredTrends = selectedPlatform === "ALL"
+    ? trendSuggestions
+    : trendSuggestions.filter((t) => t.platform === selectedPlatform);
+
+  // Get score details for a generation
+  const handleGetScoreDetails = async (generationId: string) => {
+    if (scoreDetails[generationId]) {
+      setExpandedScoreId(expandedScoreId === generationId ? null : generationId);
+      return;
+    }
+    try {
+      const result = await scoringApi.getScore(generationId);
+      if (result.data) {
+        setScoreDetails((prev) => ({ ...prev, [generationId]: result.data! }));
+        setExpandedScoreId(generationId);
+      }
+    } catch (err) {
+      console.error("Failed to get score details:", err);
     }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+        <Spinner className="h-12 w-12" />
       </div>
     );
   }
@@ -201,417 +1301,769 @@ export default function VideoGeneratePage() {
   return (
     <>
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-400 mb-4">
-        <Link href="/campaigns" className="hover:text-white transition-colors">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+        <Link href="/campaigns" className="hover:text-foreground transition-colors">
           Campaigns
         </Link>
         <span>/</span>
         <Link
           href={`/campaigns/${campaignId}`}
-          className="hover:text-white transition-colors"
+          className="hover:text-foreground transition-colors"
         >
           {campaign.name}
         </Link>
         <span>/</span>
-        <span className="text-white">Generate Video</span>
+        <span className="text-foreground">Generate Video</span>
       </div>
 
-      {/* Header */}
+      {/* Header - Step 2 */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-white">AI Video Generation</h1>
-          <p className="text-gray-400 mt-1">
-            Generate videos using Veo 3 for {campaign.name}
-          </p>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <Badge variant="outline" className="font-normal">Step 2</Badge>
+            <span>Create video variants with AI</span>
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">Generate Videos</h1>
         </div>
-        <Link
-          href={`/campaigns/${campaignId}`}
-          className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
-        >
-          Back to Campaign
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link href={`/campaigns/${campaignId}`}>
+              <ChevronLeft className="w-4 h-4 mr-2" />
+              Assets
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href={`/campaigns/${campaignId}/curation`}>
+              Next: Curate
+              <ChevronDown className="w-4 h-4 ml-2 rotate-[-90deg]" />
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           {[
-            { label: "Total", value: stats.total, color: "purple" },
-            { label: "Pending", value: stats.pending, color: "gray" },
+            { label: "Total", value: stats.total, color: "primary" },
+            { label: "Pending", value: stats.pending, color: "secondary" },
             { label: "Processing", value: stats.processing, color: "blue" },
             { label: "Completed", value: stats.completed, color: "green" },
             { label: "Failed", value: stats.failed, color: "red" },
           ].map((stat) => (
-            <div
-              key={stat.label}
-              className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20"
-            >
-              <p className="text-gray-400 text-xs">{stat.label}</p>
-              <p className="text-2xl font-bold text-white">{stat.value}</p>
-            </div>
+            <Card key={stat.label}>
+              <CardContent className="p-4">
+                <p className="text-muted-foreground text-xs">{stat.label}</p>
+                <p className="text-2xl font-bold text-foreground">{stat.value}</p>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}
 
+      {/* Trending Topics Section */}
+      {trendSuggestions.length > 0 && (
+        <Card className="mb-8 border-primary/20">
+          <CardHeader className="pb-2">
+            <button
+              onClick={() => setTrendsExpanded(!trendsExpanded)}
+              className="w-full flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                  <TrendingUp className="w-5 h-5 text-primary" />
+                </div>
+                <div className="text-left">
+                  <CardTitle className="text-base">Trending Now</CardTitle>
+                  <p className="text-muted-foreground text-sm">Click a trend to use it as your prompt inspiration</p>
+                </div>
+              </div>
+              {trendsExpanded ? (
+                <ChevronUp className="w-5 h-5 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-muted-foreground" />
+              )}
+            </button>
+          </CardHeader>
+
+          {trendsExpanded && (
+            <CardContent>
+              {/* Platform Filter */}
+              <div className="flex items-center gap-2 mb-4">
+                {(["ALL", "TIKTOK", "YOUTUBE", "INSTAGRAM"] as const).map((platform) => (
+                  <Button
+                    key={platform}
+                    variant={selectedPlatform === platform ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setSelectedPlatform(platform)}
+                  >
+                    {platform === "ALL" ? "All" : (
+                      <span className="flex items-center gap-1.5">
+                        {getPlatformIcon(platform as TrendPlatform)}
+                        {platform.charAt(0) + platform.slice(1).toLowerCase()}
+                      </span>
+                    )}
+                  </Button>
+                ))}
+              </div>
+
+              {/* Trends Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredTrends.map((trend, idx) => (
+                  <button
+                    key={`${trend.platform}-${trend.keyword}-${idx}`}
+                    onClick={() => handleApplyTrend(trend)}
+                    className="group p-3 bg-muted/50 hover:bg-muted border border-border hover:border-primary/50 rounded-xl text-left transition-all"
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg" title={trend.platform}>
+                          {getPlatformIcon(trend.platform)}
+                        </span>
+                        <span className="text-foreground font-medium text-sm group-hover:text-primary transition-colors line-clamp-1">
+                          {trend.keyword}
+                        </span>
+                      </div>
+                      <Badge variant="secondary" className="text-xs">
+                        #{trend.rank}
+                      </Badge>
+                    </div>
+
+                    {/* Hashtags */}
+                    {trend.hashtags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {trend.hashtags.slice(0, 3).map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-1.5 py-0.5 bg-background text-muted-foreground text-xs rounded"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        {trend.hashtags.length > 3 && (
+                          <span className="text-muted-foreground text-xs">+{trend.hashtags.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Relevance Score Bar */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary"
+                          style={{ width: `${trend.relevance_score}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {trend.relevance_score}%
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {filteredTrends.length === 0 && (
+                <p className="text-center text-muted-foreground py-4">
+                  No trends found for this platform
+                </p>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Generation Form */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 p-6">
-          <h2 className="text-xl font-semibold text-white mb-6">
-            New Generation
-          </h2>
-
-          {error && (
-            <div className="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-6">
-            {/* Prompt */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Prompt <span className="text-red-400">*</span>
-              </label>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Describe the video you want to generate..."
-                rows={4}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-              />
-            </div>
-
-            {/* Negative Prompt */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Negative Prompt
-              </label>
-              <textarea
-                value={negativePrompt}
-                onChange={(e) => setNegativePrompt(e.target.value)}
-                placeholder="What to avoid in the video..."
-                rows={2}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-              />
-            </div>
-
-            {/* Duration & Aspect Ratio */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Duration
-                </label>
-                <select
-                  value={duration}
-                  onChange={(e) => setDuration(Number(e.target.value))}
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  {DURATIONS.map((d) => (
-                    <option key={d.value} value={d.value}>
-                      {d.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Aspect Ratio
-                </label>
-                <select
-                  value={aspectRatio}
-                  onChange={(e) => setAspectRatio(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  {ASPECT_RATIOS.map((ar) => (
-                    <option key={ar.value} value={ar.value}>
-                      {ar.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Style */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Style
-              </label>
-              <select
-                value={style}
-                onChange={(e) => setStyle(e.target.value)}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                {STYLES.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Reference Image */}
-            {images.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Reference Image (Optional)
-                </label>
-                <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto">
-                  <button
-                    onClick={() => setReferenceImageId("")}
-                    className={`aspect-square rounded-lg border-2 flex items-center justify-center ${
-                      !referenceImageId
-                        ? "border-purple-500 bg-purple-500/20"
-                        : "border-white/20 hover:border-white/40"
-                    }`}
-                  >
-                    <span className="text-gray-400 text-xs">None</span>
-                  </button>
-                  {images.map((image) => (
-                    <button
-                      key={image.id}
-                      onClick={() => setReferenceImageId(image.id)}
-                      className={`aspect-square rounded-lg border-2 overflow-hidden ${
-                        referenceImageId === image.id
-                          ? "border-purple-500"
-                          : "border-white/20 hover:border-white/40"
-                      }`}
-                    >
-                      <img
-                        src={image.s3_url}
-                        alt={image.original_filename}
-                        className="w-full h-full object-cover"
-                      />
-                    </button>
-                  ))}
+        <Card>
+          <CardHeader>
+            <CardTitle>New Generation</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Bridge Prompt Loaded Indicator */}
+            {bridgePromptLoaded && (
+              <div className="mb-4 p-4 bg-primary/10 border border-primary/30 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-primary" />
+                  <span className="text-primary font-medium text-sm">The Bridge에서 프롬프트를 가져왔습니다</span>
                 </div>
+                <p className="text-muted-foreground text-xs mt-1">
+                  최적화된 프롬프트와 설정이 자동으로 적용되었습니다. 바로 Generate 버튼을 클릭하세요!
+                </p>
               </div>
             )}
 
-            {/* Generate Button */}
-            <button
-              onClick={handleGenerate}
-              disabled={generating || !prompt.trim()}
-              className="w-full py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {generating ? (
-                <>
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                  Starting Generation...
-                </>
-              ) : (
-                <>
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  Generate Video
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Generation History */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
-          <div className="p-6 border-b border-white/10">
-            <h2 className="text-xl font-semibold text-white">
-              Generation History
-            </h2>
-          </div>
-
-          {generations.length === 0 ? (
-            <div className="p-8 text-center">
-              <div className="w-16 h-16 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg
-                  className="w-8 h-8 text-purple-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                </svg>
+            {error && (
+              <div className="mb-4 p-4 bg-destructive/10 border border-destructive/50 rounded-lg text-destructive text-sm">
+                {error}
               </div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                No generations yet
-              </h3>
-              <p className="text-gray-400">
-                Start generating videos with the form on the left
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-white/10 max-h-[600px] overflow-y-auto">
-              {generations.map((gen) => (
-                <div key={gen.id} className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(
-                            gen.status
-                          )}`}
-                        >
-                          {gen.status}
-                        </span>
-                        {gen.quality_score && (
-                          <span className="text-xs text-gray-400">
-                            Score: {gen.quality_score.toFixed(1)}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-white text-sm line-clamp-2 mb-2">
-                        {gen.prompt}
+            )}
+
+            <div className="space-y-6">
+              {/* Prompt */}
+              <div>
+                <Label className="mb-2 block">
+                  Prompt <span className="text-destructive">*</span>
+                </Label>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => {
+                    setPrompt(e.target.value);
+                    setTransformedPrompt(null);
+                  }}
+                  placeholder="Describe the video you want to generate..."
+                  rows={4}
+                  className="w-full px-4 py-3 bg-background border border-input rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                />
+                <div className="mt-2 flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    Tip: Write in Korean or English. The AI will optimize it.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleTransformPrompt}
+                    disabled={transforming || !prompt.trim()}
+                  >
+                    {transforming ? (
+                      <>
+                        <Spinner className="w-4 h-4 mr-2" />
+                        Optimizing...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 mr-2" />
+                        Optimize with AI
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Celebrity Warning */}
+              {transformedPrompt?.celebrity_warning && (
+                <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <span className="text-lg">⚠️</span>
+                    <div>
+                      <p className="text-sm font-medium text-yellow-600 mb-1">
+                        유명인 이름 감지됨
                       </p>
-                      <div className="flex items-center gap-4 text-xs text-gray-400">
-                        <span>{gen.duration_seconds}s</span>
-                        <span>{gen.aspect_ratio}</span>
-                        <span>
-                          {new Date(gen.created_at).toLocaleString()}
-                        </span>
-                      </div>
-
-                      {/* Progress Bar */}
-                      {(gen.status === "pending" ||
-                        gen.status === "processing") && (
-                        <div className="mt-3">
-                          <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-purple-500 transition-all"
-                              style={{ width: `${gen.progress}%` }}
-                            />
-                          </div>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {gen.progress.toFixed(0)}%
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Error Message */}
-                      {gen.status === "failed" && gen.error_message && (
-                        <p className="mt-2 text-xs text-red-400">
-                          {gen.error_message}
-                        </p>
-                      )}
-
-                      {/* Output Video */}
-                      {gen.status === "completed" && gen.output_url && (
-                        <div className="mt-3">
-                          <a
-                            href={gen.output_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 text-green-300 rounded-lg text-sm hover:bg-green-500/30 transition-colors"
-                          >
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                              />
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                              />
-                            </svg>
-                            View Video
-                          </a>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2">
-                      {(gen.status === "pending" ||
-                        gen.status === "processing") && (
-                        <button
-                          onClick={() => handleCancel(gen.id)}
-                          className="p-2 text-gray-400 hover:text-yellow-400 hover:bg-white/10 rounded-lg transition-colors"
-                          title="Cancel"
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                            />
-                          </svg>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDelete(gen.id)}
-                        className="p-2 text-gray-400 hover:text-red-400 hover:bg-white/10 rounded-lg transition-colors"
-                        title="Delete"
-                      >
-                        <svg
-                          className="w-5 h-5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                          />
-                        </svg>
-                      </button>
+                      <p className="text-xs text-yellow-600/80">
+                        {transformedPrompt.detected_celebrities?.join(", ")} 이름이 자동으로 일반적인 설명으로 대체되었습니다.
+                        Google Veo는 실제 인물의 영상을 생성할 수 없습니다.
+                      </p>
                     </div>
                   </div>
                 </div>
-              ))}
+              )}
+
+              {/* Optimized Prompt Preview */}
+              {transformedPrompt?.status === "success" && (
+                <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="w-5 h-5 text-green-600" />
+                    <span className="text-green-600 font-medium text-sm">Prompt Optimized</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Intent: {transformedPrompt.analysis.intent}
+                  </p>
+                  {transformedPrompt.analysis.trend_applied.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {transformedPrompt.analysis.trend_applied.map((trend) => (
+                        <Badge key={trend} variant="secondary" className="text-xs">
+                          {trend}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <details className="cursor-pointer">
+                    <summary className="text-xs text-muted-foreground hover:text-foreground">
+                      View optimized prompt
+                    </summary>
+                    <p className="mt-2 text-sm text-foreground bg-muted p-3 rounded-lg break-words">
+                      {transformedPrompt.veo_prompt}
+                    </p>
+                  </details>
+                </div>
+              )}
+
+              {/* Negative Prompt */}
+              <div>
+                <Label className="mb-2 block">Negative Prompt</Label>
+                <textarea
+                  value={negativePrompt}
+                  onChange={(e) => setNegativePrompt(e.target.value)}
+                  placeholder="What to avoid in the video..."
+                  rows={2}
+                  className="w-full px-4 py-3 bg-background border border-input rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                />
+              </div>
+
+              {/* Audio Selection - Required */}
+              <AudioSelectionSection
+                audioTracks={audioTracks}
+                selectedAudioId={selectedAudioId}
+                onSelect={setSelectedAudioId}
+                campaignId={campaignId}
+                onAudioUploaded={(newAudio) => {
+                  setAudioTracks((prev) => [newAudio, ...prev]);
+                  setSelectedAudioId(newAudio.id);
+                }}
+              />
+
+              {/* Duration & Aspect Ratio */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="mb-2 block">Duration</Label>
+                  <Select value={String(duration)} onValueChange={(v) => setDuration(Number(v))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DURATIONS.map((d) => (
+                        <SelectItem key={d.value} value={String(d.value)}>
+                          {d.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="mb-2 block">Aspect Ratio</Label>
+                  <Select value={aspectRatio} onValueChange={setAspectRatio}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ASPECT_RATIOS.map((ar) => (
+                        <SelectItem key={ar.value} value={ar.value}>
+                          {ar.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Style Presets Multi-Select */}
+              {presets.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>
+                      Style Presets {selectedPresetIds.length > 0 && (
+                        <span className="text-primary">({selectedPresetIds.length} selected)</span>
+                      )}
+                    </Label>
+                    {selectedPresetIds.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedPresetIds([])}
+                      >
+                        Clear all
+                      </Button>
+                    )}
+                  </div>
+                  <div className="bg-muted/50 border border-border rounded-lg p-3 max-h-64 overflow-y-auto">
+                    {Object.entries(presetsByCategory).map(([category, categoryPresets]) => (
+                      <div key={category} className="mb-3 last:mb-0">
+                        <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
+                          {CATEGORY_LABELS[category] || category}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {categoryPresets.map((preset) => (
+                            <Button
+                              key={preset.id}
+                              type="button"
+                              variant={selectedPresetIds.includes(preset.id) ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => togglePreset(preset.id)}
+                              title={preset.description || preset.name}
+                            >
+                              {preset.name_ko || preset.name}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Select multiple styles to generate variations in batch
+                  </p>
+                </div>
+              )}
+
+              {/* Image Reference for I2V (NEW - optional) */}
+              <div className="p-4 bg-gradient-to-r from-purple-500/5 to-blue-500/5 border border-purple-500/20 rounded-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <Lightbulb className="w-4 h-4 text-purple-500" />
+                  <span className="text-sm font-medium text-foreground">이미지 가이드 비디오 생성</span>
+                  <Badge variant="secondary" className="text-xs">NEW</Badge>
+                </div>
+                <ImageReferenceSection
+                  images={images}
+                  imageReference={imageReference}
+                  onImageReferenceChange={setImageReference}
+                  campaignId={campaignId}
+                />
+              </div>
+
+              {/* Reference Source (Images + Merchandise) - Legacy */}
+              {!imageReference && (
+                <ReferenceSourceSection
+                  images={images}
+                  referenceImageId={referenceImageId}
+                  setReferenceImageId={setReferenceImageId}
+                  merchandiseRefs={merchandiseRefs}
+                  setMerchandiseRefs={setMerchandiseRefs}
+                  campaignId={campaignId}
+                  artistId={campaign.artist_id}
+                />
+              )}
+
+              {/* Generate Buttons */}
+              <div className="space-y-3">
+                {/* Generate with Merchandise (when merchandise selected) */}
+                {merchandiseRefs.length > 0 && (
+                  <Button
+                    onClick={handleMerchandiseGenerate}
+                    disabled={merchandiseGenerating || generating || batchGenerating || !prompt.trim()}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {merchandiseGenerating ? (
+                      <>
+                        <Spinner className="w-5 h-5 mr-2" />
+                        Generating with Merchandise...
+                      </>
+                    ) : (
+                      <>
+                        <Package className="w-5 h-5 mr-2" />
+                        Generate with {merchandiseRefs.length} Merchandise
+                        {selectedPresetIds.length > 0 && ` + ${selectedPresetIds.length} Styles`}
+                      </>
+                    )}
+                  </Button>
+                )}
+
+                {/* Batch Generate (when presets selected, no merchandise) */}
+                {selectedPresetIds.length > 0 && merchandiseRefs.length === 0 && (
+                  <Button
+                    onClick={handleBatchGenerate}
+                    disabled={batchGenerating || generating || !prompt.trim()}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {batchGenerating ? (
+                      <>
+                        <Spinner className="w-5 h-5 mr-2" />
+                        Starting Batch Generation...
+                      </>
+                    ) : (
+                      <>
+                        <Layers className="w-5 h-5 mr-2" />
+                        Generate {selectedPresetIds.length} Variations
+                      </>
+                    )}
+                  </Button>
+                )}
+
+                {/* Single Generate (no merchandise, no presets) */}
+                {merchandiseRefs.length === 0 && (
+                  <Button
+                    onClick={handleGenerate}
+                    disabled={generating || batchGenerating || merchandiseGenerating || !prompt.trim()}
+                    variant={selectedPresetIds.length > 0 ? "outline" : "default"}
+                    className={`w-full ${imageReference ? "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700" : ""}`}
+                    size="lg"
+                  >
+                    {generating ? (
+                      <>
+                        <Spinner className="w-5 h-5 mr-2" />
+                        {imageReference ? "이미지 기반 생성 중..." : "Starting Generation..."}
+                      </>
+                    ) : (
+                      <>
+                        {imageReference ? (
+                          <>
+                            <ImageIcon className="w-5 h-5 mr-2" />
+                            이미지 가이드 비디오 생성 (I2V)
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-5 h-5 mr-2" />
+                            {selectedPresetIds.length > 0 ? "Generate Single (No Style)" : "Generate Video"}
+                          </>
+                        )}
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
             </div>
-          )}
-        </div>
+          </CardContent>
+        </Card>
+
+        {/* Generation History */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Generation History</CardTitle>
+            {generations.some((g) => g.status === "completed" && !g.quality_score) && (
+              <Button
+                onClick={handleScoreAll}
+                disabled={scoringAll}
+                size="sm"
+              >
+                {scoringAll ? (
+                  <>
+                    <Spinner className="w-4 h-4 mr-2" />
+                    Scoring...
+                  </>
+                ) : (
+                  <>
+                    <Star className="w-4 h-4 mr-2" />
+                    Score All
+                  </>
+                )}
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            {generations.length === 0 ? (
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Play className="w-8 h-8 text-primary" />
+                </div>
+                <h3 className="text-lg font-medium text-foreground mb-2">
+                  No generations yet
+                </h3>
+                <p className="text-muted-foreground">
+                  Start generating videos with the form on the left
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border max-h-[600px] overflow-y-auto">
+                {generations.map((gen) => (
+                  <div key={gen.id} className="py-4 first:pt-0 last:pb-0">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <Badge variant={getStatusVariant(gen.status)}>
+                            {gen.status}
+                          </Badge>
+                          {gen.quality_score ? (
+                            <button
+                              onClick={() => handleGetScoreDetails(gen.id)}
+                              className="flex items-center gap-1.5 group"
+                            >
+                              <span
+                                className={`px-2 py-0.5 rounded text-xs font-bold ${getGradeColor(
+                                  scoreDetails[gen.id]?.grade ||
+                                    (gen.quality_score >= 90
+                                      ? "S"
+                                      : gen.quality_score >= 80
+                                      ? "A"
+                                      : gen.quality_score >= 70
+                                      ? "B"
+                                      : gen.quality_score >= 60
+                                      ? "C"
+                                      : "D")
+                                )}`}
+                              >
+                                {scoreDetails[gen.id]?.grade ||
+                                  (gen.quality_score >= 90
+                                    ? "S"
+                                    : gen.quality_score >= 80
+                                    ? "A"
+                                    : gen.quality_score >= 70
+                                    ? "B"
+                                    : gen.quality_score >= 60
+                                    ? "C"
+                                    : "D")}
+                              </span>
+                              <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">
+                                {gen.quality_score.toFixed(1)}
+                              </span>
+                              {expandedScoreId === gen.id ? (
+                                <ChevronUp className="w-3 h-3 text-muted-foreground" />
+                              ) : (
+                                <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                              )}
+                            </button>
+                          ) : gen.status === "completed" ? (
+                            <Button
+                              onClick={() => handleScoreGeneration(gen.id)}
+                              disabled={scoringId === gen.id}
+                              size="sm"
+                              variant="outline"
+                            >
+                              {scoringId === gen.id ? (
+                                <Spinner className="w-3 h-3 mr-1" />
+                              ) : (
+                                <Star className="w-3 h-3 mr-1" />
+                              )}
+                              Score
+                            </Button>
+                          ) : null}
+                        </div>
+                        <p className="text-foreground text-sm line-clamp-2 mb-2">
+                          {gen.prompt}
+                        </p>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <span>{gen.duration_seconds}s</span>
+                          <span>{gen.aspect_ratio}</span>
+                          <span>
+                            {new Date(gen.created_at).toLocaleString()}
+                          </span>
+                        </div>
+
+                        {/* Progress Bar */}
+                        {(gen.status === "pending" || gen.status === "processing") && (
+                          <div className="mt-3">
+                            <div className="h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary transition-all"
+                                style={{ width: `${gen.progress}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {gen.progress.toFixed(0)}%
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Error Message */}
+                        {gen.status === "failed" && gen.error_message && (
+                          <p className="mt-2 text-xs text-destructive">
+                            {gen.error_message}
+                          </p>
+                        )}
+
+                        {/* Score Details */}
+                        {expandedScoreId === gen.id && scoreDetails[gen.id] && (
+                          <div className="mt-3 p-3 bg-muted rounded-lg space-y-3">
+                            {/* Score Bar */}
+                            <div>
+                              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                                <span>Overall Score</span>
+                                <span className="font-medium text-foreground">
+                                  {scoreDetails[gen.id].total_score.toFixed(1)} / 100
+                                </span>
+                              </div>
+                              <div className="h-2 bg-background rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full bg-gradient-to-r ${getScoreBarColor(
+                                    scoreDetails[gen.id].total_score
+                                  )} transition-all`}
+                                  style={{ width: `${scoreDetails[gen.id].total_score}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Breakdown */}
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                {
+                                  label: "Prompt",
+                                  score: scoreDetails[gen.id].breakdown.promptQuality.score,
+                                  weight: "35%",
+                                },
+                                {
+                                  label: "Technical",
+                                  score: scoreDetails[gen.id].breakdown.technicalSettings.score,
+                                  weight: "20%",
+                                },
+                                {
+                                  label: "Style",
+                                  score: scoreDetails[gen.id].breakdown.styleAlignment.score,
+                                  weight: "30%",
+                                },
+                                {
+                                  label: "Trend",
+                                  score: scoreDetails[gen.id].breakdown.trendAlignment.score,
+                                  weight: "15%",
+                                },
+                              ].map((item) => (
+                                <div key={item.label} className="flex items-center justify-between">
+                                  <span className="text-xs text-muted-foreground">
+                                    {item.label} <span className="opacity-50">({item.weight})</span>
+                                  </span>
+                                  <span className="text-xs text-foreground">{item.score}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Recommendations */}
+                            {scoreDetails[gen.id].recommendations.length > 0 && (
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Recommendations:</p>
+                                <ul className="space-y-1">
+                                  {scoreDetails[gen.id].recommendations.slice(0, 3).map((rec, idx) => (
+                                    <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                      <span className="text-amber-500">•</span>
+                                      {rec}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Output Video - Prioritize composed video with audio */}
+                        {gen.status === "completed" && (gen.composed_output_url || gen.output_url) && (
+                          <div className="mt-3 flex items-center gap-2">
+                            <Button variant="outline" size="sm" asChild>
+                              <a
+                                href={gen.composed_output_url || gen.output_url || ""}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <Play className="w-4 h-4 mr-2" />
+                                {gen.composed_output_url ? "영상 보기 🎵" : "영상 보기 (음원 없음)"}
+                              </a>
+                            </Button>
+                            {gen.composed_output_url && gen.audio_asset && (
+                              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Music className="w-3 h-3" />
+                                {gen.audio_asset.original_filename?.slice(0, 20)}...
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2">
+                        {(gen.status === "pending" || gen.status === "processing") && (
+                          <Button
+                            onClick={() => handleCancel(gen.id)}
+                            variant="ghost"
+                            size="icon"
+                            title="Cancel"
+                          >
+                            <X className="w-5 h-5" />
+                          </Button>
+                        )}
+                        <Button
+                          onClick={() => handleDelete(gen.id)}
+                          variant="ghost"
+                          size="icon"
+                          title="Delete"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </>
   );

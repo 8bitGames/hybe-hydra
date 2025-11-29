@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     // Get total count
     const total = await prisma.campaign.count({ where });
 
-    // Get campaigns with artist info and asset count
+    // Get campaigns with artist info and asset/video counts
     const campaigns = await prisma.campaign.findMany({
       where,
       include: {
@@ -50,7 +50,16 @@ export async function GET(request: NextRequest) {
           },
         },
         _count: {
-          select: { assets: true },
+          select: {
+            assets: true,
+            videoGenerations: true,
+          },
+        },
+        videoGenerations: {
+          select: {
+            status: true,
+            qualityScore: true,
+          },
         },
       },
       orderBy: { createdAt: "desc" },
@@ -60,23 +69,46 @@ export async function GET(request: NextRequest) {
 
     const pages = Math.ceil(total / pageSize) || 1;
 
-    const items = campaigns.map((c) => ({
-      id: c.id,
-      name: c.name,
-      description: c.description,
-      artist_id: c.artistId,
-      status: c.status.toLowerCase(),
-      target_countries: c.targetCountries,
-      start_date: c.startDate?.toISOString() || null,
-      end_date: c.endDate?.toISOString() || null,
-      budget_code: c.budgetCode,
-      created_by: c.createdBy,
-      created_at: c.createdAt.toISOString(),
-      updated_at: c.updatedAt.toISOString(),
-      artist_name: c.artist.name,
-      artist_stage_name: c.artist.stageName,
-      asset_count: c._count.assets,
-    }));
+    const items = campaigns.map((c) => {
+      // Calculate video generation stats
+      const videoStats = {
+        total: c._count.videoGenerations,
+        completed: c.videoGenerations.filter(v => v.status === "COMPLETED").length,
+        processing: c.videoGenerations.filter(v => v.status === "PROCESSING" || v.status === "PENDING").length,
+        failed: c.videoGenerations.filter(v => v.status === "FAILED").length,
+        scored: c.videoGenerations.filter(v => v.qualityScore !== null).length,
+        avgScore: c.videoGenerations.filter(v => v.qualityScore !== null).length > 0
+          ? c.videoGenerations
+              .filter(v => v.qualityScore !== null)
+              .reduce((sum, v) => sum + (v.qualityScore || 0), 0) /
+            c.videoGenerations.filter(v => v.qualityScore !== null).length
+          : null,
+      };
+
+      return {
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        artist_id: c.artistId,
+        status: c.status.toLowerCase(),
+        target_countries: c.targetCountries,
+        start_date: c.startDate?.toISOString() || null,
+        end_date: c.endDate?.toISOString() || null,
+        budget_code: c.budgetCode,
+        created_by: c.createdBy,
+        created_at: c.createdAt.toISOString(),
+        updated_at: c.updatedAt.toISOString(),
+        artist_name: c.artist.name,
+        artist_stage_name: c.artist.stageName,
+        asset_count: c._count.assets,
+        video_count: videoStats.total,
+        video_completed: videoStats.completed,
+        video_processing: videoStats.processing,
+        video_failed: videoStats.failed,
+        video_scored: videoStats.scored,
+        video_avg_score: videoStats.avgScore ? Math.round(videoStats.avgScore * 10) / 10 : null,
+      };
+    });
 
     return NextResponse.json({
       items,

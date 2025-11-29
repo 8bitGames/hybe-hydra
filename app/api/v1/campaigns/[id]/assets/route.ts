@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
-import { validateFile, generateS3Key, uploadToS3 } from "@/lib/storage";
-import { AssetType } from "@prisma/client";
+import { validateFile, generateS3Key, uploadToS3, AssetType as StorageAssetType } from "@/lib/storage";
+import { AssetType, MerchandiseType } from "@prisma/client";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -60,12 +60,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       id: asset.id,
       campaign_id: asset.campaignId,
       type: asset.type.toLowerCase(),
+      merchandise_type: asset.merchandiseType?.toLowerCase() || null,
       filename: asset.filename,
       original_filename: asset.originalFilename,
       s3_url: asset.s3Url,
       file_size: asset.fileSize,
       mime_type: asset.mimeType,
-      vector_embedding_id: asset.vectorEmbeddingId,
       thumbnail_url: asset.thumbnailUrl,
       metadata: asset.metadata,
       created_by: asset.createdBy,
@@ -115,15 +115,39 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Parse form data
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    const assetTypeOverride = formData.get("asset_type") as string | null; // "goods" or null
+    const merchandiseTypeStr = formData.get("merchandise_type") as string | null; // "album", "photocard", etc.
 
     if (!file) {
       return NextResponse.json({ detail: "No file provided" }, { status: 400 });
     }
 
-    // Validate file
-    const validation = validateFile(file.type, file.size);
+    // Determine if this should be a GOODS type
+    const overrideType = assetTypeOverride?.toUpperCase() === "GOODS" ? "GOODS" as StorageAssetType : undefined;
+
+    // Validate file with optional type override
+    const validation = validateFile(file.type, file.size, overrideType);
     if (!validation.valid) {
       return NextResponse.json({ detail: validation.error }, { status: 400 });
+    }
+
+    // Validate merchandise_type if asset_type is GOODS
+    let merchandiseType: MerchandiseType | null = null;
+    if (validation.type === "GOODS") {
+      if (!merchandiseTypeStr) {
+        return NextResponse.json(
+          { detail: "merchandise_type is required when uploading goods" },
+          { status: 400 }
+        );
+      }
+      const upperMerchType = merchandiseTypeStr.toUpperCase() as MerchandiseType;
+      if (!Object.values(MerchandiseType).includes(upperMerchType)) {
+        return NextResponse.json(
+          { detail: "Invalid merchandise_type. Must be one of: album, photocard, lightstick, apparel, accessory, other" },
+          { status: 400 }
+        );
+      }
+      merchandiseType = upperMerchType;
     }
 
     // Upload to S3
@@ -136,6 +160,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       data: {
         campaignId,
         type: validation.type as AssetType,
+        merchandiseType,
         filename: s3Key.split("/").pop() || file.name,
         originalFilename: file.name,
         s3Url,
@@ -152,6 +177,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         filename: asset.filename,
         s3_url: asset.s3Url,
         type: asset.type.toLowerCase(),
+        merchandise_type: asset.merchandiseType?.toLowerCase() || null,
         message: "Asset uploaded successfully",
       },
       { status: 201 }

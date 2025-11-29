@@ -3,9 +3,272 @@ import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { VideoGenerationStatus } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
+import { generateVideo, VeoGenerationParams } from "@/lib/veo";
+import { analyzeAudio } from "@/lib/audio-analyzer";
+import { composeWithOptimalAudio } from "@/lib/video-audio-composer";
+import { generateImage, convertAspectRatioForImagen } from "@/lib/imagen";
+import { generateImagePromptForI2V, generateVideoPromptForI2V } from "@/lib/gemini-prompt";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
+}
+
+// Async video generation handler (runs in background)
+async function startVideoGeneration(
+  generationId: string,
+  campaignId: string,
+  params: {
+    prompt: string;
+    negativePrompt?: string;
+    durationSeconds?: number;
+    aspectRatio?: string;
+    referenceImageUrl?: string;
+    style?: string;
+    audioUrl: string;  // Audio URL for composition
+    // New I2V parameters
+    enableI2V?: boolean;  // Enable AI image generation first
+    imageDescription?: string;  // How the image should be used in video
+  }
+) {
+  // Don't await - let it run in background
+  (async () => {
+    try {
+      // Update status to processing
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: {
+          status: "PROCESSING",
+          progress: 5,
+        },
+      });
+
+      // Step 1: Analyze audio first (for better UX, do this early)
+      console.log(`[Generation ${generationId}] Analyzing audio...`);
+      let audioAnalysis;
+      try {
+        audioAnalysis = await analyzeAudio(params.audioUrl);
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            progress: 10,
+            audioAnalysis: audioAnalysis as object,
+          },
+        });
+      } catch (audioError) {
+        console.warn(`[Generation ${generationId}] Audio analysis failed, continuing with defaults:`, audioError);
+      }
+
+      // Step 2: I2V Mode - Generate image first using Gemini-optimized prompts
+      let generatedImageBase64: string | undefined;
+      let geminiVideoPrompt: string | undefined;  // Will hold VEO-optimized prompt with animation instructions
+
+      if (params.enableI2V && params.imageDescription) {
+        console.log(`[Generation ${generationId}] I2V mode enabled - Starting Gemini prompt generation...`);
+
+        // Step 2a: Use Gemini to generate optimized image prompt
+        console.log(`[Generation ${generationId}] Step 2a: Generating image prompt with Gemini...`);
+        const imagePromptResult = await generateImagePromptForI2V({
+          videoPrompt: params.prompt,
+          imageDescription: params.imageDescription,
+          style: params.style,
+          aspectRatio: params.aspectRatio,
+        });
+
+        if (!imagePromptResult.success || !imagePromptResult.imagePrompt) {
+          console.warn(`[Generation ${generationId}] Gemini image prompt failed: ${imagePromptResult.error}`);
+          console.log(`[Generation ${generationId}] Falling back to T2V mode...`);
+        } else {
+          const geminiImagePrompt = imagePromptResult.imagePrompt;
+          console.log(`[Generation ${generationId}] Gemini image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
+
+          await prisma.videoGeneration.update({
+            where: { id: generationId },
+            data: { progress: 15 },
+          });
+
+          // Step 2b: Generate image with Imagen using Gemini's prompt
+          console.log(`[Generation ${generationId}] Step 2b: Generating image with Imagen...`);
+          let imageResult;
+          try {
+            imageResult = await generateImage({
+              prompt: geminiImagePrompt,
+              negativePrompt: params.negativePrompt,
+              aspectRatio: convertAspectRatioForImagen(params.aspectRatio || "16:9"),
+              style: params.style,
+            });
+          } catch (imagenError) {
+            console.error(`[Generation ${generationId}] Imagen threw exception:`, imagenError);
+            imageResult = { success: false, error: imagenError instanceof Error ? imagenError.message : "Unknown error" };
+          }
+
+          if (imageResult.success && imageResult.imageBase64) {
+            generatedImageBase64 = imageResult.imageBase64;
+            console.log(`[Generation ${generationId}] Image generated successfully!`);
+
+            await prisma.videoGeneration.update({
+              where: { id: generationId },
+              data: { progress: 25 },
+            });
+
+            // Step 2c: Use Gemini to generate video prompt WITH animation instructions
+            console.log(`[Generation ${generationId}] Step 2c: Generating video prompt with animation instructions...`);
+            const videoPromptResult = await generateVideoPromptForI2V(
+              {
+                videoPrompt: params.prompt,
+                imageDescription: params.imageDescription,
+                style: params.style,
+                aspectRatio: params.aspectRatio,
+              },
+              geminiImagePrompt  // Pass the image prompt as context
+            );
+
+            if (videoPromptResult.success && videoPromptResult.videoPrompt) {
+              geminiVideoPrompt = videoPromptResult.videoPrompt;
+              console.log(`[Generation ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
+            } else {
+              console.warn(`[Generation ${generationId}] Gemini video prompt failed: ${videoPromptResult.error}`);
+              console.log(`[Generation ${generationId}] Using original prompt for video generation...`);
+            }
+
+            await prisma.videoGeneration.update({
+              where: { id: generationId },
+              data: { progress: 30 },
+            });
+          } else {
+            console.warn(`[Generation ${generationId}] Image generation failed: ${imageResult.error}`);
+            console.log(`[Generation ${generationId}] Falling back to T2V mode...`);
+          }
+        }
+      }
+
+      // Step 3: Generate video with VEO
+      console.log(`[Generation ${generationId}] Step 3: Generating video with VEO...`);
+
+      // Determine generation mode and prompt to use
+      let finalVideoPrompt = params.prompt;  // Default to original prompt
+
+      if (generatedImageBase64) {
+        console.log(`[Generation ${generationId}] I2V mode with AI-generated image`);
+        // Use Gemini's video prompt if available (includes animation instructions)
+        if (geminiVideoPrompt) {
+          finalVideoPrompt = geminiVideoPrompt;
+          console.log(`[Generation ${generationId}] Using Gemini-generated video prompt with animation instructions`);
+        }
+      } else if (params.referenceImageUrl) {
+        console.log(`[Generation ${generationId}] I2V mode with existing image: ${params.referenceImageUrl}`);
+      } else {
+        console.log(`[Generation ${generationId}] T2V mode (text only)`);
+      }
+
+      const veoParams: VeoGenerationParams = {
+        prompt: finalVideoPrompt,  // Use Gemini's prompt if I2V mode, otherwise original
+        negativePrompt: params.negativePrompt,
+        durationSeconds: params.durationSeconds || 5,
+        aspectRatio: (params.aspectRatio as "16:9" | "9:16" | "1:1") || "16:9",
+        // Use AI-generated image if available, otherwise use existing reference image
+        referenceImageBase64: generatedImageBase64,
+        referenceImageUrl: generatedImageBase64 ? undefined : params.referenceImageUrl,
+        style: params.style,
+      };
+
+      const currentProgress = generatedImageBase64 ? 40 : 20;
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: { progress: currentProgress },
+      });
+
+      console.log(`[Generation ${generationId}] Calling VEO API (progress: ${currentProgress}%)...`);
+
+      let result;
+      try {
+        result = await generateVideo(veoParams, campaignId);
+      } catch (veoError) {
+        console.error(`[Generation ${generationId}] VEO API threw exception:`, veoError);
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: "FAILED",
+            progress: 100,
+            errorMessage: `VEO API error: ${veoError instanceof Error ? veoError.message : "Unknown error"}`,
+          },
+        });
+        return;
+      }
+
+      if (!result.success || !result.videoUrl) {
+        console.error(`[Generation ${generationId}] VEO returned failure:`, result.error);
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: "FAILED",
+            progress: 100,
+            errorMessage: result.error || "Video generation failed",
+          },
+        });
+        return;
+      }
+
+      console.log(`[Generation ${generationId}] VEO succeeded, video URL: ${result.videoUrl}`);
+
+      // Update with raw video URL
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: {
+          progress: 70,
+          outputUrl: result.videoUrl,
+          qualityMetadata: result.metadata as object,
+        },
+      });
+
+      // Step 3: Compose video with audio
+      console.log(`[Generation ${generationId}] Composing video with audio...`);
+      const composeResult = await composeWithOptimalAudio({
+        videoUrl: result.videoUrl,
+        audioUrl: params.audioUrl,
+        campaignId,
+        audioAnalysis,
+        maxAudioDuration: 15,
+        fadeIn: 0.5,
+        fadeOut: 1.0,
+      });
+
+      if (composeResult.success && composeResult.composedUrl) {
+        // Success - update with composed video URL
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: "COMPLETED",
+            progress: 100,
+            composedOutputUrl: composeResult.composedUrl,
+            audioStartTime: composeResult.audioStartTime,
+            audioDuration: composeResult.audioDuration,
+          },
+        });
+        console.log(`[Generation ${generationId}] Complete with audio!`);
+      } else {
+        // Composition failed, but video succeeded - mark as completed with warning
+        console.warn(`[Generation ${generationId}] Audio composition failed:`, composeResult.error);
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: "COMPLETED",
+            progress: 100,
+            errorMessage: `Video generated but audio composition failed: ${composeResult.error}`,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Video generation error:", error);
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: {
+          status: "FAILED",
+          progress: 100,
+          errorMessage: error instanceof Error ? error.message : "Unknown error",
+        },
+      });
+    }
+  })();
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -56,6 +319,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         outputAsset: {
           select: { id: true, filename: true, s3Url: true },
         },
+        audioAsset: {
+          select: { id: true, filename: true, s3Url: true, originalFilename: true },
+        },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
@@ -73,6 +339,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       aspect_ratio: gen.aspectRatio,
       reference_image_id: gen.referenceImageId,
       reference_style: gen.referenceStyle,
+      // Audio fields
+      audio_asset_id: gen.audioAssetId,
+      audio_analysis: gen.audioAnalysis,
+      audio_start_time: gen.audioStartTime,
+      audio_duration: gen.audioDuration,
+      composed_output_url: gen.composedOutputUrl,
       status: gen.status.toLowerCase(),
       progress: gen.progress,
       error_message: gen.errorMessage,
@@ -82,6 +354,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       output_url: gen.outputUrl,
       quality_score: gen.qualityScore,
       quality_metadata: gen.qualityMetadata,
+      // Bridge context fields
+      original_input: gen.originalInput,
+      trend_keywords: gen.trendKeywords,
+      reference_urls: gen.referenceUrls,
+      prompt_analysis: gen.promptAnalysis,
+      is_favorite: gen.isFavorite,
+      tags: gen.tags,
       created_by: gen.createdBy,
       created_at: gen.createdAt.toISOString(),
       updated_at: gen.updatedAt.toISOString(),
@@ -97,6 +376,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             id: gen.outputAsset.id,
             filename: gen.outputAsset.filename,
             s3_url: gen.outputAsset.s3Url,
+          }
+        : null,
+      audio_asset: gen.audioAsset
+        ? {
+            id: gen.audioAsset.id,
+            filename: gen.audioAsset.filename,
+            original_filename: gen.audioAsset.originalFilename,
+            s3_url: gen.audioAsset.s3Url,
           }
         : null,
     }));
@@ -149,10 +436,45 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       aspect_ratio = "16:9",
       reference_image_id,
       reference_style,
+      audio_asset_id,  // Required: audio track for composition
+      // I2V parameters - generate image first, then video
+      enable_i2v,  // boolean: enable AI image generation first
+      image_description,  // string: how the image should look/be used
+      // Bridge context fields
+      original_input,
+      trend_keywords,
+      reference_urls,
+      prompt_analysis,
     } = body;
 
     if (!prompt) {
       return NextResponse.json({ detail: "Prompt is required" }, { status: 400 });
+    }
+
+    // Validate audio asset (required)
+    if (!audio_asset_id) {
+      return NextResponse.json(
+        { detail: "Audio asset is required. Please select a music track." },
+        { status: 400 }
+      );
+    }
+
+    const audioAsset = await prisma.asset.findUnique({
+      where: { id: audio_asset_id },
+    });
+
+    if (!audioAsset) {
+      return NextResponse.json(
+        { detail: "Audio asset not found" },
+        { status: 400 }
+      );
+    }
+
+    if (audioAsset.type !== "AUDIO") {
+      return NextResponse.json(
+        { detail: "Selected asset is not an audio file" },
+        { status: 400 }
+      );
     }
 
     // Validate reference image if provided
@@ -179,47 +501,57 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         aspectRatio: aspect_ratio,
         referenceImageId: reference_image_id || null,
         referenceStyle: reference_style || null,
+        audioAssetId: audio_asset_id,  // Required audio track
         status: "PENDING",
         progress: 0,
         createdBy: user.id,
         vertexRequestId: uuidv4(),
+        // Bridge context fields
+        originalInput: original_input || null,
+        trendKeywords: trend_keywords || [],
+        referenceUrls: reference_urls || null,
+        promptAnalysis: prompt_analysis || null,
       },
       include: {
         referenceImage: {
           select: { id: true, filename: true, s3Url: true },
         },
+        audioAsset: {
+          select: { id: true, filename: true, s3Url: true, originalFilename: true },
+        },
       },
     });
 
-    // In mock mode, simulate async processing
-    if (process.env.VEO_MOCK_MODE === "true") {
-      // Simulate processing (would be handled by a background job in production)
-      setTimeout(async () => {
-        try {
-          await prisma.videoGeneration.update({
-            where: { id: generation.id },
-            data: {
-              status: "PROCESSING",
-              progress: 50,
-            },
-          });
+    // Determine generation mode
+    let referenceImageUrl: string | undefined;
 
-          setTimeout(async () => {
-            await prisma.videoGeneration.update({
-              where: { id: generation.id },
-              data: {
-                status: "COMPLETED",
-                progress: 100,
-                outputUrl: `https://storage.example.com/mock-video-${generation.id}.mp4`,
-                qualityScore: 85,
-              },
-            });
-          }, 3000);
-        } catch (e) {
-          console.error("Mock processing error:", e);
-        }
-      }, 2000);
+    if (enable_i2v && image_description) {
+      // I2V mode with AI-generated image
+      console.log(`[Generation] I2V mode: Will generate image first`);
+      console.log(`[Generation] Image description: ${image_description}`);
+    } else if (reference_image_id) {
+      // I2V mode with existing image
+      const refAsset = await prisma.asset.findUnique({ where: { id: reference_image_id } });
+      referenceImageUrl = refAsset?.s3Url;
+      console.log(`[Generation] I2V mode: Using existing image ${reference_image_id}`);
+      console.log(`[Generation] Reference image URL: ${referenceImageUrl}`);
+    } else {
+      console.log(`[Generation] T2V mode: Text-only generation`);
     }
+
+    // Start async video generation
+    startVideoGeneration(generation.id, campaignId, {
+      prompt,
+      negativePrompt: negative_prompt,
+      durationSeconds: duration_seconds,
+      aspectRatio: aspect_ratio,
+      referenceImageUrl,
+      style: reference_style,
+      audioUrl: audioAsset.s3Url,
+      // I2V parameters
+      enableI2V: enable_i2v,
+      imageDescription: image_description,
+    });
 
     return NextResponse.json(
       {
@@ -231,9 +563,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         aspect_ratio: generation.aspectRatio,
         reference_image_id: generation.referenceImageId,
         reference_style: generation.referenceStyle,
+        audio_asset_id: generation.audioAssetId,
         status: generation.status.toLowerCase(),
         progress: generation.progress,
         vertex_request_id: generation.vertexRequestId,
+        // Bridge context fields
+        original_input: generation.originalInput,
+        trend_keywords: generation.trendKeywords,
+        reference_urls: generation.referenceUrls,
+        prompt_analysis: generation.promptAnalysis,
+        is_favorite: generation.isFavorite,
+        tags: generation.tags,
         created_by: generation.createdBy,
         created_at: generation.createdAt.toISOString(),
         reference_image: generation.referenceImage
@@ -243,7 +583,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               s3_url: generation.referenceImage.s3Url,
             }
           : null,
-        message: "Video generation started",
+        audio_asset: generation.audioAsset
+          ? {
+              id: generation.audioAsset.id,
+              filename: generation.audioAsset.filename,
+              original_filename: generation.audioAsset.originalFilename,
+              s3_url: generation.audioAsset.s3Url,
+            }
+          : null,
+        message: "Video generation started (with audio composition)",
       },
       { status: 201 }
     );
