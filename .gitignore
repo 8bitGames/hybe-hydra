@@ -86,3 +86,5 @@ docker-compose.override.yml
 nul
 .playwright-mcp/
 playwright-report/
+
+.vercel
