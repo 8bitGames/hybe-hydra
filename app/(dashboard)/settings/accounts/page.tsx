@@ -164,7 +164,7 @@ export default function AccountsSettingsPage() {
     try {
       const redirectUrl = `${window.location.origin}/settings/accounts`;
 
-      const response = await api.get<{ authorization_url: string; state: string }>(
+      const response = await api.get<{ authorization_url: string; state: string; detail?: string }>(
         `/api/v1/publishing/oauth/tiktok?label_id=${labelId}&redirect_url=${encodeURIComponent(redirectUrl)}`
       );
 
