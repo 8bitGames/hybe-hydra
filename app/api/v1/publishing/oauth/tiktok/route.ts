@@ -47,32 +47,50 @@ export async function GET(request: NextRequest) {
     const state = randomBytes(32).toString("hex");
     console.log("[TikTok OAuth GET] Generated state:", state);
 
-    // Clean up expired states
-    try {
-      const deleted = await prisma.oAuthState.deleteMany({
-        where: {
-          expiresAt: { lt: new Date() }
-        }
-      });
+    // Clean up expired states (non-blocking)
+    prisma.oAuthState.deleteMany({
+      where: { expiresAt: { lt: new Date() } }
+    }).then(deleted => {
       console.log("[TikTok OAuth GET] Deleted expired states:", deleted.count);
-    } catch (cleanupError) {
+    }).catch(cleanupError => {
       console.error("[TikTok OAuth GET] Error cleaning up expired states:", cleanupError);
-      // Continue even if cleanup fails
-    }
+    });
 
-    // Store state in database (expires in 10 minutes)
+    // Store state in database with transaction to ensure consistency
+    // Use 10 minute expiry
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
     try {
-      const savedState = await prisma.oAuthState.create({
-        data: {
-          state,
-          userId: user.id,
-          labelId,
-          redirectUrl,
-          platform: "TIKTOK",
-          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-        }
-      });
-      console.log("[TikTok OAuth GET] State saved to database:", savedState.id);
+      // Use raw SQL for more reliable write with Supabase pooler
+      const createResult = await prisma.$executeRaw`
+        INSERT INTO oauth_states (id, state, user_id, label_id, redirect_url, platform, expires_at, created_at)
+        VALUES (gen_random_uuid(), ${state}, ${user.id}, ${labelId}, ${redirectUrl}, 'TIKTOK', ${expiresAt}, NOW())
+      `;
+      console.log("[TikTok OAuth GET] Raw SQL insert result:", createResult);
+
+      if (createResult !== 1) {
+        console.error("[TikTok OAuth GET] Insert affected rows:", createResult);
+        return NextResponse.json(
+          { detail: "Failed to save OAuth state. Please try again." },
+          { status: 500 }
+        );
+      }
+
+      // Verify state was actually saved with a direct query
+      const verifyResult = await prisma.$queryRaw<Array<{ state: string }>>`
+        SELECT state FROM oauth_states WHERE state = ${state} LIMIT 1
+      `;
+      console.log("[TikTok OAuth GET] Verify result:", verifyResult);
+
+      if (!verifyResult || verifyResult.length === 0) {
+        console.error("[TikTok OAuth GET] CRITICAL: State not found after insert!");
+        return NextResponse.json(
+          { detail: "Failed to verify OAuth state. Database consistency issue." },
+          { status: 500 }
+        );
+      }
+
+      console.log("[TikTok OAuth GET] State verified successfully:", state.substring(0, 20) + "...");
     } catch (dbError) {
       console.error("[TikTok OAuth GET] CRITICAL: Failed to save state to database:", dbError);
       return NextResponse.json(
@@ -80,12 +98,6 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       );
     }
-
-    // Verify state was saved
-    const verifyState = await prisma.oAuthState.findUnique({
-      where: { state }
-    });
-    console.log("[TikTok OAuth GET] Verified state exists:", !!verifyState);
 
     // Generate authorization URL
     const authUrl = getAuthorizationUrl(clientKey, oauthRedirectUri, state);
@@ -114,15 +126,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ detail: "code and state are required" }, { status: 400 });
     }
 
-    // Check all existing states in database for debugging
-    const allStates = await prisma.oAuthState.findMany();
+    // Check all existing states in database for debugging using raw SQL
+    const allStates = await prisma.$queryRaw<Array<{ state: string; platform: string; created_at: Date }>>`
+      SELECT state, platform, created_at FROM oauth_states ORDER BY created_at DESC LIMIT 10
+    `;
     console.log("[TikTok OAuth POST] All states in DB:", allStates.length, allStates.map(s => s.state.substring(0, 10) + "..."));
 
-    // Retrieve and validate state from database
-    const stateData = await prisma.oAuthState.findUnique({
-      where: { state }
-    });
-    console.log("[TikTok OAuth POST] Found state data:", !!stateData);
+    // Retrieve and validate state from database using raw SQL
+    const stateResults = await prisma.$queryRaw<Array<{
+      id: string;
+      state: string;
+      user_id: string;
+      label_id: string;
+      redirect_url: string;
+      platform: string;
+      expires_at: Date;
+    }>>`
+      SELECT id, state, user_id, label_id, redirect_url, platform, expires_at
+      FROM oauth_states WHERE state = ${state} LIMIT 1
+    `;
+
+    const stateData = stateResults[0] || null;
+    console.log("[TikTok OAuth POST] Found state data:", !!stateData, stateData ? `userId: ${stateData.user_id}` : "");
 
     if (!stateData) {
       console.error("[TikTok OAuth POST] State not found in database. Requested:", state);
@@ -133,17 +158,26 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if state is expired
-    if (stateData.expiresAt < new Date()) {
+    if (new Date(stateData.expires_at) < new Date()) {
       // Clean up expired state
-      await prisma.oAuthState.delete({ where: { state } });
+      await prisma.$executeRaw`DELETE FROM oauth_states WHERE state = ${state}`;
       return NextResponse.json(
         { detail: "OAuth state expired. Please restart OAuth flow." },
         { status: 400 }
       );
     }
 
-    // Delete used state (one-time use)
-    await prisma.oAuthState.delete({ where: { state } });
+    // Delete used state (one-time use) - use raw SQL
+    await prisma.$executeRaw`DELETE FROM oauth_states WHERE state = ${state}`;
+
+    // Map snake_case to camelCase for rest of the code
+    const stateDataCamel = {
+      userId: stateData.user_id,
+      labelId: stateData.label_id,
+      redirectUrl: stateData.redirect_url,
+      platform: stateData.platform,
+      expiresAt: stateData.expires_at,
+    };
 
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
     const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
@@ -234,8 +268,8 @@ export async function POST(request: NextRequest) {
           profileUrl: tiktokUser.username
             ? `https://www.tiktok.com/@${tiktokUser.username}`
             : null,
-          labelId: stateData.labelId,
-          createdBy: stateData.userId,
+          labelId: stateDataCamel.labelId,
+          createdBy: stateDataCamel.userId,
           isActive: true,
         },
       });
@@ -249,7 +283,7 @@ export async function POST(request: NextRequest) {
         account_name: socialAccount.accountName,
         profile_url: socialAccount.profileUrl,
       },
-      redirect_url: stateData.redirectUrl,
+      redirect_url: stateDataCamel.redirectUrl,
       message: "TikTok account connected successfully",
     });
   } catch (error) {
