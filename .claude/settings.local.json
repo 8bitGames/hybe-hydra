@@ -128,7 +128,8 @@
       "Bash(del:*)",
       "Bash(cmd /c:*)",
       "Bash(DATABASE_URL=\"postgresql://postgres.nlwufeafadrnesurynom:MkVvrXtT_Q8Uz4@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" npx prisma db push)",
-      "Bash(vercel:*)"
+      "Bash(vercel:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJmZjM5ZTAxOS05ZjBmLTQ5MmItOTM2ZC0wZTJlMzE3ZDQ2ZTIiLCJlbWFpbCI6ImFkbWluQGh5ZHJhLmNvbSIsInJvbGUiOiJBRE1JTiIsImlhdCI6MTc2NDU4MTMyNywiZXhwIjoxNzY0NTg4NTI3fQ.usD-cALc2Y-ygdsMyYC29dzT2nv0M6ukEerPdjNmwGw\":*)"
     ],
     "deny": [],
     "ask": []
