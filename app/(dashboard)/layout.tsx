@@ -24,6 +24,7 @@ import {
   User,
   ChevronDown,
   Menu,
+  Settings,
 } from "lucide-react";
 import {
   Sheet,
@@ -146,6 +147,10 @@ export default function DashboardLayout({
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => router.push("/settings/accounts")}>
+                      <Settings className="mr-2 h-4 w-4" />
+                      Settings
+                    </DropdownMenuItem>
                     <DropdownMenuItem>
                       <User className="mr-2 h-4 w-4" />
                       Profile

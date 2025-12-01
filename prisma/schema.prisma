@@ -497,6 +497,22 @@ model GenerationMerchandise {
   @@map("generation_merchandise")
 }
 
+// OAuth State model - stores OAuth state for serverless environments
+model OAuthState {
+  id          String   @id @default(uuid())
+  state       String   @unique // The OAuth state parameter
+  userId      String   @map("user_id")
+  labelId     String   @map("label_id")
+  redirectUrl String   @map("redirect_url")
+  platform    String   @default("TIKTOK") // For future multi-platform support
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([state])
+  @@index([expiresAt])
+  @@map("oauth_states")
+}
+
 // Scheduled Post model - stores scheduled publishing jobs
 model ScheduledPost {
   id              String          @id @default(uuid())

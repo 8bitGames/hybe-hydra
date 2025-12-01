@@ -4,19 +4,6 @@ import { getUserFromHeader } from "@/lib/auth";
 import { getAuthorizationUrl, exchangeCodeForToken } from "@/lib/tiktok";
 import { randomBytes } from "crypto";
 
-// Store pending OAuth states (in production, use Redis or database)
-const pendingOAuthStates = new Map<string, { userId: string; labelId: string; redirectUrl: string; expiresAt: number }>();
-
-// Clean up expired states periodically
-function cleanupExpiredStates() {
-  const now = Date.now();
-  for (const [state, data] of pendingOAuthStates.entries()) {
-    if (data.expiresAt < now) {
-      pendingOAuthStates.delete(state);
-    }
-  }
-}
-
 // GET /api/v1/publishing/oauth/tiktok - Start OAuth flow
 export async function GET(request: NextRequest) {
   try {
@@ -57,13 +44,23 @@ export async function GET(request: NextRequest) {
     // Generate state for CSRF protection
     const state = randomBytes(32).toString("hex");
 
-    // Store state with user info (expires in 10 minutes)
-    cleanupExpiredStates();
-    pendingOAuthStates.set(state, {
-      userId: user.id,
-      labelId,
-      redirectUrl,
-      expiresAt: Date.now() + 10 * 60 * 1000,
+    // Clean up expired states
+    await prisma.oAuthState.deleteMany({
+      where: {
+        expiresAt: { lt: new Date() }
+      }
+    });
+
+    // Store state in database (expires in 10 minutes)
+    await prisma.oAuthState.create({
+      data: {
+        state,
+        userId: user.id,
+        labelId,
+        redirectUrl,
+        platform: "TIKTOK",
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      }
     });
 
     // Generate authorization URL
@@ -90,9 +87,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ detail: "code and state are required" }, { status: 400 });
     }
 
-    // Verify state
-    cleanupExpiredStates();
-    const stateData = pendingOAuthStates.get(state);
+    // Retrieve and validate state from database
+    const stateData = await prisma.oAuthState.findUnique({
+      where: { state }
+    });
 
     if (!stateData) {
       return NextResponse.json(
@@ -101,8 +99,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Remove used state
-    pendingOAuthStates.delete(state);
+    // Check if state is expired
+    if (stateData.expiresAt < new Date()) {
+      // Clean up expired state
+      await prisma.oAuthState.delete({ where: { state } });
+      return NextResponse.json(
+        { detail: "OAuth state expired. Please restart OAuth flow." },
+        { status: 400 }
+      );
+    }
+
+    // Delete used state (one-time use)
+    await prisma.oAuthState.delete({ where: { state } });
 
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
     const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
