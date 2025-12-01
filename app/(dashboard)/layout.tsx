@@ -23,9 +23,6 @@ import {
   LogOut,
   User,
   ChevronDown,
-  BarChart3,
-  FolderOpen,
-  Zap,
   Menu,
 } from "lucide-react";
 import {
@@ -33,6 +30,7 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { MainNavigation } from "@/components/layout/main-navigation";
 
 export default function DashboardLayout({
   children,
@@ -82,67 +80,37 @@ export default function DashboardLayout({
               {/* Mobile Menu */}
               <Sheet>
                 <SheetTrigger asChild>
-                  <Button variant="ghost" size="icon" className="sm:hidden mr-2">
+                  <Button variant="ghost" size="icon" className="md:hidden mr-2">
                     <Menu className="h-5 w-5" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="left" className="w-64">
-                  <nav className="flex flex-col gap-2 mt-6">
-                    <Link href="/dashboard">
-                      <Button variant="ghost" className="w-full justify-start gap-2">
-                        <BarChart3 className="h-4 w-4" />
-                        Dashboard
-                      </Button>
-                    </Link>
-                    <Link href="/campaigns">
-                      <Button variant="ghost" className="w-full justify-start gap-2">
-                        <FolderOpen className="h-4 w-4" />
-                        Campaigns
-                      </Button>
-                    </Link>
-                    <Link href="/bridge">
-                      <Button variant="ghost" className="w-full justify-start gap-2">
-                        <Zap className="h-4 w-4" />
-                        Bridge
-                      </Button>
-                    </Link>
-                  </nav>
+                <SheetContent side="left" className="w-72">
+                  <div className="flex items-center gap-2 mb-6">
+                    <Image
+                      src="/logo.svg"
+                      alt="HYDRA"
+                      width={120}
+                      height={32}
+                      className="h-8 w-auto"
+                    />
+                  </div>
+                  <MainNavigation mobile />
                 </SheetContent>
               </Sheet>
 
               {/* Logo */}
-              <Link href="/dashboard" className="flex items-center gap-2">
+              <Link href="/home" className="flex items-center gap-2">
                 <Image
-                  src="/logo.png"
-                  alt="HYBE HYDRA"
-                  width={140}
-                  height={40}
-                  className="h-8 w-auto object-contain"
-                  priority
+                  src="/logo.svg"
+                  alt="HYDRA"
+                  width={120}
+                  height={32}
+                  className="h-8 w-auto"
                 />
               </Link>
 
               {/* Navigation */}
-              <nav className="hidden sm:flex items-center gap-1 ml-8">
-                <Link href="/dashboard">
-                  <Button variant="ghost" size="sm" className="gap-2">
-                    <BarChart3 className="h-4 w-4" />
-                    Dashboard
-                  </Button>
-                </Link>
-                <Link href="/campaigns">
-                  <Button variant="ghost" size="sm" className="gap-2">
-                    <FolderOpen className="h-4 w-4" />
-                    Campaigns
-                  </Button>
-                </Link>
-                <Link href="/bridge">
-                  <Button variant="ghost" size="sm" className="gap-2">
-                    <Zap className="h-4 w-4" />
-                    Bridge
-                  </Button>
-                </Link>
-              </nav>
+              <MainNavigation className="hidden md:flex ml-8" />
 
               {/* Spacer */}
               <div className="flex-1" />

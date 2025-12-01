@@ -145,6 +145,18 @@ export default function CurationDashboardPage() {
     }
   };
 
+  // Helper to get the best available video URL (prefer composed_output_url)
+  const getVideoUrl = (gen: VideoGeneration): string | null => {
+    return gen.composed_output_url || gen.output_url || null;
+  };
+
+  // Helper to determine video source type
+  const getVideoSourceType = (gen: VideoGeneration): "compose" | "ai" | "none" => {
+    if (gen.composed_output_url) return "compose";
+    if (gen.output_url) return "ai";
+    return "none";
+  };
+
   const handleScoreAll = async () => {
     setScoringAll(true);
     try {
@@ -502,10 +514,10 @@ export default function CurationDashboardPage() {
                       </div>
                     )}
                   </div>
-                  <div className="aspect-video bg-black rounded-xl overflow-hidden">
-                    {gen.output_url ? (
+                  <div className="aspect-video bg-black rounded-xl overflow-hidden relative">
+                    {getVideoUrl(gen) ? (
                       <video
-                        src={gen.output_url}
+                        src={getVideoUrl(gen)!}
                         controls
                         className="w-full h-full object-contain"
                       />
@@ -513,6 +525,11 @@ export default function CurationDashboardPage() {
                       <div className="w-full h-full flex items-center justify-center text-muted-foreground">
                         No video available
                       </div>
+                    )}
+                    {getVideoSourceType(gen) === "compose" && (
+                      <Badge className="absolute top-2 left-2 bg-purple-500 text-white">
+                        Compose
+                      </Badge>
                     )}
                   </div>
                   <p className="text-sm text-muted-foreground line-clamp-2">{gen.prompt}</p>
@@ -556,10 +573,10 @@ export default function CurationDashboardPage() {
               >
                 {/* Video/Thumbnail */}
                 <div className="aspect-[9/16] bg-muted">
-                  {gen.output_url ? (
+                  {getVideoUrl(gen) ? (
                     <video
                       ref={(el) => { videoRefs.current[gen.id] = el; }}
-                      src={gen.output_url}
+                      src={getVideoUrl(gen)!}
                       muted
                       loop
                       playsInline
@@ -580,6 +597,15 @@ export default function CurationDashboardPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Video Source Type Badge */}
+                {getVideoSourceType(gen) === "compose" && (
+                  <div className="absolute top-2 left-2">
+                    <Badge className="bg-purple-500 text-white text-[10px] px-1.5 py-0.5">
+                      Compose
+                    </Badge>
+                  </div>
+                )}
 
                 {/* Score Badge */}
                 {grade && (
@@ -603,9 +629,9 @@ export default function CurationDashboardPage() {
                   </div>
                 )}
 
-                {/* Status Badge (for non-completed) */}
+                {/* Status Badge (for non-completed) - positioned below compose badge if exists */}
                 {gen.status !== "completed" && (
-                  <div className="absolute top-2 left-2">
+                  <div className={`absolute left-2 ${getVideoSourceType(gen) === "compose" ? "top-9" : "top-2"}`}>
                     <Badge variant={
                       gen.status === "processing" ? "default" :
                       gen.status === "pending" ? "secondary" :
@@ -647,13 +673,18 @@ export default function CurationDashboardPage() {
                 >
                   <div className="flex items-center gap-4">
                     {/* Thumbnail */}
-                    <div className="w-24 h-16 bg-muted rounded-lg overflow-hidden flex-shrink-0">
-                      {gen.output_url ? (
-                        <video src={gen.output_url} className="w-full h-full object-cover" />
+                    <div className="w-24 h-16 bg-muted rounded-lg overflow-hidden flex-shrink-0 relative">
+                      {getVideoUrl(gen) ? (
+                        <video src={getVideoUrl(gen)!} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-muted-foreground">
                           <Play className="w-6 h-6" />
                         </div>
+                      )}
+                      {getVideoSourceType(gen) === "compose" && (
+                        <Badge className="absolute bottom-1 left-1 bg-purple-500 text-white text-[8px] px-1 py-0">
+                          Compose
+                        </Badge>
                       )}
                     </div>
 
@@ -711,10 +742,10 @@ export default function CurationDashboardPage() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Video Player */}
                 <div>
-                  <div className="aspect-video bg-black rounded-xl overflow-hidden">
-                    {selectedGeneration.output_url ? (
+                  <div className="aspect-video bg-black rounded-xl overflow-hidden relative">
+                    {getVideoUrl(selectedGeneration) ? (
                       <video
-                        src={selectedGeneration.output_url}
+                        src={getVideoUrl(selectedGeneration)!}
                         controls
                         autoPlay
                         className="w-full h-full object-contain"
@@ -724,9 +755,21 @@ export default function CurationDashboardPage() {
                         {selectedGeneration.status === "completed" ? "Video not available" : selectedGeneration.status}
                       </div>
                     )}
+                    {getVideoSourceType(selectedGeneration) === "compose" && (
+                      <Badge className="absolute top-3 left-3 bg-purple-500 text-white">
+                        Compose Video
+                      </Badge>
+                    )}
                   </div>
                   <div className="mt-4 space-y-2">
-                    <p className="text-foreground">{selectedGeneration.prompt}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-foreground flex-1">{selectedGeneration.prompt}</p>
+                      {getVideoSourceType(selectedGeneration) !== "none" && (
+                        <Badge variant="outline" className="text-xs">
+                          {getVideoSourceType(selectedGeneration) === "compose" ? "이미지+오디오 조합" : "AI 생성"}
+                        </Badge>
+                      )}
+                    </div>
                     {selectedGeneration.negative_prompt && (
                       <p className="text-sm text-muted-foreground">
                         <span className="text-muted-foreground">Negative:</span> {selectedGeneration.negative_prompt}
@@ -1019,7 +1062,7 @@ export default function CurationDashboardPage() {
                     )}
 
                     {/* Audio selection and controls */}
-                    {selectedGeneration.output_url && (
+                    {getVideoUrl(selectedGeneration) && (
                       <div className="space-y-4">
                         {/* Audio Asset Select */}
                         <div>
@@ -1170,7 +1213,7 @@ export default function CurationDashboardPage() {
                       </div>
                     )}
 
-                    {!selectedGeneration.output_url && (
+                    {!getVideoUrl(selectedGeneration) && (
                       <p className="text-sm text-muted-foreground text-center py-4">
                         Video must be generated first before adding music
                       </p>
@@ -1213,10 +1256,10 @@ export default function CurationDashboardPage() {
                 Delete
               </Button>
               <div className="flex items-center gap-3">
-                {selectedGeneration.output_url && (
+                {getVideoUrl(selectedGeneration) && (
                   <Button variant="outline" asChild>
                     <a
-                      href={selectedGeneration.output_url}
+                      href={getVideoUrl(selectedGeneration)!}
                       target="_blank"
                       rel="noopener noreferrer"
                     >

@@ -32,9 +32,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
     }
 
-    // RBAC check
-    if (user.role !== "ADMIN" && !user.labelIds.includes(generation.campaign.artist.labelId)) {
-      return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+    // RBAC check - handle Quick Create (no campaign) vs campaign-based generations
+    if (user.role !== "ADMIN") {
+      if (generation.campaign) {
+        if (!user.labelIds.includes(generation.campaign.artist.labelId)) {
+          return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+        }
+      } else if (generation.createdBy !== user.id) {
+        // Quick Create - only owner can cancel
+        return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+      }
     }
 
     // Can only cancel pending or processing generations

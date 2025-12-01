@@ -65,20 +65,20 @@ enum PublishStatus {
 
 // User model
 model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
-  name          String
+  id             String   @id @default(uuid())
+  email          String   @unique
+  name           String
   hashedPassword String   @map("hashed_password")
-  role          UserRole  @default(VIEWER)
-  labelIds      String[]  @map("label_ids")
-  isActive      Boolean   @default(true) @map("is_active")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  role           UserRole @default(VIEWER)
+  labelIds       String[] @map("label_ids")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   // Relations
-  campaigns         Campaign[]
-  assets            Asset[]
-  videoGenerations  VideoGeneration[]
+  campaigns        Campaign[]
+  assets           Asset[]
+  videoGenerations VideoGeneration[]
 
   @@map("users")
 }
@@ -137,26 +137,27 @@ model Campaign {
   creator          User              @relation(fields: [createdBy], references: [id])
   assets           Asset[]
   videoGenerations VideoGeneration[]
+  scheduledPosts   ScheduledPost[]
 
   @@map("campaigns")
 }
 
 // Asset model
 model Asset {
-  id                String           @id @default(uuid())
-  campaignId        String           @map("campaign_id")
-  type              AssetType
-  merchandiseType   MerchandiseType? @map("merchandise_type") // Only set when type is GOODS
-  filename          String
-  originalFilename  String           @map("original_filename")
-  s3Url             String           @map("s3_url")
-  s3Key             String           @map("s3_key")
-  fileSize          Int?             @map("file_size")
-  mimeType          String?          @map("mime_type")
-  thumbnailUrl      String?          @map("thumbnail_url")
-  metadata          Json?
-  createdBy         String           @map("created_by")
-  createdAt         DateTime         @default(now()) @map("created_at")
+  id               String           @id @default(uuid())
+  campaignId       String           @map("campaign_id")
+  type             AssetType
+  merchandiseType  MerchandiseType? @map("merchandise_type") // Only set when type is GOODS
+  filename         String
+  originalFilename String           @map("original_filename")
+  s3Url            String           @map("s3_url")
+  s3Key            String           @map("s3_key")
+  fileSize         Int?             @map("file_size")
+  mimeType         String?          @map("mime_type")
+  thumbnailUrl     String?          @map("thumbnail_url")
+  metadata         Json?
+  createdBy        String           @map("created_by")
+  createdAt        DateTime         @default(now()) @map("created_at")
 
   // Relations
   campaign                  Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -173,9 +174,9 @@ model StylePreset {
   id          String   @id @default(uuid())
   name        String
   nameKo      String?  @map("name_ko")
-  category    String   // e.g., "contrast", "mood", "motion", "cinematic"
+  category    String // e.g., "contrast", "mood", "motion", "cinematic"
   description String?
-  parameters  Json     // { contrast, saturation, colorGrading, motionIntensity, etc. }
+  parameters  Json // { contrast, saturation, colorGrading, motionIntensity, etc. }
   isActive    Boolean  @default(true) @map("is_active")
   sortOrder   Int      @default(0) @map("sort_order")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -187,7 +188,8 @@ model StylePreset {
 // Video Generation model
 model VideoGeneration {
   id                  String                @id @default(uuid())
-  campaignId          String                @map("campaign_id")
+  campaignId          String?               @map("campaign_id")  // Nullable for Quick Create
+  isQuickCreate       Boolean               @default(false) @map("is_quick_create")
   prompt              String
   negativePrompt      String?               @map("negative_prompt")
   durationSeconds     Int                   @default(5) @map("duration_seconds")
@@ -204,52 +206,56 @@ model VideoGeneration {
   qualityScore        Float?                @map("quality_score")
   qualityMetadata     Json?                 @map("quality_metadata")
 
-  // Audio track - required for video generation
-  audioAssetId        String                @map("audio_asset_id")
-  audioAnalysis       Json?                 @map("audio_analysis")       // {bpm, energy_curve, segments, duration}
-  audioStartTime      Float?                @map("audio_start_time")     // Selected start time in audio (seconds)
-  audioDuration       Float?                @map("audio_duration")       // Duration of audio used (max 15s)
-  composedOutputUrl   String?               @map("composed_output_url")  // Final video with audio
+  // Audio track - optional (required only for Compose workflow)
+  audioAssetId      String?  @map("audio_asset_id")
+  audioAnalysis     Json?   @map("audio_analysis") // {bpm, energy_curve, segments, duration}
+  audioStartTime    Float?  @map("audio_start_time") // Selected start time in audio (seconds)
+  audioDuration     Float?  @map("audio_duration") // Duration of audio used (max 15s)
+  composedOutputUrl String? @map("composed_output_url") // Final video with audio
 
   // Bridge context - tracks how this generation was created
-  originalInput       String?               @map("original_input")       // User's original idea/input
-  trendKeywords       String[]              @map("trend_keywords")       // Applied trend keywords from Bridge
-  referenceUrls       Json?                 @map("reference_urls")       // Scraped URLs [{url, title, platform, hashtags}]
-  promptAnalysis      Json?                 @map("prompt_analysis")      // AI analysis {intent, suggestions, trend_applied}
-  isFavorite          Boolean               @default(false) @map("is_favorite") // User marked as favorite
-  tags                String[]              @default([])                 // User-defined tags for organization
+  originalInput  String?  @map("original_input") // User's original idea/input
+  trendKeywords  String[] @map("trend_keywords") // Applied trend keywords from Bridge
+  referenceUrls  Json?    @map("reference_urls") // Scraped URLs [{url, title, platform, hashtags}]
+  promptAnalysis Json?    @map("prompt_analysis") // AI analysis {intent, suggestions, trend_applied}
+  isFavorite     Boolean  @default(false) @map("is_favorite") // User marked as favorite
+  tags           String[] @default([]) // User-defined tags for organization
 
-  createdBy           String                @map("created_by")
-  createdAt           DateTime              @default(now()) @map("created_at")
-  updatedAt           DateTime              @updatedAt @map("updated_at")
+  // TikTok SEO Optimization - stores SEO metadata for TikTok publishing
+  tiktokSEO Json? @map("tiktok_seo") // { description, hashtags, keywords, searchIntent, suggestedPostingTimes, textOverlayKeywords }
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  campaign              Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign              Campaign?               @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   creator               User                    @relation(fields: [createdBy], references: [id])
   referenceImage        Asset?                  @relation("ReferenceImage", fields: [referenceImageId], references: [id], onDelete: SetNull)
   outputAsset           Asset?                  @relation("OutputAsset", fields: [outputAssetId], references: [id], onDelete: SetNull)
-  audioAsset            Asset                   @relation("AudioAsset", fields: [audioAssetId], references: [id])
+  audioAsset            Asset?                  @relation("AudioAsset", fields: [audioAssetId], references: [id])
   merchandiseReferences GenerationMerchandise[]
+  scheduledPosts        ScheduledPost[]
 
   @@map("video_generations")
 }
 
 // Trend Snapshot model - stores trending content from social platforms
 model TrendSnapshot {
-  id          String        @id @default(uuid())
-  platform    TrendPlatform
-  keyword     String
-  rank        Int
-  region      String        @default("KR")
-  viewCount   BigInt?       @map("view_count")
-  videoCount  Int?          @map("video_count")
-  description String?
-  hashtags    String[]
-  metadata    Json?         // Platform-specific data (music info, challenge details, etc.)
-  trendUrl    String?       @map("trend_url")
-  thumbnailUrl String?      @map("thumbnail_url")
-  collectedAt DateTime      @default(now()) @map("collected_at")
-  expiresAt   DateTime?     @map("expires_at")
+  id           String        @id @default(uuid())
+  platform     TrendPlatform
+  keyword      String
+  rank         Int
+  region       String        @default("KR")
+  viewCount    BigInt?       @map("view_count")
+  videoCount   Int?          @map("video_count")
+  description  String?
+  hashtags     String[]
+  metadata     Json? // Platform-specific data (music info, challenge details, etc.)
+  trendUrl     String?       @map("trend_url")
+  thumbnailUrl String?       @map("thumbnail_url")
+  collectedAt  DateTime      @default(now()) @map("collected_at")
+  expiresAt    DateTime?     @map("expires_at")
 
   @@unique([platform, keyword, region, collectedAt])
   @@index([platform, region])
@@ -258,22 +264,162 @@ model TrendSnapshot {
   @@map("trend_snapshots")
 }
 
+// Trend Video model - stores video search results from trend searches
+model TrendVideo {
+  id           String        @id @default(uuid())
+  platform     TrendPlatform
+  videoId      String        @map("video_id") // TikTok video ID
+  searchQuery  String        @map("search_query") // keyword or hashtag used to find this
+  searchType   String        @map("search_type") // "keyword" or "hashtag"
+  description  String?
+  authorId     String        @map("author_id")
+  authorName   String        @map("author_name")
+  playCount    BigInt?       @map("play_count")
+  likeCount    BigInt?       @map("like_count")
+  commentCount BigInt?       @map("comment_count")
+  shareCount   BigInt?       @map("share_count")
+  hashtags     String[]
+  videoUrl     String        @map("video_url")
+  thumbnailUrl String?       @map("thumbnail_url")
+  collectedAt  DateTime      @default(now()) @map("collected_at")
+
+  @@unique([platform, videoId])
+  @@index([platform, searchQuery])
+  @@index([collectedAt])
+  @@index([playCount])
+  @@map("trend_videos")
+}
+
+// Text Trend Analysis - aggregated text/hashtag analysis from search results
+model TextTrendAnalysis {
+  id          String        @id @default(uuid())
+  searchQuery String        @map("search_query")
+  platform    TrendPlatform
+
+  // Hashtag Analysis
+  topHashtags     Json @map("top_hashtags") // [{hashtag, count, avgLikes}]
+  hashtagClusters Json @map("hashtag_clusters") // Grouped by theme
+
+  // Content Analysis
+  topicThemes    String[] @map("topic_themes") // ["dance challenge", "reaction", ...]
+  commonPhrases  Json     @map("common_phrases") // [{phrase, frequency}]
+  sentimentTrend String   @map("sentiment_trend") // "positive", "neutral", "negative"
+
+  // Popularity Metrics
+  totalVideos Int   @map("total_videos")
+  avgLikes    Float @map("avg_likes")
+  avgComments Float @map("avg_comments")
+  avgShares   Float @map("avg_shares")
+
+  // Text Content Recommendations
+  captionTemplates   Json @map("caption_templates") // Recommended caption styles
+  hashtagStrategy    Json @map("hashtag_strategy") // Recommended hashtag combinations
+  contentSuggestions Json @map("content_suggestions") // What to write about
+
+  analyzedAt DateTime @default(now()) @map("analyzed_at")
+  expiresAt  DateTime @map("expires_at")
+
+  @@unique([platform, searchQuery], name: "platform_searchQuery")
+  @@index([platform])
+  @@index([searchQuery])
+  @@index([analyzedAt])
+  @@index([expiresAt])
+  @@map("text_trend_analyses")
+}
+
+// Video Trend Analysis - visual style analysis from top videos
+model VideoTrendAnalysis {
+  id          String        @id @default(uuid())
+  searchQuery String        @map("search_query")
+  platform    TrendPlatform
+
+  // Visual Style Patterns
+  dominantStyles   String[] @map("dominant_styles") // ["cinematic", "lo-fi", ...]
+  colorPalettes    Json     @map("color_palettes") // Common color schemes
+  lightingPatterns String[] @map("lighting_patterns") // ["natural", "neon", ...]
+  cameraMovements  String[] @map("camera_movements") // ["slow zoom", "tracking", ...]
+  transitionStyles String[] @map("transition_styles") // ["jump cut", "fade", ...]
+
+  // Content Patterns
+  commonSubjects String[] @map("common_subjects") // ["person dancing", "product", ...]
+  settingTypes   String[] @map("setting_types") // ["studio", "outdoor", ...]
+  propCategories String[] @map("prop_categories") // ["fashion", "tech", ...]
+
+  // Mood & Pace
+  dominantMood    String   @map("dominant_mood") // "energetic", "calm", ...
+  averagePace     String   @map("average_pace") // "fast", "medium", "slow"
+  effectsTrending String[] @map("effects_trending") // Popular visual effects
+
+  // Video Content Recommendations
+  promptTemplates Json @map("prompt_templates") // Veo prompt suggestions
+  styleGuidelines Json @map("style_guidelines") // Visual style recommendations
+  technicalSpecs  Json @map("technical_specs") // aspect_ratio, duration, etc.
+
+  // Source Videos Analyzed
+  analyzedVideoIds String[] @map("analyzed_video_ids")
+  videosAnalyzed   Int      @map("videos_analyzed")
+
+  analyzedAt DateTime @default(now()) @map("analyzed_at")
+  expiresAt  DateTime @map("expires_at")
+
+  @@unique([platform, searchQuery], name: "platform_searchQuery")
+  @@index([platform])
+  @@index([searchQuery])
+  @@index([analyzedAt])
+  @@index([expiresAt])
+  @@map("video_trend_analyses")
+}
+
+// Trend Report - combined recommendations for content creation
+model TrendReport {
+  id          String        @id @default(uuid())
+  searchQuery String        @map("search_query")
+  platform    TrendPlatform
+
+  // References to analyses
+  textAnalysisId  String? @map("text_analysis_id")
+  videoAnalysisId String? @map("video_analysis_id")
+
+  // Unified Recommendations
+  trendScore     Float  @map("trend_score") // 0-100 overall trend strength
+  trendDirection String @map("trend_direction") // "rising", "stable", "declining"
+
+  // Content Creation Guide
+  textGuide        Json @map("text_guide") // Caption/hashtag recommendations
+  videoGuide       Json @map("video_guide") // Visual style recommendations
+  combinedStrategy Json @map("combined_strategy") // Unified approach
+
+  // For Campaign Integration
+  targetAudience     String[] @map("target_audience")
+  bestPostingTimes   Json?    @map("best_posting_times")
+  competitorInsights Json?    @map("competitor_insights")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([platform])
+  @@index([searchQuery])
+  @@index([trendScore])
+  @@index([createdAt])
+  @@map("trend_reports")
+}
+
 // Social Account model - stores connected social media accounts
 model SocialAccount {
-  id            String          @id @default(uuid())
-  platform      PublishPlatform
-  accountName   String          @map("account_name")
-  accountId     String          @map("account_id") // Platform-specific account/channel ID
-  accessToken   String?         @map("access_token") // Encrypted
-  refreshToken  String?         @map("refresh_token") // Encrypted
-  tokenExpiresAt DateTime?      @map("token_expires_at")
-  profileUrl    String?         @map("profile_url")
-  followerCount Int?            @map("follower_count")
-  isActive      Boolean         @default(true) @map("is_active")
-  labelId       String          @map("label_id") // Which label owns this account
-  createdBy     String          @map("created_by")
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
+  id             String          @id @default(uuid())
+  platform       PublishPlatform
+  accountName    String          @map("account_name")
+  accountId      String          @map("account_id") // Platform-specific account/channel ID
+  accessToken    String?         @map("access_token") // Encrypted
+  refreshToken   String?         @map("refresh_token") // Encrypted
+  tokenExpiresAt DateTime?       @map("token_expires_at")
+  profileUrl     String?         @map("profile_url")
+  followerCount  Int?            @map("follower_count")
+  isActive       Boolean         @default(true) @map("is_active")
+  labelId        String          @map("label_id") // Which label owns this account
+  createdBy      String          @map("created_by")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
 
   // Relations
   scheduledPosts ScheduledPost[]
@@ -304,25 +450,25 @@ enum MerchandiseContext {
 
 // Merchandise Item model - stores merchandise/goods information
 model MerchandiseItem {
-  id            String          @id @default(uuid())
-  name          String
-  nameKo        String?         @map("name_ko")
-  artistId      String?         @map("artist_id")
-  type          MerchandiseType
-  description   String?
-  s3Url         String          @map("s3_url")
-  s3Key         String          @map("s3_key")
-  thumbnailUrl  String?         @map("thumbnail_url")
-  fileSize      Int?            @map("file_size")
-  releaseDate   DateTime?       @map("release_date")
-  metadata      Json?           // { colors, dimensions, design_features, etc. }
-  isActive      Boolean         @default(true) @map("is_active")
-  createdBy     String          @map("created_by")
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
+  id           String          @id @default(uuid())
+  name         String
+  nameKo       String?         @map("name_ko")
+  artistId     String?         @map("artist_id")
+  type         MerchandiseType
+  description  String?
+  s3Url        String          @map("s3_url")
+  s3Key        String          @map("s3_key")
+  thumbnailUrl String?         @map("thumbnail_url")
+  fileSize     Int?            @map("file_size")
+  releaseDate  DateTime?       @map("release_date")
+  metadata     Json? // { colors, dimensions, design_features, etc. }
+  isActive     Boolean         @default(true) @map("is_active")
+  createdBy    String          @map("created_by")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
 
   // Relations
-  artist                Artist?               @relation(fields: [artistId], references: [id], onDelete: SetNull)
+  artist                Artist?                 @relation(fields: [artistId], references: [id], onDelete: SetNull)
   generationMerchandise GenerationMerchandise[]
 
   @@index([artistId])
@@ -333,17 +479,17 @@ model MerchandiseItem {
 
 // Generation Merchandise - links video generations to merchandise references
 model GenerationMerchandise {
-  id              String             @id @default(uuid())
-  generationId    String             @map("generation_id")
-  merchandiseId   String             @map("merchandise_id")
-  context         MerchandiseContext @default(HOLDING)
-  guidanceScale   Float              @default(0.7) @map("guidance_scale") // 0-1, how strongly to apply reference
-  promptAddition  String?            @map("prompt_addition") // Additional prompt for this merchandise
-  createdAt       DateTime           @default(now()) @map("created_at")
+  id             String             @id @default(uuid())
+  generationId   String             @map("generation_id")
+  merchandiseId  String             @map("merchandise_id")
+  context        MerchandiseContext @default(HOLDING)
+  guidanceScale  Float              @default(0.7) @map("guidance_scale") // 0-1, how strongly to apply reference
+  promptAddition String?            @map("prompt_addition") // Additional prompt for this merchandise
+  createdAt      DateTime           @default(now()) @map("created_at")
 
   // Relations
-  generation      VideoGeneration    @relation(fields: [generationId], references: [id], onDelete: Cascade)
-  merchandise     MerchandiseItem    @relation(fields: [merchandiseId], references: [id], onDelete: Cascade)
+  generation  VideoGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  merchandise MerchandiseItem @relation(fields: [merchandiseId], references: [id], onDelete: Cascade)
 
   @@unique([generationId, merchandiseId])
   @@index([generationId])
@@ -361,40 +507,42 @@ model ScheduledPost {
   status          PublishStatus   @default(DRAFT)
 
   // Content
-  caption         String?
-  hashtags        String[]
-  thumbnailUrl    String?         @map("thumbnail_url")
+  caption      String?
+  hashtags     String[]
+  thumbnailUrl String?  @map("thumbnail_url")
 
   // Scheduling
-  scheduledAt     DateTime?       @map("scheduled_at")
-  publishedAt     DateTime?       @map("published_at")
-  timezone        String          @default("Asia/Seoul")
+  scheduledAt DateTime? @map("scheduled_at")
+  publishedAt DateTime? @map("published_at")
+  timezone    String    @default("Asia/Seoul")
 
   // Platform-specific settings
-  platformSettings Json?          @map("platform_settings") // { visibility, music, duet, stitch, etc. }
+  platformSettings Json? @map("platform_settings") // { visibility, music, duet, stitch, etc. }
 
   // Publishing result
-  publishedUrl    String?         @map("published_url")
-  platformPostId  String?         @map("platform_post_id")
-  errorMessage    String?         @map("error_message")
-  retryCount      Int             @default(0) @map("retry_count")
+  publishedUrl   String? @map("published_url")
+  platformPostId String? @map("platform_post_id")
+  errorMessage   String? @map("error_message")
+  retryCount     Int     @default(0) @map("retry_count")
 
   // Analytics - SNS performance metrics
-  viewCount       Int?            @map("view_count")
-  likeCount       Int?            @map("like_count")
-  commentCount    Int?            @map("comment_count")
-  shareCount      Int?            @map("share_count")
-  saveCount       Int?            @map("save_count")
-  engagementRate  Float?          @map("engagement_rate")
+  viewCount             Int?      @map("view_count")
+  likeCount             Int?      @map("like_count")
+  commentCount          Int?      @map("comment_count")
+  shareCount            Int?      @map("share_count")
+  saveCount             Int?      @map("save_count")
+  engagementRate        Float?    @map("engagement_rate")
   analyticsLastSyncedAt DateTime? @map("analytics_last_synced_at")
 
   // Metadata
-  createdBy       String          @map("created_by")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  socialAccount   SocialAccount   @relation(fields: [socialAccountId], references: [id])
+  socialAccount SocialAccount   @relation(fields: [socialAccountId], references: [id])
+  campaign      Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  generation    VideoGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
 
   @@index([campaignId])
   @@index([generationId])

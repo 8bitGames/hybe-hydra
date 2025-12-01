@@ -42,9 +42,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
     }
 
-    // RBAC check
-    if (user.role !== "ADMIN" && !user.labelIds.includes(generation.campaign.artist.labelId)) {
-      return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+    // RBAC check - Quick Create generations (no campaign) are accessible by their creator
+    if (user.role !== "ADMIN") {
+      if (generation.campaign) {
+        if (!user.labelIds.includes(generation.campaign.artist.labelId)) {
+          return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+        }
+      } else if (generation.createdBy !== user.id) {
+        return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+      }
     }
 
     return NextResponse.json({
@@ -136,9 +142,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
     }
 
-    // RBAC check
-    if (user.role !== "ADMIN" && !user.labelIds.includes(existingGeneration.campaign.artist.labelId)) {
-      return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+    // RBAC check - handle Quick Create (no campaign) vs campaign-based generations
+    if (user.role !== "ADMIN") {
+      if (existingGeneration.campaign) {
+        if (!user.labelIds.includes(existingGeneration.campaign.artist.labelId)) {
+          return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+        }
+      } else if (existingGeneration.createdBy !== user.id) {
+        // Quick Create - only owner can access
+        return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+      }
     }
 
     const body = await request.json();
@@ -232,9 +245,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
     }
 
-    // RBAC check
-    if (user.role !== "ADMIN" && !user.labelIds.includes(generation.campaign.artist.labelId)) {
-      return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+    // RBAC check - handle Quick Create (no campaign) vs campaign-based generations
+    if (user.role !== "ADMIN") {
+      if (generation.campaign) {
+        if (!user.labelIds.includes(generation.campaign.artist.labelId)) {
+          return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+        }
+      } else if (generation.createdBy !== user.id) {
+        // Quick Create - only owner can delete
+        return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+      }
     }
 
     // Can only delete pending or failed generations

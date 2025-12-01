@@ -70,7 +70,7 @@ export default function Home() {
           <div className="flex items-center justify-center mb-6">
             <Image
               src="/logo.png"
-              alt="HYBE HYDRA"
+              alt="HYDRA"
               width={300}
               height={90}
               className="h-20 w-auto object-contain"

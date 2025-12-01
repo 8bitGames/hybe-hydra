@@ -32,6 +32,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           include: {
             artist: {
               select: {
+                labelId: true,
                 brandGuidelines: true,
               },
             },
@@ -44,19 +45,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
     }
 
-    // Check access
-    if (user.role !== "ADMIN" && !user.labelIds.includes(generation.campaign.artist.brandGuidelines || "")) {
-      // Get label ID from artist
-      const artist = await prisma.artist.findFirst({
-        where: {
-          campaigns: {
-            some: { id: generation.campaignId },
-          },
-        },
-        select: { labelId: true },
-      });
-
-      if (artist && !user.labelIds.includes(artist.labelId)) {
+    // Check access - handle Quick Create (no campaign) vs campaign-based generations
+    if (user.role !== "ADMIN") {
+      if (generation.campaign) {
+        if (!user.labelIds.includes(generation.campaign.artist.labelId)) {
+          return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+        }
+      } else if (generation.createdBy !== user.id) {
+        // Quick Create - only owner can access
         return NextResponse.json({ detail: "Access denied" }, { status: 403 });
       }
     }
@@ -90,7 +86,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       durationSeconds: generation.durationSeconds,
       stylePresetName,
       styleParameters,
-      artistBrandGuidelines: generation.campaign.artist.brandGuidelines || undefined,
+      artistBrandGuidelines: generation.campaign?.artist?.brandGuidelines || undefined,
       trendKeywords,
     };
 
@@ -188,6 +184,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         id: true,
         qualityScore: true,
         qualityMetadata: true,
+        createdBy: true,
         campaign: {
           select: {
             artist: {
@@ -202,9 +199,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
     }
 
-    // Check access
-    if (user.role !== "ADMIN" && !user.labelIds.includes(generation.campaign.artist.labelId)) {
-      return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+    // Check access - handle Quick Create (no campaign) vs campaign-based generations
+    if (user.role !== "ADMIN") {
+      if (generation.campaign) {
+        if (!user.labelIds.includes(generation.campaign.artist.labelId)) {
+          return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+        }
+      } else if (generation.createdBy !== user.id) {
+        // Quick Create - only owner can access
+        return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+      }
     }
 
     const metadata = generation.qualityMetadata as Record<string, unknown> | null;

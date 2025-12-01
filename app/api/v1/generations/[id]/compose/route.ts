@@ -46,9 +46,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
     }
 
-    // Check access
-    if (user.role !== "ADMIN" && !user.labelIds.includes(generation.campaign.artist.labelId)) {
-      return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+    // Check access - handle Quick Create (no campaign) vs campaign-based generations
+    if (user.role !== "ADMIN") {
+      if (generation.campaign) {
+        if (!user.labelIds.includes(generation.campaign.artist.labelId)) {
+          return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+        }
+      } else if (generation.createdBy !== user.id) {
+        // Quick Create - only owner can access
+        return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+      }
     }
 
     // Check if generation has output video
@@ -142,7 +149,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Upload composed video to S3
     console.log("Uploading composed video to S3...");
     const outputBuffer = await fs.readFile(result.outputPath);
-    const composedKey = generateS3Key(generation.campaignId, `composed_${generationId}.mp4`);
+    const s3Folder = generation.campaignId || `quick-create/${user.id}`;
+    const composedKey = generateS3Key(s3Folder, `composed_${generationId}.mp4`);
     const composedUrl = await uploadToS3(outputBuffer, composedKey, "video/mp4");
 
     // Clean up temp file
@@ -228,8 +236,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
     }
 
-    if (user.role !== "ADMIN" && !user.labelIds.includes(generation.campaign.artist.labelId)) {
-      return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+    // Check access - handle Quick Create (no campaign) vs campaign-based generations
+    if (user.role !== "ADMIN") {
+      if (generation.campaign) {
+        if (!user.labelIds.includes(generation.campaign.artist.labelId)) {
+          return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+        }
+      } else if (generation.createdBy !== user.id) {
+        // Quick Create - only owner can access
+        return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+      }
     }
 
     const metadata = generation.qualityMetadata as Record<string, unknown> | null;

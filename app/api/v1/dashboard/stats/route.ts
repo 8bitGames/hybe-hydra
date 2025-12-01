@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
         progress: true,
         qualityScore: true,
         outputUrl: true,
+        composedOutputUrl: true,
         prompt: true,
         createdAt: true,
         updatedAt: true,
@@ -186,10 +187,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Recent activity
+    // Recent activity (increased limit to show all completed videos including compose)
     const recentGenerations = generations
-      .filter(g => g.status === "COMPLETED" && g.outputUrl)
-      .slice(0, 5)
+      .filter(g => g.status === "COMPLETED" && (g.outputUrl || g.composedOutputUrl))
+      .slice(0, 50)
       .map(g => {
         const campaign = campaigns.find(c => c.id === g.campaignId);
         return {
@@ -198,6 +199,7 @@ export async function GET(request: NextRequest) {
           campaign_name: campaign?.name || "Unknown",
           prompt: g.prompt,
           output_url: g.outputUrl,
+          composed_output_url: g.composedOutputUrl,
           quality_score: g.qualityScore,
           created_at: g.createdAt.toISOString(),
         };

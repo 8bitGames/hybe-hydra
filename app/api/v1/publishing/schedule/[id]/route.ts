@@ -102,7 +102,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         aspect_ratio: generation.aspectRatio,
         duration_seconds: generation.durationSeconds,
         quality_score: generation.qualityScore,
-        campaign: {
+        campaign: generation.campaign ? {
           id: generation.campaign.id,
           name: generation.campaign.name,
           artist: {
@@ -110,7 +110,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             stage_name: generation.campaign.artist.stageName,
             group_name: generation.campaign.artist.groupName,
           },
-        },
+        } : null,
       } : null,
     });
   } catch (error) {

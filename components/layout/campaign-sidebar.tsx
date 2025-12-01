@@ -37,6 +37,9 @@ import {
   Circle,
   PlayCircle,
   Home,
+  Layers,
+  TrendingUp,
+  Wand2,
 } from "lucide-react";
 
 interface WorkflowStep {
@@ -60,10 +63,26 @@ const workflowSteps: WorkflowStep[] = [
   {
     id: "generate",
     name: "Generate",
-    description: "Create video variants",
+    description: "AI creates video from prompt",
     icon: Sparkles,
     href: (id) => `/campaigns/${id}/generate`,
     isComplete: (campaign) => (campaign.video_count ?? 0) > 0,
+  },
+  {
+    id: "compose",
+    name: "Compose",
+    description: "Build video from images + audio",
+    icon: Wand2,
+    href: (id) => `/campaigns/${id}/compose`,
+    isComplete: () => false, // Will be tracked separately
+  },
+  {
+    id: "pipeline",
+    name: "Pipeline",
+    description: "Batch variations & A/B testing",
+    icon: Layers,
+    href: (id) => `/campaigns/${id}/pipeline`,
+    isComplete: (campaign) => (campaign.video_count ?? 0) > 1,
   },
   {
     id: "curate",
@@ -117,6 +136,8 @@ export function CampaignSidebar({ className }: CampaignSidebarProps) {
   // Determine current workflow step
   const getCurrentStep = () => {
     if (pathname?.includes("/generate")) return "generate";
+    if (pathname?.includes("/compose")) return "compose";
+    if (pathname?.includes("/pipeline")) return "pipeline";
     if (pathname?.includes("/curation")) return "curate";
     if (pathname?.includes("/publish")) return "publish";
     if (pathname?.includes("/campaigns/") && campaignId) return "assets";
@@ -373,6 +394,21 @@ export function CampaignSidebar({ className }: CampaignSidebarProps) {
               >
                 <FolderOpen className="h-4 w-4" />
                 <span className="text-sm">All Campaigns</span>
+              </Link>
+
+              <Link
+                href="/trends"
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+                  "hover:bg-accent/50 text-muted-foreground hover:text-foreground",
+                  pathname === "/trends" && "bg-accent text-foreground"
+                )}
+              >
+                <TrendingUp className="h-4 w-4" />
+                <span className="text-sm">TikTok Trends</span>
+                <Badge variant="secondary" className="ml-auto text-[10px]">
+                  New
+                </Badge>
               </Link>
             </nav>
           </div>

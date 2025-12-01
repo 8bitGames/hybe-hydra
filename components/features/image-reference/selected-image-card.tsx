@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { RefreshCw, X, Lightbulb } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 interface SelectedImageCardProps {
   imageUrl: string;
@@ -12,14 +13,6 @@ interface SelectedImageCardProps {
   onRemove: () => void;
 }
 
-const DESCRIPTION_SUGGESTIONS = [
-  "이 이미지가 화면 중앙에서 3D로 회전하며 빛이 퍼지는 효과",
-  "이 이미지로 시작해서 점점 줌아웃되며 전체 장면이 드러남",
-  "이 이미지의 인물이 움직이기 시작하며 카메라가 따라감",
-  "이 이미지가 물결처럼 흔들리며 몽환적인 분위기로 전환",
-  "이 제품이 360도 회전하며 하이라이트가 반짝임",
-];
-
 export function SelectedImageCard({
   imageUrl,
   filename,
@@ -28,6 +21,16 @@ export function SelectedImageCard({
   onChangeImage,
   onRemove,
 }: SelectedImageCardProps) {
+  const { t } = useI18n();
+
+  const DESCRIPTION_SUGGESTIONS = [
+    t.generation.suggestion1,
+    t.generation.suggestion2,
+    t.generation.suggestion3,
+    t.generation.suggestion4,
+    t.generation.suggestion5,
+  ];
+
   const handleSuggestionClick = (suggestion: string) => {
     onDescriptionChange(suggestion);
   };
@@ -46,7 +49,7 @@ export function SelectedImageCard({
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate mb-1">{filename}</p>
           <p className="text-xs text-muted-foreground mb-3">
-            이 이미지를 영상에서 어떻게 활용할지 설명해주세요
+            {t.generation.imageUsageDescription}
           </p>
           <div className="flex gap-2">
             <Button
@@ -56,7 +59,7 @@ export function SelectedImageCard({
               onClick={onChangeImage}
             >
               <RefreshCw className="w-3 h-3 mr-1" />
-              다른 이미지
+              {t.generation.changeImage}
             </Button>
             <Button
               type="button"
@@ -66,7 +69,7 @@ export function SelectedImageCard({
               className="text-muted-foreground hover:text-destructive"
             >
               <X className="w-3 h-3 mr-1" />
-              제거
+              {t.common.remove}
             </Button>
           </div>
         </div>
@@ -76,12 +79,12 @@ export function SelectedImageCard({
       <div className="px-4 pb-4 space-y-3">
         <div>
           <label className="text-sm font-medium text-foreground mb-2 block">
-            이미지 활용 방법 <span className="text-destructive">*</span>
+            {t.generation.imageUsageRequired} <span className="text-destructive">*</span>
           </label>
           <textarea
             value={description}
             onChange={(e) => onDescriptionChange(e.target.value)}
-            placeholder="예: 이 앨범 커버가 화면 중앙에서 3D로 회전하면서 주변에 빛이 퍼져나가는 효과를 넣어줘..."
+            placeholder={t.generation.imageUsagePlaceholder}
             rows={3}
             className="w-full px-3 py-2 bg-background border border-input rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none text-sm"
           />
@@ -92,7 +95,7 @@ export function SelectedImageCard({
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <Lightbulb className="w-3 h-3" />
-              빠른 선택:
+              {t.generation.quickSelect}:
             </p>
             <div className="flex flex-wrap gap-2">
               {DESCRIPTION_SUGGESTIONS.slice(0, 3).map((suggestion, idx) => (

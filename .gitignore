@@ -83,3 +83,6 @@ poetry.lock
 docker-compose.override.yml
 
 /lib/generated/prisma
+nul
+.playwright-mcp/
+playwright-report/

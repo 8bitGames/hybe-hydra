@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { ImageIcon, X, Sparkles } from "lucide-react";
 import { ImagePickerModal } from "./image-picker-modal";
 import { SelectedImageCard } from "./selected-image-card";
+import { useI18n } from "@/lib/i18n";
 
 export interface ImageReferenceData {
   assetId: string;
@@ -28,6 +29,7 @@ export function ImageReferenceSection({
   onImageReferenceChange,
   campaignId,
 }: ImageReferenceSectionProps) {
+  const { t } = useI18n();
   const [showPicker, setShowPicker] = useState(false);
 
   const handleSelectImage = (asset: Asset) => {
@@ -58,7 +60,7 @@ export function ImageReferenceSection({
       <div className="flex items-center justify-between">
         <Label className="flex items-center gap-2">
           <ImageIcon className="w-4 h-4" />
-          이미지 참조 (선택)
+          {t.generation.imageReferenceOptional}
         </Label>
         {imageReference && (
           <Button
@@ -69,7 +71,7 @@ export function ImageReferenceSection({
             className="text-muted-foreground hover:text-destructive"
           >
             <X className="w-4 h-4 mr-1" />
-            제거
+            {t.common.remove}
           </Button>
         )}
       </div>
@@ -89,7 +91,7 @@ export function ImageReferenceSection({
             <ImageIcon className="w-6 h-6 text-muted-foreground" />
           </div>
           <p className="text-sm text-muted-foreground mb-3">
-            이미지를 선택하면 영상의 시작점이나 스타일 참조로 활용됩니다
+            {t.generation.imageReferenceDescription}
           </p>
           <Button
             type="button"
@@ -97,13 +99,13 @@ export function ImageReferenceSection({
             onClick={() => setShowPicker(true)}
           >
             <Sparkles className="w-4 h-4 mr-2" />
-            Asset Locker에서 이미지 선택
+            {t.generation.selectFromAssetLocker}
           </Button>
         </div>
       )}
 
       <p className="text-xs text-muted-foreground">
-        이미지를 선택하면 Image-to-Video (I2V) 모드로 생성됩니다. 선택하지 않으면 텍스트만으로 생성합니다.
+        {t.generation.i2vModeInfo}
       </p>
 
       <ImagePickerModal

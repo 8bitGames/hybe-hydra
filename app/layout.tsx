@@ -9,7 +9,7 @@ const notoSansKR = Noto_Sans_KR({
 });
 
 export const metadata: Metadata = {
-  title: "HYBE HYDRA",
+  title: "HYDRA",
   description: "Enterprise AI Video Orchestration Platform",
   icons: {
     icon: "/icon.png",

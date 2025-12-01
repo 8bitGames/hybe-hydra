@@ -11,12 +11,14 @@ import {
   presetsApi,
   batchApi,
   scoringApi,
+  variationsApi,
   VideoGeneration,
   VideoGenerationStats,
   VideoGenerationStatus,
   PromptTransformResponse,
   StylePreset,
   ScoringResult,
+  VariationConfigRequest,
 } from "@/lib/video-api";
 import {
   trendsApi,
@@ -40,10 +42,12 @@ import {
 } from "@/lib/merchandise-api";
 import { Input } from "@/components/ui/input";
 import { Image as ImageIcon, Search, Check, Music, Volume2, Lightbulb } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 import {
   ImageReferenceSection,
   ImageReferenceData,
 } from "@/components/features/image-reference";
+import { VariationModal, VariationConfig } from "@/components/features/variation-modal";
 import { validateImageDescription } from "@/lib/image-prompt-combiner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,12 +63,6 @@ const ASPECT_RATIOS = [
   { value: "1:1", label: "1:1 (Square)", icon: "square" },
 ];
 
-const DURATIONS = [
-  { value: 5, label: "5 seconds" },
-  { value: 10, label: "10 seconds" },
-  { value: 15, label: "15 seconds" },
-];
-
 // Category labels for style presets
 const CATEGORY_LABELS: Record<string, string> = {
   contrast: "Contrast",
@@ -72,7 +70,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   motion: "Motion",
   cinematic: "Cinematic",
   aesthetic: "Aesthetic",
-  kpop: "K-Pop",
+  country: "Country",
   effect: "Effects",
   lighting: "Lighting",
 };
@@ -98,6 +96,7 @@ function AudioSelectionSection({
   campaignId: string;
   onAudioUploaded: (newAudio: Asset) => void;
 }) {
+  const { t } = useI18n();
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -109,13 +108,13 @@ function AudioSelectionSection({
 
     // Validate file type
     if (!file.type.startsWith("audio/")) {
-      setUploadError("오디오 파일만 업로드할 수 있습니다.");
+      setUploadError(t.common.fileTypeError);
       return;
     }
 
     // Validate file size (max 50MB)
     if (file.size > 50 * 1024 * 1024) {
-      setUploadError("파일 크기는 50MB 이하만 가능합니다.");
+      setUploadError(t.common.fileSizeLimit);
       return;
     }
 
@@ -142,7 +141,7 @@ function AudioSelectionSection({
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || "업로드에 실패했습니다.");
+        throw new Error(errorData.detail || t.common.uploadFailed);
       }
 
       const newAsset = await response.json();
@@ -155,7 +154,7 @@ function AudioSelectionSection({
       // Reset input
       e.target.value = "";
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "업로드에 실패했습니다.");
+      setUploadError(err instanceof Error ? err.message : t.common.uploadFailed);
     } finally {
       setUploading(false);
       setTimeout(() => setUploadProgress(0), 1000);
@@ -169,7 +168,7 @@ function AudioSelectionSection({
       <div className="flex items-center justify-between">
         <Label className="flex items-center gap-2">
           <Music className="w-4 h-4 text-primary" />
-          음원 선택 <span className="text-destructive">*</span>
+          {t.generation.audioSelection} <span className="text-destructive">*</span>
         </Label>
         {audioTracks.length > 0 && (
           <Button
@@ -178,7 +177,7 @@ function AudioSelectionSection({
             size="sm"
             onClick={() => setShowUpload(!showUpload)}
           >
-            {showUpload ? "목록 보기" : "+ 새 음원 업로드"}
+            {showUpload ? t.generation.showList : t.generation.uploadNewAudio}
           </Button>
         )}
       </div>
@@ -193,7 +192,7 @@ function AudioSelectionSection({
             <p className="text-sm font-medium text-foreground truncate">
               {selectedAudio.original_filename}
             </p>
-            <p className="text-xs text-muted-foreground">선택됨</p>
+            <p className="text-xs text-muted-foreground">{t.common.selected}</p>
           </div>
           <Button
             type="button"
@@ -218,8 +217,8 @@ function AudioSelectionSection({
 
           <div className="text-center">
             <Music className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-            <p className="text-sm text-foreground mb-1">음원 파일을 업로드하세요</p>
-            <p className="text-xs text-muted-foreground mb-3">MP3, WAV, AAC 지원 (최대 50MB)</p>
+            <p className="text-sm text-foreground mb-1">{t.generation.uploadAudioGuide}</p>
+            <p className="text-xs text-muted-foreground mb-3">{t.generation.audioFormats}</p>
 
             <label className="relative cursor-pointer">
               <input
@@ -234,12 +233,12 @@ function AudioSelectionSection({
                   {uploading ? (
                     <>
                       <Spinner className="w-4 h-4 mr-2" />
-                      업로드 중... {uploadProgress}%
+                      {t.common.uploading} {uploadProgress}%
                     </>
                   ) : (
                     <>
                       <Music className="w-4 h-4 mr-2" />
-                      파일 선택
+                      {t.common.selectFile}
                     </>
                   )}
                 </span>
@@ -302,7 +301,7 @@ function AudioSelectionSection({
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
                 className="p-2 hover:bg-muted rounded-full transition-colors"
-                title="미리 듣기"
+                title={t.common.preview}
               >
                 <Volume2 className="w-4 h-4 text-muted-foreground" />
               </a>
@@ -315,13 +314,13 @@ function AudioSelectionSection({
       {!showUpload && audioTracks.length === 0 && (
         <div className="text-center py-6 text-muted-foreground">
           <Music className="w-10 h-10 mx-auto mb-2 opacity-50" />
-          <p className="text-sm">업로드된 음원이 없습니다</p>
-          <p className="text-xs">위의 버튼을 클릭하여 음원을 업로드하세요</p>
+          <p className="text-sm">{t.generation.noAudioUploaded}</p>
+          <p className="text-xs">{t.generation.uploadAudioGuide}</p>
         </div>
       )}
 
       <p className="text-xs text-muted-foreground">
-        영상 생성 시 선택한 음원의 최적 15초 구간이 자동으로 합성됩니다.
+        {t.generation.audioSyncInfo}
       </p>
     </div>
   );
@@ -350,6 +349,7 @@ function ReferenceSourceSection({
   campaignId: string;
   artistId?: string;
 }) {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<"images" | "merchandise">("images");
   const [merchandise, setMerchandise] = useState<MerchandiseItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -472,7 +472,7 @@ function ReferenceSourceSection({
 
   return (
     <div className="space-y-3">
-      <Label className="block">Reference Source (Optional)</Label>
+      <Label className="block">{t.generation.referenceSource}</Label>
 
       {/* Tab Buttons */}
       <div className="flex gap-2">
@@ -484,7 +484,7 @@ function ReferenceSourceSection({
           className="flex-1"
         >
           <ImageIcon className="w-4 h-4 mr-2" />
-          이미지 ({images.length})
+          {t.common.image} ({images.length})
         </Button>
         <Button
           type="button"
@@ -494,7 +494,7 @@ function ReferenceSourceSection({
           className="flex-1"
         >
           <Package className="w-4 h-4 mr-2" />
-          굿즈 {selectedArray.length > 0 && `(${selectedArray.length})`}
+          {t.generation.goods} {selectedArray.length > 0 && `(${selectedArray.length})`}
         </Button>
       </div>
 
@@ -510,7 +510,7 @@ function ReferenceSourceSection({
                 : "border-border hover:border-muted-foreground"
             }`}
           >
-            <span className="text-muted-foreground text-xs">없음</span>
+            <span className="text-muted-foreground text-xs">{t.common.none}</span>
           </button>
           {images.map((image) => (
             <button
@@ -532,7 +532,7 @@ function ReferenceSourceSection({
           ))}
           {images.length === 0 && (
             <div className="col-span-3 text-center py-4 text-muted-foreground text-sm">
-              업로드된 이미지가 없습니다
+              {t.common.noData}
             </div>
           )}
         </div>
@@ -544,7 +544,7 @@ function ReferenceSourceSection({
           {/* Selected Merchandise */}
           {selectedArray.length > 0 && (
             <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg space-y-2">
-              <p className="text-xs text-muted-foreground font-medium">선택된 굿즈:</p>
+              <p className="text-xs text-muted-foreground font-medium">{t.generation.selectedGoods}:</p>
               {selectedArray.map((item) => (
                 <div key={item.id} className="flex items-center gap-2 p-2 bg-background rounded-lg">
                   <div className="w-10 h-10 rounded overflow-hidden flex-shrink-0 bg-muted">
@@ -616,16 +616,16 @@ function ReferenceSourceSection({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="굿즈 검색..."
+                placeholder={t.generation.searchGoods}
                 className="pl-8 h-9"
               />
             </div>
             <Select value={filterType} onValueChange={(v) => setFilterType(v as MerchandiseType | "all")}>
               <SelectTrigger className="w-[100px] h-9">
-                <SelectValue placeholder="전체" />
+                <SelectValue placeholder={t.common.all} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
+                <SelectItem value="all">{t.common.all}</SelectItem>
                 {MERCHANDISE_TYPES.map((type) => (
                   <SelectItem key={type.value} value={type.value}>
                     {type.labelKo}
@@ -681,13 +681,13 @@ function ReferenceSourceSection({
               })}
               {filteredMerchandise.length === 0 && (
                 <div className="col-span-4 text-center py-8 text-muted-foreground text-sm">
-                  굿즈를 찾을 수 없습니다
+                  {t.generation.goodsNotFound}
                 </div>
               )}
             </div>
           )}
           <p className="text-xs text-muted-foreground">
-            최대 {maxMerchandise}개까지 선택 가능. AI가 선택한 굿즈를 영상에 포함합니다.
+            {t.generation.maxGoodsMessage}
           </p>
         </div>
       )}
@@ -698,6 +698,7 @@ function ReferenceSourceSection({
 export default function VideoGeneratePage() {
   const params = useParams();
   const router = useRouter();
+  const { t } = useI18n();
   const campaignId = params.id as string;
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -730,7 +731,6 @@ export default function VideoGeneratePage() {
   // Form state
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
-  const [duration, setDuration] = useState(5);
   const [aspectRatio, setAspectRatio] = useState("9:16");
   const [referenceImageId, setReferenceImageId] = useState<string>("");
   const [selectedAudioId, setSelectedAudioId] = useState<string>("");  // Required audio track
@@ -750,6 +750,11 @@ export default function VideoGeneratePage() {
     promptAnalysis: { intent: string; trend_applied: string[]; suggestions?: string[] } | null;
   } | null>(null);
 
+  // Variation modal state
+  const [variationModalOpen, setVariationModalOpen] = useState(false);
+  const [selectedSeedGeneration, setSelectedSeedGeneration] = useState<VideoGeneration | null>(null);
+  const [creatingVariations, setCreatingVariations] = useState(false);
+
   // Load prompt from Bridge on mount
   useEffect(() => {
     const bridgeData = loadBridgePrompt(campaignId);
@@ -759,7 +764,6 @@ export default function VideoGeneratePage() {
       setTransformedPrompt(bridgeData.transformedPrompt);
       setNegativePrompt(bridgeData.transformedPrompt.negative_prompt);
       setAspectRatio(bridgeData.transformedPrompt.technical_settings.aspect_ratio);
-      setDuration(bridgeData.transformedPrompt.technical_settings.duration_seconds);
       setBridgePromptLoaded(true);
       // Store Bridge context for API call
       setBridgeContext({
@@ -875,7 +879,6 @@ export default function VideoGeneratePage() {
           // Auto-fill the form with optimized values
           setNegativePrompt(result.data.negative_prompt);
           setAspectRatio(result.data.technical_settings.aspect_ratio);
-          setDuration(result.data.technical_settings.duration_seconds);
         }
       }
     } catch (err) {
@@ -918,7 +921,7 @@ export default function VideoGeneratePage() {
     }
 
     if (!selectedAudioId) {
-      setError("음원을 선택해주세요. 영상 생성에는 음원이 필수입니다.");
+      setError(t.generation.audioRequired);
       return;
     }
 
@@ -926,7 +929,7 @@ export default function VideoGeneratePage() {
     if (imageReference) {
       const validation = validateImageDescription(imageReference.description);
       if (!validation.valid) {
-        setError(validation.message || "이미지 활용 방법을 입력해주세요");
+        setError(validation.message || t.generation.imageUsageRequired);
         return;
       }
     }
@@ -945,7 +948,7 @@ export default function VideoGeneratePage() {
         prompt: promptToUse,
         audio_asset_id: selectedAudioId,  // Required audio track
         negative_prompt: negativePromptToUse,
-        duration_seconds: duration,
+        duration_seconds: 0,  // Auto-calculate based on preset/vibe
         aspect_ratio: aspectRatio,
         // If I2V mode with image description, don't use reference_image_id
         // Backend will generate the image based on the description
@@ -970,14 +973,7 @@ export default function VideoGeneratePage() {
 
       if (result.data) {
         setGenerations((prev) => [result.data!, ...prev]);
-        // Clear form (but keep audio selection for convenience)
-        setPrompt("");
-        setNegativePrompt("");
-        setReferenceImageId("");
-        setImageReference(null);  // Clear image reference
-        setTransformedPrompt(null);
-        setBridgeContext(null);
-        setBridgePromptLoaded(false);
+        // Keep form data for convenience - user can generate more variants
         // Reload stats
         const statsResult = await videoApi.getStats(campaignId);
         if (statsResult.data) setStats(statsResult.data);
@@ -1000,7 +996,7 @@ export default function VideoGeneratePage() {
     }
 
     if (!selectedAudioId) {
-      setError("음원을 선택해주세요. 영상 생성에는 음원이 필수입니다.");
+      setError(t.generation.audioRequired);
       return;
     }
 
@@ -1020,7 +1016,7 @@ export default function VideoGeneratePage() {
         audio_asset_id: selectedAudioId,  // Required audio track
         negative_prompt: negativePrompt.trim() || undefined,
         style_preset_ids: selectedPresetIds,
-        duration_seconds: duration,
+        duration_seconds: 0,  // Auto-calculate based on preset/vibe
         aspect_ratio: aspectRatio,
         reference_image_id: referenceImageId || undefined,
       });
@@ -1033,12 +1029,7 @@ export default function VideoGeneratePage() {
       if (result.data) {
         // Add all batch generations to the list
         setGenerations((prev) => [...result.data!.generations, ...prev]);
-        // Clear form
-        setPrompt("");
-        setNegativePrompt("");
-        setReferenceImageId("");
-        setSelectedPresetIds([]);
-        setTransformedPrompt(null);
+        // Keep form data for convenience - user can generate more variants
         // Reload stats
         const statsResult = await videoApi.getStats(campaignId);
         if (statsResult.data) setStats(statsResult.data);
@@ -1058,7 +1049,7 @@ export default function VideoGeneratePage() {
     }
 
     if (!selectedAudioId) {
-      setError("음원을 선택해주세요. 영상 생성에는 음원이 필수입니다.");
+      setError(t.generation.audioRequired);
       return;
     }
 
@@ -1079,7 +1070,7 @@ export default function VideoGeneratePage() {
         negative_prompt: negativePrompt.trim() || undefined,
         merchandise_references: merchandiseRefs,
         style_preset_ids: selectedPresetIds.length > 0 ? selectedPresetIds : undefined,
-        duration_seconds: duration,
+        duration_seconds: 0,  // Auto-calculate based on preset/vibe
         aspect_ratio: aspectRatio,
         reference_image_id: referenceImageId || undefined,
       });
@@ -1130,13 +1121,7 @@ export default function VideoGeneratePage() {
           updated_at: gen.created_at,
         }));
         setGenerations((prev) => [...newGenerations, ...prev]);
-        // Clear form
-        setPrompt("");
-        setNegativePrompt("");
-        setReferenceImageId("");
-        setSelectedPresetIds([]);
-        setMerchandiseRefs([]);
-        setTransformedPrompt(null);
+        // Keep form data for convenience - user can generate more variants
         // Reload stats
         const statsResult = await videoApi.getStats(campaignId);
         if (statsResult.data) setStats(statsResult.data);
@@ -1165,6 +1150,47 @@ export default function VideoGeneratePage() {
       setGenerations((prev) => prev.filter((g) => g.id !== generationId));
       const statsResult = await videoApi.getStats(campaignId);
       if (statsResult.data) setStats(statsResult.data);
+    }
+  };
+
+  // Open variation modal for a completed generation
+  const handleOpenVariationModal = (gen: VideoGeneration) => {
+    setSelectedSeedGeneration(gen);
+    setVariationModalOpen(true);
+  };
+
+  // Create variations from seed generation
+  const handleCreateVariations = async (config: VariationConfig) => {
+    if (!selectedSeedGeneration) return;
+
+    setCreatingVariations(true);
+    try {
+      const result = await variationsApi.create(selectedSeedGeneration.id, {
+        style_categories: config.styleCategories,
+        enable_prompt_variation: config.enablePromptVariation,
+        prompt_variation_types: config.promptVariationTypes,
+        max_variations: config.maxVariations,
+      });
+
+      if (result.data) {
+        // Reload generations to show new variations
+        const generationsResult = await videoApi.getAll(campaignId, { page_size: 50 });
+        if (generationsResult.data) {
+          setGenerations(generationsResult.data.items);
+        }
+        // Reload stats
+        const statsResult = await videoApi.getStats(campaignId);
+        if (statsResult.data) setStats(statsResult.data);
+
+        // Close modal
+        setVariationModalOpen(false);
+        setSelectedSeedGeneration(null);
+      }
+    } catch (err) {
+      console.error("Failed to create variations:", err);
+      setError("Failed to create variations");
+    } finally {
+      setCreatingVariations(false);
     }
   };
 
@@ -1484,10 +1510,10 @@ export default function VideoGeneratePage() {
               <div className="mb-4 p-4 bg-primary/10 border border-primary/30 rounded-lg">
                 <div className="flex items-center gap-2">
                   <Zap className="w-5 h-5 text-primary" />
-                  <span className="text-primary font-medium text-sm">The Bridge에서 프롬프트를 가져왔습니다</span>
+                  <span className="text-primary font-medium text-sm">{t.generation.bridgePromptLoaded}</span>
                 </div>
                 <p className="text-muted-foreground text-xs mt-1">
-                  최적화된 프롬프트와 설정이 자동으로 적용되었습니다. 바로 Generate 버튼을 클릭하세요!
+                  {t.generation.bridgePromptMessage}
                 </p>
               </div>
             )}
@@ -1546,11 +1572,10 @@ export default function VideoGeneratePage() {
                     <span className="text-lg">⚠️</span>
                     <div>
                       <p className="text-sm font-medium text-yellow-600 mb-1">
-                        유명인 이름 감지됨
+                        {t.bridge.celebrityDetected}
                       </p>
                       <p className="text-xs text-yellow-600/80">
-                        {transformedPrompt.detected_celebrities?.join(", ")} 이름이 자동으로 일반적인 설명으로 대체되었습니다.
-                        Google Veo는 실제 인물의 영상을 생성할 수 없습니다.
+                        {transformedPrompt.detected_celebrities?.join(", ")} {t.bridge.celebrityWarningMessage}
                       </p>
                     </div>
                   </div>
@@ -1611,39 +1636,24 @@ export default function VideoGeneratePage() {
                 }}
               />
 
-              {/* Duration & Aspect Ratio */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="mb-2 block">Duration</Label>
-                  <Select value={String(duration)} onValueChange={(v) => setDuration(Number(v))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DURATIONS.map((d) => (
-                        <SelectItem key={d.value} value={String(d.value)}>
-                          {d.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label className="mb-2 block">Aspect Ratio</Label>
-                  <Select value={aspectRatio} onValueChange={setAspectRatio}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ASPECT_RATIOS.map((ar) => (
-                        <SelectItem key={ar.value} value={ar.value}>
-                          {ar.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* Aspect Ratio */}
+              <div>
+                <Label className="mb-2 block">Aspect Ratio</Label>
+                <Select value={aspectRatio} onValueChange={setAspectRatio}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ASPECT_RATIOS.map((ar) => (
+                      <SelectItem key={ar.value} value={ar.value}>
+                        {ar.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Duration is auto-calculated (10-30s based on vibe)
+                </p>
               </div>
 
               {/* Style Presets Multi-Select */}
@@ -1699,7 +1709,7 @@ export default function VideoGeneratePage() {
               <div className="p-4 bg-gradient-to-r from-purple-500/5 to-blue-500/5 border border-purple-500/20 rounded-lg">
                 <div className="flex items-center gap-2 mb-3">
                   <Lightbulb className="w-4 h-4 text-purple-500" />
-                  <span className="text-sm font-medium text-foreground">이미지 가이드 비디오 생성</span>
+                  <span className="text-sm font-medium text-foreground">{t.generation.imageGuideGeneration}</span>
                   <Badge variant="secondary" className="text-xs">NEW</Badge>
                 </div>
                 <ImageReferenceSection
@@ -1782,14 +1792,14 @@ export default function VideoGeneratePage() {
                     {generating ? (
                       <>
                         <Spinner className="w-5 h-5 mr-2" />
-                        {imageReference ? "이미지 기반 생성 중..." : "Starting Generation..."}
+                        {imageReference ? t.generation.imageBasedGenerating : t.generation.generating}
                       </>
                     ) : (
                       <>
                         {imageReference ? (
                           <>
                             <ImageIcon className="w-5 h-5 mr-2" />
-                            이미지 가이드 비디오 생성 (I2V)
+                            {t.generation.imageGuideGeneration} (I2V)
                           </>
                         ) : (
                           <>
@@ -2014,7 +2024,7 @@ export default function VideoGeneratePage() {
 
                         {/* Output Video - Prioritize composed video with audio */}
                         {gen.status === "completed" && (gen.composed_output_url || gen.output_url) && (
-                          <div className="mt-3 flex items-center gap-2">
+                          <div className="mt-3 flex items-center gap-2 flex-wrap">
                             <Button variant="outline" size="sm" asChild>
                               <a
                                 href={gen.composed_output_url || gen.output_url || ""}
@@ -2024,6 +2034,16 @@ export default function VideoGeneratePage() {
                                 <Play className="w-4 h-4 mr-2" />
                                 {gen.composed_output_url ? "영상 보기 🎵" : "영상 보기 (음원 없음)"}
                               </a>
+                            </Button>
+                            {/* Create Variations Button */}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenVariationModal(gen)}
+                              className="border-primary/50 text-primary hover:bg-primary/10"
+                            >
+                              <Sparkles className="w-4 h-4 mr-2" />
+                              변형 생성
                             </Button>
                             {gen.composed_output_url && gen.audio_asset && (
                               <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -2065,6 +2085,19 @@ export default function VideoGeneratePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Variation Modal */}
+      <VariationModal
+        isOpen={variationModalOpen}
+        onClose={() => {
+          setVariationModalOpen(false);
+          setSelectedSeedGeneration(null);
+        }}
+        seedGeneration={selectedSeedGeneration}
+        presets={presets}
+        onCreateVariations={handleCreateVariations}
+        isCreating={creatingVariations}
+      />
     </>
   );
 }

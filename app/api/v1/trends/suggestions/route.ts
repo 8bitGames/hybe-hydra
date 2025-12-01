@@ -16,8 +16,8 @@ interface TrendSuggestion {
 function generatePromptTemplate(keyword: string, platform: TrendPlatform): string {
   const templates: Record<TrendPlatform, string[]> = {
     TIKTOK: [
-      `K-pop idol dancing to "${keyword}" trend with dynamic camera movements`,
-      `Artist performing "${keyword}" challenge in stylish outfit with neon lighting`,
+      `Country artist performing "${keyword}" trend with authentic stage presence`,
+      `Artist performing "${keyword}" challenge in stylish outfit with warm lighting`,
       `Close-up reaction video in "${keyword}" style with smooth transitions`,
     ],
     YOUTUBE: [
@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
       // Personalize with artist context
       if (artistContext) {
         promptTemplate = promptTemplate.replace("Artist", artistContext);
-        promptTemplate = promptTemplate.replace("K-pop idol", artistContext);
+        promptTemplate = promptTemplate.replace("Country artist", artistContext);
       }
 
       suggestions.push({

@@ -1,0 +1,110 @@
+// =====================================================
+// COMPOSE ENGINE SCHEMA EXTENSIONS
+// =====================================================
+// Add these to schema.prisma after running existing migrations
+// Then run: npx prisma migrate dev --name add_compose_engine
+// =====================================================
+
+// 1. Add this enum after VideoGenerationStatus:
+
+// Video generation type enum (VEO = AI generation, COMPOSE = MoviePy slideshow)
+enum GenerationType {
+  VEO
+  COMPOSE
+}
+
+
+// 2. Add these fields to the VideoGeneration model:
+
+// Inside VideoGeneration model, add after existing fields:
+
+  // Generation type (VEO = AI, COMPOSE = MoviePy slideshow)
+  generationType        GenerationType        @default(VEO) @map("generation_type")
+
+  // Compose-specific fields (only used when generationType = COMPOSE)
+  composeJobId          String?               @map("compose_job_id")       // Python service job ID
+  composeProgress       Int?                  @map("compose_progress")     // Render progress 0-100
+  composeStep           String?               @map("compose_step")         // Current step description
+  composeScript         Json?                 @map("compose_script")       // { lines: [{text, timing, duration}], totalDuration }
+  composeVibe           String?               @map("compose_vibe")         // Exciting, Emotional, Pop, Minimal
+  composeSearchKeywords String[]              @map("compose_search_keywords") // Keywords for image search
+  composeMusicBpm       Int?                  @map("compose_music_bpm")    // Matched music BPM
+  composeBpmRange       Json?                 @map("compose_bpm_range")    // { min, max }
+  composeEffectPreset   String?               @map("compose_effect_preset")// zoom_beat, crossfade, bounce
+  composeEffectSettings Json?                 @map("compose_effect_settings") // Custom effect parameters
+
+  // Add relation to ComposeImageCandidate
+  composeImages         ComposeImageCandidate[]
+
+
+// 3. Add these fields to the Asset model (for audio BPM metadata):
+
+// Inside Asset model, add after existing fields:
+
+  // Audio metadata (for music matching in compose)
+  audioBpm              Int?                  @map("audio_bpm")            // BPM for audio files
+  audioVibe             String?               @map("audio_vibe")           // Vibe tag: Exciting, Emotional, Pop
+  audioGenre            String?               @map("audio_genre")          // Genre: Hip-hop, EDM, Acoustic
+  audioDurationSec      Float?                @map("audio_duration_sec")   // Duration in seconds
+  audioEnergy           Float?                @map("audio_energy")         // 0-1 energy level
+  audioAnalyzed         Boolean               @default(false) @map("audio_analyzed") // BPM analysis done
+
+// Add index for music matching:
+  @@index([audioVibe, audioBpm])
+
+
+// 4. Add this new model:
+
+// Compose Image Candidate - stores searched images for user selection
+model ComposeImageCandidate {
+  id            String          @id @default(uuid())
+  generationId  String          @map("generation_id")
+
+  // Image source info
+  sourceUrl     String          @map("source_url")
+  sourceTitle   String?         @map("source_title")
+  sourceDomain  String?         @map("source_domain")
+
+  // Cached copy in S3
+  cachedS3Url   String?         @map("cached_s3_url")
+  cachedS3Key   String?         @map("cached_s3_key")
+  thumbnailUrl  String?         @map("thumbnail_url")
+
+  // Image metadata
+  width         Int?
+  height        Int?
+  fileSize      Int?            @map("file_size")
+  mimeType      String?         @map("mime_type")
+
+  // User selection state
+  isSelected    Boolean         @default(true) @map("is_selected")
+  sortOrder     Int             @default(0) @map("sort_order")
+
+  // Auto-filtering results
+  qualityScore  Float?          @map("quality_score")
+  isFiltered    Boolean         @default(false) @map("is_filtered")
+  filterReason  String?         @map("filter_reason")
+
+  // Custom image (uploaded by user, not from search)
+  isCustom      Boolean         @default(false) @map("is_custom")
+
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  // Relations
+  generation    VideoGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  @@index([generationId])
+  @@index([isSelected])
+  @@map("compose_image_candidates")
+}
+
+
+// =====================================================
+// MIGRATION INSTRUCTIONS
+// =====================================================
+// 1. Copy the enum to schema.prisma after VideoGenerationStatus
+// 2. Add the VideoGeneration fields after existing fields
+// 3. Add the Asset audio fields after existing fields
+// 4. Add the ComposeImageCandidate model at the end
+// 5. Run: npx prisma migrate dev --name add_compose_engine
+// =====================================================

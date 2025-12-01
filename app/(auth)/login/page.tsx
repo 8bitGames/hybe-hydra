@@ -41,7 +41,7 @@ export default function LoginPage() {
           <div className="flex items-center justify-center mb-4">
             <Image
               src="/logo.png"
-              alt="HYBE HYDRA"
+              alt="HYDRA"
               width={200}
               height={60}
               className="h-12 w-auto object-contain"
