@@ -168,17 +168,24 @@ export default function AccountsSettingsPage() {
         `/api/v1/publishing/oauth/tiktok?label_id=${labelId}&redirect_url=${encodeURIComponent(redirectUrl)}`
       );
 
+      console.log("OAuth API response:", response);
+      console.log("OAuth API response.data:", response.data);
+
       if (response.data?.authorization_url) {
         // Store state in sessionStorage for callback verification
         sessionStorage.setItem("tiktok_oauth_state", response.data.state);
         // Redirect to TikTok OAuth
         window.location.href = response.data.authorization_url;
       } else {
-        throw new Error("Failed to get authorization URL");
+        console.error("No authorization_url in response:", response.data);
+        throw new Error(response.data?.detail || "Failed to get authorization URL");
       }
     } catch (err: any) {
       console.error("Failed to start TikTok OAuth:", err);
-      toast.error("Connection Failed", err?.response?.data?.detail || "Failed to start TikTok connection");
+      console.error("Response data:", err?.response?.data);
+      console.error("Response status:", err?.response?.status);
+      const errorDetail = err?.response?.data?.detail || err?.message || "Failed to start TikTok connection";
+      toast.error("Connection Failed", errorDetail);
       setConnecting(null);
     }
   };
