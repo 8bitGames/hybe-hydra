@@ -34,17 +34,22 @@ video_image = (
         "libxext6",
         "libgl1-mesa-glx",
         "libglib2.0-0",
+        "libsndfile1",  # Audio file support
+        "libmpg123-0",  # MP3 decoding
         "fonts-noto-cjk",  # Korean/CJK font support
         "fonts-dejavu",
     )
     # Python dependencies (matching requirements.txt)
     .pip_install(
-        "moviepy==1.0.3",
-        "Pillow==10.2.0",
-        "numpy==1.26.3",
+        "moviepy>=2.0.0",
+        "Pillow>=10.0.0",
+        "numpy>=1.26.0",
         "librosa==0.10.1",
         "soundfile==0.12.1",
-        "boto3==1.34.14",
+        "audioread==3.0.1",
+        "scipy>=1.11.0,<1.13.0",  # Pin scipy for librosa compatibility
+        "boto3==1.35.0",
+        "botocore==1.35.0",
         "httpx==0.26.0",
         "aiofiles==23.2.1",
         "pydantic==2.5.3",
