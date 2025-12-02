@@ -41,7 +41,7 @@ video_image = (
     )
     # Python dependencies (matching requirements.txt)
     .pip_install(
-        "moviepy>=2.0.0",
+        "moviepy==2.1.1",  # Pin exact version - 2.x has different imports than 1.x
         "Pillow>=10.0.0",
         "numpy>=1.26.0",
         "librosa==0.10.1",
