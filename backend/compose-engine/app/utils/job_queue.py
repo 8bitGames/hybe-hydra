@@ -88,7 +88,8 @@ class JobQueue:
             return
 
         if status:
-            job_data["status"] = status.value
+            # Handle both Enum and string status values
+            job_data["status"] = status.value if hasattr(status, 'value') else status
         if progress is not None:
             job_data["progress"] = progress
         if current_step:
