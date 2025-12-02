@@ -245,6 +245,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch user info from TikTok
+    console.log("[TikTok OAuth POST] Fetching user info with token:", tokenResult.accessToken?.substring(0, 20) + "...");
     const userInfoResponse = await fetch(
       "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username",
       {
@@ -255,12 +256,15 @@ export async function POST(request: NextRequest) {
       }
     );
 
+    console.log("[TikTok OAuth POST] User info response status:", userInfoResponse.status);
     const userInfoResult = await userInfoResponse.json();
+    console.log("[TikTok OAuth POST] User info result:", JSON.stringify(userInfoResult));
     const tiktokUser = userInfoResult.data?.user;
 
     if (!tiktokUser) {
+      console.error("[TikTok OAuth POST] Failed to get TikTok user - response:", JSON.stringify(userInfoResult));
       return NextResponse.json(
-        { detail: "Failed to fetch TikTok user info" },
+        { detail: `Failed to fetch TikTok user info: ${userInfoResult.error?.message || JSON.stringify(userInfoResult)}` },
         { status: 400 }
       );
     }
