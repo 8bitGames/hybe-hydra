@@ -265,6 +265,8 @@ class VideoRenderer:
             # Step 11: Render to file
             await self._update_progress(progress_callback, job_id, 85, "Rendering final video")
             output_path = self.temp.get_path(job_id, "output.mp4")
+            # CRITICAL: Use job-specific temp audio file to avoid conflicts in parallel processing
+            temp_audiofile = self.temp.get_path(job_id, f"temp_audio_{job_id}.mp4")
 
             # Run rendering in thread pool to not block
             # Try GPU encoding first (NVENC), fallback to CPU
@@ -278,6 +280,7 @@ class VideoRenderer:
                         audio_codec="aac",
                         preset="p4",            # NVENC preset: p1(fastest)-p7(best quality)
                         ffmpeg_params=["-rc", "vbr", "-cq", "23", "-b:v", "0"],  # Quality mode
+                        temp_audiofile=temp_audiofile,  # Unique per job to avoid file lock conflicts
                         logger=None
                     )
                 )
@@ -294,6 +297,7 @@ class VideoRenderer:
                         threads=8,
                         preset="fast",
                         ffmpeg_params=["-crf", "23"],
+                        temp_audiofile=temp_audiofile,  # Unique per job to avoid file lock conflicts
                         logger=None
                     )
                 )
