@@ -4,12 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
+import logging
 
 from .config import get_settings
 from .utils.job_queue import JobQueue
-from .dependencies import set_job_queue
+from .dependencies import set_job_queue, init_render_semaphore
 
-
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
@@ -24,6 +25,10 @@ async def lifespan(app: FastAPI):
     job_queue = JobQueue(settings.redis_url)
     await job_queue.connect()
     set_job_queue(job_queue)
+
+    # Initialize render semaphore for concurrent job control
+    init_render_semaphore(settings.max_concurrent_jobs)
+    logger.info(f"Render concurrency: max {settings.max_concurrent_jobs} parallel jobs")
 
     yield
 

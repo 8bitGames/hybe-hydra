@@ -262,11 +262,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Start background jobs for each variation
     createdGenerations.forEach(async ({ generation, settings }) => {
       try {
-        // Update to processing
-        await prisma.videoGeneration.update({
-          where: { id: generation.id },
-          data: { status: "PROCESSING", progress: 10 },
-        });
+        // Keep status as PENDING - compose-engine will send callbacks to update status:
+        // - "queued" when waiting for render slot
+        // - "processing" when actively rendering
+        // - "completed" or "failed" when done
 
         // Determine callback URL (works for both local and deployed)
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || process.env.VERCEL_URL

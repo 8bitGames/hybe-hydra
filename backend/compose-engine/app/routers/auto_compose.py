@@ -1,6 +1,6 @@
 """Auto-compose API router for variation generation."""
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List
 import asyncio
@@ -16,7 +16,7 @@ from ..models.render_job import (
 from ..services.image_fetcher import ImageFetcher
 from ..services.video_renderer import VideoRenderer
 from ..utils.job_queue import JobQueue
-from ..dependencies import get_job_queue
+from ..dependencies import get_job_queue, get_render_semaphore
 from ..config import get_settings
 
 
@@ -47,8 +47,8 @@ class AutoComposeResponse(BaseModel):
     search_results: Optional[int] = None
 
 
-async def send_callback(callback_url: str, job_id: str, status: str, output_url: Optional[str] = None, error: Optional[str] = None):
-    """Send callback to notify job completion."""
+async def send_callback(callback_url: str, job_id: str, status: str, output_url: Optional[str] = None, error: Optional[str] = None, progress: Optional[int] = None):
+    """Send callback to notify job status changes."""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             payload = {
@@ -56,25 +56,47 @@ async def send_callback(callback_url: str, job_id: str, status: str, output_url:
                 "status": status,
                 "output_url": output_url,
                 "error": error,
+                "progress": progress,
             }
             response = await client.post(callback_url, json=payload)
             if response.status_code != 200:
                 logger.error(f"Callback failed with status {response.status_code}: {response.text}")
             else:
-                logger.info(f"Callback sent successfully for job {job_id}")
+                logger.info(f"Callback sent successfully for job {job_id}: status={status}")
     except Exception as e:
         logger.error(f"Failed to send callback for job {job_id}: {e}")
 
 
 async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[JobQueue]):
-    """Background task to process auto-compose job."""
+    """Background task to process auto-compose job with concurrency control."""
     settings = get_settings()
     output_url = None
     final_status = "failed"
     error_message = None
 
+    # Get render semaphore for concurrency control
+    semaphore = get_render_semaphore()
+    semaphore_acquired = False  # Track if we acquired the semaphore (for cleanup)
+
     try:
-        # Update status
+        # Wait for semaphore (limits concurrent renders)
+        if semaphore:
+            logger.info(f"[Auto-Compose] Job {request.job_id} waiting for render slot...")
+            if job_queue:
+                await job_queue.update_job(
+                    request.job_id,
+                    status="queued",
+                    progress=0,
+                    current_step="Waiting for render slot..."
+                )
+            # Send callback for "queued" status so frontend shows "대기중"
+            if request.callback_url:
+                await send_callback(request.callback_url, request.job_id, "queued", progress=0)
+            await semaphore.acquire()
+            semaphore_acquired = True
+            logger.info(f"[Auto-Compose] Job {request.job_id} acquired render slot")
+
+        # Update status to processing
         if job_queue:
             await job_queue.update_job(
                 request.job_id,
@@ -82,6 +104,9 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
                 progress=5,
                 current_step="Searching images..."
             )
+        # Send callback for "processing" status so frontend shows "처리중"
+        if request.callback_url:
+            await send_callback(request.callback_url, request.job_id, "processing", progress=5)
 
         # Search for images using the tags
         image_fetcher = ImageFetcher()
@@ -322,6 +347,7 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
 
     except Exception as e:
         error_message = str(e)
+        logger.error(f"[Auto-Compose] Job {request.job_id} failed: {error_message}")
         if job_queue:
             await job_queue.update_job(
                 request.job_id,
@@ -333,12 +359,15 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
         if request.callback_url:
             await send_callback(request.callback_url, request.job_id, "failed", error=error_message)
 
+    finally:
+        # Release semaphore only if we acquired it
+        if semaphore_acquired and semaphore:
+            semaphore.release()
+            logger.info(f"[Auto-Compose] Job {request.job_id} released render slot")
+
 
 @router.post("/auto", response_model=AutoComposeResponse)
-async def auto_compose(
-    request: AutoComposeRequest,
-    background_tasks: BackgroundTasks
-):
+async def auto_compose(request: AutoComposeRequest):
     """
     Auto-compose: Search images by tags and create a slideshow video.
 
@@ -346,14 +375,16 @@ async def auto_compose(
     - Takes 2-3 search tags (extracted from original prompt)
     - Searches for new images
     - Creates a new slideshow with the specified vibe
+
+    Jobs run in parallel up to max_concurrent_jobs (default: 2).
     """
     job_queue = get_job_queue()
 
     if job_queue:
         await job_queue.create_job(request.job_id, request.model_dump())
 
-    # Start background processing
-    background_tasks.add_task(process_auto_compose, request, job_queue)
+    # Start background processing with asyncio.create_task for true parallel execution
+    asyncio.create_task(process_auto_compose(request, job_queue))
 
     return AutoComposeResponse(
         status="accepted",

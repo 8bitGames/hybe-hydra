@@ -4,9 +4,10 @@ import { generateGeoAeoContent } from "@/lib/geo-aeo-generator";
 
 interface CallbackPayload {
   job_id: string;
-  status: "completed" | "failed";
+  status: "queued" | "processing" | "completed" | "failed";
   output_url?: string;
   error?: string;
+  progress?: number;
 }
 
 interface AutoPublishSettings {
@@ -26,18 +27,38 @@ interface VariationSettings {
   vibe: string;
 }
 
-// POST /api/v1/jobs/callback - Receive job completion callbacks from compose-engine
+// Map compose-engine status to Prisma VideoStatus enum
+function mapStatusToPrisma(status: string): string {
+  switch (status) {
+    case "queued":
+      return "PENDING"; // Waiting for render slot - shows as "대기중"
+    case "processing":
+      return "PROCESSING"; // Actively rendering - shows as "처리중"
+    case "completed":
+      return "COMPLETED";
+    case "failed":
+      return "FAILED";
+    default:
+      return "PENDING";
+  }
+}
+
+// POST /api/v1/jobs/callback - Receive job status callbacks from compose-engine
 export async function POST(request: NextRequest) {
   try {
     const body: CallbackPayload = await request.json();
-    const { job_id, status, output_url, error } = body;
+    const { job_id, status, output_url, error, progress } = body;
 
-    console.log(`[Job Callback] Received callback for job ${job_id}: ${status}`);
+    console.log(`[Job Callback] Received callback for job ${job_id}: ${status} (progress: ${progress ?? 'N/A'})`);
+
+    // Map status and determine progress
+    const prismaStatus = mapStatusToPrisma(status);
+    const finalProgress = status === "completed" || status === "failed" ? 100 : (progress ?? 0);
 
     // Update the video generation record
     const updateData: Record<string, unknown> = {
-      status: status === "completed" ? "COMPLETED" : "FAILED",
-      progress: 100,
+      status: prismaStatus,
+      progress: finalProgress,
       updatedAt: new Date(),
     };
 
@@ -54,7 +75,7 @@ export async function POST(request: NextRequest) {
       data: updateData,
     });
 
-    console.log(`[Job Callback] Updated job ${job_id} to ${status}`);
+    console.log(`[Job Callback] Updated job ${job_id}: ${status} → ${prismaStatus} (progress: ${finalProgress}%)`);
 
     // Check if this job has auto-publish settings
     const generation = await prisma.videoGeneration.findUnique({
