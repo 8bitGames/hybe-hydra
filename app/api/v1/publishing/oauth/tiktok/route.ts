@@ -204,7 +204,14 @@ export async function POST(request: NextRequest) {
     const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
     const redirectUri = process.env.TIKTOK_REDIRECT_URI;
 
+    console.log("[TikTok OAuth POST] Environment check:", {
+      hasClientKey: !!clientKey,
+      hasClientSecret: !!clientSecret,
+      redirectUri: redirectUri,
+    });
+
     if (!clientKey || !clientSecret || !redirectUri) {
+      console.error("[TikTok OAuth POST] Missing TikTok credentials");
       return NextResponse.json(
         { detail: "TikTok OAuth is not configured" },
         { status: 500 }
@@ -212,6 +219,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Exchange code for token
+    console.log("[TikTok OAuth POST] Exchanging code for token...");
+    console.log("[TikTok OAuth POST] Code length:", code.length);
     const tokenResult = await exchangeCodeForToken(
       clientKey,
       clientSecret,
@@ -219,7 +228,16 @@ export async function POST(request: NextRequest) {
       redirectUri
     );
 
+    console.log("[TikTok OAuth POST] Token exchange result:", {
+      success: tokenResult.success,
+      error: tokenResult.error,
+      hasAccessToken: !!tokenResult.accessToken,
+      hasRefreshToken: !!tokenResult.refreshToken,
+      openId: tokenResult.openId,
+    });
+
     if (!tokenResult.success) {
+      console.error("[TikTok OAuth POST] Token exchange failed:", tokenResult.error);
       return NextResponse.json(
         { detail: `OAuth failed: ${tokenResult.error}` },
         { status: 400 }

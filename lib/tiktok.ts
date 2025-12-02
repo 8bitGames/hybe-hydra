@@ -512,6 +512,13 @@ export async function exchangeCodeForToken(
       params.code_verifier = codeVerifier;
     }
 
+    console.log("[TikTok Token Exchange] Request params:", {
+      client_key: clientKey?.substring(0, 10) + "...",
+      redirect_uri: redirectUri,
+      code_length: code.length,
+      grant_type: "authorization_code",
+    });
+
     const response = await fetch(`${TIKTOK_API_BASE}/v2/oauth/token/`, {
       method: "POST",
       headers: {
@@ -521,8 +528,11 @@ export async function exchangeCodeForToken(
     });
 
     const result = await response.json();
+    console.log("[TikTok Token Exchange] Response status:", response.status);
+    console.log("[TikTok Token Exchange] Response body:", JSON.stringify(result));
 
     if (result.error) {
+      console.error("[TikTok Token Exchange] Error:", result.error, result.error_description);
       return {
         success: false,
         error: result.error_description || result.error,
