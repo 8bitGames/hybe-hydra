@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
-import { inngest } from '@/lib/inngest/client';
+import { submitRenderToModal, ModalRenderRequest } from '@/lib/modal/client';
 
-const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || 'http://localhost:8001';
 const S3_BUCKET = process.env.MINIO_BUCKET_NAME || 'hydra-assets';
-const USE_INNGEST = process.env.USE_INNGEST_COMPOSE === 'true';
 
 interface RenderRequest {
   generationId: string;
@@ -133,10 +131,8 @@ export async function POST(request: NextRequest) {
     // Use generationId as job_id for consistent tracking
     const outputKey = `compose/renders/${generationId}/output.mp4`;
 
-    // Prepare render request for Python service
-    // Note: targetDuration=0 means auto-calculate based on vibe preset
-    // audio.duration should be null to use full audio, not targetDuration
-    const renderRequest = {
+    // Prepare render request for Modal
+    const modalRequest: ModalRenderRequest = {
       job_id: generationId,
       images: images.map(img => ({
         url: img.url,
@@ -149,7 +145,7 @@ export async function POST(request: NextRequest) {
       },
       script: script && script.lines && script.lines.length > 0
         ? { lines: script.lines }
-        : null,  // Pass null if no script lines
+        : null,
       settings: {
         vibe,
         effect_preset: effectPreset,
@@ -164,80 +160,44 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    console.log('[Compose Render] Request:', JSON.stringify({
+    console.log('[Compose Render] Submitting to Modal:', JSON.stringify({
       job_id: generationId,
       images_count: images.length,
       has_script: !!(script && script.lines && script.lines.length > 0),
       script_lines_count: script?.lines?.length || 0,
       vibe,
       target_duration: targetDuration,
-      use_inngest: USE_INNGEST
     }));
 
-    // Option 1: Use Inngest for orchestration (recommended for production)
-    // Provides retries, monitoring, and better error handling
-    if (USE_INNGEST) {
-      await inngest.send({
-        name: 'video/compose',
-        data: {
-          generationId,
-          campaignId,
-          userId: user.id,
-          audioAssetId,
-          images,
-          script,
-          effectPreset,
-          aspectRatio,
-          targetDuration,
-          vibe,
-          textStyle,
-          colorGrade,
-          prompt
-        }
-      });
+    // Submit directly to Modal (GPU rendering)
+    const modalResponse = await submitRenderToModal(modalRequest);
 
-      return NextResponse.json({
-        jobId: generationId,
-        generationId,
-        status: 'queued',
-        message: 'Render job queued via Inngest',
-        estimatedSeconds: targetDuration > 0 ? targetDuration * 8 : 60,
-        outputKey
-      });
-    }
+    console.log('[Compose Render] Modal response:', modalResponse);
 
-    // Option 2: Direct API call to compose engine (faster for local dev)
-    // Use /render/auto to automatically choose Modal (GPU) if enabled, else local
-    const renderEndpoint = process.env.USE_MODAL_RENDER === 'true'
-      ? '/render/auto'  // Auto-select Modal GPU if enabled
-      : '/render';      // Local rendering only
-
-    const response = await fetch(`${COMPOSE_ENGINE_URL}${renderEndpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(renderRequest)
+    // Store modal_call_id in database for status polling
+    await prisma.videoGeneration.update({
+      where: { id: generationId },
+      data: {
+        qualityMetadata: {
+          composeData,
+          modalCallId: modalResponse.call_id,
+        },
+      }
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Compose engine error: ${error}`);
-    }
-
-    await response.json();
 
     return NextResponse.json({
       jobId: generationId,
       generationId,
       status: 'queued',
-      estimatedSeconds: targetDuration > 0 ? targetDuration * 8 : 60,
+      message: 'Render job queued on Modal (GPU)',
+      modalCallId: modalResponse.call_id,
+      estimatedSeconds: targetDuration > 0 ? targetDuration * 4 : 45, // Faster with GPU
       outputKey
     });
   } catch (error) {
     console.error('Render start error:', error);
     return NextResponse.json(
-      { detail: 'Failed to start rendering' },
+      { detail: `Failed to start rendering: ${error instanceof Error ? error.message : 'Unknown error'}` },
       { status: 500 }
     );
   }

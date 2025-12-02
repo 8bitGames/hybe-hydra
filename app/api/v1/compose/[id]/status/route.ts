@@ -1,25 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
-
-const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || 'http://localhost:8001';
-const USE_INNGEST = process.env.USE_INNGEST_COMPOSE === 'true';
+import { getModalRenderStatus, modalStatusToDbStatus } from '@/lib/modal/client';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
-}
-
-interface JobStatus {
-  status: string;
-  progress: number;
-  current_step?: string;
-  steps?: Array<{
-    name: string;
-    completed: boolean;
-    progress?: number;
-  }>;
-  output_url?: string;
-  error?: string;
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -34,7 +19,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const params = await context.params;
     const generationId = params.id;
 
-    // Get generation record to find the job ID
+    // Get generation record to find the modal call ID
     const generation = await prisma.videoGeneration.findUnique({
       where: { id: generationId },
       select: {
@@ -43,7 +28,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
         progress: true,
         outputUrl: true,
         composedOutputUrl: true,
-        errorMessage: true
+        errorMessage: true,
+        qualityMetadata: true
       }
     });
 
@@ -54,134 +40,141 @@ export async function GET(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // When using Inngest, the function updates the database directly
-    // So we can rely on database status without polling compose-engine
-    if (USE_INNGEST) {
-      // Database is source of truth when using Inngest orchestration
-      const isCompleted = generation.status === 'COMPLETED';
-      const isFailed = generation.status === 'FAILED';
+    // If already completed or failed, return from database
+    if (generation.status === 'COMPLETED') {
+      return NextResponse.json({
+        status: 'completed',
+        progress: 100,
+        currentStep: 'Completed',
+        outputUrl: generation.composedOutputUrl || generation.outputUrl,
+        error: null
+      });
+    }
 
-      // Trigger auto-schedule if completed
-      if (isCompleted) {
-        const fullGen = await prisma.videoGeneration.findUnique({
-          where: { id: generationId },
-          select: { qualityMetadata: true }
-        });
-        const metadata = fullGen?.qualityMetadata as Record<string, unknown> | null;
-        const autoPublish = metadata?.autoPublish as { enabled?: boolean } | undefined;
+    if (generation.status === 'FAILED') {
+      return NextResponse.json({
+        status: 'failed',
+        progress: 0,
+        currentStep: 'Failed',
+        outputUrl: null,
+        error: generation.errorMessage
+      });
+    }
 
-        if (autoPublish?.enabled && !metadata?.autoScheduleTriggered) {
-          try {
-            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-            fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-            }).catch(err => console.error('Auto-schedule failed:', err));
+    // Get modal call ID from qualityMetadata
+    const metadata = generation.qualityMetadata as Record<string, unknown> | null;
+    const modalCallId = metadata?.modalCallId as string | undefined;
 
-            // Mark as triggered to prevent duplicate scheduling
-            await prisma.videoGeneration.update({
-              where: { id: generationId },
-              data: {
-                qualityMetadata: { ...metadata, autoScheduleTriggered: true }
-              }
-            });
-          } catch (scheduleError) {
-            console.error('Auto-schedule error:', scheduleError);
-          }
-        }
-      }
-
+    if (!modalCallId) {
+      // No modal call ID - might be an old job or error
       return NextResponse.json({
         status: generation.status.toLowerCase(),
         progress: generation.progress || 0,
-        currentStep: isCompleted ? 'Completed' : isFailed ? 'Failed' : 'Processing via Inngest',
+        currentStep: 'Processing',
         outputUrl: generation.composedOutputUrl || generation.outputUrl,
         error: generation.errorMessage
       });
     }
 
-    // Direct mode: Try to get job status from Python compose-engine
+    // Poll Modal for current status
     try {
-      const response = await fetch(`${COMPOSE_ENGINE_URL}/job/${generationId}/status`);
+      const modalStatus = await getModalRenderStatus(modalCallId);
 
-      if (response.ok) {
-        const jobStatus: JobStatus = await response.json();
+      console.log(`[Compose Status] Modal response for ${generationId}:`, modalStatus);
 
-        // Update generation record with latest status
-        if (jobStatus.status === 'completed' && jobStatus.output_url) {
-          // Check if this is a new completion (not already marked as completed)
-          const currentGen = await prisma.videoGeneration.findUnique({
-            where: { id: generationId },
-            select: { status: true, qualityMetadata: true }
-          });
+      if (modalStatus.status === 'completed' && modalStatus.result?.output_url) {
+        // Update database with completion
+        // Note: generation.status was already checked above, so this is always true here
+        const wasNotCompleted = true;
 
-          const wasNotCompleted = currentGen?.status !== 'COMPLETED';
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: 'COMPLETED',
+            progress: 100,
+            composedOutputUrl: modalStatus.result.output_url,
+            outputUrl: modalStatus.result.output_url,
+          }
+        });
 
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: {
-              status: 'COMPLETED',
-              progress: 100,
-              composedOutputUrl: jobStatus.output_url,
-              outputUrl: jobStatus.output_url, // Also set outputUrl for auto-schedule
-            }
-          });
+        // Trigger auto-schedule if this is a new completion
+        if (wasNotCompleted) {
+          const autoPublish = metadata?.autoPublish as { enabled?: boolean } | undefined;
 
-          // Trigger auto-schedule if this is a new completion
-          if (wasNotCompleted) {
-            const metadata = currentGen?.qualityMetadata as Record<string, unknown> | null;
-            const autoPublish = metadata?.autoPublish as { enabled?: boolean } | undefined;
-
-            if (autoPublish?.enabled) {
-              try {
-                const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-                fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                }).catch(err => console.error('Auto-schedule failed:', err));
-              } catch (scheduleError) {
-                console.error('Auto-schedule error:', scheduleError);
-              }
+          if (autoPublish?.enabled) {
+            try {
+              const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+              fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+              }).catch(err => console.error('Auto-schedule failed:', err));
+            } catch (scheduleError) {
+              console.error('Auto-schedule error:', scheduleError);
             }
           }
-        } else if (jobStatus.status === 'failed') {
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: {
-              status: 'FAILED',
-              errorMessage: jobStatus.error
-            }
-          });
-        } else {
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: {
-              progress: jobStatus.progress
-            }
-          });
         }
 
         return NextResponse.json({
-          status: jobStatus.status,
-          progress: jobStatus.progress,
-          currentStep: jobStatus.current_step,
-          steps: jobStatus.steps,
-          outputUrl: jobStatus.output_url,
-          error: jobStatus.error
+          status: 'completed',
+          progress: 100,
+          currentStep: 'Completed',
+          outputUrl: modalStatus.result.output_url,
+          error: null
         });
       }
-    } catch (fetchError) {
-      console.warn('Could not fetch job status from compose engine:', fetchError);
+
+      if (modalStatus.status === 'failed' || modalStatus.status === 'error') {
+        const errorMsg = modalStatus.result?.error || modalStatus.error || 'Modal render failed';
+
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: 'FAILED',
+            errorMessage: errorMsg
+          }
+        });
+
+        return NextResponse.json({
+          status: 'failed',
+          progress: 0,
+          currentStep: 'Failed',
+          outputUrl: null,
+          error: errorMsg
+        });
+      }
+
+      // Still processing
+      // Estimate progress based on typical render times (30-60 seconds total)
+      const createdAt = metadata?.createdAt as string | undefined;
+      let estimatedProgress = 50; // Default mid-way
+
+      if (createdAt) {
+        const elapsed = (Date.now() - new Date(createdAt).getTime()) / 1000;
+        // Assume ~45 seconds total render time with GPU
+        estimatedProgress = Math.min(90, Math.floor((elapsed / 45) * 100));
+      }
+
+      return NextResponse.json({
+        status: 'processing',
+        progress: estimatedProgress,
+        currentStep: 'Rendering on Modal (GPU)',
+        outputUrl: null,
+        error: null
+      });
+
+    } catch (modalError) {
+      console.error('Modal status check error:', modalError);
+
+      // Return current database status as fallback
+      return NextResponse.json({
+        status: generation.status.toLowerCase(),
+        progress: generation.progress || 0,
+        currentStep: 'Processing (status check failed)',
+        outputUrl: generation.composedOutputUrl || generation.outputUrl,
+        error: null
+      });
     }
 
-    // Fallback to database status
-    return NextResponse.json({
-      status: generation.status.toLowerCase(),
-      progress: generation.progress || 0,
-      currentStep: null,
-      outputUrl: generation.composedOutputUrl || generation.outputUrl,
-      error: generation.errorMessage
-    });
   } catch (error) {
     console.error('Status check error:', error);
     return NextResponse.json(
