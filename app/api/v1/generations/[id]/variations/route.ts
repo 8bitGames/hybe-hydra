@@ -501,6 +501,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           status: gen.status.toLowerCase(),
           progress: gen.progress,
           output_url: gen.outputUrl,
+          composed_output_url: gen.composedOutputUrl,
           error_message: gen.errorMessage,
           quality_score: gen.qualityScore,
           audio_asset: gen.audioAsset ? {
