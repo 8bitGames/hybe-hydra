@@ -247,13 +247,18 @@ export default function PipelineManagementPage() {
             </h3>
             <p className="text-muted-foreground text-sm mb-4">
               {isKorean
-                ? "Generate 페이지에서 영상을 생성한 후 '변형 생성' 버튼을 눌러 파이프라인을 시작하세요"
-                : "Create a video on the Generate page and click 'Create Variations' to start a pipeline"}
+                ? "완료된 영상이 있으면 글로벌 Pipeline 페이지에서 변형을 생성할 수 있습니다"
+                : "If you have completed videos, you can create variations from the global Pipeline page"}
             </p>
-            <Button onClick={() => router.push(`/campaigns/${campaignId}/generate`)}>
-              <ArrowRight className="w-4 h-4 mr-2" />
-              {isKorean ? "Generate 페이지로 이동" : "Go to Generate Page"}
-            </Button>
+            <div className="flex items-center justify-center gap-3">
+              <Button variant="outline" onClick={() => router.push(`/campaigns/${campaignId}/generate`)}>
+                {isKorean ? "AI 영상 생성" : "Generate AI Video"}
+              </Button>
+              <Button onClick={() => router.push("/pipeline")}>
+                <Layers className="w-4 h-4 mr-2" />
+                {isKorean ? "Pipeline으로 이동" : "Go to Pipeline"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : (

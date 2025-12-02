@@ -104,85 +104,43 @@ test.describe('Navigation Efficiency', () => {
   });
 });
 
-test.describe('Quick Create Flow', () => {
+test.describe('AI Generate Flow', () => {
 
   test.beforeEach(async ({ page }) => {
     await login(page);
   });
 
-  test('Quick Create card navigates to generate page', async ({ page }) => {
+  test('AI Generate card navigates to generate page', async ({ page }) => {
     await page.goto(`${BASE_URL}/home`);
 
     // Click AI Generate card
     await page.click('text=AI Generate');
 
     await expect(page).toHaveURL(/\/create\/generate/);
-    await expect(page.locator('text=Quick Create Mode')).toBeVisible();
   });
 
-  test('Quick Create mode is default selected', async ({ page }) => {
+  test('Generate page shows campaign selector', async ({ page }) => {
     await page.goto(`${BASE_URL}/create/generate`);
 
-    // Check Quick Create badge is visible
-    await expect(page.locator('text=Quick Create Mode')).toBeVisible();
-
-    // Campaign selector should show Quick Create as default
-    await expect(page.locator('text=Quick Create (no campaign)')).toBeVisible();
+    // Should show campaign selection UI
+    await expect(page.locator('text=Select Campaign')).toBeVisible();
   });
 
-  test('Quick Create generates without campaign selection modal', async ({ page }) => {
+  test('Can select campaign and proceed to generate', async ({ page }) => {
     await page.goto(`${BASE_URL}/create/generate`);
 
-    // Fill in prompt
-    await page.fill('textarea', 'Test video with artist performing on stage');
+    // Click the campaign selector
+    await page.click('button:has-text("Select a campaign to start")');
 
-    // Click generate
-    await page.click('button:has-text("Generate Video")');
+    // Check if campaigns are loaded
+    const hasCampaigns = await page.locator('[role="option"]').count() > 0;
 
-    // Should show success modal, not campaign selection
-    await expect(page.locator('text=Video Generation Started!')).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Quick Create in Progress')).toBeVisible();
-  });
-
-  test('Quick Create allows saving to campaign after generation', async ({ page }) => {
-    await page.goto(`${BASE_URL}/create/generate`);
-
-    await page.fill('textarea', 'Test video prompt');
-    await page.click('button:has-text("Generate Video")');
-
-    // Wait for success modal
-    await expect(page.locator('text=Video Generation Started!')).toBeVisible({ timeout: 10000 });
-
-    // Check save options are available
-    await expect(page.locator('text=Save to campaign (optional)')).toBeVisible();
-    await expect(page.locator('text=Add to existing campaign')).toBeVisible();
-    await expect(page.locator('text=Create new campaign')).toBeVisible();
-  });
-
-  test('Quick Create click count is minimal', async ({ page }) => {
-    let clickCount = 0;
-
-    // Count all clicks
-    page.on('click', () => clickCount++);
-
-    await page.goto(`${BASE_URL}/home`);
-
-    // Click 1: AI Generate card
-    await page.click('text=AI Generate');
-
-    // Enter prompt (not a click)
-    await page.fill('textarea', 'Test prompt');
-
-    // Click 2: Generate button
-    await page.click('button:has-text("Generate Video")');
-
-    // Wait for modal
-    await expect(page.locator('text=Video Generation Started!')).toBeVisible({ timeout: 10000 });
-
-    console.log(`Quick Create total clicks: ${clickCount}`);
-
-    // Should be 2 or fewer clicks
-    expect(clickCount).toBeLessThanOrEqual(3);
+    if (hasCampaigns) {
+      await page.locator('[role="option"]').first().click();
+      await page.click('button:has-text("Start Generating")');
+      // Should navigate to campaign generate page
+      await expect(page).toHaveURL(/\/campaigns\/[^/]+\/generate/);
+    }
   });
 });
 
@@ -342,16 +300,6 @@ test.describe('Error Handling', () => {
 
   test.beforeEach(async ({ page }) => {
     await login(page);
-  });
-
-  test('Empty prompt shows validation error', async ({ page }) => {
-    await page.goto(`${BASE_URL}/create/generate`);
-
-    // Try to generate without prompt
-    const generateButton = page.locator('button:has-text("Generate Video")');
-
-    // Button should be disabled
-    await expect(generateButton).toBeDisabled();
   });
 
   test('Console has no errors on home page', async ({ page }) => {

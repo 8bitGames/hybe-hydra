@@ -48,6 +48,19 @@ async function main() {
   // Create artists (Country Music Artists)
   const artists = await Promise.all([
     prisma.artist.upsert({
+      where: { id: "centellian24" },
+      update: {},
+      create: {
+        id: "centellian24",
+        name: "Centellian24",
+        stageName: "Centellian24",
+        labelId: labels[0].id, // Big Machine Records
+        profileDescription: "Premium skincare brand featuring advanced Centella Asiatica formula. Known for K-beauty innovation and clinical-grade products.",
+        brandGuidelines: "Clean beauty aesthetic. Professional, clinical imagery. Brand tone: Premium, Trustworthy, Innovative.",
+        profileImageUrl: "https://centellian24.com/images/logo.jpg",
+      },
+    }),
+    prisma.artist.upsert({
       where: { id: "carly-pearce" },
       update: {},
       create: {

@@ -63,12 +63,6 @@ const navigationItems: NavItem[] = [
         icon: Wand2,
         description: "Combine images + audio",
       },
-      {
-        name: "Batch Variations",
-        href: "/create/batch",
-        icon: Layers,
-        description: "Generate multiple versions",
-      },
     ],
   },
   {
@@ -80,6 +74,12 @@ const navigationItems: NavItem[] = [
         href: "/campaigns",
         icon: FolderOpen,
         description: "Organize your projects",
+      },
+      {
+        name: "Pipeline",
+        href: "/pipeline",
+        icon: Layers,
+        description: "Batch variations & A/B testing",
       },
       {
         name: "All Videos",

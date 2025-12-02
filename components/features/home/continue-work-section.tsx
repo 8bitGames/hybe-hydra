@@ -97,7 +97,7 @@ export function ContinueWorkSection({ campaigns, loading }: ContinueWorkSectionP
                 New Campaign
               </Button>
               <Button onClick={() => router.push("/create/generate")}>
-                Quick Create
+                Create Video
               </Button>
             </div>
           </div>

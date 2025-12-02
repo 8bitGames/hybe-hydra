@@ -22,6 +22,15 @@ interface MerchandiseReference {
   guidance_scale?: number;
 }
 
+// Primary merchandise info for I2V mode
+interface PrimaryMerchandiseInfo {
+  id: string;
+  name: string;
+  type: string;
+  s3Url: string;
+  context: MerchandiseContext;
+}
+
 // Generate prompt addition based on merchandise type and context
 function generateMerchandisePrompt(
   merchandise: { name: string; type: string; metadata?: unknown },
@@ -41,15 +50,40 @@ function generateMerchandisePrompt(
   return contextPrompts[context] || `with ${merchandiseName}`;
 }
 
+// Generate I2V-optimized prompt for animating the reference product image
+function generateI2VPromptWithMerchandise(
+  basePrompt: string,
+  merchandise: { name: string; type: string },
+  context: MerchandiseContext
+): string {
+  // I2V mode: The reference image IS the product, so describe HOW to animate it
+  const merchandiseName = merchandise.name;
+
+  const animationInstructions: Record<MerchandiseContext, string> = {
+    HOLDING: `Starting from the reference image of ${merchandiseName}: A person's hands gently pick up and hold the product, fingers naturally wrapping around it, slight movement as they examine it, product remains clearly visible and in focus throughout.`,
+    WEARING: `Starting from the reference image of ${merchandiseName}: The clothing/accessory is being worn, subtle natural movement as the person adjusts or shows off the item, fabric/material moves naturally with body motion.`,
+    SHOWING: `Starting from the reference image of ${merchandiseName}: Smooth camera push-in towards the product, slight rotation to showcase different angles, the product remains the hero element, cinematic reveal with subtle lighting shifts.`,
+    BACKGROUND: `Starting from the reference image of ${merchandiseName}: The product remains visible in the background as the main scene unfolds in the foreground, subtle depth of field shifts bring attention to it periodically.`,
+  };
+
+  const animation = animationInstructions[context] || `Starting from the reference image of ${merchandiseName}: ${basePrompt}`;
+
+  // Combine base prompt concept with animation instructions
+  return `${animation} Scene context: ${basePrompt}. Maintain visual consistency with the reference product image throughout the video. Smooth, professional motion, product clearly recognizable.`;
+}
+
 // Async video generation handler with merchandise references
 function startMerchandiseVideoGeneration(
   generationId: string,
+  campaignId: string,
   params: {
     prompt: string;
+    i2vPrompt: string;  // I2V-optimized prompt for animation
     negativePrompt?: string;
     durationSeconds: number;
     aspectRatio: string;
     style?: string;
+    primaryMerchandiseUrl?: string;  // Primary merchandise image for I2V
     merchandiseUrls?: string[];
   }
 ) {
@@ -63,15 +97,24 @@ function startMerchandiseVideoGeneration(
         },
       });
 
-      // Build Veo params with merchandise reference images
+      // Determine which prompt to use based on whether we have a reference image
+      const useI2VMode = !!params.primaryMerchandiseUrl;
+      const finalPrompt = useI2VMode ? params.i2vPrompt : params.prompt;
+
+      console.log(`[Merchandise Gen ${generationId}] Mode: ${useI2VMode ? "I2V with product image" : "T2V text only"}`);
+      if (useI2VMode) {
+        console.log(`[Merchandise Gen ${generationId}] Reference image: ${params.primaryMerchandiseUrl}`);
+      }
+
+      // Build Veo params with merchandise reference image for I2V
       const veoParams: VeoGenerationParams = {
-        prompt: params.prompt,
+        prompt: finalPrompt,
         negativePrompt: params.negativePrompt,
         durationSeconds: params.durationSeconds,
         aspectRatio: params.aspectRatio as "16:9" | "9:16" | "1:1",
         style: params.style,
-        // Note: Reference images would be passed here when Veo supports it
-        // referenceImages: params.merchandiseUrls,
+        // Pass primary merchandise image as reference for I2V mode
+        referenceImageUrl: params.primaryMerchandiseUrl,
       };
 
       await prisma.videoGeneration.update({
@@ -79,7 +122,7 @@ function startMerchandiseVideoGeneration(
         data: { progress: 50 },
       });
 
-      const result = await generateVideo(veoParams);
+      const result = await generateVideo(veoParams, campaignId);
 
       if (result.success && result.videoUrl) {
         const existingGen = await prisma.videoGeneration.findUnique({
@@ -261,6 +304,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const merchandisePromptParts: string[] = [];
     const merchandiseUrls: string[] = [];
 
+    // Track primary merchandise for I2V (first item with highest guidance_scale)
+    let primaryMerch: PrimaryMerchandiseInfo | null = null;
+    let highestGuidanceScale = 0;
+
     for (const ref of merchandise_references as MerchandiseReference[]) {
       const merchandise = merchandiseMap.get(ref.merchandise_id);
       if (merchandise) {
@@ -271,21 +318,56 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         );
         merchandisePromptParts.push(promptPart);
         merchandiseUrls.push(merchandise.s3Url);
+
+        // Track the primary merchandise (highest guidance scale or first item)
+        const guidanceScale = ref.guidance_scale || 0.7;
+        if (!primaryMerch || guidanceScale > highestGuidanceScale) {
+          primaryMerch = {
+            id: merchandise.id,
+            name: merchandise.name,
+            type: merchandise.type,
+            s3Url: merchandise.s3Url,
+            context,
+          };
+          highestGuidanceScale = guidanceScale;
+        }
       }
     }
 
     const merchandisePrompt = merchandisePromptParts.join(", ");
     const batchId = uuidv4();
 
+    // Generate I2V-optimized prompt if we have a primary merchandise image
+    const i2vPrompt = primaryMerch
+      ? generateI2VPromptWithMerchandise(
+          base_prompt,
+          { name: primaryMerch.name, type: primaryMerch.type },
+          primaryMerch.context
+        )
+      : "";
+
+    const primaryImageUrl = primaryMerch?.s3Url;
+    const primaryMerchandiseId = primaryMerch?.id;
+
+    console.log(`[Merchandise Gen] Primary product: ${primaryMerch?.name || "none"}`);
+    console.log(`[Merchandise Gen] Primary image URL: ${primaryImageUrl || "none"}`);
+    console.log(`[Merchandise Gen] I2V Mode: ${primaryImageUrl ? "enabled" : "disabled"}`);
+
     // Create generations for each style preset
     const generationPromises = presets.map(async (preset) => {
       const presetParams = preset.parameters as StylePresetParams;
       const promptModifier = presetParams?.promptModifier || "";
 
-      // Build final prompt: base + merchandise + style
+      // Build final prompt: base + merchandise + style (for T2V fallback)
       let finalPrompt = `${base_prompt}, ${merchandisePrompt}`;
       if (promptModifier) {
         finalPrompt += `. Style: ${promptModifier}`;
+      }
+
+      // Build I2V prompt with style modifier
+      let finalI2VPrompt = i2vPrompt;
+      if (promptModifier && finalI2VPrompt) {
+        finalI2VPrompt += ` Style: ${promptModifier}`;
       }
 
       const finalAspectRatio = presetParams?.aspectRatio || aspect_ratio;
@@ -311,6 +393,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             styleParameters: presetParams,
             merchandiseReferenced: true,
             merchandiseIds,
+            i2vMode: !!primaryImageUrl,
+            primaryMerchandiseId: primaryMerchandiseId,
+            i2vPrompt: finalI2VPrompt || undefined,
           },
         },
       });
@@ -331,19 +416,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         });
       }
 
-      return { generation, preset };
+      return { generation, preset, finalI2VPrompt };
     });
 
     const results = await Promise.all(generationPromises);
 
     // Start async video generation for all items
-    results.forEach(({ generation, preset }) => {
-      startMerchandiseVideoGeneration(generation.id, {
+    results.forEach(({ generation, preset, finalI2VPrompt }) => {
+      startMerchandiseVideoGeneration(generation.id, campaignId, {
         prompt: generation.prompt,
+        i2vPrompt: finalI2VPrompt || generation.prompt,
         negativePrompt: generation.negativePrompt || undefined,
         durationSeconds: generation.durationSeconds,
         aspectRatio: generation.aspectRatio,
         style: preset.name !== "Default" ? preset.name : undefined,
+        primaryMerchandiseUrl: primaryImageUrl || undefined,
         merchandiseUrls,
       });
     });

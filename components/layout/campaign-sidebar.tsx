@@ -397,6 +397,21 @@ export function CampaignSidebar({ className }: CampaignSidebarProps) {
               </Link>
 
               <Link
+                href="/pipeline"
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+                  "hover:bg-accent/50 text-muted-foreground hover:text-foreground",
+                  pathname === "/pipeline" && "bg-accent text-foreground"
+                )}
+              >
+                <Layers className="h-4 w-4" />
+                <span className="text-sm">Pipeline</span>
+                <Badge variant="secondary" className="ml-auto text-[10px]">
+                  A/B
+                </Badge>
+              </Link>
+
+              <Link
                 href="/trends"
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",

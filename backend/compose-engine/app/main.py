@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
 
 
 # Import routers after dependencies are set up to avoid circular imports
-from .routers import render, images, audio, jobs
+from .routers import render, images, audio, jobs, auto_compose
 
 
 app = FastAPI(
@@ -56,6 +56,7 @@ app.include_router(render.router, prefix="/render", tags=["render"])
 app.include_router(images.router, prefix="/images", tags=["images"])
 app.include_router(audio.router, prefix="/audio", tags=["audio"])
 app.include_router(jobs.router, prefix="/job", tags=["jobs"])
+app.include_router(auto_compose.router, prefix="/api/v1/compose", tags=["auto-compose"])
 
 
 @app.get("/")

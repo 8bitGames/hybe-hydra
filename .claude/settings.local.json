@@ -129,7 +129,11 @@
       "Bash(cmd /c:*)",
       "Bash(DATABASE_URL=\"postgresql://postgres.nlwufeafadrnesurynom:MkVvrXtT_Q8Uz4@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" npx prisma db push)",
       "Bash(vercel:*)",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJmZjM5ZTAxOS05ZjBmLTQ5MmItOTM2ZC0wZTJlMzE3ZDQ2ZTIiLCJlbWFpbCI6ImFkbWluQGh5ZHJhLmNvbSIsInJvbGUiOiJBRE1JTiIsImlhdCI6MTc2NDU4MTMyNywiZXhwIjoxNzY0NTg4NTI3fQ.usD-cALc2Y-ygdsMyYC29dzT2nv0M6ukEerPdjNmwGw\":*)"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJmZjM5ZTAxOS05ZjBmLTQ5MmItOTM2ZC0wZTJlMzE3ZDQ2ZTIiLCJlbWFpbCI6ImFkbWluQGh5ZHJhLmNvbSIsInJvbGUiOiJBRE1JTiIsImlhdCI6MTc2NDU4MTMyNywiZXhwIjoxNzY0NTg4NTI3fQ.usD-cALc2Y-ygdsMyYC29dzT2nv0M6ukEerPdjNmwGw\":*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJmZjM5ZTAxOS05ZjBmLTQ5MmItOTM2ZC0wZTJlMzE3ZDQ2ZTIiLCJlbWFpbCI6ImFkbWluQGh5ZHJhLmNvbSIsInJvbGUiOiJBRE1JTiIsImlhdCI6MTc2NDYxMTYzOCwiZXhwIjoxNzY0NjE4ODM4fQ.iLB4vDtmX1wNiuMKjTNXI1ps_3KJmp895ksgaRZNie0\")",
+      "Bash(LABEL_ID=\"b76d927e-f8ca-4b3d-81ba-01bbab476283\")",
+      "Bash(__NEW_LINE__ curl -s -X GET \"https://hydra-sand-theta.vercel.app/api/v1/publishing/oauth/tiktok?label_id=$LABEL_ID&redirect_url=https://hydra-sand-theta.vercel.app/settings/accounts\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJmZjM5ZTAxOS05ZjBmLTQ5MmItOTM2ZC0wZTJlMzE3ZDQ2ZTIiLCJlbWFpbCI6ImFkbWluQGh5ZHJhLmNvbSIsInJvbGUiOiJBRE1JTiIsImlhdCI6MTc2NDYxMTYzOCwiZXhwIjoxNzY0NjE4ODM4fQ.iLB4vDtmX1wNiuMKjTNXI1ps_3KJmp895ksgaRZNie0\" curl -s \"https://hydra-sand-theta.vercel.app/api/v1/campaigns/campaign-carly-hummingbird-tour/generations?page_size=5\" -H \"Authorization: Bearer $TOKEN\")"
     ],
     "deny": [],
     "ask": []

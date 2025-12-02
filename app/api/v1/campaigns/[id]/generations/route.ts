@@ -28,6 +28,8 @@ async function startVideoGeneration(
     // New I2V parameters
     enableI2V?: boolean;  // Enable AI image generation first
     imageDescription?: string;  // How the image should be used in video
+    // Pre-generated preview image (from two-step workflow)
+    previewImageBase64?: string;  // Skip image generation if provided
   }
 ) {
   // Don't await - let it run in background
@@ -63,80 +65,117 @@ async function startVideoGeneration(
       let geminiVideoPrompt: string | undefined;  // Will hold VEO-optimized prompt with animation instructions
 
       if (params.enableI2V && params.imageDescription) {
-        console.log(`[Generation ${generationId}] I2V mode enabled - Starting Gemini prompt generation...`);
-
-        // Step 2a: Use Gemini to generate optimized image prompt
-        console.log(`[Generation ${generationId}] Step 2a: Generating image prompt with Gemini...`);
-        const imagePromptResult = await generateImagePromptForI2V({
-          videoPrompt: params.prompt,
-          imageDescription: params.imageDescription,
-          style: params.style,
-          aspectRatio: params.aspectRatio,
-        });
-
-        if (!imagePromptResult.success || !imagePromptResult.imagePrompt) {
-          console.warn(`[Generation ${generationId}] Gemini image prompt failed: ${imagePromptResult.error}`);
-          console.log(`[Generation ${generationId}] Falling back to T2V mode...`);
-        } else {
-          const geminiImagePrompt = imagePromptResult.imagePrompt;
-          console.log(`[Generation ${generationId}] Gemini image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
+        // Check if we have a pre-generated preview image (two-step workflow)
+        if (params.previewImageBase64) {
+          console.log(`[Generation ${generationId}] I2V mode with pre-generated preview image - skipping image generation`);
+          generatedImageBase64 = params.previewImageBase64;
 
           await prisma.videoGeneration.update({
             where: { id: generationId },
-            data: { progress: 15 },
+            data: { progress: 25 },
           });
 
-          // Step 2b: Generate image with Imagen using Gemini's prompt
-          console.log(`[Generation ${generationId}] Step 2b: Generating image with Imagen...`);
-          let imageResult;
-          try {
-            imageResult = await generateImage({
-              prompt: geminiImagePrompt,
-              negativePrompt: params.negativePrompt,
-              aspectRatio: convertAspectRatioForImagen(params.aspectRatio || "16:9"),
+          // Still generate video prompt with animation instructions
+          console.log(`[Generation ${generationId}] Generating video prompt with animation instructions...`);
+          const videoPromptResult = await generateVideoPromptForI2V(
+            {
+              videoPrompt: params.prompt,
+              imageDescription: params.imageDescription,
               style: params.style,
-            });
-          } catch (imagenError) {
-            console.error(`[Generation ${generationId}] Imagen threw exception:`, imagenError);
-            imageResult = { success: false, error: imagenError instanceof Error ? imagenError.message : "Unknown error" };
+              aspectRatio: params.aspectRatio,
+            },
+            params.imageDescription  // Use image description as context
+          );
+
+          if (videoPromptResult.success && videoPromptResult.videoPrompt) {
+            geminiVideoPrompt = videoPromptResult.videoPrompt;
+            console.log(`[Generation ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
+          } else {
+            console.warn(`[Generation ${generationId}] Gemini video prompt failed: ${videoPromptResult.error}`);
+            console.log(`[Generation ${generationId}] Using original prompt for video generation...`);
           }
 
-          if (imageResult.success && imageResult.imageBase64) {
-            generatedImageBase64 = imageResult.imageBase64;
-            console.log(`[Generation ${generationId}] Image generated successfully!`);
+          await prisma.videoGeneration.update({
+            where: { id: generationId },
+            data: { progress: 30 },
+          });
+        } else {
+          // No preview image - generate new image with Gemini + Imagen
+          console.log(`[Generation ${generationId}] I2V mode enabled - Starting Gemini prompt generation...`);
+
+          // Step 2a: Use Gemini to generate optimized image prompt
+          console.log(`[Generation ${generationId}] Step 2a: Generating image prompt with Gemini...`);
+          const imagePromptResult = await generateImagePromptForI2V({
+            videoPrompt: params.prompt,
+            imageDescription: params.imageDescription,
+            style: params.style,
+            aspectRatio: params.aspectRatio,
+          });
+
+          if (!imagePromptResult.success || !imagePromptResult.imagePrompt) {
+            console.warn(`[Generation ${generationId}] Gemini image prompt failed: ${imagePromptResult.error}`);
+            console.log(`[Generation ${generationId}] Falling back to T2V mode...`);
+          } else {
+            const geminiImagePrompt = imagePromptResult.imagePrompt;
+            console.log(`[Generation ${generationId}] Gemini image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
 
             await prisma.videoGeneration.update({
               where: { id: generationId },
-              data: { progress: 25 },
+              data: { progress: 15 },
             });
 
-            // Step 2c: Use Gemini to generate video prompt WITH animation instructions
-            console.log(`[Generation ${generationId}] Step 2c: Generating video prompt with animation instructions...`);
-            const videoPromptResult = await generateVideoPromptForI2V(
-              {
-                videoPrompt: params.prompt,
-                imageDescription: params.imageDescription,
+            // Step 2b: Generate image with Imagen using Gemini's prompt
+            console.log(`[Generation ${generationId}] Step 2b: Generating image with Imagen...`);
+            let imageResult;
+            try {
+              imageResult = await generateImage({
+                prompt: geminiImagePrompt,
+                negativePrompt: params.negativePrompt,
+                aspectRatio: convertAspectRatioForImagen(params.aspectRatio || "16:9"),
                 style: params.style,
-                aspectRatio: params.aspectRatio,
-              },
-              geminiImagePrompt  // Pass the image prompt as context
-            );
-
-            if (videoPromptResult.success && videoPromptResult.videoPrompt) {
-              geminiVideoPrompt = videoPromptResult.videoPrompt;
-              console.log(`[Generation ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
-            } else {
-              console.warn(`[Generation ${generationId}] Gemini video prompt failed: ${videoPromptResult.error}`);
-              console.log(`[Generation ${generationId}] Using original prompt for video generation...`);
+              });
+            } catch (imagenError) {
+              console.error(`[Generation ${generationId}] Imagen threw exception:`, imagenError);
+              imageResult = { success: false, error: imagenError instanceof Error ? imagenError.message : "Unknown error" };
             }
 
-            await prisma.videoGeneration.update({
-              where: { id: generationId },
-              data: { progress: 30 },
-            });
-          } else {
-            console.warn(`[Generation ${generationId}] Image generation failed: ${imageResult.error}`);
-            console.log(`[Generation ${generationId}] Falling back to T2V mode...`);
+            if (imageResult.success && imageResult.imageBase64) {
+              generatedImageBase64 = imageResult.imageBase64;
+              console.log(`[Generation ${generationId}] Image generated successfully!`);
+
+              await prisma.videoGeneration.update({
+                where: { id: generationId },
+                data: { progress: 25 },
+              });
+
+              // Step 2c: Use Gemini to generate video prompt WITH animation instructions
+              console.log(`[Generation ${generationId}] Step 2c: Generating video prompt with animation instructions...`);
+              const videoPromptResult = await generateVideoPromptForI2V(
+                {
+                  videoPrompt: params.prompt,
+                  imageDescription: params.imageDescription,
+                  style: params.style,
+                  aspectRatio: params.aspectRatio,
+                },
+                geminiImagePrompt  // Pass the image prompt as context
+              );
+
+              if (videoPromptResult.success && videoPromptResult.videoPrompt) {
+                geminiVideoPrompt = videoPromptResult.videoPrompt;
+                console.log(`[Generation ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
+              } else {
+                console.warn(`[Generation ${generationId}] Gemini video prompt failed: ${videoPromptResult.error}`);
+                console.log(`[Generation ${generationId}] Using original prompt for video generation...`);
+              }
+
+              await prisma.videoGeneration.update({
+                where: { id: generationId },
+                data: { progress: 30 },
+              });
+            } else {
+              console.warn(`[Generation ${generationId}] Image generation failed: ${imageResult.error}`);
+              console.log(`[Generation ${generationId}] Falling back to T2V mode...`);
+            }
           }
         }
       }
@@ -440,6 +479,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // I2V parameters - generate image first, then video
       enable_i2v,  // boolean: enable AI image generation first
       image_description,  // string: how the image should look/be used
+      // Preview image (pre-generated from two-step workflow)
+      preview_image_base64,  // string: base64 encoded image to skip regeneration
+      preview_image_url,  // string: URL of pre-generated image
       // Bridge context fields
       original_input,
       trend_keywords,
@@ -551,6 +593,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // I2V parameters
       enableI2V: enable_i2v,
       imageDescription: image_description,
+      // Pre-generated preview image (skip image generation step)
+      previewImageBase64: preview_image_base64,
     });
 
     return NextResponse.json(

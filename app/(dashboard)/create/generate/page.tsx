@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/auth-store";
 import { api } from "@/lib/api";
 import { Campaign } from "@/lib/campaigns-api";
-import { trackQuickCreate } from "@/lib/analytics";
 import {
   Card,
   CardContent,
@@ -16,7 +15,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -37,42 +35,51 @@ import {
 import {
   Bot,
   Sparkles,
-  Zap,
+  Music,
   FolderOpen,
   Plus,
-  Download,
-  Save,
   ArrowRight,
   Lightbulb,
   Wand2,
+  Play,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const stylePresets = [
-  { id: "cinematic", name: "Cinematic", description: "Movie-like quality" },
-  { id: "energetic", name: "Energetic", description: "Fast-paced, dynamic" },
-  { id: "emotional", name: "Emotional", description: "Soft, heartfelt" },
-  { id: "minimal", name: "Minimal", description: "Clean, simple" },
-  { id: "retro", name: "Retro", description: "Vintage aesthetic" },
-  { id: "futuristic", name: "Futuristic", description: "Sci-fi inspired" },
+const generateSteps = [
+  {
+    step: 1,
+    title: "Prompt",
+    description: "Describe your video with AI optimization",
+    icon: Sparkles,
+  },
+  {
+    step: 2,
+    title: "Audio",
+    description: "Select music to sync with your video",
+    icon: Music,
+  },
+  {
+    step: 3,
+    title: "Style",
+    description: "Choose visual presets and effects",
+    icon: Wand2,
+  },
+  {
+    step: 4,
+    title: "Generate",
+    description: "AI creates your video with Veo",
+    icon: Play,
+  },
 ];
 
-export default function QuickGeneratePage() {
+export default function AIGeneratePage() {
   const router = useRouter();
   const { accessToken, isAuthenticated } = useAuthStore();
 
-  const [prompt, setPrompt] = useState("");
-  const [selectedStyle, setSelectedStyle] = useState("cinematic");
-  const [selectedCampaign, setSelectedCampaign] = useState<string>("quick-create");
+  const [selectedCampaign, setSelectedCampaign] = useState<string>("");
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(false);
   const [campaignsLoading, setCampaignsLoading] = useState(true);
-  const [generatedVideo, setGeneratedVideo] = useState<{
-    id: string;
-    url: string;
-    prompt: string;
-  } | null>(null);
-  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showCampaignModal, setShowCampaignModal] = useState(false);
   const [newCampaignName, setNewCampaignName] = useState("");
   const [saveMode, setSaveMode] = useState<"new" | "existing">("existing");
 
@@ -103,96 +110,24 @@ export default function QuickGeneratePage() {
     loadCampaigns();
   }, [loadCampaigns]);
 
-  const handleGenerate = async () => {
-    if (!prompt.trim()) return;
-
-    trackQuickCreate.generateClick();
-    setLoading(true);
-    try {
-      // If a real campaign is selected (not quick-create), redirect to campaign generation
-      if (selectedCampaign && selectedCampaign !== "quick-create") {
-        router.push(`/campaigns/${selectedCampaign}/generate?prompt=${encodeURIComponent(prompt)}&style=${selectedStyle}`);
-        return;
-      }
-
-      // Quick create mode - generate without campaign using Quick Create API
-      const response = await api.post<{ id: string; status: string }>("/api/v1/quick-create", {
-        prompt: prompt.trim(),
-        reference_style: selectedStyle,
-        aspect_ratio: "9:16",
-        duration_seconds: 5,
-      });
-
-      if (response.data?.id) {
-        trackQuickCreate.success(response.data.id);
-        // Redirect to a result page or show success
-        setGeneratedVideo({
-          id: response.data.id,
-          url: "",  // Will be populated when generation completes
-          prompt: prompt,
-        });
-        setShowSaveModal(true);
-      }
-      setLoading(false);
-    } catch (err) {
-      console.error("Failed to generate:", err);
-      trackQuickCreate.abandon('generation_error');
-      setLoading(false);
-    }
-  };
-
-  const handleSaveToCampaign = async () => {
-    if (saveMode === "new" && !newCampaignName.trim()) return;
-    if (saveMode === "existing" && (!selectedCampaign || selectedCampaign === "quick-create")) return;
-
-    // If we have a generated video, save it to campaign
-    if (generatedVideo?.id) {
-      try {
-        if (saveMode === "new") {
-          trackQuickCreate.saveToCampaign('new');
-          // Create new campaign first, then save
-          router.push(`/campaigns/new?name=${encodeURIComponent(newCampaignName)}&quickCreateId=${generatedVideo.id}`);
-        } else {
-          trackQuickCreate.saveToCampaign('existing', selectedCampaign);
-          // Save to existing campaign
-          await api.post(`/api/v1/quick-create/${generatedVideo.id}/save-to-campaign`, {
-            campaign_id: selectedCampaign,
-          });
-          router.push(`/campaigns/${selectedCampaign}/curation`);
-        }
-      } catch (err) {
-        console.error("Failed to save to campaign:", err);
-      }
+  const handleStartGenerate = () => {
+    if (selectedCampaign) {
+      router.push(`/campaigns/${selectedCampaign}/generate`);
     } else {
-      // No generated video yet, redirect to campaign generate page
-      if (saveMode === "new") {
-        router.push(`/campaigns/new?name=${encodeURIComponent(newCampaignName)}&redirect=generate&prompt=${encodeURIComponent(prompt)}&style=${selectedStyle}`);
-      } else {
-        router.push(`/campaigns/${selectedCampaign}/generate?prompt=${encodeURIComponent(prompt)}&style=${selectedStyle}`);
-      }
+      setShowCampaignModal(true);
     }
   };
 
-  const handleViewResult = () => {
-    if (generatedVideo?.id) {
-      trackQuickCreate.viewVideos();
-      router.push(`/videos?highlight=${generatedVideo.id}`);
+  const handleSelectCampaign = () => {
+    if (saveMode === "new" && !newCampaignName.trim()) return;
+    if (saveMode === "existing" && !selectedCampaign) return;
+
+    if (saveMode === "new") {
+      router.push(`/campaigns/new?name=${encodeURIComponent(newCampaignName)}&redirect=generate`);
+    } else {
+      router.push(`/campaigns/${selectedCampaign}/generate`);
     }
   };
-
-  const handleCreateAnother = () => {
-    trackQuickCreate.createAnother();
-    setShowSaveModal(false);
-    setGeneratedVideo(null);
-    setPrompt("");
-  };
-
-  const promptSuggestions = [
-    "Carly Pearce performing emotional country ballad on stage with soft spotlight",
-    "Dynamic concert footage with crowd cheering and confetti falling",
-    "Cinematic artist portrait with dramatic lighting and slow motion",
-    "Music video style with artistic transitions and color grading",
-  ];
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
@@ -210,112 +145,74 @@ export default function QuickGeneratePage() {
         </p>
       </div>
 
-      {/* Quick Create Badge */}
-      <div className="flex items-center gap-2">
-        <Badge variant="secondary" className="gap-1">
-          <Zap className="h-3 w-3" />
-          Quick Create Mode
-        </Badge>
-        <span className="text-sm text-muted-foreground">
-          Generate without selecting a campaign first
-        </span>
-      </div>
+      {/* How It Works */}
+      <Card>
+        <CardHeader>
+          <CardTitle>How AI Generation Works</CardTitle>
+          <CardDescription>
+            Create AI-powered videos in 4 simple steps
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {generateSteps.map((step, idx) => (
+              <div key={step.step} className="relative">
+                <div className="flex flex-col items-center text-center p-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                    <step.icon className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="font-medium">{step.title}</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {step.description}
+                  </p>
+                </div>
+                {idx < generateSteps.length - 1 && (
+                  <div className="hidden md:block absolute top-1/2 right-0 transform translate-x-1/2 -translate-y-1/2">
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Main Form */}
+      {/* Campaign Selection */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5" />
-            Describe Your Video
+            <FolderOpen className="h-5 w-5" />
+            Select Campaign
           </CardTitle>
           <CardDescription>
-            Write a detailed description of the video you want to create
+            Choose a campaign to access your assets and generate videos
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Prompt Input */}
+        <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="prompt">Video Description</Label>
-            <Textarea
-              id="prompt"
-              placeholder="Describe your video in detail... e.g., Carly Pearce performing an emotional country ballad on stage with soft lighting and intimate atmosphere"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              className="min-h-[120px] resize-none"
-            />
-            <p className="text-xs text-muted-foreground">
-              Tip: Be specific about the mood, lighting, camera angles, and atmosphere
-            </p>
-          </div>
-
-          {/* Prompt Suggestions */}
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <Lightbulb className="h-4 w-4" />
-              Suggestions
-            </Label>
-            <div className="flex flex-wrap gap-2">
-              {promptSuggestions.map((suggestion, idx) => (
-                <Button
-                  key={idx}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs h-auto py-1.5 px-3"
-                  onClick={() => setPrompt(suggestion)}
-                >
-                  {suggestion.length > 50 ? suggestion.slice(0, 50) + "..." : suggestion}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          {/* Style Selection */}
-          <div className="space-y-2">
-            <Label>Visual Style</Label>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-              {stylePresets.map((style) => (
-                <button
-                  key={style.id}
-                  onClick={() => setSelectedStyle(style.id)}
-                  className={cn(
-                    "p-3 rounded-lg border text-center transition-all",
-                    selectedStyle === style.id
-                      ? "border-primary bg-primary/5 ring-1 ring-primary"
-                      : "hover:border-muted-foreground/50"
-                  )}
-                >
-                  <div className="font-medium text-sm">{style.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {style.description}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Campaign Selection (Optional) */}
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <FolderOpen className="h-4 w-4" />
-              Campaign (Optional)
-            </Label>
+            <Label>Campaign</Label>
             <Select
               value={selectedCampaign}
               onValueChange={setSelectedCampaign}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Quick Create (no campaign)" />
+                <SelectValue placeholder="Select a campaign to start..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="quick-create">
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-4 w-4" />
-                    Quick Create (no campaign)
-                  </div>
-                </SelectItem>
                 {campaignsLoading ? (
                   <div className="flex items-center justify-center py-4">
                     <Spinner className="h-4 w-4" />
+                  </div>
+                ) : campaigns.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    No campaigns yet.
+                    <Button
+                      variant="link"
+                      className="p-0 h-auto"
+                      onClick={() => router.push("/campaigns/new")}
+                    >
+                      Create one
+                    </Button>
                   </div>
                 ) : (
                   campaigns.map((campaign) => (
@@ -333,35 +230,24 @@ export default function QuickGeneratePage() {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Select a campaign to organize your video, or use Quick Create to test first
+              Your campaign&apos;s audio and image assets will be available for generation
             </p>
           </div>
 
-          {/* Generate Button */}
           <div className="flex gap-3 pt-4">
             <Button
               size="lg"
               className="flex-1"
-              onClick={handleGenerate}
-              disabled={!prompt.trim() || loading}
+              onClick={handleStartGenerate}
             >
-              {loading ? (
-                <>
-                  <Spinner className="h-4 w-4 mr-2" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Wand2 className="h-4 w-4 mr-2" />
-                  Generate Video
-                </>
-              )}
+              <Bot className="h-4 w-4 mr-2" />
+              {selectedCampaign ? "Start Generating" : "Select Campaign to Continue"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Info Card */}
+      {/* Why AI Generate */}
       <Card className="bg-muted/30">
         <CardContent className="pt-6">
           <div className="flex items-start gap-4">
@@ -369,57 +255,30 @@ export default function QuickGeneratePage() {
               <Lightbulb className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h3 className="font-medium mb-1">Quick Create vs Campaign</h3>
-              <p className="text-sm text-muted-foreground">
-                <strong>Quick Create:</strong> Test ideas instantly without setup. You can save the result to a campaign later.
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                <strong>Campaign:</strong> Organize multiple videos, manage assets, and track publishing.
-              </p>
+              <h3 className="font-medium mb-1">When to use AI Generate</h3>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• You want AI to create unique video content from text</li>
+                <li>• You need high-quality visuals synced to music</li>
+                <li>• You want to generate multiple style variations</li>
+                <li>• You want to leverage trending content and viral styles</li>
+              </ul>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Quick Create Result / Save to Campaign Modal */}
-      <Dialog open={showSaveModal} onOpenChange={setShowSaveModal}>
-        <DialogContent className="sm:max-w-md">
+      {/* Campaign Selection Modal */}
+      <Dialog open={showCampaignModal} onOpenChange={setShowCampaignModal}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {generatedVideo?.id ? (
-                <>
-                  <Sparkles className="h-5 w-5 text-green-500" />
-                  Video Generation Started!
-                </>
-              ) : (
-                "Select a Campaign"
-              )}
-            </DialogTitle>
+            <DialogTitle>Select a Campaign</DialogTitle>
             <DialogDescription>
-              {generatedVideo?.id
-                ? "Your video is being generated. You can save it to a campaign or view it later in All Videos."
-                : "To generate a video, please select a campaign or create a new one"}
+              AI Generation requires a campaign for audio assets and organization
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            {generatedVideo?.id && (
-              <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-                <div className="flex items-center gap-2 text-green-600 dark:text-green-400 mb-2">
-                  <Zap className="h-4 w-4" />
-                  <span className="font-medium">Quick Create in Progress</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Generation ID: {generatedVideo.id.slice(0, 8)}...
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Prompt: {generatedVideo.prompt.slice(0, 50)}...
-                </p>
-              </div>
-            )}
-
             <div className="space-y-3">
-              <p className="text-sm font-medium">Save to campaign (optional):</p>
               <div
                 className={cn(
                   "p-4 rounded-lg border cursor-pointer transition-colors",
@@ -431,7 +290,7 @@ export default function QuickGeneratePage() {
               >
                 <div className="flex items-center gap-2 mb-2">
                   <FolderOpen className="h-4 w-4" />
-                  <span className="font-medium">Add to existing campaign</span>
+                  <span className="font-medium">Use existing campaign</span>
                 </div>
                 {saveMode === "existing" && (
                   <Select
@@ -477,24 +336,19 @@ export default function QuickGeneratePage() {
             </div>
           </div>
 
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            {generatedVideo?.id && (
-              <Button variant="outline" onClick={handleViewResult} className="w-full sm:w-auto">
-                View in All Videos
-              </Button>
-            )}
-            <Button variant="outline" onClick={generatedVideo?.id ? handleCreateAnother : () => setShowSaveModal(false)}>
-              {generatedVideo?.id ? "Create Another" : "Cancel"}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCampaignModal(false)}>
+              Cancel
             </Button>
             <Button
-              onClick={handleSaveToCampaign}
+              onClick={handleSelectCampaign}
               disabled={
                 (saveMode === "new" && !newCampaignName.trim()) ||
-                (saveMode === "existing" && (!selectedCampaign || selectedCampaign === "quick-create"))
+                (saveMode === "existing" && !selectedCampaign)
               }
             >
-              <Save className="h-4 w-4 mr-2" />
-              Save to Campaign
+              Continue
+              <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { campaignsApi, assetsApi, Campaign, Asset } from "@/lib/campaigns-api";
 import { loadBridgePrompt, clearBridgePrompt } from "@/lib/bridge-storage";
@@ -12,6 +12,7 @@ import {
   batchApi,
   scoringApi,
   variationsApi,
+  previewImageApi,
   VideoGeneration,
   VideoGenerationStats,
   VideoGenerationStatus,
@@ -19,6 +20,7 @@ import {
   StylePreset,
   ScoringResult,
   VariationConfigRequest,
+  PreviewImageResponse,
 } from "@/lib/video-api";
 import {
   trendsApi,
@@ -698,6 +700,7 @@ function ReferenceSourceSection({
 export default function VideoGeneratePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t } = useI18n();
   const campaignId = params.id as string;
 
@@ -754,6 +757,24 @@ export default function VideoGeneratePage() {
   const [variationModalOpen, setVariationModalOpen] = useState(false);
   const [selectedSeedGeneration, setSelectedSeedGeneration] = useState<VideoGeneration | null>(null);
   const [creatingVariations, setCreatingVariations] = useState(false);
+
+  // Preview image state (for I2V two-step workflow)
+  const [previewImage, setPreviewImage] = useState<PreviewImageResponse | null>(null);
+  const [generatingPreview, setGeneratingPreview] = useState(false);
+
+  // Load prompt from URL query params (from Quick Create redirect)
+  useEffect(() => {
+    const urlPrompt = searchParams.get("prompt");
+    const urlStyle = searchParams.get("style");
+
+    if (urlPrompt) {
+      setPrompt(decodeURIComponent(urlPrompt));
+    }
+    // Style is informational - we don't have a direct style field, but could match to presets
+    if (urlStyle) {
+      console.log("Style from Quick Create:", urlStyle);
+    }
+  }, [searchParams]);
 
   // Load prompt from Bridge on mount
   useEffect(() => {
@@ -896,6 +917,53 @@ export default function VideoGeneratePage() {
     return prompt.trim();
   };
 
+  // Generate preview image for I2V workflow
+  const handleGeneratePreview = async () => {
+    if (!prompt.trim()) {
+      setError("Please enter a prompt");
+      return;
+    }
+
+    if (!imageReference?.description) {
+      setError(t.generation.imageUsageRequired);
+      return;
+    }
+
+    setError("");
+    setGeneratingPreview(true);
+    setPreviewImage(null);
+
+    try {
+      const promptToUse = getPromptToUse();
+
+      const result = await previewImageApi.generate(campaignId, {
+        video_prompt: promptToUse,
+        image_description: imageReference.description,
+        aspect_ratio: aspectRatio,
+        negative_prompt: negativePrompt.trim() || undefined,
+        product_image_url: imageReference.assetUrl,  // Pass the actual product image for reference
+      });
+
+      if (result.error) {
+        setError(result.error.message);
+        return;
+      }
+
+      if (result.data) {
+        setPreviewImage(result.data);
+      }
+    } catch (err) {
+      setError("Failed to generate preview image");
+    } finally {
+      setGeneratingPreview(false);
+    }
+  };
+
+  // Clear preview and regenerate
+  const handleClearPreview = () => {
+    setPreviewImage(null);
+  };
+
   // Toggle preset selection
   const togglePreset = (presetId: string) => {
     setSelectedPresetIds((prev) =>
@@ -925,8 +993,8 @@ export default function VideoGeneratePage() {
       return;
     }
 
-    // Validate image description if image is selected
-    if (imageReference) {
+    // Validate image description if image is selected (without preview)
+    if (imageReference && !previewImage) {
       const validation = validateImageDescription(imageReference.description);
       if (!validation.valid) {
         setError(validation.message || t.generation.imageUsageRequired);
@@ -943,6 +1011,8 @@ export default function VideoGeneratePage() {
 
       // Determine if we're using I2V mode (AI-generated image first)
       const useI2VMode = imageReference && imageReference.description;
+      // Check if we have a preview image to use directly
+      const hasPreviewImage = previewImage && previewImage.image_base64;
 
       const result = await videoApi.create(campaignId, {
         prompt: promptToUse,
@@ -954,8 +1024,12 @@ export default function VideoGeneratePage() {
         // Backend will generate the image based on the description
         reference_image_id: useI2VMode ? undefined : (referenceImageId || undefined),
         // I2V parameters - enable AI image generation first
+        // If we have a preview image, pass it directly to skip regeneration
         enable_i2v: useI2VMode ? true : undefined,
         image_description: useI2VMode ? imageReference.description : undefined,
+        // Pass preview image data if available (skip image generation step)
+        preview_image_base64: hasPreviewImage ? previewImage.image_base64 : undefined,
+        preview_image_url: hasPreviewImage ? previewImage.image_url : undefined,
         // Include Bridge context if available
         original_input: bridgeContext?.originalInput || prompt.trim(),
         trend_keywords: bridgeContext?.trendKeywords || [],
@@ -973,7 +1047,10 @@ export default function VideoGeneratePage() {
 
       if (result.data) {
         setGenerations((prev) => [result.data!, ...prev]);
-        // Keep form data for convenience - user can generate more variants
+        // Clear preview image after successful generation
+        if (hasPreviewImage) {
+          setPreviewImage(null);
+        }
         // Reload stats
         const statsResult = await videoApi.getStats(campaignId);
         if (statsResult.data) setStats(statsResult.data);
@@ -1715,9 +1792,83 @@ export default function VideoGeneratePage() {
                 <ImageReferenceSection
                   images={images}
                   imageReference={imageReference}
-                  onImageReferenceChange={setImageReference}
+                  onImageReferenceChange={(ref) => {
+                    setImageReference(ref);
+                    setPreviewImage(null); // Clear preview when image reference changes
+                  }}
                   campaignId={campaignId}
                 />
+
+                {/* Preview Image Section - Two-step workflow */}
+                {imageReference && imageReference.description && (
+                  <div className="mt-4 pt-4 border-t border-purple-500/20">
+                    {!previewImage ? (
+                      // Step 1: Generate Preview Button
+                      <Button
+                        type="button"
+                        onClick={handleGeneratePreview}
+                        disabled={generatingPreview || !prompt.trim()}
+                        variant="outline"
+                        className="w-full border-purple-500/50 text-purple-600 hover:bg-purple-500/10"
+                      >
+                        {generatingPreview ? (
+                          <>
+                            <Spinner className="w-4 h-4 mr-2" />
+                            이미지 생성 중...
+                          </>
+                        ) : (
+                          <>
+                            <ImageIcon className="w-4 h-4 mr-2" />
+                            이미지 미리 생성
+                          </>
+                        )}
+                      </Button>
+                    ) : (
+                      // Step 2: Show Preview and Actions
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-green-600 flex items-center gap-2">
+                            <Check className="w-4 h-4" />
+                            이미지 생성 완료
+                          </span>
+                          <Button
+                            type="button"
+                            onClick={handleClearPreview}
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="w-4 h-4 mr-1" />
+                            다시 생성
+                          </Button>
+                        </div>
+
+                        {/* Preview Image Display */}
+                        <div className="relative rounded-lg overflow-hidden border border-border bg-muted">
+                          <img
+                            src={previewImage.image_url}
+                            alt="Generated preview"
+                            className="w-full h-auto max-h-64 object-contain"
+                          />
+                        </div>
+
+                        {/* Gemini Prompt Preview */}
+                        <details className="text-xs">
+                          <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
+                            AI가 생성한 이미지 프롬프트 보기
+                          </summary>
+                          <p className="mt-2 p-2 bg-muted rounded text-muted-foreground break-words">
+                            {previewImage.gemini_image_prompt}
+                          </p>
+                        </details>
+
+                        <p className="text-xs text-muted-foreground">
+                          이 이미지가 마음에 드시면 아래 버튼으로 영상을 생성하세요.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Reference Source (Images + Merchandise) - Legacy */}
@@ -1797,10 +1948,19 @@ export default function VideoGeneratePage() {
                     ) : (
                       <>
                         {imageReference ? (
-                          <>
-                            <ImageIcon className="w-5 h-5 mr-2" />
-                            {t.generation.imageGuideGeneration} (I2V)
-                          </>
+                          previewImage ? (
+                            // Has preview image - generate video with it
+                            <>
+                              <Play className="w-5 h-5 mr-2" />
+                              이 이미지로 영상 생성
+                            </>
+                          ) : (
+                            // No preview - standard I2V mode
+                            <>
+                              <ImageIcon className="w-5 h-5 mr-2" />
+                              {t.generation.imageGuideGeneration} (I2V)
+                            </>
+                          )
                         ) : (
                           <>
                             <Play className="w-5 h-5 mr-2" />

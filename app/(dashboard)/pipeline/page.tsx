@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { campaignsApi, Campaign } from "@/lib/campaigns-api";
 import { pipelineApi, PipelineItem } from "@/lib/pipeline-api";
-import { presetsApi, StylePreset, variationsApi, VariationConfigRequest, videoApi, VideoGeneration } from "@/lib/video-api";
+import { presetsApi, StylePreset, variationsApi, VariationConfigRequest, videoApi, VideoGeneration, composeVariationsApi } from "@/lib/video-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -275,16 +275,27 @@ export default function GlobalPipelinePage() {
   const handleAutoCreateVariations = async (video: VideoGeneration) => {
     setCreatingAutoPipeline(true);
     try {
-      // Auto-select presets optimized for compose videos (slideshow content)
-      // Uses "mood" and "motion" categories which work well with slideshow videos
-      const autoConfig: VariationConfigRequest = {
-        style_categories: ["mood", "motion"], // Best for slideshow content
-        enable_prompt_variation: false, // Keep original prompt for compose
-        prompt_variation_types: [],
-        max_variations: 4, // Reasonable default
-      };
+      // Check if this is a Compose video (ID starts with "compose-")
+      const isComposeVideo = video.id.startsWith("compose-");
 
-      await variationsApi.create(video.id, autoConfig);
+      if (isComposeVideo) {
+        // For Compose videos: Re-search images with 2-3 tags and create new slideshow
+        // This uses the compose-engine to search different images and render new videos
+        await composeVariationsApi.create(video.id, {
+          variation_count: 4,
+          tag_count: 2, // Use 2-3 tags extracted from original prompt
+        });
+      } else {
+        // For AI videos: Use style presets to create variations via VEO
+        const autoConfig: VariationConfigRequest = {
+          style_categories: ["mood", "motion"], // Best for slideshow content
+          enable_prompt_variation: false, // Keep original prompt for compose
+          prompt_variation_types: [],
+          max_variations: 4, // Reasonable default
+        };
+        await variationsApi.create(video.id, autoConfig);
+      }
+
       setActiveTab("pipelines");
       fetchPipelines(); // Refresh to show new pipeline
     } catch (error) {
@@ -312,14 +323,26 @@ export default function GlobalPipelinePage() {
 
     setCreatingVariations(true);
     try {
-      const requestConfig: VariationConfigRequest = {
-        style_categories: config.styleCategories,
-        enable_prompt_variation: config.enablePromptVariation,
-        prompt_variation_types: config.promptVariationTypes,
-        max_variations: config.maxVariations,
-      };
+      // Check if this is a Compose video
+      const isComposeVideo = selectedSeedGeneration.id.startsWith("compose-");
 
-      await variationsApi.create(selectedSeedGeneration.id, requestConfig);
+      if (isComposeVideo) {
+        // For Compose videos: Re-search images with tags and create new slideshow
+        await composeVariationsApi.create(selectedSeedGeneration.id, {
+          variation_count: config.maxVariations || 4,
+          tag_count: 2, // Use 2-3 tags extracted from original prompt
+        });
+      } else {
+        // For AI videos: Use style presets to create variations via VEO
+        const requestConfig: VariationConfigRequest = {
+          style_categories: config.styleCategories,
+          enable_prompt_variation: config.enablePromptVariation,
+          prompt_variation_types: config.promptVariationTypes,
+          max_variations: config.maxVariations,
+        };
+        await variationsApi.create(selectedSeedGeneration.id, requestConfig);
+      }
+
       setVariationModalOpen(false);
       setActiveTab("pipelines");
       fetchPipelines(); // Refresh to show new pipeline
