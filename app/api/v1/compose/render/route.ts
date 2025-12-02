@@ -27,6 +27,25 @@ interface RenderRequest {
   textStyle?: string;
   colorGrade?: string;
   prompt?: string;
+  // Additional compose data for variations
+  searchKeywords?: string[];
+  tiktokSEO?: {
+    description?: string;
+    hashtags?: {
+      category?: string;
+      niche?: string;
+      descriptive?: string[];
+      trending?: string;
+    };
+    keywords?: {
+      primary?: string;
+      secondary?: string[];
+      longTail?: string[];
+    };
+    textOverlayKeywords?: string[];
+    searchIntent?: string;
+    suggestedPostingTimes?: string[];
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -51,7 +70,9 @@ export async function POST(request: NextRequest) {
       vibe,
       textStyle = 'bold_pop',
       colorGrade = 'vibrant',
-      prompt = 'Compose video generation'
+      prompt = 'Compose video generation',
+      searchKeywords = [],
+      tiktokSEO,
     } = body;
 
     // Get audio asset URL
@@ -67,7 +88,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create or update VideoGeneration record
+    // Build composeData to store all compose settings for variations
+    const composeData = {
+      script: script?.lines || [],
+      searchKeywords,
+      vibe,
+      effectPreset,
+      textStyle,
+      colorGrade,
+      aspectRatio,
+      originalPrompt: prompt,
+      tiktokSEO,
+      imageCount: images.length,
+    };
+
+    // Create or update VideoGeneration record with composeData
     await prisma.videoGeneration.upsert({
       where: { id: generationId },
       create: {
@@ -80,10 +115,16 @@ export async function POST(request: NextRequest) {
         status: 'PROCESSING',
         progress: 0,
         createdBy: user.id,
+        qualityMetadata: {
+          composeData,
+        },
       },
       update: {
         status: 'PROCESSING',
         progress: 0,
+        qualityMetadata: {
+          composeData,
+        },
       }
     });
 
