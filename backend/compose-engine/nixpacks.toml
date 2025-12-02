@@ -1,6 +1,6 @@
 # Nixpacks configuration for Railway deployment
 [phases.setup]
-nixPkgs = ["python311", "ffmpeg", "libGL", "glib"]
+nixPkgs = ["python311", "ffmpeg", "libGL", "glib", "libsndfile", "mpg123"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
