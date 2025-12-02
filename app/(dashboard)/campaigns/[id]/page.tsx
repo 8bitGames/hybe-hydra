@@ -49,6 +49,7 @@ import {
   Check,
   Package,
 } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 type AssetFilter = "all" | "image" | "video" | "audio" | "goods";
 type MerchandiseType = "album" | "photocard" | "lightstick" | "apparel" | "accessory" | "other";
@@ -65,6 +66,7 @@ const MERCHANDISE_TYPES: { value: MerchandiseType; label: string; labelKo: strin
 export default function CampaignDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { t } = useI18n();
   const campaignId = params.id as string;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -289,23 +291,6 @@ export default function CampaignDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header - Step 1: Assets */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <Badge variant="outline" className="font-normal">Step 1</Badge>
-            <span>Upload & manage source materials</span>
-          </div>
-          <h1 className="text-2xl font-bold">Asset Locker</h1>
-        </div>
-        <Link href={`/campaigns/${campaignId}/generate`}>
-          <Button>
-            Next: Generate Videos
-            <ChevronRight className="h-4 w-4 ml-2" />
-          </Button>
-        </Link>
-      </div>
-
       {/* Campaign Info Card */}
       <Card>
         <CardContent className="pt-6">

@@ -27,6 +27,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Star, Plus, Grid3X3, List, Music, Trash2, X, Play, Download, MessageSquare, Zap, Copy, Check, ChevronLeft, ChevronRight, Volume2, VolumeX, Loader2 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import { useI18n } from "@/lib/i18n";
 
 type SortOption = "score" | "date" | "status";
 type ViewMode = "mosaic" | "list";
@@ -34,7 +35,77 @@ type ViewMode = "mosaic" | "list";
 export default function CurationDashboardPage() {
   const params = useParams();
   const router = useRouter();
+  const { language } = useI18n();
   const campaignId = params.id as string;
+
+  // Translations
+  const t = {
+    total: language === "ko" ? "전체" : "Total",
+    pending: language === "ko" ? "대기중" : "Pending",
+    processing: language === "ko" ? "처리중" : "Processing",
+    completed: language === "ko" ? "완료됨" : "Completed",
+    failed: language === "ko" ? "실패" : "Failed",
+    sortByScore: language === "ko" ? "점수순" : "Sort by Score",
+    sortByDate: language === "ko" ? "날짜순" : "Sort by Date",
+    compareMode: language === "ko" ? "비교 모드" : "Compare Mode",
+    selected: language === "ko" ? "선택됨" : "selected",
+    noGenerations: language === "ko" ? "생성된 영상이 없습니다" : "No generations yet",
+    startGenerating: language === "ko" ? "영상을 생성해보세요" : "Start generating videos to see them here",
+    generateVideos: language === "ko" ? "영상 생성" : "Generate Videos",
+    abComparison: language === "ko" ? "A/B 비교" : "A/B Comparison",
+    clearSelection: language === "ko" ? "선택 해제" : "Clear Selection",
+    noVideoAvailable: language === "ko" ? "영상 없음" : "No video available",
+    generationDetails: language === "ko" ? "생성 상세" : "Generation Details",
+    qualityScore: language === "ko" ? "품질 점수" : "Quality Score",
+    scoreBreakdown: language === "ko" ? "점수 분석" : "Score Breakdown",
+    promptQuality: language === "ko" ? "프롬프트 품질" : "Prompt Quality",
+    technicalSettings: language === "ko" ? "기술 설정" : "Technical Settings",
+    styleAlignment: language === "ko" ? "스타일 일치도" : "Style Alignment",
+    trendAlignment: language === "ko" ? "트렌드 일치도" : "Trend Alignment",
+    recommendations: language === "ko" ? "추천사항" : "Recommendations",
+    noScoreYet: language === "ko" ? "아직 점수가 계산되지 않았습니다" : "No score calculated yet",
+    calculateScore: language === "ko" ? "점수 계산" : "Calculate Score",
+    aiCaption: language === "ko" ? "AI 캡션" : "AI Caption",
+    generateAiCaption: language === "ko" ? "AI 캡션 생성" : "Generate AI Caption",
+    generatingCaption: language === "ko" ? "캡션 생성 중..." : "Generating Caption...",
+    hookLine: language === "ko" ? "훅 라인" : "Hook Line",
+    callToAction: language === "ko" ? "행동 유도" : "Call to Action",
+    copyAll: language === "ko" ? "모두 복사" : "Copy All",
+    copied: language === "ko" ? "복사됨!" : "Copied!",
+    addMusic: language === "ko" ? "음악 추가" : "Add Music",
+    composed: language === "ko" ? "조합됨" : "Composed",
+    currentAudioTrack: language === "ko" ? "현재 오디오 트랙" : "Current Audio Track",
+    selectAudioTrack: language === "ko" ? "오디오 트랙 선택" : "Select Audio Track",
+    chooseAudioFile: language === "ko" ? "오디오 파일 선택..." : "Choose audio file...",
+    noAudioFiles: language === "ko" ? "업로드된 오디오 파일이 없습니다" : "No audio files uploaded",
+    uploadAudio: language === "ko" ? "오디오 업로드" : "Upload Audio",
+    musicVolume: language === "ko" ? "음악 볼륨" : "Music Volume",
+    audioStartTime: language === "ko" ? "오디오 시작 시간" : "Audio Start Time",
+    fadeIn: language === "ko" ? "페이드 인" : "Fade In",
+    fadeOut: language === "ko" ? "페이드 아웃" : "Fade Out",
+    mixWithOriginalAudio: language === "ko" ? "원본 오디오와 믹스" : "Mix with Original Audio",
+    originalAudioVolume: language === "ko" ? "원본 오디오 볼륨" : "Original Audio Volume",
+    composingVideo: language === "ko" ? "영상 조합 중..." : "Composing Video...",
+    replaceAudio: language === "ko" ? "오디오 교체" : "Replace Audio",
+    addAudioToVideo: language === "ko" ? "영상에 오디오 추가" : "Add Audio to Video",
+    videoMustBeGenerated: language === "ko" ? "음악을 추가하려면 먼저 영상을 생성해야 합니다" : "Video must be generated first before adding music",
+    details: language === "ko" ? "상세" : "Details",
+    duration: language === "ko" ? "길이" : "Duration",
+    aspectRatio: language === "ko" ? "화면비" : "Aspect Ratio",
+    status: language === "ko" ? "상태" : "Status",
+    created: language === "ko" ? "생성일" : "Created",
+    delete: language === "ko" ? "삭제" : "Delete",
+    download: language === "ko" ? "다운로드" : "Download",
+    close: language === "ko" ? "닫기" : "Close",
+    imageAudioCompose: language === "ko" ? "이미지+오디오 조합" : "Image+Audio Compose",
+    aiGenerated: language === "ko" ? "AI 생성" : "AI Generated",
+    negative: language === "ko" ? "네거티브" : "Negative",
+    noScore: language === "ko" ? "점수 없음" : "No score",
+    on: language === "ko" ? "켜짐" : "On",
+    off: language === "ko" ? "꺼짐" : "Off",
+    volume: language === "ko" ? "볼륨" : "Volume",
+    start: language === "ko" ? "시작" : "Start",
+  };
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [generations, setGenerations] = useState<VideoGeneration[]>([]);
@@ -345,76 +416,16 @@ export default function CurationDashboardPage() {
   if (!campaign) return null;
 
   return (
-    <>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-        <Link href="/campaigns" className="hover:text-foreground transition-colors">
-          Campaigns
-        </Link>
-        <span>/</span>
-        <Link
-          href={`/campaigns/${campaignId}`}
-          className="hover:text-foreground transition-colors"
-        >
-          {campaign.name}
-        </Link>
-        <span>/</span>
-        <span className="text-foreground">Curation</span>
-      </div>
-
-      {/* Header - Step 3 */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <Badge variant="outline" className="font-normal">Step 3</Badge>
-            <span>Review, score, and select videos</span>
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">Curate Videos</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" asChild>
-            <Link href={`/campaigns/${campaignId}/generate`}>
-              <ChevronLeft className="w-4 h-4 mr-2" />
-              Generate
-            </Link>
-          </Button>
-          {generations.some((g) => g.status === "completed" && !g.quality_score) && (
-            <Button
-              onClick={handleScoreAll}
-              disabled={scoringAll}
-              variant="secondary"
-            >
-              {scoringAll ? (
-                <>
-                  <Spinner className="h-4 w-4 mr-2" />
-                  Scoring...
-                </>
-              ) : (
-                <>
-                  <Star className="w-4 h-4 mr-2" />
-                  Score All
-                </>
-              )}
-            </Button>
-          )}
-          <Button asChild>
-            <Link href={`/campaigns/${campaignId}/publish`}>
-              Next: Publish
-              <ChevronRight className="w-4 h-4 ml-2" />
-            </Link>
-          </Button>
-        </div>
-      </div>
-
+    <div className="space-y-6">
       {/* Stats Bar */}
       {stats && (
         <div className="grid grid-cols-5 gap-4 mb-6">
           {[
-            { label: "Total", value: stats.total, key: "all" },
-            { label: "Pending", value: stats.pending, key: "pending" },
-            { label: "Processing", value: stats.processing, key: "processing" },
-            { label: "Completed", value: stats.completed, key: "completed" },
-            { label: "Failed", value: stats.failed, key: "failed" },
+            { label: t.total, value: stats.total, key: "all" },
+            { label: t.pending, value: stats.pending, key: "pending" },
+            { label: t.processing, value: stats.processing, key: "processing" },
+            { label: t.completed, value: stats.completed, key: "completed" },
+            { label: t.failed, value: stats.failed, key: "failed" },
           ].map((stat) => (
             <button
               key={stat.label}
@@ -459,8 +470,8 @@ export default function CurationDashboardPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="score">Sort by Score</SelectItem>
-              <SelectItem value="date">Sort by Date</SelectItem>
+              <SelectItem value="score">{t.sortByScore}</SelectItem>
+              <SelectItem value="date">{t.sortByDate}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -469,7 +480,7 @@ export default function CurationDashboardPage() {
         <div className="flex items-center gap-3">
           {selectedIds.length > 0 && (
             <span className="text-sm text-muted-foreground">
-              {selectedIds.length}/2 selected
+              {selectedIds.length}/2 {t.selected}
             </span>
           )}
           <Button
@@ -480,7 +491,7 @@ export default function CurationDashboardPage() {
             }}
           >
             <Music className="w-4 h-4 mr-2" />
-            Compare Mode
+            {t.compareMode}
           </Button>
         </div>
       </div>
@@ -491,10 +502,10 @@ export default function CurationDashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Music className="w-5 h-5 text-primary" />
-              A/B Comparison
+              {t.abComparison}
             </CardTitle>
             <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])}>
-              Clear Selection
+              {t.clearSelection}
             </Button>
           </CardHeader>
           <CardContent>
@@ -523,7 +534,7 @@ export default function CurationDashboardPage() {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                        No video available
+                        {t.noVideoAvailable}
                       </div>
                     )}
                     {getVideoSourceType(gen) === "compose" && (
@@ -546,11 +557,11 @@ export default function CurationDashboardPage() {
           <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <Play className="w-10 h-10 text-primary" />
           </div>
-          <h3 className="text-xl font-medium text-foreground mb-2">No generations yet</h3>
-          <p className="text-muted-foreground mb-6">Start generating videos to see them here</p>
+          <h3 className="text-xl font-medium text-foreground mb-2">{t.noGenerations}</h3>
+          <p className="text-muted-foreground mb-6">{t.startGenerating}</p>
           <Button asChild>
             <Link href={`/campaigns/${campaignId}/generate`}>
-              Generate Videos
+              {t.generateVideos}
             </Link>
           </Button>
         </Card>
@@ -710,7 +721,7 @@ export default function CurationDashboardPage() {
                           </span>
                         </>
                       ) : (
-                        <span className="text-muted-foreground text-sm">No score</span>
+                        <span className="text-muted-foreground text-sm">{t.noScore}</span>
                       )}
                     </div>
                   </div>
@@ -727,7 +738,7 @@ export default function CurationDashboardPage() {
           <Card className="max-w-4xl w-full max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
             <CardHeader className="flex flex-row items-center justify-between border-b">
-              <CardTitle>Generation Details</CardTitle>
+              <CardTitle>{t.generationDetails}</CardTitle>
               <Button
                 variant="ghost"
                 size="icon"
@@ -766,13 +777,13 @@ export default function CurationDashboardPage() {
                       <p className="text-foreground flex-1">{selectedGeneration.prompt}</p>
                       {getVideoSourceType(selectedGeneration) !== "none" && (
                         <Badge variant="outline" className="text-xs">
-                          {getVideoSourceType(selectedGeneration) === "compose" ? "이미지+오디오 조합" : "AI 생성"}
+                          {getVideoSourceType(selectedGeneration) === "compose" ? t.imageAudioCompose : t.aiGenerated}
                         </Badge>
                       )}
                     </div>
                     {selectedGeneration.negative_prompt && (
                       <p className="text-sm text-muted-foreground">
-                        <span className="text-muted-foreground">Negative:</span> {selectedGeneration.negative_prompt}
+                        <span className="text-muted-foreground">{t.negative}:</span> {selectedGeneration.negative_prompt}
                       </p>
                     )}
                   </div>
@@ -785,7 +796,7 @@ export default function CurationDashboardPage() {
                       {/* Score Header */}
                       <div className="bg-muted rounded-xl p-4">
                         <div className="flex items-center justify-between mb-4">
-                          <span className="text-muted-foreground">Quality Score</span>
+                          <span className="text-muted-foreground">{t.qualityScore}</span>
                           <div className="flex items-center gap-3">
                             <span className={`px-3 py-1 rounded-lg text-lg font-bold ${getGradeColor(getGrade(selectedGeneration.quality_score))}`}>
                               {getGrade(selectedGeneration.quality_score)}
@@ -813,12 +824,12 @@ export default function CurationDashboardPage() {
                       {/* Score Breakdown */}
                       {scoreDetails[selectedGeneration.id] && (
                         <div className="bg-muted rounded-xl p-4 space-y-3">
-                          <h4 className="text-foreground font-medium">Score Breakdown</h4>
+                          <h4 className="text-foreground font-medium">{t.scoreBreakdown}</h4>
                           {[
-                            { label: "Prompt Quality", score: scoreDetails[selectedGeneration.id].breakdown.promptQuality.score, weight: 35 },
-                            { label: "Technical Settings", score: scoreDetails[selectedGeneration.id].breakdown.technicalSettings.score, weight: 20 },
-                            { label: "Style Alignment", score: scoreDetails[selectedGeneration.id].breakdown.styleAlignment.score, weight: 30 },
-                            { label: "Trend Alignment", score: scoreDetails[selectedGeneration.id].breakdown.trendAlignment.score, weight: 15 },
+                            { label: t.promptQuality, score: scoreDetails[selectedGeneration.id].breakdown.promptQuality.score, weight: 35 },
+                            { label: t.technicalSettings, score: scoreDetails[selectedGeneration.id].breakdown.technicalSettings.score, weight: 20 },
+                            { label: t.styleAlignment, score: scoreDetails[selectedGeneration.id].breakdown.styleAlignment.score, weight: 30 },
+                            { label: t.trendAlignment, score: scoreDetails[selectedGeneration.id].breakdown.trendAlignment.score, weight: 15 },
                           ].map((item) => (
                             <div key={item.label}>
                               <div className="flex items-center justify-between text-sm mb-1">
@@ -836,7 +847,7 @@ export default function CurationDashboardPage() {
                       {/* Recommendations */}
                       {scoreDetails[selectedGeneration.id]?.recommendations?.length > 0 && (
                         <div className="bg-muted rounded-xl p-4">
-                          <h4 className="text-foreground font-medium mb-3">Recommendations</h4>
+                          <h4 className="text-foreground font-medium mb-3">{t.recommendations}</h4>
                           <ul className="space-y-2">
                             {scoreDetails[selectedGeneration.id].recommendations.map((rec, idx) => (
                               <li key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -850,7 +861,7 @@ export default function CurationDashboardPage() {
                     </>
                   ) : (
                     <div className="bg-muted rounded-xl p-6 text-center">
-                      <p className="text-muted-foreground mb-4">No score calculated yet</p>
+                      <p className="text-muted-foreground mb-4">{t.noScoreYet}</p>
                       <Button
                         onClick={async () => {
                           const result = await scoringApi.scoreGeneration(selectedGeneration.id);
@@ -867,7 +878,7 @@ export default function CurationDashboardPage() {
                           }
                         }}
                       >
-                        Calculate Score
+                        {t.calculateScore}
                       </Button>
                     </div>
                   )}
@@ -877,7 +888,7 @@ export default function CurationDashboardPage() {
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="text-foreground font-medium flex items-center gap-2">
                         <MessageSquare className="w-5 h-5 text-primary" />
-                        AI Caption
+                        {t.aiCaption}
                       </h4>
                       {!captionCache[selectedGeneration.id] && (
                         <div className="flex items-center gap-2">
@@ -931,7 +942,7 @@ export default function CurationDashboardPage() {
                               {/* Hook Line */}
                               {platformCaption.hookLine && (
                                 <div className="bg-primary/10 border border-primary/30 rounded-lg p-3">
-                                  <p className="text-primary text-xs mb-1">Hook Line</p>
+                                  <p className="text-primary text-xs mb-1">{t.hookLine}</p>
                                   <p className="text-foreground text-sm">{platformCaption.hookLine}</p>
                                 </div>
                               )}
@@ -974,7 +985,7 @@ export default function CurationDashboardPage() {
                               {/* Call to Action */}
                               {platformCaption.callToAction && (
                                 <div className="bg-secondary/50 border border-secondary rounded-lg p-3">
-                                  <p className="text-secondary-foreground text-xs mb-1">Call to Action</p>
+                                  <p className="text-secondary-foreground text-xs mb-1">{t.callToAction}</p>
                                   <p className="text-foreground text-sm">{platformCaption.callToAction}</p>
                                 </div>
                               )}
@@ -997,12 +1008,12 @@ export default function CurationDashboardPage() {
                                   {copiedCaption === "all" ? (
                                     <>
                                       <Check className="w-3.5 h-3.5 mr-1" />
-                                      Copied!
+                                      {t.copied}
                                     </>
                                   ) : (
                                     <>
                                       <Copy className="w-3.5 h-3.5 mr-1" />
-                                      Copy All
+                                      {t.copyAll}
                                     </>
                                   )}
                                 </Button>
@@ -1020,12 +1031,12 @@ export default function CurationDashboardPage() {
                         {generatingCaption ? (
                           <>
                             <Spinner className="h-4 w-4 mr-2" />
-                            Generating Caption...
+                            {t.generatingCaption}
                           </>
                         ) : (
                           <>
                             <Zap className="w-4 h-4 mr-2" />
-                            Generate AI Caption
+                            {t.generateAiCaption}
                           </>
                         )}
                       </Button>
@@ -1037,12 +1048,12 @@ export default function CurationDashboardPage() {
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="text-foreground font-medium flex items-center gap-2">
                         <Music className="w-5 h-5 text-primary" />
-                        Add Music
+                        {t.addMusic}
                       </h4>
                       {composeInfo[selectedGeneration.id]?.is_composed && (
                         <Badge variant="secondary" className="text-green-600">
                           <Check className="w-3 h-3 mr-1" />
-                          Composed
+                          {t.composed}
                         </Badge>
                       )}
                     </div>
@@ -1050,13 +1061,13 @@ export default function CurationDashboardPage() {
                     {/* Show current composition info if exists */}
                     {composeInfo[selectedGeneration.id]?.is_composed && composeInfo[selectedGeneration.id]?.composition && (
                       <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 mb-4">
-                        <p className="text-green-600 text-xs mb-1">Current Audio Track</p>
+                        <p className="text-green-600 text-xs mb-1">{t.currentAudioTrack}</p>
                         <p className="text-foreground text-sm font-medium">
                           {composeInfo[selectedGeneration.id].composition?.audio_asset_name}
                         </p>
                         <p className="text-muted-foreground text-xs mt-1">
-                          Volume: {((composeInfo[selectedGeneration.id].composition?.audio_volume || 1) * 100).toFixed(0)}% •
-                          Start: {composeInfo[selectedGeneration.id].composition?.audio_start_time || 0}s
+                          {t.volume}: {((composeInfo[selectedGeneration.id].composition?.audio_volume || 1) * 100).toFixed(0)}% •
+                          {t.start}: {composeInfo[selectedGeneration.id].composition?.audio_start_time || 0}s
                         </p>
                       </div>
                     )}
@@ -1066,11 +1077,11 @@ export default function CurationDashboardPage() {
                       <div className="space-y-4">
                         {/* Audio Asset Select */}
                         <div>
-                          <label className="text-sm text-muted-foreground mb-2 block">Select Audio Track</label>
+                          <label className="text-sm text-muted-foreground mb-2 block">{t.selectAudioTrack}</label>
                           {audioAssets.length > 0 ? (
                             <Select value={selectedAudioId} onValueChange={setSelectedAudioId}>
                               <SelectTrigger>
-                                <SelectValue placeholder="Choose audio file..." />
+                                <SelectValue placeholder={t.chooseAudioFile} />
                               </SelectTrigger>
                               <SelectContent>
                                 {audioAssets.map((asset) => (
@@ -1082,11 +1093,11 @@ export default function CurationDashboardPage() {
                             </Select>
                           ) : (
                             <div className="text-center py-4 bg-background rounded-lg">
-                              <p className="text-sm text-muted-foreground mb-2">No audio files uploaded</p>
+                              <p className="text-sm text-muted-foreground mb-2">{t.noAudioFiles}</p>
                               <Button variant="outline" size="sm" asChild>
                                 <Link href={`/campaigns/${campaignId}`}>
                                   <Plus className="w-4 h-4 mr-2" />
-                                  Upload Audio
+                                  {t.uploadAudio}
                                 </Link>
                               </Button>
                             </div>
@@ -1101,7 +1112,7 @@ export default function CurationDashboardPage() {
                               <div className="flex items-center justify-between mb-2">
                                 <label className="text-sm text-muted-foreground flex items-center gap-2">
                                   <Volume2 className="w-4 h-4" />
-                                  Music Volume
+                                  {t.musicVolume}
                                 </label>
                                 <span className="text-sm text-foreground">{(audioVolume * 100).toFixed(0)}%</span>
                               </div>
@@ -1117,7 +1128,7 @@ export default function CurationDashboardPage() {
                             {/* Start Time */}
                             <div>
                               <div className="flex items-center justify-between mb-2">
-                                <label className="text-sm text-muted-foreground">Audio Start Time</label>
+                                <label className="text-sm text-muted-foreground">{t.audioStartTime}</label>
                                 <span className="text-sm text-foreground">{audioStartTime}s</span>
                               </div>
                               <Slider
@@ -1133,7 +1144,7 @@ export default function CurationDashboardPage() {
                             <div className="grid grid-cols-2 gap-4">
                               <div>
                                 <div className="flex items-center justify-between mb-2">
-                                  <label className="text-sm text-muted-foreground">Fade In</label>
+                                  <label className="text-sm text-muted-foreground">{t.fadeIn}</label>
                                   <span className="text-sm text-foreground">{fadeIn}s</span>
                                 </div>
                                 <Slider
@@ -1146,7 +1157,7 @@ export default function CurationDashboardPage() {
                               </div>
                               <div>
                                 <div className="flex items-center justify-between mb-2">
-                                  <label className="text-sm text-muted-foreground">Fade Out</label>
+                                  <label className="text-sm text-muted-foreground">{t.fadeOut}</label>
                                   <span className="text-sm text-foreground">{fadeOut}s</span>
                                 </div>
                                 <Slider
@@ -1163,21 +1174,21 @@ export default function CurationDashboardPage() {
                             <div className="flex items-center justify-between">
                               <label className="text-sm text-muted-foreground flex items-center gap-2">
                                 {mixOriginalAudio ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                                Mix with Original Audio
+                                {t.mixWithOriginalAudio}
                               </label>
                               <Button
                                 variant={mixOriginalAudio ? "default" : "outline"}
                                 size="sm"
                                 onClick={() => setMixOriginalAudio(!mixOriginalAudio)}
                               >
-                                {mixOriginalAudio ? "On" : "Off"}
+                                {mixOriginalAudio ? t.on : t.off}
                               </Button>
                             </div>
 
                             {mixOriginalAudio && (
                               <div>
                                 <div className="flex items-center justify-between mb-2">
-                                  <label className="text-sm text-muted-foreground">Original Audio Volume</label>
+                                  <label className="text-sm text-muted-foreground">{t.originalAudioVolume}</label>
                                   <span className="text-sm text-foreground">{(originalAudioVolume * 100).toFixed(0)}%</span>
                                 </div>
                                 <Slider
@@ -1199,12 +1210,12 @@ export default function CurationDashboardPage() {
                               {composing ? (
                                 <>
                                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                  Composing Video...
+                                  {t.composingVideo}
                                 </>
                               ) : (
                                 <>
                                   <Music className="w-4 h-4 mr-2" />
-                                  {composeInfo[selectedGeneration.id]?.is_composed ? "Replace Audio" : "Add Audio to Video"}
+                                  {composeInfo[selectedGeneration.id]?.is_composed ? t.replaceAudio : t.addAudioToVideo}
                                 </>
                               )}
                             </Button>
@@ -1215,29 +1226,29 @@ export default function CurationDashboardPage() {
 
                     {!getVideoUrl(selectedGeneration) && (
                       <p className="text-sm text-muted-foreground text-center py-4">
-                        Video must be generated first before adding music
+                        {t.videoMustBeGenerated}
                       </p>
                     )}
                   </div>
 
                   {/* Meta Info */}
                   <div className="bg-muted rounded-xl p-4">
-                    <h4 className="text-foreground font-medium mb-3">Details</h4>
+                    <h4 className="text-foreground font-medium mb-3">{t.details}</h4>
                     <dl className="grid grid-cols-2 gap-3 text-sm">
                       <div>
-                        <dt className="text-muted-foreground">Duration</dt>
+                        <dt className="text-muted-foreground">{t.duration}</dt>
                         <dd className="text-foreground">{selectedGeneration.duration_seconds}s</dd>
                       </div>
                       <div>
-                        <dt className="text-muted-foreground">Aspect Ratio</dt>
+                        <dt className="text-muted-foreground">{t.aspectRatio}</dt>
                         <dd className="text-foreground">{selectedGeneration.aspect_ratio}</dd>
                       </div>
                       <div>
-                        <dt className="text-muted-foreground">Status</dt>
+                        <dt className="text-muted-foreground">{t.status}</dt>
                         <dd className="text-foreground capitalize">{selectedGeneration.status}</dd>
                       </div>
                       <div>
-                        <dt className="text-muted-foreground">Created</dt>
+                        <dt className="text-muted-foreground">{t.created}</dt>
                         <dd className="text-foreground">{new Date(selectedGeneration.created_at).toLocaleString()}</dd>
                       </div>
                     </dl>
@@ -1253,7 +1264,7 @@ export default function CurationDashboardPage() {
                 onClick={() => handleDelete(selectedGeneration.id)}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
-                Delete
+                {t.delete}
               </Button>
               <div className="flex items-center gap-3">
                 {getVideoUrl(selectedGeneration) && (
@@ -1264,18 +1275,18 @@ export default function CurationDashboardPage() {
                       rel="noopener noreferrer"
                     >
                       <Download className="w-4 h-4 mr-2" />
-                      Download
+                      {t.download}
                     </a>
                   </Button>
                 )}
                 <Button onClick={() => setSelectedGeneration(null)}>
-                  Close
+                  {t.close}
                 </Button>
               </div>
             </div>
           </Card>
         </div>
       )}
-    </>
+    </div>
   );
 }

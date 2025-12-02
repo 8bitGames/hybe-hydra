@@ -13,12 +13,12 @@ interface I18nContextType {
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
-// Get browser language
+// Get browser language (defaults to Korean)
 function getBrowserLanguage(): Language {
   if (typeof window === "undefined") return "ko";
 
-  const browserLang = navigator.language.split("-")[0];
-  return browserLang === "ko" ? "ko" : "en";
+  // Always default to Korean unless user explicitly changes
+  return "ko";
 }
 
 // Get stored language preference

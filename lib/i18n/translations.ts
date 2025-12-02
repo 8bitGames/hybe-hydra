@@ -171,6 +171,50 @@ export interface Translations {
       failed: string;
       cancelled: string;
     };
+    stats: {
+      total: string;
+      pending: string;
+      processing: string;
+      completed: string;
+      failed: string;
+    };
+    // Trending
+    trendingNow: string;
+    trendingDescription: string;
+    noTrendsFound: string;
+    // Form
+    newGeneration: string;
+    promptRequired: string;
+    promptPlaceholder: string;
+    promptTip: string;
+    optimizing: string;
+    optimizeWithAI: string;
+    promptOptimized: string;
+    viewOptimizedPrompt: string;
+    negativePromptPlaceholder: string;
+    durationAutoCalc: string;
+    stylePresets: string;
+    clearAll: string;
+    selectedCount: string;
+    batchStylesInfo: string;
+    // History
+    generationHistory: string;
+    noGenerationsYet: string;
+    startGeneratingHint: string;
+    scoreAll: string;
+    scoring: string;
+    overall: string;
+    promptQuality: string;
+    technical: string;
+    style: string;
+    trend: string;
+    recommendations: string;
+    viewVideo: string;
+    viewVideoWithAudio: string;
+    viewVideoNoAudio: string;
+    createVariation: string;
+    cancel: string;
+    delete: string;
     score: string;
     grade: string;
     // Audio
@@ -309,6 +353,157 @@ export interface Translations {
     validation: string;
     serverError: string;
     tryAgain: string;
+  };
+  createPage: {
+    title: string;
+    subtitle: string;
+    modes: {
+      quick: {
+        name: string;
+        description: string;
+      };
+      generate: {
+        name: string;
+        description: string;
+      };
+      compose: {
+        name: string;
+        description: string;
+      };
+      batch: {
+        name: string;
+        description: string;
+      };
+    };
+    hints: {
+      quickModeInfo: string;
+      needMoreControl: string;
+    };
+  };
+  campaignWorkspace: {
+    tabs: {
+      assets: string;
+      generate: string;
+      compose: string;
+      videos: string;
+      publish: string;
+      analytics: string;
+    };
+  };
+  workspace: {
+    // Stats
+    generated: string;
+    highQuality: string;
+    published: string;
+    prompts: string;
+    totalViews: string;
+    totalLikes: string;
+    // Tabs
+    timeline: string;
+    promptLibrary: string;
+    references: string;
+    gallery: string;
+    publishing: string;
+    // Timeline
+    workHistory: string;
+    chronologicalView: string;
+    noActivityYet: string;
+    startGenerating: string;
+    videoGeneration: string;
+    // Prompts
+    allPromptsUsed: string;
+    clickToReuse: string;
+    noPromptsYet: string;
+    viewOptimizedPrompt: string;
+    used: string;
+    success: string;
+    avg: string;
+    last: string;
+    copyPrompt: string;
+    reuse: string;
+    // References
+    trendsUsed: string;
+    keywordsApplied: string;
+    noTrendsUsed: string;
+    successful: string;
+    referenceUrls: string;
+    externalLinks: string;
+    noReferenceUrls: string;
+    // Gallery
+    generatedVideos: string;
+    allVideosGenerated: string;
+    searchPrompts: string;
+    allStatus: string;
+    noVideosFound: string;
+    // Publishing
+    publishedContent: string;
+    snsStatus: string;
+    noPublishedContent: string;
+    publishContent: string;
+    // Video Modal
+    videoPreview: string;
+    details: string;
+    duration: string;
+    aspectRatio: string;
+    created: string;
+    status: string;
+    trendsApplied: string;
+    referenceImage: string;
+    merchandise: string;
+    generateSimilar: string;
+    withAudio: string;
+    loading: string;
+    loadError: string;
+    tryAgain: string;
+  };
+  publish: {
+    // Stats
+    total: string;
+    scheduled: string;
+    published: string;
+    drafts: string;
+    failed: string;
+    // View tabs
+    queue: string;
+    list: string;
+    calendar: string;
+    allPlatforms: string;
+    // Connected
+    connected: string;
+    noAccountsConnected: string;
+    // Empty state
+    noScheduledPosts: string;
+    connectAccountsMessage: string;
+    generateVideosFirst: string;
+    scheduleFirstPost: string;
+    contactAdmin: string;
+    generateVideos: string;
+    // Post sections
+    scheduledPosts: string;
+    draftPosts: string;
+    publishedPosts: string;
+    failedPosts: string;
+    // Post card
+    noCaption: string;
+    cancelPost: string;
+    deletePost: string;
+    viewPost: string;
+    inTime: string;
+    error: string;
+    // Schedule modal
+    schedulePost: string;
+    selectVideo: string;
+    publishTo: string;
+    caption: string;
+    scheduleTime: string;
+    leaveEmptyForDraft: string;
+    cancel: string;
+    scheduling: string;
+    saveAsDraft: string;
+    // Calendar view
+    calendarView: string;
+    comingSoon: string;
+    writeCaption: string;
   };
   compose: {
     title: string;
@@ -553,6 +748,50 @@ export const translations: Record<Language, Translations> = {
         failed: "실패",
         cancelled: "취소됨",
       },
+      stats: {
+        total: "전체",
+        pending: "대기중",
+        processing: "처리중",
+        completed: "완료",
+        failed: "실패",
+      },
+      // Trending
+      trendingNow: "실시간 트렌드",
+      trendingDescription: "트렌드를 클릭하여 프롬프트에 적용하세요",
+      noTrendsFound: "이 플랫폼의 트렌드를 찾을 수 없습니다",
+      // Form
+      newGeneration: "새 생성",
+      promptRequired: "프롬프트를 입력해주세요",
+      promptPlaceholder: "생성할 영상을 설명하세요...",
+      promptTip: "한국어 또는 영어로 작성하세요. AI가 최적화합니다.",
+      optimizing: "최적화 중...",
+      optimizeWithAI: "AI로 최적화",
+      promptOptimized: "프롬프트 최적화됨",
+      viewOptimizedPrompt: "최적화된 프롬프트 보기",
+      negativePromptPlaceholder: "영상에서 피할 요소...",
+      durationAutoCalc: "길이는 자동 계산됩니다 (10-30초)",
+      stylePresets: "스타일 프리셋",
+      clearAll: "모두 지우기",
+      selectedCount: "선택됨",
+      batchStylesInfo: "여러 스타일을 선택하여 배치로 변형을 생성하세요",
+      // History
+      generationHistory: "생성 히스토리",
+      noGenerationsYet: "생성된 영상이 없습니다",
+      startGeneratingHint: "왼쪽 폼으로 영상 생성을 시작하세요",
+      scoreAll: "전체 채점",
+      scoring: "채점 중...",
+      overall: "전체 점수",
+      promptQuality: "프롬프트",
+      technical: "기술",
+      style: "스타일",
+      trend: "트렌드",
+      recommendations: "추천사항",
+      viewVideo: "영상 보기",
+      viewVideoWithAudio: "영상 보기 🎵",
+      viewVideoNoAudio: "영상 보기 (음원 없음)",
+      createVariation: "변형 생성",
+      cancel: "취소",
+      delete: "삭제",
       score: "점수",
       grade: "등급",
       audioSelection: "음원 선택",
@@ -683,6 +922,157 @@ export const translations: Record<Language, Translations> = {
       validation: "입력 값을 확인해주세요",
       serverError: "서버 오류가 발생했습니다",
       tryAgain: "다시 시도해주세요",
+    },
+    createPage: {
+      title: "만들기",
+      subtitle: "AI로 영상을 생성하세요",
+      modes: {
+        quick: {
+          name: "빠른 생성",
+          description: "프롬프트만으로 빠르게 영상 생성",
+        },
+        generate: {
+          name: "고급 생성",
+          description: "세부 설정과 참조 이미지로 영상 생성",
+        },
+        compose: {
+          name: "컴포즈",
+          description: "이미지와 음악으로 슬라이드쇼 영상 제작",
+        },
+        batch: {
+          name: "배치",
+          description: "여러 프롬프트로 대량 영상 생성",
+        },
+      },
+      hints: {
+        quickModeInfo: "기본 설정: 9:16 세로, 5-10초 길이, AI 자동 최적화",
+        needMoreControl: "더 세밀한 설정이 필요하신가요?",
+      },
+    },
+    campaignWorkspace: {
+      tabs: {
+        assets: "에셋",
+        generate: "생성",
+        compose: "컴포즈",
+        videos: "영상",
+        publish: "발행",
+        analytics: "분석",
+      },
+    },
+    workspace: {
+      // Stats
+      generated: "생성됨",
+      highQuality: "고품질",
+      published: "발행됨",
+      prompts: "프롬프트",
+      totalViews: "총 조회수",
+      totalLikes: "총 좋아요",
+      // Tabs
+      timeline: "타임라인",
+      promptLibrary: "프롬프트 라이브러리",
+      references: "참조",
+      gallery: "갤러리",
+      publishing: "발행",
+      // Timeline
+      workHistory: "작업 히스토리",
+      chronologicalView: "시간순 활동 보기",
+      noActivityYet: "활동 내역이 없습니다",
+      startGenerating: "생성 시작",
+      videoGeneration: "영상 생성",
+      // Prompts
+      allPromptsUsed: "이 캠페인에서 사용된 모든 프롬프트",
+      clickToReuse: "클릭하여 재사용",
+      noPromptsYet: "프롬프트가 없습니다",
+      viewOptimizedPrompt: "최적화된 프롬프트 보기",
+      used: "사용",
+      success: "성공",
+      avg: "평균",
+      last: "최근",
+      copyPrompt: "프롬프트 복사",
+      reuse: "재사용",
+      // References
+      trendsUsed: "사용된 트렌드",
+      keywordsApplied: "생성에 적용된 키워드와 해시태그",
+      noTrendsUsed: "사용된 트렌드가 없습니다",
+      successful: "성공",
+      referenceUrls: "참조 URL",
+      externalLinks: "참조로 사용된 외부 링크",
+      noReferenceUrls: "참조 URL이 없습니다",
+      // Gallery
+      generatedVideos: "생성된 영상",
+      allVideosGenerated: "이 캠페인에서 생성된 모든 영상",
+      searchPrompts: "프롬프트 검색...",
+      allStatus: "전체 상태",
+      noVideosFound: "영상을 찾을 수 없습니다",
+      // Publishing
+      publishedContent: "발행된 콘텐츠",
+      snsStatus: "SNS 발행 상태 및 성과",
+      noPublishedContent: "발행된 콘텐츠가 없습니다",
+      publishContent: "콘텐츠 발행",
+      // Video Modal
+      videoPreview: "영상 미리보기",
+      details: "상세",
+      duration: "길이",
+      aspectRatio: "비율",
+      created: "생성일",
+      status: "상태",
+      trendsApplied: "적용된 트렌드",
+      referenceImage: "참조 이미지",
+      merchandise: "굿즈",
+      generateSimilar: "유사하게 생성",
+      withAudio: "오디오 포함",
+      loading: "워크스페이스 로딩 중...",
+      loadError: "워크스페이스 로드 실패",
+      tryAgain: "다시 시도",
+    },
+    publish: {
+      // Stats
+      total: "전체",
+      scheduled: "예약됨",
+      published: "발행됨",
+      drafts: "초안",
+      failed: "실패",
+      // View tabs
+      queue: "대기열",
+      list: "목록",
+      calendar: "캘린더",
+      allPlatforms: "전체 플랫폼",
+      // Connected
+      connected: "연결됨",
+      noAccountsConnected: "연결된 계정 없음",
+      // Empty state
+      noScheduledPosts: "예약된 게시물이 없습니다",
+      connectAccountsMessage: "SNS 계정을 연결하여 발행을 시작하세요",
+      generateVideosFirst: "먼저 영상을 생성한 후 발행 예약하세요",
+      scheduleFirstPost: "첫 게시물 예약하기",
+      contactAdmin: "관리자에게 연락하여 SNS 계정을 연결하세요",
+      generateVideos: "영상 생성",
+      // Post sections
+      scheduledPosts: "예약됨",
+      draftPosts: "초안",
+      publishedPosts: "발행됨",
+      failedPosts: "실패",
+      // Post card
+      noCaption: "캡션 없음",
+      cancelPost: "이 예약 게시물을 취소하시겠습니까?",
+      deletePost: "이 게시물을 삭제하시겠습니까?",
+      viewPost: "게시물 보기",
+      inTime: "후",
+      error: "오류",
+      // Schedule modal
+      schedulePost: "게시물 예약",
+      selectVideo: "영상 선택",
+      publishTo: "발행 대상",
+      caption: "캡션",
+      scheduleTime: "예약 시간 (선택)",
+      leaveEmptyForDraft: "비워두면 초안으로 저장됩니다",
+      cancel: "취소",
+      scheduling: "예약 중...",
+      saveAsDraft: "초안으로 저장",
+      // Calendar view
+      calendarView: "캘린더 뷰",
+      comingSoon: "캘린더 뷰가 곧 제공됩니다. 대기열 또는 목록 뷰를 이용하세요.",
+      writeCaption: "캡션을 작성하세요...",
     },
     compose: {
       title: "슬라이드쇼 영상 제작",
@@ -919,6 +1309,50 @@ export const translations: Record<Language, Translations> = {
         failed: "Failed",
         cancelled: "Cancelled",
       },
+      stats: {
+        total: "Total",
+        pending: "Pending",
+        processing: "Processing",
+        completed: "Completed",
+        failed: "Failed",
+      },
+      // Trending
+      trendingNow: "Trending Now",
+      trendingDescription: "Click a trend to use it as your prompt inspiration",
+      noTrendsFound: "No trends found for this platform",
+      // Form
+      newGeneration: "New Generation",
+      promptRequired: "Please enter a prompt",
+      promptPlaceholder: "Describe the video you want to generate...",
+      promptTip: "Tip: Write in Korean or English. The AI will optimize it.",
+      optimizing: "Optimizing...",
+      optimizeWithAI: "Optimize with AI",
+      promptOptimized: "Prompt Optimized",
+      viewOptimizedPrompt: "View optimized prompt",
+      negativePromptPlaceholder: "What to avoid in the video...",
+      durationAutoCalc: "Duration is auto-calculated (10-30s based on vibe)",
+      stylePresets: "Style Presets",
+      clearAll: "Clear all",
+      selectedCount: "selected",
+      batchStylesInfo: "Select multiple styles to generate variations in batch",
+      // History
+      generationHistory: "Generation History",
+      noGenerationsYet: "No generations yet",
+      startGeneratingHint: "Start generating videos with the form on the left",
+      scoreAll: "Score All",
+      scoring: "Scoring...",
+      overall: "Overall Score",
+      promptQuality: "Prompt",
+      technical: "Technical",
+      style: "Style",
+      trend: "Trend",
+      recommendations: "Recommendations",
+      viewVideo: "Watch Video",
+      viewVideoWithAudio: "Watch Video 🎵",
+      viewVideoNoAudio: "Watch Video (No Audio)",
+      createVariation: "Create Variations",
+      cancel: "Cancel",
+      delete: "Delete",
       score: "Score",
       grade: "Grade",
       audioSelection: "Audio Selection",
@@ -1049,6 +1483,157 @@ export const translations: Record<Language, Translations> = {
       validation: "Please check your input",
       serverError: "Server error occurred",
       tryAgain: "Please try again",
+    },
+    createPage: {
+      title: "Create",
+      subtitle: "Generate videos with AI",
+      modes: {
+        quick: {
+          name: "Quick",
+          description: "Generate videos quickly with just a prompt",
+        },
+        generate: {
+          name: "Advanced",
+          description: "Generate videos with detailed settings and reference images",
+        },
+        compose: {
+          name: "Compose",
+          description: "Create slideshow videos with images and music",
+        },
+        batch: {
+          name: "Batch",
+          description: "Generate multiple videos with batch prompts",
+        },
+      },
+      hints: {
+        quickModeInfo: "Defaults: 9:16 vertical, 5-10 seconds, AI auto-optimization",
+        needMoreControl: "Need more control?",
+      },
+    },
+    campaignWorkspace: {
+      tabs: {
+        assets: "Assets",
+        generate: "Generate",
+        compose: "Compose",
+        videos: "Videos",
+        publish: "Publish",
+        analytics: "Analytics",
+      },
+    },
+    workspace: {
+      // Stats
+      generated: "Generated",
+      highQuality: "High Quality",
+      published: "Published",
+      prompts: "Prompts",
+      totalViews: "Total Views",
+      totalLikes: "Total Likes",
+      // Tabs
+      timeline: "Timeline",
+      promptLibrary: "Prompt Library",
+      references: "References",
+      gallery: "Gallery",
+      publishing: "Publishing",
+      // Timeline
+      workHistory: "Work History",
+      chronologicalView: "Chronological view of all activities",
+      noActivityYet: "No activity yet",
+      startGenerating: "Start Generating",
+      videoGeneration: "Video Generation",
+      // Prompts
+      allPromptsUsed: "All prompts used in this campaign",
+      clickToReuse: "Click to reuse",
+      noPromptsYet: "No prompts yet",
+      viewOptimizedPrompt: "View optimized prompt",
+      used: "Used",
+      success: "success",
+      avg: "Avg",
+      last: "Last",
+      copyPrompt: "Copy Prompt",
+      reuse: "Reuse",
+      // References
+      trendsUsed: "Trends Used",
+      keywordsApplied: "Keywords and hashtags applied to generations",
+      noTrendsUsed: "No trends used yet",
+      successful: "successful",
+      referenceUrls: "Reference URLs",
+      externalLinks: "External links used as reference",
+      noReferenceUrls: "No reference URLs yet",
+      // Gallery
+      generatedVideos: "Generated Videos",
+      allVideosGenerated: "All videos generated for this campaign",
+      searchPrompts: "Search prompts...",
+      allStatus: "All Status",
+      noVideosFound: "No videos found",
+      // Publishing
+      publishedContent: "Published Content",
+      snsStatus: "SNS publishing status and performance",
+      noPublishedContent: "No published content yet",
+      publishContent: "Publish Content",
+      // Video Modal
+      videoPreview: "Video Preview",
+      details: "Details",
+      duration: "Duration",
+      aspectRatio: "Aspect Ratio",
+      created: "Created",
+      status: "Status",
+      trendsApplied: "Trends Applied",
+      referenceImage: "Reference Image",
+      merchandise: "Merchandise",
+      generateSimilar: "Generate Similar",
+      withAudio: "With Audio",
+      loading: "Loading workspace...",
+      loadError: "Failed to load workspace",
+      tryAgain: "Try Again",
+    },
+    publish: {
+      // Stats
+      total: "Total",
+      scheduled: "Scheduled",
+      published: "Published",
+      drafts: "Drafts",
+      failed: "Failed",
+      // View tabs
+      queue: "Queue",
+      list: "List",
+      calendar: "Calendar",
+      allPlatforms: "All Platforms",
+      // Connected
+      connected: "Connected",
+      noAccountsConnected: "No accounts connected",
+      // Empty state
+      noScheduledPosts: "No scheduled posts yet",
+      connectAccountsMessage: "Connect your social media accounts to start publishing",
+      generateVideosFirst: "Generate some videos first, then schedule them for publishing",
+      scheduleFirstPost: "Schedule Your First Post",
+      contactAdmin: "Contact your administrator to connect social media accounts",
+      generateVideos: "Generate Videos",
+      // Post sections
+      scheduledPosts: "Scheduled",
+      draftPosts: "Drafts",
+      publishedPosts: "Published",
+      failedPosts: "Failed",
+      // Post card
+      noCaption: "No caption",
+      cancelPost: "Cancel this scheduled post?",
+      deletePost: "Delete this scheduled post?",
+      viewPost: "View Post",
+      inTime: "in",
+      error: "Error",
+      // Schedule modal
+      schedulePost: "Schedule Post",
+      selectVideo: "Select Video",
+      publishTo: "Publish To",
+      caption: "Caption",
+      scheduleTime: "Schedule Time (Optional)",
+      leaveEmptyForDraft: "Leave empty to save as draft",
+      cancel: "Cancel",
+      scheduling: "Scheduling...",
+      saveAsDraft: "Save as Draft",
+      // Calendar view
+      calendarView: "Calendar View",
+      comingSoon: "Calendar view coming soon. Use Queue or List view for now.",
+      writeCaption: "Write your caption...",
     },
     compose: {
       title: "Slideshow Video Creator",

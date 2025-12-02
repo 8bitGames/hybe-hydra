@@ -39,9 +39,11 @@ import {
   X,
   ExternalLink,
 } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 export default function ComposeGalleryPage() {
   const router = useRouter();
+  const { language } = useI18n();
   const [videos, setVideos] = useState<ComposedVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -52,6 +54,35 @@ export default function ComposeGalleryPage() {
   // Video preview modal
   const [selectedVideo, setSelectedVideo] = useState<ComposedVideo | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  // Translations
+  const t = {
+    title: language === "ko" ? "슬라이드쇼 영상" : "Composed Videos",
+    subtitle: language === "ko" ? "Compose로 만든 슬라이드쇼 영상을 확인하고 다운로드하세요" : "View and download your slideshow videos created with Compose",
+    createNew: language === "ko" ? "새로 만들기" : "Create New",
+    totalVideos: language === "ko" ? "전체 영상" : "Total Videos",
+    readyToPlay: language === "ko" ? "재생 가능" : "Ready to Play",
+    totalDuration: language === "ko" ? "총 재생시간" : "Total Duration",
+    searchPlaceholder: language === "ko" ? "캠페인, 아티스트, 프롬프트로 검색..." : "Search by campaign, artist, or prompt...",
+    noVideos: language === "ko" ? "영상을 찾을 수 없습니다" : "No videos found",
+    tryDifferent: language === "ko" ? "다른 검색어로 시도해보세요" : "Try a different search term",
+    createFirst: language === "ko" ? "Compose로 첫 번째 슬라이드쇼 영상을 만들어보세요" : "Create your first slideshow video with Compose",
+    createVideo: language === "ko" ? "영상 만들기" : "Create Video",
+    page: language === "ko" ? "페이지" : "Page",
+    of: language === "ko" ? "/" : "of",
+    videoNotAvailable: language === "ko" ? "영상을 사용할 수 없습니다" : "Video not available",
+    artist: language === "ko" ? "아티스트" : "Artist",
+    duration: language === "ko" ? "길이" : "Duration",
+    seconds: language === "ko" ? "초" : "seconds",
+    aspectRatio: language === "ko" ? "화면 비율" : "Aspect Ratio",
+    createdBy: language === "ko" ? "제작자" : "Created By",
+    createdAt: language === "ko" ? "생성일" : "Created At",
+    music: language === "ko" ? "음악" : "Music",
+    prompt: language === "ko" ? "프롬프트" : "Prompt",
+    openInNewTab: language === "ko" ? "새 탭에서 열기" : "Open in New Tab",
+    download: language === "ko" ? "다운로드" : "Download",
+    createSimilar: language === "ko" ? "유사하게 만들기" : "Create Similar",
+  };
 
   const loadVideos = useCallback(async () => {
     setLoading(true);
@@ -117,69 +148,48 @@ export default function ComposeGalleryPage() {
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
-              <Film className="h-6 w-6 text-white" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+              <Film className="h-5 w-5 text-muted-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">Composed Videos</h1>
-              <p className="text-muted-foreground">
-                View and download your slideshow videos created with Compose
+              <h1 className="text-xl font-semibold">{t.title}</h1>
+              <p className="text-sm text-muted-foreground">
+                {t.subtitle}
               </p>
             </div>
           </div>
-          <Button asChild>
+          <Button asChild size="sm">
             <Link href="/compose">
               <Wand2 className="h-4 w-4 mr-2" />
-              Create New
+              {t.createNew}
             </Link>
           </Button>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="border-dashed">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/30">
-                  <Film className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{total}</p>
-                  <p className="text-xs text-muted-foreground">Total Videos</p>
-                </div>
-              </div>
+        <div className="grid grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-2xl font-bold">{total}</p>
+              <p className="text-xs text-muted-foreground">{t.totalVideos}</p>
             </CardContent>
           </Card>
 
-          <Card className="border-dashed">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900/30">
-                  <Play className="h-5 w-5 text-green-600 dark:text-green-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">
-                    {videos.filter((v) => v.composed_output_url).length}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Ready to Play</p>
-                </div>
-              </div>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-2xl font-bold">
+                {videos.filter((v) => v.composed_output_url).length}
+              </p>
+              <p className="text-xs text-muted-foreground">{t.readyToPlay}</p>
             </CardContent>
           </Card>
 
-          <Card className="border-dashed">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                  <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">
-                    {videos.reduce((sum, v) => sum + v.duration_seconds, 0)}s
-                  </p>
-                  <p className="text-xs text-muted-foreground">Total Duration</p>
-                </div>
-              </div>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-2xl font-bold">
+                {videos.reduce((sum, v) => sum + v.duration_seconds, 0)}s
+              </p>
+              <p className="text-xs text-muted-foreground">{t.totalDuration}</p>
             </CardContent>
           </Card>
         </div>
@@ -189,7 +199,7 @@ export default function ComposeGalleryPage() {
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search by campaign, artist, or prompt..."
+          placeholder={t.searchPlaceholder}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-9"
@@ -208,16 +218,14 @@ export default function ComposeGalleryPage() {
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mx-auto mb-4">
                 <FolderOpen className="h-6 w-6 text-muted-foreground" />
               </div>
-              <h3 className="font-medium mb-2">No videos found</h3>
+              <h3 className="font-medium mb-2">{t.noVideos}</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                {searchQuery
-                  ? "Try a different search term"
-                  : "Create your first slideshow video with Compose"}
+                {searchQuery ? t.tryDifferent : t.createFirst}
               </p>
-              <Button asChild>
+              <Button asChild size="sm">
                 <Link href="/compose">
                   <Wand2 className="h-4 w-4 mr-2" />
-                  Create Video
+                  {t.createVideo}
                 </Link>
               </Button>
             </div>
@@ -311,7 +319,7 @@ export default function ComposeGalleryPage() {
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="text-sm text-muted-foreground">
-                Page {page} of {totalPages}
+                {page} {t.of} {totalPages} {t.page}
               </span>
               <Button
                 variant="outline"
@@ -349,7 +357,7 @@ export default function ComposeGalleryPage() {
                   />
                 ) : (
                   <div className="flex items-center justify-center h-full text-white">
-                    <p>Video not available</p>
+                    <p>{t.videoNotAvailable}</p>
                   </div>
                 )}
               </div>
@@ -358,15 +366,15 @@ export default function ComposeGalleryPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <div>
-                    <p className="text-xs text-muted-foreground">Artist</p>
+                    <p className="text-xs text-muted-foreground">{t.artist}</p>
                     <p className="font-medium">{selectedVideo.artist_name}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Duration</p>
-                    <p className="font-medium">{selectedVideo.duration_seconds} seconds</p>
+                    <p className="text-xs text-muted-foreground">{t.duration}</p>
+                    <p className="font-medium">{selectedVideo.duration_seconds}{t.seconds}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Aspect Ratio</p>
+                    <p className="text-xs text-muted-foreground">{t.aspectRatio}</p>
                     <p className="font-medium">
                       {selectedVideo.aspect_ratio} ({getAspectRatioLabel(selectedVideo.aspect_ratio)})
                     </p>
@@ -374,16 +382,16 @@ export default function ComposeGalleryPage() {
                 </div>
                 <div className="space-y-2">
                   <div>
-                    <p className="text-xs text-muted-foreground">Created By</p>
+                    <p className="text-xs text-muted-foreground">{t.createdBy}</p>
                     <p className="font-medium">{selectedVideo.creator.name}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Created At</p>
+                    <p className="text-xs text-muted-foreground">{t.createdAt}</p>
                     <p className="font-medium">{formatDate(selectedVideo.created_at)}</p>
                   </div>
                   {selectedVideo.audio_asset && (
                     <div>
-                      <p className="text-xs text-muted-foreground">Music</p>
+                      <p className="text-xs text-muted-foreground">{t.music}</p>
                       <p className="font-medium flex items-center gap-1">
                         <Music className="h-3 w-3" />
                         {selectedVideo.audio_asset.original_filename}
@@ -395,7 +403,7 @@ export default function ComposeGalleryPage() {
 
               {/* Prompt */}
               <div>
-                <p className="text-xs text-muted-foreground mb-1">Prompt</p>
+                <p className="text-xs text-muted-foreground mb-1">{t.prompt}</p>
                 <p className="text-sm p-3 bg-muted rounded-lg">{selectedVideo.prompt}</p>
               </div>
 
@@ -403,32 +411,33 @@ export default function ComposeGalleryPage() {
               <div className="flex items-center gap-2 pt-2">
                 {selectedVideo.composed_output_url && (
                   <>
-                    <Button asChild>
+                    <Button asChild size="sm">
                       <a
                         href={selectedVideo.composed_output_url}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
                         <ExternalLink className="h-4 w-4 mr-2" />
-                        Open in New Tab
+                        {t.openInNewTab}
                       </a>
                     </Button>
-                    <Button variant="outline" asChild>
+                    <Button variant="outline" size="sm" asChild>
                       <a href={selectedVideo.composed_output_url} download>
                         <Download className="h-4 w-4 mr-2" />
-                        Download
+                        {t.download}
                       </a>
                     </Button>
                   </>
                 )}
                 <Button
                   variant="outline"
+                  size="sm"
                   asChild
                   className="ml-auto"
                 >
                   <Link href={`/campaigns/${selectedVideo.campaign_id}/compose`}>
                     <Wand2 className="h-4 w-4 mr-2" />
-                    Create Similar
+                    {t.createSimilar}
                   </Link>
                 </Button>
               </div>

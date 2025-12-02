@@ -3,13 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { campaignsApi, artistsApi, Campaign, Artist } from "@/lib/campaigns-api";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
@@ -40,6 +34,7 @@ import {
 } from "lucide-react";
 
 export default function CampaignsPage() {
+  const { language } = useI18n();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [artists, setArtists] = useState<Artist[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +81,10 @@ export default function CampaignsPage() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
+    const confirmMessage = language === "ko"
+      ? `정말로 "${name}"을(를) 삭제하시겠습니까?`
+      : `Are you sure you want to delete "${name}"?`;
+    if (!confirm(confirmMessage)) return;
 
     const result = await campaignsApi.delete(id);
     if (!result.error) {
@@ -103,201 +101,204 @@ export default function CampaignsPage() {
   const hasFilters = statusFilter || artistFilter;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Campaigns</h1>
-          <p className="text-muted-foreground">Manage your video campaigns</p>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {language === "ko" ? "캠페인" : "Campaigns"}
+          </h1>
         </div>
         <Link href="/campaigns/new">
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            New Campaign
+          <Button size="lg" className="text-base font-semibold">
+            <Plus className="h-5 w-5 mr-2" />
+            {language === "ko" ? "새 캠페인" : "New Campaign"}
           </Button>
         </Link>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex-1 min-w-[180px]">
-              <label className="text-sm font-medium mb-2 block">Status</label>
-              <Select
-                value={statusFilter}
-                onValueChange={(value) => {
-                  setStatusFilter(value === "all" ? "" : value);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+      {/* Filters - Inline */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Select
+          value={statusFilter}
+          onValueChange={(value) => {
+            setStatusFilter(value === "all" ? "" : value);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="w-[160px] h-10 text-base">
+            <SelectValue placeholder={language === "ko" ? "모든 상태" : "All Statuses"} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-base">{language === "ko" ? "모든 상태" : "All Statuses"}</SelectItem>
+            <SelectItem value="draft" className="text-base">{language === "ko" ? "초안" : "Draft"}</SelectItem>
+            <SelectItem value="active" className="text-base">{language === "ko" ? "활성" : "Active"}</SelectItem>
+            <SelectItem value="completed" className="text-base">{language === "ko" ? "완료" : "Completed"}</SelectItem>
+            <SelectItem value="archived" className="text-base">{language === "ko" ? "보관됨" : "Archived"}</SelectItem>
+          </SelectContent>
+        </Select>
 
-            <div className="flex-1 min-w-[180px]">
-              <label className="text-sm font-medium mb-2 block">Artist</label>
-              <Select
-                value={artistFilter}
-                onValueChange={(value) => {
-                  setArtistFilter(value === "all" ? "" : value);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="All Artists" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Artists</SelectItem>
-                  {artists.map((artist) => (
-                    <SelectItem key={artist.id} value={artist.id}>
-                      {artist.stage_name || artist.name}
-                      {artist.group_name ? ` (${artist.group_name})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <Select
+          value={artistFilter}
+          onValueChange={(value) => {
+            setArtistFilter(value === "all" ? "" : value);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="w-[180px] h-10 text-base">
+            <SelectValue placeholder={language === "ko" ? "모든 아티스트" : "All Artists"} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-base">{language === "ko" ? "모든 아티스트" : "All Artists"}</SelectItem>
+            {artists.map((artist) => (
+              <SelectItem key={artist.id} value={artist.id} className="text-base">
+                {artist.stage_name || artist.name}
+                {artist.group_name ? ` (${artist.group_name})` : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-            {hasFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                <X className="h-4 w-4 mr-1" />
-                Clear
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+        {hasFilters && (
+          <Button variant="ghost" onClick={clearFilters} className="text-base">
+            <X className="h-5 w-5 mr-1" />
+            {language === "ko" ? "초기화" : "Clear"}
+          </Button>
+        )}
+      </div>
 
       {/* Campaign List */}
-      <Card>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <Spinner className="h-6 w-6" />
-            </div>
-          ) : campaigns.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mx-auto mb-4">
-                <FolderOpen className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <h3 className="font-medium mb-2">No campaigns found</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                {hasFilters
-                  ? "Try adjusting your filters"
-                  : "Create your first campaign to get started"}
-              </p>
-              {!hasFilters && (
-                <Link href="/campaigns/new">
-                  <Button>Create Campaign</Button>
-                </Link>
-              )}
-            </div>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[40%]">Campaign</TableHead>
-                    <TableHead>Artist</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-center">Assets</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {campaigns.map((campaign) => (
-                    <TableRow key={campaign.id}>
-                      <TableCell>
-                        <Link
-                          href={`/campaigns/${campaign.id}`}
-                          className="block hover:underline"
-                        >
-                          <div className="font-medium">{campaign.name}</div>
-                          {campaign.description && (
-                            <div className="text-sm text-muted-foreground truncate max-w-[300px]">
-                              {campaign.description}
-                            </div>
-                          )}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {campaign.artist_stage_name || campaign.artist_name || "-"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusVariants[campaign.status]}>
-                          {campaign.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center text-muted-foreground">
-                        {campaign.asset_count ?? 0}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Link href={`/campaigns/${campaign.id}/analytics`}>
-                            <Button variant="ghost" size="icon-sm" title="Analytics">
-                              <BarChart3 className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          <Link href={`/campaigns/${campaign.id}`}>
-                            <Button variant="ghost" size="icon-sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => handleDelete(campaign.id, campaign.name)}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
+      <div className="border rounded-lg overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Spinner className="h-8 w-8" />
+          </div>
+        ) : campaigns.length === 0 ? (
+          <div className="text-center py-16">
+            <FolderOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-xl font-semibold mb-2">
+              {language === "ko" ? "캠페인을 찾을 수 없습니다" : "No campaigns found"}
+            </h3>
+            <p className="text-base text-muted-foreground mb-6">
+              {hasFilters
+                ? (language === "ko" ? "필터를 조정해보세요" : "Try adjusting your filters")
+                : (language === "ko" ? "첫 번째 캠페인을 만들어보세요" : "Create your first campaign to get started")}
+            </p>
+            {!hasFilters && (
+              <Link href="/campaigns/new">
+                <Button size="lg" className="text-base font-semibold">
+                  {language === "ko" ? "캠페인 만들기" : "Create Campaign"}
+                </Button>
+              </Link>
+            )}
+          </div>
+        ) : (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="w-[40%] text-base font-semibold py-3">
+                    {language === "ko" ? "캠페인" : "Campaign"}
+                  </TableHead>
+                  <TableHead className="text-base font-semibold py-3">
+                    {language === "ko" ? "아티스트" : "Artist"}
+                  </TableHead>
+                  <TableHead className="text-base font-semibold py-3">
+                    {language === "ko" ? "상태" : "Status"}
+                  </TableHead>
+                  <TableHead className="text-center text-base font-semibold py-3">
+                    {language === "ko" ? "에셋" : "Assets"}
+                  </TableHead>
+                  <TableHead className="text-right text-base font-semibold py-3">
+                    {language === "ko" ? "작업" : "Actions"}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {campaigns.map((campaign) => (
+                  <TableRow key={campaign.id} className="hover:bg-muted/30">
+                    <TableCell className="py-4">
+                      <Link
+                        href={`/campaigns/${campaign.id}`}
+                        className="block hover:underline"
+                      >
+                        <div className="text-base font-semibold">{campaign.name}</div>
+                        {campaign.description && (
+                          <div className="text-sm text-muted-foreground truncate max-w-[300px]">
+                            {campaign.description}
+                          </div>
+                        )}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-base text-muted-foreground py-4">
+                      {campaign.artist_stage_name || campaign.artist_name || "-"}
+                    </TableCell>
+                    <TableCell className="py-4">
+                      <Badge variant={statusVariants[campaign.status]} className="text-sm">
+                        {campaign.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center text-base text-muted-foreground py-4">
+                      {campaign.asset_count ?? 0}
+                    </TableCell>
+                    <TableCell className="text-right py-4">
+                      <div className="flex items-center justify-end gap-1">
+                        <Link href={`/campaigns/${campaign.id}/analytics`}>
+                          <Button variant="ghost" size="icon" title="Analytics">
+                            <BarChart3 className="h-5 w-5" />
                           </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                        </Link>
+                        <Link href={`/campaigns/${campaign.id}`}>
+                          <Button variant="ghost" size="icon">
+                            <Eye className="h-5 w-5" />
+                          </Button>
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(campaign.id, campaign.name)}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between px-4 py-3 border-t">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage(page - 1)}
-                    disabled={page === 1}
-                  >
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Previous
-                  </Button>
-                  <span className="text-sm text-muted-foreground">
-                    Page {page} of {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage(page + 1)}
-                    disabled={page === totalPages}
-                  >
-                    Next
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setPage(page - 1)}
+                  disabled={page === 1}
+                  className="text-base"
+                >
+                  <ChevronLeft className="h-5 w-5 mr-1" />
+                  {language === "ko" ? "이전" : "Previous"}
+                </Button>
+                <span className="text-base text-muted-foreground">
+                  {language === "ko"
+                    ? `${page} / ${totalPages} 페이지`
+                    : `Page ${page} of ${totalPages}`}
+                </span>
+                <Button
+                  variant="outline"
+                  onClick={() => setPage(page + 1)}
+                  disabled={page === totalPages}
+                  className="text-base"
+                >
+                  {language === "ko" ? "다음" : "Next"}
+                  <ChevronRight className="h-5 w-5 ml-1" />
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

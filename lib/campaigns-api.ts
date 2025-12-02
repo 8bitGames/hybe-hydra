@@ -40,6 +40,9 @@ export interface Campaign {
   video_avg_score?: number | null;
   approved_count?: number;
   published_count?: number;
+  cover_image_url?: string | null;
+  audio_count?: number;
+  image_count?: number;
 }
 
 export interface CampaignList {

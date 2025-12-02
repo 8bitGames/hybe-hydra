@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { CampaignStatus } from "@prisma/client";
+import { cached, CacheKeys, CacheTTL, invalidateCampaignCache } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {};
 
     // RBAC: Non-admin users can only see campaigns for their labels
+    const labelKey = user.role === "ADMIN" ? "admin" : user.labelIds.sort().join(",");
     if (user.role !== "ADMIN") {
       where.artist = {
         labelId: { in: user.labelIds },
@@ -36,91 +38,109 @@ export async function GET(request: NextRequest) {
       where.artistId = artistId;
     }
 
-    // Get total count
-    const total = await prisma.campaign.count({ where });
+    // Cache key based on user's label access and query params
+    const cacheKey = CacheKeys.campaignsList(labelKey, page, status || undefined);
 
-    // Get campaigns with artist info and asset/video counts
-    const campaigns = await prisma.campaign.findMany({
-      where,
-      include: {
-        artist: {
-          select: {
-            name: true,
-            stageName: true,
-          },
-        },
-        _count: {
-          select: {
-            assets: true,
-            videoGenerations: true,
-          },
-        },
-        videoGenerations: {
-          select: {
-            status: true,
-            qualityScore: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+    // Use cache for campaign list (30 second TTL)
+    const result = await cached(cacheKey, CacheTTL.SHORT, async () => {
+      return fetchCampaignsList(where, page, pageSize);
     });
 
-    const pages = Math.ceil(total / pageSize) || 1;
-
-    const items = campaigns.map((c) => {
-      // Calculate video generation stats
-      const videoStats = {
-        total: c._count.videoGenerations,
-        completed: c.videoGenerations.filter(v => v.status === "COMPLETED").length,
-        processing: c.videoGenerations.filter(v => v.status === "PROCESSING" || v.status === "PENDING").length,
-        failed: c.videoGenerations.filter(v => v.status === "FAILED").length,
-        scored: c.videoGenerations.filter(v => v.qualityScore !== null).length,
-        avgScore: c.videoGenerations.filter(v => v.qualityScore !== null).length > 0
-          ? c.videoGenerations
-              .filter(v => v.qualityScore !== null)
-              .reduce((sum, v) => sum + (v.qualityScore || 0), 0) /
-            c.videoGenerations.filter(v => v.qualityScore !== null).length
-          : null,
-      };
-
-      return {
-        id: c.id,
-        name: c.name,
-        description: c.description,
-        artist_id: c.artistId,
-        status: c.status.toLowerCase(),
-        target_countries: c.targetCountries,
-        start_date: c.startDate?.toISOString() || null,
-        end_date: c.endDate?.toISOString() || null,
-        budget_code: c.budgetCode,
-        created_by: c.createdBy,
-        created_at: c.createdAt.toISOString(),
-        updated_at: c.updatedAt.toISOString(),
-        artist_name: c.artist.name,
-        artist_stage_name: c.artist.stageName,
-        asset_count: c._count.assets,
-        video_count: videoStats.total,
-        video_completed: videoStats.completed,
-        video_processing: videoStats.processing,
-        video_failed: videoStats.failed,
-        video_scored: videoStats.scored,
-        video_avg_score: videoStats.avgScore ? Math.round(videoStats.avgScore * 10) / 10 : null,
-      };
-    });
-
-    return NextResponse.json({
-      items,
-      total,
-      page,
-      page_size: pageSize,
-      pages,
-    });
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Get campaigns error:", error);
     return NextResponse.json({ detail: "Internal server error" }, { status: 500 });
   }
+}
+
+// Extracted data fetching logic for caching
+async function fetchCampaignsList(
+  where: Record<string, unknown>,
+  page: number,
+  pageSize: number
+) {
+  // Get total count
+  const total = await prisma.campaign.count({ where });
+
+  // Get campaigns with artist info and asset/video counts
+  const campaigns = await prisma.campaign.findMany({
+    where,
+    include: {
+      artist: {
+        select: {
+          name: true,
+          stageName: true,
+        },
+      },
+      _count: {
+        select: {
+          assets: true,
+          videoGenerations: true,
+        },
+      },
+      videoGenerations: {
+        select: {
+          status: true,
+          qualityScore: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
+
+  const pages = Math.ceil(total / pageSize) || 1;
+
+  const items = campaigns.map((c) => {
+    // Calculate video generation stats
+    const videoStats = {
+      total: c._count.videoGenerations,
+      completed: c.videoGenerations.filter(v => v.status === "COMPLETED").length,
+      processing: c.videoGenerations.filter(v => v.status === "PROCESSING" || v.status === "PENDING").length,
+      failed: c.videoGenerations.filter(v => v.status === "FAILED").length,
+      scored: c.videoGenerations.filter(v => v.qualityScore !== null).length,
+      avgScore: c.videoGenerations.filter(v => v.qualityScore !== null).length > 0
+        ? c.videoGenerations
+            .filter(v => v.qualityScore !== null)
+            .reduce((sum, v) => sum + (v.qualityScore || 0), 0) /
+          c.videoGenerations.filter(v => v.qualityScore !== null).length
+        : null,
+    };
+
+    return {
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      artist_id: c.artistId,
+      status: c.status.toLowerCase(),
+      target_countries: c.targetCountries,
+      start_date: c.startDate?.toISOString() || null,
+      end_date: c.endDate?.toISOString() || null,
+      budget_code: c.budgetCode,
+      created_by: c.createdBy,
+      created_at: c.createdAt.toISOString(),
+      updated_at: c.updatedAt.toISOString(),
+      artist_name: c.artist.name,
+      artist_stage_name: c.artist.stageName,
+      asset_count: c._count.assets,
+      video_count: videoStats.total,
+      video_completed: videoStats.completed,
+      video_processing: videoStats.processing,
+      video_failed: videoStats.failed,
+      video_scored: videoStats.scored,
+      video_avg_score: videoStats.avgScore ? Math.round(videoStats.avgScore * 10) / 10 : null,
+    };
+  });
+
+  // Return data object (will be cached)
+  return {
+    items,
+    total,
+    page,
+    page_size: pageSize,
+    pages,
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -175,6 +195,9 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    // Invalidate campaign list cache
+    await invalidateCampaignCache(campaign.id);
 
     return NextResponse.json(
       {

@@ -99,15 +99,15 @@ export function TrendRecommendationsCard({
   };
 
   return (
-    <Card className={`border-purple-500/30 bg-gradient-to-br from-purple-500/5 to-pink-500/5 ${compact ? "" : ""}`}>
+    <Card className={`border-border bg-muted/50 ${compact ? "" : ""}`}>
       <CardHeader className="pb-2">
         <button
           onClick={() => setExpanded(!expanded)}
           className="flex items-center justify-between w-full"
         >
           <CardTitle className="text-sm flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-purple-500" />
-            <span className="bg-gradient-to-r from-purple-500 to-pink-500 text-transparent bg-clip-text font-semibold">
+            <Sparkles className="w-4 h-4 text-muted-foreground" />
+            <span className="font-semibold text-foreground">
               AI Trend Recommendations
             </span>
           </CardTitle>
@@ -157,21 +157,21 @@ export function TrendRecommendationsCard({
               {/* Style Match */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="p-2 bg-background/50 rounded-lg text-center">
-                  <Film className="w-4 h-4 mx-auto mb-1 text-purple-400" />
+                  <Film className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
                   <p className="text-xs text-muted-foreground">Style</p>
                   <p className="text-xs font-medium truncate">
                     {recommendations.bridge.styleMatch.visual || "Modern"}
                   </p>
                 </div>
                 <div className="p-2 bg-background/50 rounded-lg text-center">
-                  <Sparkles className="w-4 h-4 mx-auto mb-1 text-pink-400" />
+                  <Sparkles className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
                   <p className="text-xs text-muted-foreground">Mood</p>
                   <p className="text-xs font-medium capitalize">
                     {recommendations.bridge.styleMatch.mood || "Engaging"}
                   </p>
                 </div>
                 <div className="p-2 bg-background/50 rounded-lg text-center">
-                  <Clock className="w-4 h-4 mx-auto mb-1 text-blue-400" />
+                  <Clock className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
                   <p className="text-xs text-muted-foreground">Pace</p>
                   <p className="text-xs font-medium capitalize">
                     {recommendations.bridge.styleMatch.pace || "Fast"}
@@ -215,7 +215,7 @@ export function TrendRecommendationsCard({
                       <Badge
                         key={i}
                         variant="secondary"
-                        className="text-xs cursor-pointer hover:bg-purple-500/20"
+                        className="text-xs cursor-pointer hover:bg-muted"
                         onClick={() => onApplyHashtags?.([tag])}
                       >
                         #{tag}
@@ -229,7 +229,7 @@ export function TrendRecommendationsCard({
               <Button
                 onClick={handleApplyAll}
                 size="sm"
-                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                className="w-full"
               >
                 <TrendingUp className="w-4 h-4 mr-2" />
                 Apply Trend Style

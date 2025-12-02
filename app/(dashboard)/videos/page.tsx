@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/auth-store";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import {
   Card,
   CardContent,
@@ -61,6 +62,7 @@ interface VideoGeneration {
 export default function AllVideosPage() {
   const router = useRouter();
   const { accessToken, isAuthenticated } = useAuthStore();
+  const { language } = useI18n();
 
   const [videos, setVideos] = useState<VideoGeneration[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,11 +135,17 @@ export default function AllVideosPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "COMPLETED":
-        return <Badge variant="default" className="bg-green-500"><CheckCircle className="h-3 w-3 mr-1" />Completed</Badge>;
+        return <Badge variant="default" className="bg-green-500">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          {language === "ko" ? "완료" : "Completed"}
+        </Badge>;
       case "PROCESSING":
-        return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Processing</Badge>;
+        return <Badge variant="secondary">
+          <Clock className="h-3 w-3 mr-1" />
+          {language === "ko" ? "처리중" : "Processing"}
+        </Badge>;
       case "FAILED":
-        return <Badge variant="destructive">Failed</Badge>;
+        return <Badge variant="destructive">{language === "ko" ? "실패" : "Failed"}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -148,13 +156,17 @@ export default function AllVideosPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">All Videos</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {language === "ko" ? "모든 영상" : "All Videos"}
+          </h1>
           <p className="text-muted-foreground">
-            Browse and manage all generated videos across campaigns
+            {language === "ko"
+              ? "캠페인 전체의 생성된 영상을 탐색하고 관리"
+              : "Browse and manage all generated videos across campaigns"}
           </p>
         </div>
         <Button onClick={() => router.push("/create/generate")}>
-          Create New Video
+          {language === "ko" ? "새 영상 만들기" : "Create New Video"}
         </Button>
       </div>
 
@@ -166,7 +178,7 @@ export default function AllVideosPage() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by prompt..."
+                  placeholder={language === "ko" ? "프롬프트로 검색..." : "Search by prompt..."}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9"
@@ -175,21 +187,21 @@ export default function AllVideosPage() {
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={language === "ko" ? "상태" : "Status"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="COMPLETED">Completed</SelectItem>
-                <SelectItem value="PROCESSING">Processing</SelectItem>
-                <SelectItem value="FAILED">Failed</SelectItem>
+                <SelectItem value="all">{language === "ko" ? "모든 상태" : "All Status"}</SelectItem>
+                <SelectItem value="COMPLETED">{language === "ko" ? "완료" : "Completed"}</SelectItem>
+                <SelectItem value="PROCESSING">{language === "ko" ? "처리중" : "Processing"}</SelectItem>
+                <SelectItem value="FAILED">{language === "ko" ? "실패" : "Failed"}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={campaignFilter} onValueChange={setCampaignFilter}>
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Campaign" />
+                <SelectValue placeholder={language === "ko" ? "캠페인" : "Campaign"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Campaigns</SelectItem>
+                <SelectItem value="all">{language === "ko" ? "모든 캠페인" : "All Campaigns"}</SelectItem>
                 {uniqueCampaigns.map((campaign) => (
                   <SelectItem key={campaign.id} value={campaign.id}>
                     {campaign.name}
@@ -210,14 +222,16 @@ export default function AllVideosPage() {
         <Card>
           <CardContent className="pt-12 pb-12 text-center">
             <PlayCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="font-medium mb-2">No videos found</h3>
+            <h3 className="font-medium mb-2">
+              {language === "ko" ? "영상을 찾을 수 없습니다" : "No videos found"}
+            </h3>
             <p className="text-sm text-muted-foreground mb-4">
               {videos.length === 0
-                ? "Start generating videos to see them here"
-                : "Try adjusting your filters"}
+                ? (language === "ko" ? "영상 생성을 시작해보세요" : "Start generating videos to see them here")
+                : (language === "ko" ? "필터를 조정해보세요" : "Try adjusting your filters")}
             </p>
             <Button onClick={() => router.push("/create/generate")}>
-              Create Your First Video
+              {language === "ko" ? "첫 영상 만들기" : "Create Your First Video"}
             </Button>
           </CardContent>
         </Card>
@@ -276,26 +290,26 @@ export default function AllVideosPage() {
                         onClick={() => router.push(`/campaigns/${video.campaignId}/curation`)}
                       >
                         <ExternalLink className="h-4 w-4 mr-2" />
-                        View in Campaign
+                        {language === "ko" ? "캠페인에서 보기" : "View in Campaign"}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => router.push(`/campaigns/${video.campaignId}/publish`)}
                       >
                         <Send className="h-4 w-4 mr-2" />
-                        Schedule Publish
+                        {language === "ko" ? "게시 예약" : "Schedule Publish"}
                       </DropdownMenuItem>
                       {getVideoUrl(video) && (
                         <DropdownMenuItem asChild>
                           <a href={getVideoUrl(video)!} download>
                             <Download className="h-4 w-4 mr-2" />
-                            Download
+                            {language === "ko" ? "다운로드" : "Download"}
                           </a>
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem className="text-destructive">
                         <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
+                        {language === "ko" ? "삭제" : "Delete"}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

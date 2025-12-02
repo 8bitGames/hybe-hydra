@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { saveBridgePrompt, BridgePromptData } from "@/lib/bridge-storage";
+import { useI18n } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -235,6 +236,7 @@ export default function CampaignWorkspacePage() {
   const params = useParams();
   const router = useRouter();
   const { accessToken } = useAuthStore();
+  const { t } = useI18n();
   const campaignId = params.id as string;
 
   const [data, setData] = useState<WorkspaceData | null>(null);
@@ -335,7 +337,7 @@ export default function CampaignWorkspacePage() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <Spinner className="h-12 w-12 mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading workspace...</p>
+          <p className="text-muted-foreground">{t.workspace.loading}</p>
         </div>
       </div>
     );
@@ -346,8 +348,8 @@ export default function CampaignWorkspacePage() {
       <div className="space-y-6">
         <Card>
           <CardContent className="pt-6 text-center">
-            <p className="text-muted-foreground mb-4">{error || "Failed to load workspace"}</p>
-            <Button onClick={loadWorkspace}>Try Again</Button>
+            <p className="text-muted-foreground mb-4">{error || t.workspace.loadError}</p>
+            <Button onClick={loadWorkspace}>{t.workspace.tryAgain}</Button>
           </CardContent>
         </Card>
       </div>
@@ -372,42 +374,6 @@ export default function CampaignWorkspacePage() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/campaigns" className="hover:text-foreground transition-colors">
-          Campaigns
-        </Link>
-        <span>/</span>
-        <Link href={`/campaigns/${campaignId}`} className="hover:text-foreground transition-colors">
-          {campaign.name}
-        </Link>
-        <span>/</span>
-        <span className="text-foreground">Workspace</span>
-      </div>
-
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Campaign Workspace</h1>
-          <p className="text-muted-foreground">
-            {campaign.name} - {campaign.artist.name}
-            {campaign.artist.group && ` (${campaign.artist.group})`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={loadWorkspace}>
-            <RotateCcw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-          <Link href={`/campaigns/${campaignId}/generate`}>
-            <Button>
-              <Sparkles className="h-4 w-4 mr-2" />
-              Generate
-            </Button>
-          </Link>
-        </div>
-      </div>
-
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <Card>
@@ -417,7 +383,7 @@ export default function CampaignWorkspacePage() {
                 <Sparkles className="h-5 w-5 text-purple-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Generated</p>
+                <p className="text-sm text-muted-foreground">{t.workspace.generated}</p>
                 <p className="text-2xl font-bold">{stats.generations.completed}</p>
               </div>
             </div>
@@ -430,7 +396,7 @@ export default function CampaignWorkspacePage() {
                 <Star className="h-5 w-5 text-yellow-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">High Quality</p>
+                <p className="text-sm text-muted-foreground">{t.workspace.highQuality}</p>
                 <p className="text-2xl font-bold">{stats.generations.high_quality}</p>
               </div>
             </div>
@@ -443,7 +409,7 @@ export default function CampaignWorkspacePage() {
                 <Send className="h-5 w-5 text-green-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Published</p>
+                <p className="text-sm text-muted-foreground">{t.workspace.published}</p>
                 <p className="text-2xl font-bold">{stats.publishing.published}</p>
               </div>
             </div>
@@ -456,7 +422,7 @@ export default function CampaignWorkspacePage() {
                 <FileText className="h-5 w-5 text-blue-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Prompts</p>
+                <p className="text-sm text-muted-foreground">{t.workspace.prompts}</p>
                 <p className="text-2xl font-bold">{stats.prompts.unique_count}</p>
               </div>
             </div>
@@ -469,7 +435,7 @@ export default function CampaignWorkspacePage() {
                 <Eye className="h-5 w-5 text-orange-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Views</p>
+                <p className="text-sm text-muted-foreground">{t.workspace.totalViews}</p>
                 <p className="text-2xl font-bold">{formatNumber(stats.publishing.total_views)}</p>
               </div>
             </div>
@@ -482,7 +448,7 @@ export default function CampaignWorkspacePage() {
                 <Heart className="h-5 w-5 text-red-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Likes</p>
+                <p className="text-sm text-muted-foreground">{t.workspace.totalLikes}</p>
                 <p className="text-2xl font-bold">{formatNumber(stats.publishing.total_likes)}</p>
               </div>
             </div>
@@ -495,23 +461,23 @@ export default function CampaignWorkspacePage() {
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="timeline" className="flex items-center gap-2">
             <History className="h-4 w-4" />
-            <span className="hidden sm:inline">Timeline</span>
+            <span className="hidden sm:inline">{t.workspace.timeline}</span>
           </TabsTrigger>
           <TabsTrigger value="prompts" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
-            <span className="hidden sm:inline">Prompts</span>
+            <span className="hidden sm:inline">{t.workspace.prompts}</span>
           </TabsTrigger>
           <TabsTrigger value="references" className="flex items-center gap-2">
             <Link2 className="h-4 w-4" />
-            <span className="hidden sm:inline">References</span>
+            <span className="hidden sm:inline">{t.workspace.references}</span>
           </TabsTrigger>
           <TabsTrigger value="gallery" className="flex items-center gap-2">
             <LayoutGrid className="h-4 w-4" />
-            <span className="hidden sm:inline">Gallery</span>
+            <span className="hidden sm:inline">{t.workspace.gallery}</span>
           </TabsTrigger>
           <TabsTrigger value="publishing" className="flex items-center gap-2">
             <Send className="h-4 w-4" />
-            <span className="hidden sm:inline">Publishing</span>
+            <span className="hidden sm:inline">{t.workspace.publishing}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -519,16 +485,16 @@ export default function CampaignWorkspacePage() {
         <TabsContent value="timeline" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Work History</CardTitle>
-              <CardDescription>Chronological view of all activities</CardDescription>
+              <CardTitle>{t.workspace.workHistory}</CardTitle>
+              <CardDescription>{t.workspace.chronologicalView}</CardDescription>
             </CardHeader>
             <CardContent>
               {timeline.length === 0 ? (
                 <div className="text-center py-12">
                   <History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">No activity yet</p>
+                  <p className="text-muted-foreground">{t.workspace.noActivityYet}</p>
                   <Link href={`/campaigns/${campaignId}/generate`}>
-                    <Button className="mt-4">Start Generating</Button>
+                    <Button className="mt-4">{t.workspace.startGenerating}</Button>
                   </Link>
                 </div>
               ) : (
@@ -550,7 +516,7 @@ export default function CampaignWorkspacePage() {
                               <div className="flex items-center gap-2 mb-1">
                                 {getStatusIcon((item.data as { status?: string }).status || "")}
                                 <span className="text-sm font-medium capitalize">
-                                  {item.type === "generation" ? "Video Generation" : "Published"}
+                                  {item.type === "generation" ? t.workspace.videoGeneration : t.workspace.published}
                                 </span>
                                 <Badge variant="outline" className="text-xs">
                                   {(item.data as { status?: string }).status}
@@ -614,14 +580,14 @@ export default function CampaignWorkspacePage() {
         <TabsContent value="prompts" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Prompt Library</CardTitle>
-              <CardDescription>All prompts used in this campaign. Click to reuse.</CardDescription>
+              <CardTitle>{t.workspace.promptLibrary}</CardTitle>
+              <CardDescription>{t.workspace.allPromptsUsed}. {t.workspace.clickToReuse}.</CardDescription>
             </CardHeader>
             <CardContent>
               {prompts.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">No prompts yet</p>
+                  <p className="text-muted-foreground">{t.workspace.noPromptsYet}</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -636,7 +602,7 @@ export default function CampaignWorkspacePage() {
                           {prompt.veo_prompt !== prompt.original_input && (
                             <details className="mb-2">
                               <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-                                View optimized prompt
+                                {t.workspace.viewOptimizedPrompt}
                               </summary>
                               <p className="mt-2 text-sm text-muted-foreground bg-muted p-2 rounded">
                                 {prompt.veo_prompt}
@@ -653,9 +619,9 @@ export default function CampaignWorkspacePage() {
                             </div>
                           )}
                           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>Used {prompt.generation_count}x</span>
+                            <span>{t.workspace.used} {prompt.generation_count}x</span>
                             <span className="text-green-500">
-                              {prompt.success_rate.toFixed(0)}% success
+                              {prompt.success_rate.toFixed(0)}% {t.workspace.success}
                             </span>
                             {prompt.avg_quality_score && (
                               <span
@@ -663,10 +629,10 @@ export default function CampaignWorkspacePage() {
                                   prompt.avg_quality_score
                                 )}`}
                               >
-                                Avg: {getGrade(prompt.avg_quality_score)}
+                                {t.workspace.avg}: {getGrade(prompt.avg_quality_score)}
                               </span>
                             )}
-                            <span>Last: {formatDate(prompt.last_used)}</span>
+                            <span>{t.workspace.last}: {formatDate(prompt.last_used)}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
@@ -674,7 +640,7 @@ export default function CampaignWorkspacePage() {
                             variant="ghost"
                             size="icon"
                             onClick={() => handleCopyPrompt(prompt.veo_prompt)}
-                            title="Copy prompt"
+                            title={t.workspace.copyPrompt}
                           >
                             <Copy className="h-4 w-4" />
                           </Button>
@@ -684,7 +650,7 @@ export default function CampaignWorkspacePage() {
                             onClick={() => handleReusePrompt(prompt)}
                           >
                             <RotateCcw className="h-4 w-4 mr-1" />
-                            Reuse
+                            {t.workspace.reuse}
                           </Button>
                         </div>
                       </div>
@@ -704,15 +670,15 @@ export default function CampaignWorkspacePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <TrendingUp className="h-5 w-5" />
-                  Trends Used
+                  {t.workspace.trendsUsed}
                 </CardTitle>
-                <CardDescription>Keywords and hashtags applied to generations</CardDescription>
+                <CardDescription>{t.workspace.keywordsApplied}</CardDescription>
               </CardHeader>
               <CardContent>
                 {trends.length === 0 ? (
                   <div className="text-center py-8">
                     <TrendingUp className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">No trends used yet</p>
+                    <p className="text-sm text-muted-foreground">{t.workspace.noTrendsUsed}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -726,7 +692,7 @@ export default function CampaignWorkspacePage() {
                           <div>
                             <p className="font-medium">{trend.keyword}</p>
                             <p className="text-xs text-muted-foreground">
-                              Used {trend.usage_count}x • {trend.success_count} successful
+                              {t.workspace.used} {trend.usage_count}x • {trend.success_count} {t.workspace.successful}
                             </p>
                           </div>
                         </div>
@@ -760,15 +726,15 @@ export default function CampaignWorkspacePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Link2 className="h-5 w-5" />
-                  Reference URLs
+                  {t.workspace.referenceUrls}
                 </CardTitle>
-                <CardDescription>External links used as reference</CardDescription>
+                <CardDescription>{t.workspace.externalLinks}</CardDescription>
               </CardHeader>
               <CardContent>
                 {reference_urls.length === 0 ? (
                   <div className="text-center py-8">
                     <Link2 className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">No reference URLs yet</p>
+                    <p className="text-sm text-muted-foreground">{t.workspace.noReferenceUrls}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -790,7 +756,7 @@ export default function CampaignWorkspacePage() {
                               </div>
                             )}
                             <p className="text-xs text-muted-foreground mt-1">
-                              Used {ref.used_count}x • First: {formatDate(ref.first_used)}
+                              {t.workspace.used} {ref.used_count}x • First: {formatDate(ref.first_used)}
                             </p>
                           </div>
                           <a href={ref.url} target="_blank" rel="noopener noreferrer">
@@ -814,14 +780,14 @@ export default function CampaignWorkspacePage() {
             <CardHeader>
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
-                  <CardTitle>Generated Videos</CardTitle>
-                  <CardDescription>All videos generated for this campaign</CardDescription>
+                  <CardTitle>{t.workspace.generatedVideos}</CardTitle>
+                  <CardDescription>{t.workspace.allVideosGenerated}</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search prompts..."
+                      placeholder={t.workspace.searchPrompts}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-9 w-[200px]"
@@ -832,10 +798,10 @@ export default function CampaignWorkspacePage() {
                     onChange={(e) => setStatusFilter(e.target.value)}
                     className="h-10 px-3 border rounded-md bg-background text-sm"
                   >
-                    <option value="all">All Status</option>
-                    <option value="completed">Completed</option>
-                    <option value="processing">Processing</option>
-                    <option value="failed">Failed</option>
+                    <option value="all">{t.workspace.allStatus}</option>
+                    <option value="completed">{t.generation.status.completed}</option>
+                    <option value="processing">{t.generation.status.processing}</option>
+                    <option value="failed">{t.generation.status.failed}</option>
                   </select>
                 </div>
               </div>
@@ -844,7 +810,7 @@ export default function CampaignWorkspacePage() {
               {filteredGenerations.length === 0 ? (
                 <div className="text-center py-12">
                   <LayoutGrid className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">No videos found</p>
+                  <p className="text-muted-foreground">{t.workspace.noVideosFound}</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -941,16 +907,16 @@ export default function CampaignWorkspacePage() {
         <TabsContent value="publishing" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Published Content</CardTitle>
-              <CardDescription>SNS publishing status and performance</CardDescription>
+              <CardTitle>{t.workspace.publishedContent}</CardTitle>
+              <CardDescription>{t.workspace.snsStatus}</CardDescription>
             </CardHeader>
             <CardContent>
               {publishing.length === 0 ? (
                 <div className="text-center py-12">
                   <Send className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">No published content yet</p>
+                  <p className="text-muted-foreground">{t.workspace.noPublishedContent}</p>
                   <Link href={`/campaigns/${campaignId}/publish`}>
-                    <Button className="mt-4">Publish Content</Button>
+                    <Button className="mt-4">{t.workspace.publishContent}</Button>
                   </Link>
                 </div>
               ) : (
@@ -1036,7 +1002,7 @@ export default function CampaignWorkspacePage() {
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Play className="h-5 w-5" />
-                  Video Preview
+                  {t.workspace.videoPreview}
                   {selectedVideo.quality_score && (
                     <span
                       className={`ml-2 px-2 py-0.5 rounded text-sm font-bold ${getGradeColor(
@@ -1066,7 +1032,7 @@ export default function CampaignWorkspacePage() {
                   />
                   {selectedVideo.composed_output_url && (
                     <Badge className="absolute bottom-2 left-2 bg-green-600">
-                      With Audio
+                      {t.workspace.withAudio}
                     </Badge>
                   )}
                 </div>
@@ -1074,13 +1040,13 @@ export default function CampaignWorkspacePage() {
                 {/* Video Details */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <h4 className="font-medium text-sm">Details</h4>
+                    <h4 className="font-medium text-sm">{t.workspace.details}</h4>
                     <div className="text-sm text-muted-foreground space-y-1">
-                      <p>Duration: {selectedVideo.duration_seconds}s</p>
-                      <p>Aspect Ratio: {selectedVideo.aspect_ratio}</p>
-                      <p>Created: {formatDate(selectedVideo.created_at)}</p>
+                      <p>{t.workspace.duration}: {selectedVideo.duration_seconds}s</p>
+                      <p>{t.workspace.aspectRatio}: {selectedVideo.aspect_ratio}</p>
+                      <p>{t.workspace.created}: {formatDate(selectedVideo.created_at)}</p>
                       <p className="flex items-center gap-1">
-                        Status: {getStatusIcon(selectedVideo.status)}
+                        {t.workspace.status}: {getStatusIcon(selectedVideo.status)}
                         <span className="capitalize">{selectedVideo.status}</span>
                       </p>
                     </div>
@@ -1088,7 +1054,7 @@ export default function CampaignWorkspacePage() {
 
                   {selectedVideo.trend_keywords?.length > 0 && (
                     <div className="space-y-2">
-                      <h4 className="font-medium text-sm">Trends Applied</h4>
+                      <h4 className="font-medium text-sm">{t.workspace.trendsApplied}</h4>
                       <div className="flex flex-wrap gap-1">
                         {selectedVideo.trend_keywords.map((tag) => (
                           <Badge key={tag} variant="secondary" className="text-xs">
@@ -1103,7 +1069,7 @@ export default function CampaignWorkspacePage() {
                 {/* Reference Image */}
                 {selectedVideo.reference_image && (
                   <div className="space-y-2">
-                    <h4 className="font-medium text-sm">Reference Image</h4>
+                    <h4 className="font-medium text-sm">{t.workspace.referenceImage}</h4>
                     <img
                       src={selectedVideo.reference_image.thumbnail_url || selectedVideo.reference_image.s3_url}
                       alt="Reference"
@@ -1115,7 +1081,7 @@ export default function CampaignWorkspacePage() {
                 {/* Merchandise References */}
                 {selectedVideo.merchandise_refs?.length > 0 && (
                   <div className="space-y-2">
-                    <h4 className="font-medium text-sm">Merchandise</h4>
+                    <h4 className="font-medium text-sm">{t.workspace.merchandise}</h4>
                     <div className="flex flex-wrap gap-2">
                       {selectedVideo.merchandise_refs.map((ref, idx) => (
                         <Badge key={idx} variant="outline" className="text-xs">
@@ -1134,12 +1100,12 @@ export default function CampaignWorkspacePage() {
                     onClick={() => handleCopyPrompt(selectedVideo.prompt)}
                   >
                     <Copy className="h-4 w-4 mr-1" />
-                    Copy Prompt
+                    {t.workspace.copyPrompt}
                   </Button>
                   <Link href={`/campaigns/${campaignId}/generate`}>
                     <Button size="sm">
                       <RotateCcw className="h-4 w-4 mr-1" />
-                      Generate Similar
+                      {t.workspace.generateSimilar}
                     </Button>
                   </Link>
                 </div>

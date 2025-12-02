@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
+import { cached, CacheKeys, CacheTTL } from "@/lib/cache";
 
 // GET /api/v1/dashboard/stats - Get global dashboard statistics across all campaigns
 export async function GET(request: NextRequest) {
@@ -12,17 +13,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
     }
 
-    // Build where clause based on user role
-    const campaignWhereClause = user.role === "ADMIN"
-      ? {}
-      : {
-          artist: {
-            labelId: { in: user.labelIds }
-          }
-        };
+    // Use cache for dashboard stats (60 second TTL)
+    const cacheKey = CacheKeys.dashboardStats(user.id);
+    const stats = await cached(cacheKey, CacheTTL.MEDIUM, async () => {
+      return fetchDashboardStats(user.id, user.role, user.labelIds);
+    });
 
-    // Get all campaigns with counts
-    const campaigns = await prisma.campaign.findMany({
+    return NextResponse.json(stats);
+  } catch (error) {
+    console.error("Get dashboard stats error:", error);
+    return NextResponse.json({ detail: "Internal server error" }, { status: 500 });
+  }
+}
+
+// Extracted data fetching logic for caching
+async function fetchDashboardStats(
+  userId: string,
+  role: string,
+  labelIds: string[]
+) {
+  // Build where clause based on user role
+  const campaignWhereClause = role === "ADMIN"
+    ? {}
+    : {
+        artist: {
+          labelId: { in: labelIds }
+        }
+      };
+
+  // Get all campaigns with counts
+  const campaigns = await prisma.campaign.findMany({
       where: campaignWhereClause,
       include: {
         artist: {
@@ -222,22 +242,18 @@ export async function GET(request: NextRequest) {
         };
       });
 
-    // Response
-    return NextResponse.json({
-      summary: {
-        campaigns: campaignStats,
-        generations: generationStats,
-        publishing: publishingStats,
-      },
-      sns_performance: snsPerformance,
-      campaigns_overview: campaignsOverview,
-      recent_activity: {
-        generations: recentGenerations,
-        published: recentPublished,
-      },
-    });
-  } catch (error) {
-    console.error("Get dashboard stats error:", error);
-    return NextResponse.json({ detail: "Internal server error" }, { status: 500 });
-  }
+  // Return data object (will be cached)
+  return {
+    summary: {
+      campaigns: campaignStats,
+      generations: generationStats,
+      publishing: publishingStats,
+    },
+    sns_performance: snsPerformance,
+    campaigns_overview: campaignsOverview,
+    recent_activity: {
+      generations: recentGenerations,
+      published: recentPublished,
+    },
+  };
 }

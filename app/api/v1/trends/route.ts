@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { TrendPlatform, Prisma } from "@prisma/client";
+import { cached, CacheKeys, CacheTTL } from "@/lib/cache";
 
 // GET /api/v1/trends - Get trending content from social platforms
 export async function GET(request: NextRequest) {
@@ -19,88 +20,15 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);
     const hoursAgo = parseInt(searchParams.get("hours_ago") || "24");
 
-    // Calculate the time threshold for fresh trends
-    const timeThreshold = new Date();
-    timeThreshold.setHours(timeThreshold.getHours() - hoursAgo);
+    // Cache key for trends (15 min TTL)
+    const cacheKey = CacheKeys.trendsPlatform(platform || "all", region);
 
-    // Build where clause
-    const whereClause: Record<string, unknown> = {
-      region,
-      collectedAt: {
-        gte: timeThreshold,
-      },
-    };
-
-    if (platform) {
-      whereClause.platform = platform;
-    }
-
-    // Get latest trends, ordered by rank
-    const trends = await prisma.trendSnapshot.findMany({
-      where: whereClause,
-      orderBy: [
-        { collectedAt: "desc" },
-        { rank: "asc" },
-      ],
-      take: limit,
+    // Use cache for trends data
+    const result = await cached(cacheKey, CacheTTL.TRENDS, async () => {
+      return fetchTrendsData(platform, region, limit, hoursAgo);
     });
 
-    // Group by platform for easier consumption
-    const groupedByPlatform = trends.reduce((acc, trend) => {
-      if (!acc[trend.platform]) {
-        acc[trend.platform] = [];
-      }
-      acc[trend.platform].push({
-        id: trend.id,
-        keyword: trend.keyword,
-        rank: trend.rank,
-        view_count: trend.viewCount?.toString() || null,
-        video_count: trend.videoCount,
-        description: trend.description,
-        hashtags: trend.hashtags,
-        trend_url: trend.trendUrl,
-        thumbnail_url: trend.thumbnailUrl,
-        collected_at: trend.collectedAt.toISOString(),
-      });
-      return acc;
-    }, {} as Record<string, unknown[]>);
-
-    // Get platform statistics
-    const platformStats = await prisma.trendSnapshot.groupBy({
-      by: ["platform"],
-      where: {
-        region,
-        collectedAt: {
-          gte: timeThreshold,
-        },
-      },
-      _count: {
-        id: true,
-      },
-    });
-
-    return NextResponse.json({
-      region,
-      time_range_hours: hoursAgo,
-      total_count: trends.length,
-      platform_stats: platformStats.map((stat) => ({
-        platform: stat.platform,
-        count: stat._count.id,
-      })),
-      trends: platform ? trends.map((t) => ({
-        id: t.id,
-        platform: t.platform,
-        keyword: t.keyword,
-        rank: t.rank,
-        view_count: t.viewCount?.toString() || null,
-        video_count: t.videoCount,
-        description: t.description,
-        hashtags: t.hashtags,
-        trend_url: t.trendUrl,
-        thumbnail_url: t.thumbnailUrl,
-        collected_at: t.collectedAt.toISOString(),
-      })) : groupedByPlatform,
-    });
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Get trends error:", error);
     return NextResponse.json(
@@ -108,6 +36,98 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// Extracted data fetching logic for caching
+async function fetchTrendsData(
+  platform: TrendPlatform | null,
+  region: string,
+  limit: number,
+  hoursAgo: number
+) {
+  // Calculate the time threshold for fresh trends
+  const timeThreshold = new Date();
+  timeThreshold.setHours(timeThreshold.getHours() - hoursAgo);
+
+  // Build where clause
+  const whereClause: Record<string, unknown> = {
+    region,
+    collectedAt: {
+      gte: timeThreshold,
+    },
+  };
+
+  if (platform) {
+    whereClause.platform = platform;
+  }
+
+  // Get latest trends, ordered by rank
+  const trends = await prisma.trendSnapshot.findMany({
+    where: whereClause,
+    orderBy: [
+      { collectedAt: "desc" },
+      { rank: "asc" },
+    ],
+    take: limit,
+  });
+
+  // Group by platform for easier consumption
+  const groupedByPlatform = trends.reduce((acc, trend) => {
+    if (!acc[trend.platform]) {
+      acc[trend.platform] = [];
+    }
+    acc[trend.platform].push({
+      id: trend.id,
+      keyword: trend.keyword,
+      rank: trend.rank,
+      view_count: trend.viewCount?.toString() || null,
+      video_count: trend.videoCount,
+      description: trend.description,
+      hashtags: trend.hashtags,
+      trend_url: trend.trendUrl,
+      thumbnail_url: trend.thumbnailUrl,
+      collected_at: trend.collectedAt.toISOString(),
+    });
+    return acc;
+  }, {} as Record<string, unknown[]>);
+
+  // Get platform statistics
+  const platformStats = await prisma.trendSnapshot.groupBy({
+    by: ["platform"],
+    where: {
+      region,
+      collectedAt: {
+        gte: timeThreshold,
+      },
+    },
+    _count: {
+      id: true,
+    },
+  });
+
+  // Return data object (will be cached)
+  return {
+    region,
+    time_range_hours: hoursAgo,
+    total_count: trends.length,
+    platform_stats: platformStats.map((stat) => ({
+      platform: stat.platform,
+      count: stat._count.id,
+    })),
+    trends: platform ? trends.map((t) => ({
+      id: t.id,
+      platform: t.platform,
+      keyword: t.keyword,
+      rank: t.rank,
+      view_count: t.viewCount?.toString() || null,
+      video_count: t.videoCount,
+      description: t.description,
+      hashtags: t.hashtags,
+      trend_url: t.trendUrl,
+      thumbnail_url: t.thumbnailUrl,
+      collected_at: t.collectedAt.toISOString(),
+    })) : groupedByPlatform,
+  };
 }
 
 // POST /api/v1/trends - Create new trend snapshots (admin only)

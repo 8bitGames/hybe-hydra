@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/auth-store";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import {
   Card,
   CardContent,
@@ -61,16 +62,25 @@ const getPlatformIcon = (platform: string) => {
   }
 };
 
-const getStatusBadge = (status: string) => {
+const getStatusBadge = (status: string, language: "ko" | "en") => {
   switch (status) {
     case "PUBLISHED":
-      return <Badge className="bg-green-500"><CheckCircle className="h-3 w-3 mr-1" />Published</Badge>;
+      return <Badge className="bg-green-500">
+        <CheckCircle className="h-3 w-3 mr-1" />
+        {language === "ko" ? "발행됨" : "Published"}
+      </Badge>;
     case "SCHEDULED":
-      return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Scheduled</Badge>;
+      return <Badge variant="secondary">
+        <Clock className="h-3 w-3 mr-1" />
+        {language === "ko" ? "예약됨" : "Scheduled"}
+      </Badge>;
     case "FAILED":
-      return <Badge variant="destructive"><AlertCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+      return <Badge variant="destructive">
+        <AlertCircle className="h-3 w-3 mr-1" />
+        {language === "ko" ? "실패" : "Failed"}
+      </Badge>;
     case "DRAFT":
-      return <Badge variant="outline">Draft</Badge>;
+      return <Badge variant="outline">{language === "ko" ? "초안" : "Draft"}</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
@@ -86,6 +96,7 @@ const formatNumber = (num: number | null): string => {
 export default function PublishingPage() {
   const router = useRouter();
   const { accessToken, isAuthenticated } = useAuthStore();
+  const { language } = useI18n();
 
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
@@ -142,19 +153,23 @@ export default function PublishingPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Publishing</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {language === "ko" ? "발행" : "Publishing"}
+          </h1>
           <p className="text-muted-foreground">
-            Manage scheduled posts and track published content
+            {language === "ko"
+              ? "예약된 게시물 관리 및 발행된 콘텐츠 추적"
+              : "Manage scheduled posts and track published content"}
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={loadData} disabled={loading}>
             <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
-            Refresh
+            {language === "ko" ? "새로고침" : "Refresh"}
           </Button>
           <Button variant="outline" onClick={() => router.push("/settings/accounts")}>
             <Settings className="h-4 w-4 mr-2" />
-            Manage Accounts
+            {language === "ko" ? "계정 관리" : "Manage Accounts"}
           </Button>
         </div>
       </div>
@@ -168,7 +183,9 @@ export default function PublishingPage() {
                 <Clock className="h-5 w-5 text-blue-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Scheduled</p>
+                <p className="text-sm text-muted-foreground">
+                  {language === "ko" ? "예약됨" : "Scheduled"}
+                </p>
                 <p className="text-2xl font-bold">{scheduledPosts.length}</p>
               </div>
             </div>
@@ -181,7 +198,9 @@ export default function PublishingPage() {
                 <CheckCircle className="h-5 w-5 text-green-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Published</p>
+                <p className="text-sm text-muted-foreground">
+                  {language === "ko" ? "발행됨" : "Published"}
+                </p>
                 <p className="text-2xl font-bold">{publishedPosts.length}</p>
               </div>
             </div>
@@ -194,7 +213,9 @@ export default function PublishingPage() {
                 <Eye className="h-5 w-5 text-orange-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Views</p>
+                <p className="text-sm text-muted-foreground">
+                  {language === "ko" ? "총 조회수" : "Total Views"}
+                </p>
                 <p className="text-2xl font-bold">
                   {formatNumber(publishedPosts.reduce((sum, p) => sum + (p.viewCount || 0), 0))}
                 </p>
@@ -209,7 +230,9 @@ export default function PublishingPage() {
                 <Heart className="h-5 w-5 text-red-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Likes</p>
+                <p className="text-sm text-muted-foreground">
+                  {language === "ko" ? "총 좋아요" : "Total Likes"}
+                </p>
                 <p className="text-2xl font-bold">
                   {formatNumber(publishedPosts.reduce((sum, p) => sum + (p.likeCount || 0), 0))}
                 </p>
@@ -224,16 +247,16 @@ export default function PublishingPage() {
         <TabsList>
           <TabsTrigger value="scheduled" className="gap-2">
             <Clock className="h-4 w-4" />
-            Scheduled ({scheduledPosts.length})
+            {language === "ko" ? "예약됨" : "Scheduled"} ({scheduledPosts.length})
           </TabsTrigger>
           <TabsTrigger value="published" className="gap-2">
             <CheckCircle className="h-4 w-4" />
-            Published ({publishedPosts.length})
+            {language === "ko" ? "발행됨" : "Published"} ({publishedPosts.length})
           </TabsTrigger>
           {failedPosts.length > 0 && (
             <TabsTrigger value="failed" className="gap-2">
               <AlertCircle className="h-4 w-4" />
-              Failed ({failedPosts.length})
+              {language === "ko" ? "실패" : "Failed"} ({failedPosts.length})
             </TabsTrigger>
           )}
         </TabsList>
@@ -247,12 +270,16 @@ export default function PublishingPage() {
             <Card>
               <CardContent className="pt-12 pb-12 text-center">
                 <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="font-medium mb-2">No scheduled posts</h3>
+                <h3 className="font-medium mb-2">
+                  {language === "ko" ? "예약된 게시물이 없습니다" : "No scheduled posts"}
+                </h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Schedule posts from your campaign&apos;s Publish tab
+                  {language === "ko"
+                    ? "캠페인의 발행 탭에서 게시물을 예약하세요"
+                    : "Schedule posts from your campaign's Publish tab"}
                 </p>
                 <Button onClick={() => router.push("/campaigns")}>
-                  Go to Campaigns
+                  {language === "ko" ? "캠페인으로 이동" : "Go to Campaigns"}
                 </Button>
               </CardContent>
             </Card>
@@ -266,10 +293,11 @@ export default function PublishingPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{post.accountName}</span>
-                          {getStatusBadge(post.status)}
+                          {getStatusBadge(post.status, language)}
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          {post.campaignName} • Scheduled for{" "}
+                          {post.campaignName} •{" "}
+                          {language === "ko" ? "예약 시간: " : "Scheduled for "}
                           {new Date(post.scheduledAt).toLocaleString()}
                         </p>
                       </div>
@@ -278,7 +306,7 @@ export default function PublishingPage() {
                         size="sm"
                         onClick={() => router.push(`/campaigns/${post.campaignId}/publish`)}
                       >
-                        View
+                        {language === "ko" ? "보기" : "View"}
                       </Button>
                     </div>
                   </CardContent>
@@ -297,9 +325,13 @@ export default function PublishingPage() {
             <Card>
               <CardContent className="pt-12 pb-12 text-center">
                 <Send className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="font-medium mb-2">No published posts yet</h3>
+                <h3 className="font-medium mb-2">
+                  {language === "ko" ? "아직 발행된 게시물이 없습니다" : "No published posts yet"}
+                </h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Published posts will appear here with their analytics
+                  {language === "ko"
+                    ? "발행된 게시물이 여기에 분석과 함께 표시됩니다"
+                    : "Published posts will appear here with their analytics"}
                 </p>
               </CardContent>
             </Card>
@@ -313,10 +345,11 @@ export default function PublishingPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{post.accountName}</span>
-                          {getStatusBadge(post.status)}
+                          {getStatusBadge(post.status, language)}
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          {post.campaignName} • Published{" "}
+                          {post.campaignName} •{" "}
+                          {language === "ko" ? "발행 날짜: " : "Published "}
                           {post.publishedAt && new Date(post.publishedAt).toLocaleDateString()}
                         </p>
                         <div className="flex items-center gap-4 mt-2 text-sm">
@@ -340,7 +373,7 @@ export default function PublishingPage() {
                         >
                           <a href={post.publishedUrl} target="_blank" rel="noopener noreferrer">
                             <ExternalLink className="h-4 w-4 mr-2" />
-                            View
+                            {language === "ko" ? "보기" : "View"}
                           </a>
                         </Button>
                       )}
@@ -357,9 +390,13 @@ export default function PublishingPage() {
             <Card>
               <CardContent className="pt-12 pb-12 text-center">
                 <CheckCircle className="h-12 w-12 mx-auto text-green-500 mb-4" />
-                <h3 className="font-medium mb-2">No failed posts</h3>
+                <h3 className="font-medium mb-2">
+                  {language === "ko" ? "실패한 게시물이 없습니다" : "No failed posts"}
+                </h3>
                 <p className="text-sm text-muted-foreground">
-                  All your posts are publishing successfully
+                  {language === "ko"
+                    ? "모든 게시물이 성공적으로 발행되고 있습니다"
+                    : "All your posts are publishing successfully"}
                 </p>
               </CardContent>
             </Card>
@@ -373,7 +410,7 @@ export default function PublishingPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{post.accountName}</span>
-                          {getStatusBadge(post.status)}
+                          {getStatusBadge(post.status, language)}
                         </div>
                         <p className="text-sm text-muted-foreground">
                           {post.campaignName}
@@ -384,7 +421,7 @@ export default function PublishingPage() {
                         size="sm"
                         onClick={() => router.push(`/campaigns/${post.campaignId}/publish`)}
                       >
-                        Retry
+                        {language === "ko" ? "재시도" : "Retry"}
                       </Button>
                     </div>
                   </CardContent>

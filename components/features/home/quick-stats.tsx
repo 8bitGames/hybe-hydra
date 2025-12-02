@@ -15,6 +15,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 interface QuickStatsProps {
   stats: {
@@ -36,13 +37,15 @@ const formatNumber = (num: number | null | undefined): string => {
 };
 
 export function QuickStats({ stats, loading }: QuickStatsProps) {
+  const { language } = useI18n();
+
   if (loading) {
     return (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <BarChart3 className="h-5 w-5" />
-            Quick Stats
+            {language === "ko" ? "빠른 통계" : "Quick Stats"}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -60,28 +63,28 @@ export function QuickStats({ stats, loading }: QuickStatsProps) {
 
   const statItems = [
     {
-      label: "Campaigns",
+      label: language === "ko" ? "캠페인" : "Campaigns",
       value: stats.campaigns,
       icon: FolderOpen,
       color: "text-blue-500",
       bgColor: "bg-blue-500/10",
     },
     {
-      label: "Videos",
+      label: language === "ko" ? "영상" : "Videos",
       value: stats.videos,
       icon: PlayCircle,
       color: "text-purple-500",
       bgColor: "bg-purple-500/10",
     },
     {
-      label: "Published",
+      label: language === "ko" ? "발행됨" : "Published",
       value: stats.published,
       icon: Send,
       color: "text-green-500",
       bgColor: "bg-green-500/10",
     },
     {
-      label: "Views",
+      label: language === "ko" ? "조회수" : "Views",
       value: stats.totalViews,
       icon: Eye,
       color: "text-orange-500",
@@ -89,7 +92,7 @@ export function QuickStats({ stats, loading }: QuickStatsProps) {
       format: true,
     },
     {
-      label: "Likes",
+      label: language === "ko" ? "좋아요" : "Likes",
       value: stats.totalLikes,
       icon: Heart,
       color: "text-red-500",
@@ -97,7 +100,7 @@ export function QuickStats({ stats, loading }: QuickStatsProps) {
       format: true,
     },
     {
-      label: "Engagement",
+      label: language === "ko" ? "참여도" : "Engagement",
       value: stats.engagementRate,
       icon: TrendingUp,
       color: "text-teal-500",
@@ -112,11 +115,11 @@ export function QuickStats({ stats, loading }: QuickStatsProps) {
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <BarChart3 className="h-5 w-5" />
-          Quick Stats
+          {language === "ko" ? "빠른 통계" : "Quick Stats"}
         </CardTitle>
         <Link href="/dashboard">
           <Button variant="ghost" size="sm">
-            Full Dashboard
+            {language === "ko" ? "전체 대시보드" : "Full Dashboard"}
             <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         </Link>

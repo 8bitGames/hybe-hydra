@@ -1,0 +1,450 @@
+{
+  "campaigns.page.try_again": {
+    "en": "Try Again",
+    "ko": "[번역 필요] Try Again"
+  },
+  "campaigns.page.work_history": {
+    "en": "Work History",
+    "ko": "[번역 필요] Work History"
+  },
+  "campaigns.page.chronological_view_of_all": {
+    "en": "Chronological view of all activities",
+    "ko": "[번역 필요] Chronological view of all activities"
+  },
+  "campaigns.page.prompt_library": {
+    "en": "Prompt Library",
+    "ko": "[번역 필요] Prompt Library"
+  },
+  "campaigns.page.copy_prompt": {
+    "en": "Copy prompt",
+    "ko": "[번역 필요] Copy prompt"
+  },
+  "campaigns.page.keywords_and_hashtags_applied": {
+    "en": "Keywords and hashtags applied to generations",
+    "ko": "[번역 필요] Keywords and hashtags applied to generations"
+  },
+  "campaigns.page.external_links_used_as": {
+    "en": "External links used as reference",
+    "ko": "[번역 필요] External links used as reference"
+  },
+  "campaigns.page.generated_videos": {
+    "en": "Generated Videos",
+    "ko": "[번역 필요] Generated Videos"
+  },
+  "campaigns.page.all_videos_generated_for": {
+    "en": "All videos generated for this campaign",
+    "ko": "[번역 필요] All videos generated for this campaign"
+  },
+  "campaigns.page.search_prompts": {
+    "en": "Search prompts...",
+    "ko": "[번역 필요] Search prompts..."
+  },
+  "campaigns.page.all_status": {
+    "en": "All Status",
+    "ko": "[번역 필요] All Status"
+  },
+  "campaigns.page.published_content": {
+    "en": "Published Content",
+    "ko": "[번역 필요] Published Content"
+  },
+  "campaigns.page.": {
+    "en": "[TRANSLATE] 이미지",
+    "ko": "이미지"
+  },
+  "campaigns.page.eg_carly_pearce_concert": {
+    "en": "e.g., Carly Pearce concert, country music live, Nashville stage...",
+    "ko": "[번역 필요] e.g., Carly Pearce concert, country music live, Nashville stage..."
+  },
+  "campaigns.page.sort_by_score": {
+    "en": "Sort by Score",
+    "ko": "[번역 필요] Sort by Score"
+  },
+  "campaigns.page.sort_by_date": {
+    "en": "Sort by Date",
+    "ko": "[번역 필요] Sort by Date"
+  },
+  "campaigns.page.generation_details": {
+    "en": "Generation Details",
+    "ko": "[번역 필요] Generation Details"
+  },
+  "campaigns.page.copy_caption": {
+    "en": "Copy caption",
+    "ko": "[번역 필요] Copy caption"
+  },
+  "campaigns.page.choose_audio_file": {
+    "en": "Choose audio file...",
+    "ko": "[번역 필요] Choose audio file..."
+  },
+  "campaigns.page.create_video_variants_with": {
+    "en": "Create video variants with AI",
+    "ko": "[번역 필요] Create video variants with AI"
+  },
+  "campaigns.page.new_generation": {
+    "en": "New Generation",
+    "ko": "[번역 필요] New Generation"
+  },
+  "campaigns.page.describe_the_video_you": {
+    "en": "Describe the video you want to generate...",
+    "ko": "[번역 필요] Describe the video you want to generate..."
+  },
+  "campaigns.page.what_to_avoid_in": {
+    "en": "What to avoid in the video...",
+    "ko": "[번역 필요] What to avoid in the video..."
+  },
+  "campaigns.page.generation_history": {
+    "en": "Generation History",
+    "ko": "[번역 필요] Generation History"
+  },
+  "campaigns.page.overall_score": {
+    "en": "Overall Score",
+    "ko": "[번역 필요] Overall Score"
+  },
+  "campaigns.page.cancel": {
+    "en": "Cancel",
+    "ko": "[번역 필요] Cancel"
+  },
+  "campaigns.page.delete": {
+    "en": "Delete",
+    "ko": "[번역 필요] Delete"
+  },
+  "campaigns.layout.": {
+    "en": "[TRANSLATE] 캠페인",
+    "ko": "캠페인"
+  },
+  "campaigns.page.campaign_name": {
+    "en": "Campaign Name",
+    "ko": "[번역 필요] Campaign Name"
+  },
+  "campaigns.page.enter_description": {
+    "en": "Enter description...",
+    "ko": "[번역 필요] Enter description..."
+  },
+  "campaigns.page.asset_locker": {
+    "en": "Asset Locker",
+    "ko": "[번역 필요] Asset Locker"
+  },
+  "campaigns.page.upload_asset_type": {
+    "en": "Upload Asset Type",
+    "ko": "[번역 필요] Upload Asset Type"
+  },
+  "campaigns.page.merchandise_type": {
+    "en": "Merchandise Type",
+    "ko": "[번역 필요] Merchandise Type"
+  },
+  "campaigns.page.schedule_to_social_platforms": {
+    "en": "Schedule to social platforms",
+    "ko": "[번역 필요] Schedule to social platforms"
+  },
+  "campaigns.page.all_platforms": {
+    "en": "All Platforms",
+    "ko": "[번역 필요] All Platforms"
+  },
+  "campaigns.page.schedule_post": {
+    "en": "Schedule Post",
+    "ko": "[번역 필요] Schedule Post"
+  },
+  "campaigns.page.write_your_caption": {
+    "en": "Write your caption...",
+    "ko": "[번역 필요] Write your caption..."
+  },
+  "campaigns.page.eg_summer_comeback_2025": {
+    "en": "e.g., Summer Comeback 2025",
+    "ko": "[번역 필요] e.g., Summer Comeback 2025"
+  },
+  "campaigns.page.select_an_artist": {
+    "en": "Select an artist",
+    "ko": "[번역 필요] Select an artist"
+  },
+  "campaigns.page.brief_description_of_the": {
+    "en": "Brief description of the campaign...",
+    "ko": "[번역 필요] Brief description of the campaign..."
+  },
+  "campaigns.page.target_countries": {
+    "en": "Target Countries",
+    "ko": "[번역 필요] Target Countries"
+  },
+  "campaigns.page.start_date": {
+    "en": "Start Date",
+    "ko": "[번역 필요] Start Date"
+  },
+  "campaigns.page.end_date": {
+    "en": "End Date",
+    "ko": "[번역 필요] End Date"
+  },
+  "campaigns.page.all_statuses": {
+    "en": "All Statuses",
+    "ko": "[번역 필요] All Statuses"
+  },
+  "campaigns.page.all_artists": {
+    "en": "All Artists",
+    "ko": "[번역 필요] All Artists"
+  },
+  "campaigns.page.create_campaign": {
+    "en": "Create Campaign",
+    "ko": "[번역 필요] Create Campaign"
+  },
+  "campaigns.page.analytics": {
+    "en": "Analytics",
+    "ko": "[번역 필요] Analytics"
+  },
+  "common.page.search_by_campaign_artist": {
+    "en": "Search by campaign, artist, or prompt...",
+    "ko": "[번역 필요] Search by campaign, artist, or prompt..."
+  },
+  "common.page.video_not_available": {
+    "en": "Video not available",
+    "ko": "[번역 필요] Video not available"
+  },
+  "common.page.search_campaigns": {
+    "en": "Search campaigns...",
+    "ko": "[번역 필요] Search campaigns..."
+  },
+  "create.page.how_compose_works": {
+    "en": "How Compose Works",
+    "ko": "[번역 필요] How Compose Works"
+  },
+  "create.page.select_a_campaign_to": {
+    "en": "Select a campaign to start...",
+    "ko": "[번역 필요] Select a campaign to start..."
+  },
+  "create.page.select_a_campaign": {
+    "en": "Select a Campaign",
+    "ko": "[번역 필요] Select a Campaign"
+  },
+  "create.page.campaign_name_eg_carly": {
+    "en": "Campaign name (e.g., Carly Pearce Summer)",
+    "ko": "[번역 필요] Campaign name (e.g., Carly Pearce Summer)"
+  },
+  "create.page.how_ai_generation_works": {
+    "en": "How AI Generation Works",
+    "ko": "[번역 필요] How AI Generation Works"
+  },
+  "create.page.": {
+    "en": "[TRANSLATE] 통합",
+    "ko": "통합"
+  },
+  "common.page.try_again": {
+    "en": "Try Again",
+    "ko": "[번역 필요] Try Again"
+  },
+  "common.page.overall_workflow_progress_across": {
+    "en": "Overall workflow progress across all campaigns",
+    "ko": "[번역 필요] Overall workflow progress across all campaigns"
+  },
+  "common.page.analytics_from_all_published": {
+    "en": "Analytics from all published content",
+    "ko": "[번역 필요] Analytics from all published content"
+  },
+  "common.page.campaign_progress": {
+    "en": "Campaign Progress",
+    "ko": "[번역 필요] Campaign Progress"
+  },
+  "common.page.generation_and_publishing_status": {
+    "en": "Generation and publishing status per campaign",
+    "ko": "[번역 필요] Generation and publishing status per campaign"
+  },
+  "common.page.create_campaign": {
+    "en": "Create Campaign",
+    "ko": "[번역 필요] Create Campaign"
+  },
+  "common.page.latest_completed_video_generations": {
+    "en": "Latest completed video generations",
+    "ko": "[번역 필요] Latest completed video generations"
+  },
+  "common.page.no_completed_generations_yet": {
+    "en": "No completed generations yet",
+    "ko": "[번역 필요] No completed generations yet"
+  },
+  "common.page.latest_published_content_on": {
+    "en": "Latest published content on SNS",
+    "ko": "[번역 필요] Latest published content on SNS"
+  },
+  "common.page.no_published_content_yet": {
+    "en": "No published content yet",
+    "ko": "[번역 필요] No published content yet"
+  },
+  "insights.page.": {
+    "en": "[TRANSLATE] 트렌드를",
+    "ko": "트렌드를"
+  },
+  "common.layout.": {
+    "en": "[TRANSLATE] 완료될",
+    "ko": "완료될"
+  },
+  "common.page.": {
+    "en": "[TRANSLATE] 파이프라인",
+    "ko": "파이프라인"
+  },
+  "settings.page.select_label": {
+    "en": "Select Label",
+    "ko": "[번역 필요] Select Label"
+  },
+  "settings.page.other_platforms": {
+    "en": "Other Platforms",
+    "ko": "[번역 필요] Other Platforms"
+  },
+  "settings.page.how_to_connect": {
+    "en": "How to Connect",
+    "ko": "[번역 필요] How to Connect"
+  },
+  "common.page.countrymusic_carlypearce_nashville": {
+    "en": "countrymusic, carlypearce, nashville",
+    "ko": "[번역 필요] countrymusic, carlypearce, nashville"
+  },
+  "common.page.fyp_viral_trending": {
+    "en": "fyp, viral, trending",
+    "ko": "[번역 필요] fyp, viral, trending"
+  },
+  "common.page.enter_keyword_eg_country": {
+    "en": "Enter keyword (e.g., country song)",
+    "ko": "[번역 필요] Enter keyword (e.g., country song)"
+  },
+  "common.page.enter_hashtag_eg_countrymusic": {
+    "en": "Enter hashtag (e.g., countrymusic)",
+    "ko": "[번역 필요] Enter hashtag (e.g., countrymusic)"
+  },
+  "videos.page.search_by_prompt": {
+    "en": "Search by prompt...",
+    "ko": "[번역 필요] Search by prompt..."
+  },
+  "videos.page.status": {
+    "en": "Status",
+    "ko": "[번역 필요] Status"
+  },
+  "videos.page.all_status": {
+    "en": "All Status",
+    "ko": "[번역 필요] All Status"
+  },
+  "videos.page.campaign": {
+    "en": "Campaign",
+    "ko": "[번역 필요] Campaign"
+  },
+  "videos.page.all_campaigns": {
+    "en": "All Campaigns",
+    "ko": "[번역 필요] All Campaigns"
+  },
+  "components.audio-structure-preview.": {
+    "en": "[TRANSLATE] 음악",
+    "ko": "음악"
+  },
+  "components.CampaignTabs.": {
+    "en": "[TRANSLATE] 캠페인",
+    "ko": "캠페인"
+  },
+  "components.CampaignWorkspaceHeader.": {
+    "en": "[TRANSLATE] 초안",
+    "ko": "초안"
+  },
+  "components.index.": {
+    "en": "[TRANSLATE] 캠페인",
+    "ko": "캠페인"
+  },
+  "create.BatchMode.": {
+    "en": "[TRANSLATE] 영상",
+    "ko": "영상"
+  },
+  "create.ComposeMode.": {
+    "en": "[TRANSLATE] 스크립트",
+    "ko": "스크립트"
+  },
+  "create.GenerateMode.": {
+    "en": "[TRANSLATE] 프롬프트",
+    "ko": "프롬프트"
+  },
+  "create.ModeSelector.": {
+    "en": "[TRANSLATE] 통합",
+    "ko": "통합"
+  },
+  "create.QuickCreateMode.": {
+    "en": "[TRANSLATE] 빠른",
+    "ko": "빠른"
+  },
+  "create.index.": {
+    "en": "[TRANSLATE] 만들기",
+    "ko": "만들기"
+  },
+  "components.image-picker-modal.": {
+    "en": "[TRANSLATE] 에서",
+    "ko": "에서"
+  },
+  "components.image-text-preview.": {
+    "en": "[TRANSLATE] 이미지",
+    "ko": "이미지"
+  },
+  "components.MerchandiseSelector.": {
+    "en": "[TRANSLATE] 아티스트",
+    "ko": "아티스트"
+  },
+  "components.MerchandiseSelector.search_merchandise": {
+    "en": "Search merchandise...",
+    "ko": "[번역 필요] Search merchandise..."
+  },
+  "components.MerchandiseSelector.all_types": {
+    "en": "All Types",
+    "ko": "[번역 필요] All Types"
+  },
+  "components.MerchandiseSelector.no_suggestions_available": {
+    "en": "No suggestions available",
+    "ko": "[번역 필요] No suggestions available"
+  },
+  "components.pipeline-card.": {
+    "en": "[TRANSLATE] 완료",
+    "ko": "완료"
+  },
+  "components.url-scraper.youtube_tiktok_instagram_url": {
+    "en": "YouTube, TikTok, Instagram URL...",
+    "ko": "[번역 필요] YouTube, TikTok, Instagram URL..."
+  },
+  "components.url-scraper.paste_youtube_tiktok_or": {
+    "en": "Paste YouTube, TikTok, or Instagram URL...",
+    "ko": "[번역 필요] Paste YouTube, TikTok, or Instagram URL..."
+  },
+  "components.script-timeline.": {
+    "en": "[TRANSLATE] 텍스트",
+    "ko": "텍스트"
+  },
+  "components.tiktok-seo-preview.": {
+    "en": "[TRANSLATE] 최적화",
+    "ko": "최적화"
+  },
+  "components.text-trend-panel.thematic_groupings_of_related": {
+    "en": "Thematic groupings of related hashtags",
+    "ko": "[번역 필요] Thematic groupings of related hashtags"
+  },
+  "components.trend-recommendations-card.enter_trend_topic_eg": {
+    "en": "Enter trend topic (e.g., countrymusic)",
+    "ko": "[번역 필요] Enter trend topic (e.g., countrymusic)"
+  },
+  "components.variation-modal.": {
+    "en": "[TRANSLATE] 분위기",
+    "ko": "분위기"
+  },
+  "components.campaign-sidebar.select_campaign": {
+    "en": "Select campaign...",
+    "ko": "[번역 필요] Select campaign..."
+  },
+  "components.main-navigation.": {
+    "en": "[TRANSLATE] 간소화된",
+    "ko": "간소화된"
+  },
+  "components.BilingualLabel.": {
+    "en": "[TRANSLATE] 사용자의",
+    "ko": "사용자의"
+  },
+  "components.CollapsiblePanel.": {
+    "en": "[TRANSLATE] 설정의",
+    "ko": "설정의"
+  },
+  "components.GlobalJobTracker.": {
+    "en": "[TRANSLATE] 헤더에",
+    "ko": "헤더에"
+  },
+  "components.ProgressIndicator.": {
+    "en": "[TRANSLATE] 상태",
+    "ko": "상태"
+  },
+  "components.spinner.loading": {
+    "en": "Loading",
+    "ko": "[번역 필요] Loading"
+  }
+}

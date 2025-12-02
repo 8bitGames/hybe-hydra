@@ -1,165 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
-import {
-  publishVideoToTikTok,
-  refreshAccessToken,
-  TikTokPostSettings,
-} from "@/lib/tiktok";
+import { inngest } from "@/lib/inngest";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
-}
-
-interface PlatformSettings {
-  privacy_level?: string;
-  disable_duet?: boolean;
-  disable_comment?: boolean;
-  disable_stitch?: boolean;
-  video_cover_timestamp_ms?: number;
-}
-
-// Helper to check if token needs refresh
-function isTokenExpired(expiresAt: Date | null): boolean {
-  if (!expiresAt) return true;
-  // Refresh if expires within 5 minutes
-  const bufferMs = 5 * 60 * 1000;
-  return new Date().getTime() + bufferMs > expiresAt.getTime();
-}
-
-// Background publish handler
-async function executePublish(
-  postId: string,
-  socialAccountId: string,
-  videoUrl: string,
-  caption: string,
-  hashtags: string[],
-  platformSettings: PlatformSettings | null
-) {
-  try {
-    // Get social account with credentials
-    const account = await prisma.socialAccount.findUnique({
-      where: { id: socialAccountId },
-    });
-
-    if (!account || !account.accessToken) {
-      await prisma.scheduledPost.update({
-        where: { id: postId },
-        data: {
-          status: "FAILED",
-          errorMessage: "Social account not found or not connected",
-          retryCount: { increment: 1 },
-        },
-      });
-      return;
-    }
-
-    let accessToken = account.accessToken;
-
-    // Check if token needs refresh
-    if (isTokenExpired(account.tokenExpiresAt)) {
-      const clientKey = process.env.TIKTOK_CLIENT_KEY;
-      const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
-
-      if (!clientKey || !clientSecret || !account.refreshToken) {
-        await prisma.scheduledPost.update({
-          where: { id: postId },
-          data: {
-            status: "FAILED",
-            errorMessage: "Token expired and refresh credentials not available",
-            retryCount: { increment: 1 },
-          },
-        });
-        return;
-      }
-
-      const refreshResult = await refreshAccessToken(
-        clientKey,
-        clientSecret,
-        account.refreshToken
-      );
-
-      if (!refreshResult.success) {
-        await prisma.scheduledPost.update({
-          where: { id: postId },
-          data: {
-            status: "FAILED",
-            errorMessage: `Token refresh failed: ${refreshResult.error}`,
-            retryCount: { increment: 1 },
-          },
-        });
-        return;
-      }
-
-      // Update stored tokens
-      await prisma.socialAccount.update({
-        where: { id: socialAccountId },
-        data: {
-          accessToken: refreshResult.accessToken,
-          refreshToken: refreshResult.refreshToken || account.refreshToken,
-          tokenExpiresAt: refreshResult.expiresIn
-            ? new Date(Date.now() + refreshResult.expiresIn * 1000)
-            : null,
-        },
-      });
-
-      accessToken = refreshResult.accessToken!;
-    }
-
-    // Prepare TikTok settings
-    const tiktokSettings: Partial<TikTokPostSettings> = {
-      privacy_level: (platformSettings?.privacy_level as TikTokPostSettings["privacy_level"]) || "PUBLIC_TO_EVERYONE",
-      disable_duet: platformSettings?.disable_duet,
-      disable_comment: platformSettings?.disable_comment,
-      disable_stitch: platformSettings?.disable_stitch,
-      video_cover_timestamp_ms: platformSettings?.video_cover_timestamp_ms,
-    };
-
-    // Publish to TikTok
-    const result = await publishVideoToTikTok(
-      accessToken,
-      videoUrl,
-      caption || "",
-      hashtags || [],
-      tiktokSettings
-    );
-
-    if (result.success) {
-      await prisma.scheduledPost.update({
-        where: { id: postId },
-        data: {
-          status: "PUBLISHED",
-          publishedAt: new Date(),
-          platformPostId: result.postId,
-          publishedUrl: result.postUrl,
-          errorMessage: null,
-        },
-      });
-
-      console.log(`Successfully published post ${postId} to TikTok:`, result.postId);
-    } else {
-      await prisma.scheduledPost.update({
-        where: { id: postId },
-        data: {
-          status: "FAILED",
-          errorMessage: result.error || "Unknown publish error",
-          retryCount: { increment: 1 },
-        },
-      });
-
-      console.error(`Failed to publish post ${postId}:`, result.error);
-    }
-  } catch (error) {
-    console.error(`Publish error for post ${postId}:`, error);
-    await prisma.scheduledPost.update({
-      where: { id: postId },
-      data: {
-        status: "FAILED",
-        errorMessage: error instanceof Error ? error.message : "Unknown error",
-        retryCount: { increment: 1 },
-      },
-    });
-  }
 }
 
 // POST /api/v1/publishing/schedule/[id]/publish - Manually trigger publish
@@ -254,15 +99,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       data: { status: "PUBLISHING" },
     });
 
-    // Start async publish (don't await)
-    executePublish(
-      post.id,
-      post.socialAccount.id,
-      generation.outputUrl,
-      post.caption || "",
-      post.hashtags,
-      post.platformSettings as PlatformSettings | null
-    );
+    // Trigger publish via Inngest (durable background job)
+    await inngest.send({
+      name: "publish/tiktok",
+      data: {
+        videoId: post.generationId,
+        userId: user.id,
+        accountId: post.socialAccount.id,
+        caption: post.caption || "",
+        hashtags: post.hashtags,
+      },
+    });
 
     return NextResponse.json({
       id: post.id,

@@ -701,8 +701,55 @@ export default function VideoGeneratePage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const campaignId = params.id as string;
+
+  // Page translations
+  const pt = {
+    newGeneration: language === "ko" ? "새 영상 생성" : "New Generation",
+    promptLabel: language === "ko" ? "프롬프트" : "Prompt",
+    promptPlaceholder: language === "ko" ? "생성할 영상을 설명해주세요..." : "Describe the video you want to generate...",
+    promptTip: language === "ko" ? "팁: 한국어나 영어로 작성하세요. AI가 최적화합니다." : "Tip: Write in Korean or English. The AI will optimize it.",
+    optimizing: language === "ko" ? "최적화 중..." : "Optimizing...",
+    optimizeWithAi: language === "ko" ? "AI로 최적화" : "Optimize with AI",
+    negativePromptLabel: language === "ko" ? "네거티브 프롬프트" : "Negative Prompt",
+    negativePromptPlaceholder: language === "ko" ? "영상에서 피할 것..." : "What to avoid in the video...",
+    aspectRatioLabel: language === "ko" ? "화면비" : "Aspect Ratio",
+    durationAuto: language === "ko" ? "재생 시간은 자동 계산됩니다 (분위기에 따라 10-30초)" : "Duration is auto-calculated (10-30s based on vibe)",
+    stylePresets: language === "ko" ? "스타일 프리셋" : "Style Presets",
+    selected: language === "ko" ? "선택됨" : "selected",
+    clearAll: language === "ko" ? "모두 해제" : "Clear all",
+    selectMultipleStyles: language === "ko" ? "여러 스타일을 선택하여 일괄 생성" : "Select multiple styles to generate variations in batch",
+    generateVideo: language === "ko" ? "영상 생성" : "Generate Video",
+    generateSingle: language === "ko" ? "단일 생성 (스타일 없음)" : "Generate Single (No Style)",
+    generateVariations: language === "ko" ? "변형 생성" : "Generate Variations",
+    generatingBatch: language === "ko" ? "일괄 생성 시작 중..." : "Starting Batch Generation...",
+    generatingWithMerch: language === "ko" ? "굿즈와 함께 생성 중..." : "Generating with Merchandise...",
+    generateWithMerch: language === "ko" ? "굿즈와 함께 생성" : "Generate with Merchandise",
+    styles: language === "ko" ? "스타일" : "Styles",
+    generationHistory: language === "ko" ? "생성 기록" : "Generation History",
+    scoring: language === "ko" ? "점수 계산 중..." : "Scoring...",
+    scoreAll: language === "ko" ? "전체 점수 계산" : "Score All",
+    noGenerationsYet: language === "ko" ? "아직 생성된 영상이 없습니다" : "No generations yet",
+    startGenerating: language === "ko" ? "왼쪽 폼에서 영상 생성을 시작하세요" : "Start generating videos with the form on the left",
+    promptOptimized: language === "ko" ? "프롬프트 최적화 완료" : "Prompt Optimized",
+    intent: language === "ko" ? "의도" : "Intent",
+    viewOptimizedPrompt: language === "ko" ? "최적화된 프롬프트 보기" : "View optimized prompt",
+    overallScore: language === "ko" ? "전체 점수" : "Overall Score",
+    recommendations: language === "ko" ? "추천사항" : "Recommendations",
+    watchVideo: language === "ko" ? "영상 보기" : "Watch Video",
+    watchVideoNoAudio: language === "ko" ? "영상 보기 (음원 없음)" : "Watch Video (No Audio)",
+    createVariations: language === "ko" ? "변형 생성" : "Create Variations",
+    deleteConfirm: language === "ko" ? "이 생성을 삭제하시겠습니까?" : "Delete this generation?",
+    score: language === "ko" ? "점수" : "Score",
+    generatePreviewImage: language === "ko" ? "이미지 미리 생성" : "Generate Preview Image",
+    generatingImage: language === "ko" ? "이미지 생성 중..." : "Generating image...",
+    imageGenerated: language === "ko" ? "이미지 생성 완료" : "Image generated",
+    regenerate: language === "ko" ? "다시 생성" : "Regenerate",
+    viewAiPrompt: language === "ko" ? "AI가 생성한 이미지 프롬프트 보기" : "View AI-generated image prompt",
+    useThisImageForVideo: language === "ko" ? "이 이미지로 영상 생성" : "Generate video with this image",
+    likeThisImage: language === "ko" ? "이 이미지가 마음에 드시면 아래 버튼으로 영상을 생성하세요." : "If you like this image, click the button below to generate the video.",
+  };
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [images, setImages] = useState<Asset[]>([]);
@@ -1402,57 +1449,16 @@ export default function VideoGeneratePage() {
   if (!campaign) return null;
 
   return (
-    <>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-        <Link href="/campaigns" className="hover:text-foreground transition-colors">
-          Campaigns
-        </Link>
-        <span>/</span>
-        <Link
-          href={`/campaigns/${campaignId}`}
-          className="hover:text-foreground transition-colors"
-        >
-          {campaign.name}
-        </Link>
-        <span>/</span>
-        <span className="text-foreground">Generate Video</span>
-      </div>
-
-      {/* Header - Step 2 */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <Badge variant="outline" className="font-normal">Step 2</Badge>
-            <span>Create video variants with AI</span>
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">Generate Videos</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
-            <Link href={`/campaigns/${campaignId}`}>
-              <ChevronLeft className="w-4 h-4 mr-2" />
-              Assets
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link href={`/campaigns/${campaignId}/curation`}>
-              Next: Curate
-              <ChevronDown className="w-4 h-4 ml-2 rotate-[-90deg]" />
-            </Link>
-          </Button>
-        </div>
-      </div>
-
+    <div className="space-y-6">
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           {[
-            { label: "Total", value: stats.total, color: "primary" },
-            { label: "Pending", value: stats.pending, color: "secondary" },
-            { label: "Processing", value: stats.processing, color: "blue" },
-            { label: "Completed", value: stats.completed, color: "green" },
-            { label: "Failed", value: stats.failed, color: "red" },
+            { label: t.generation.stats.total, value: stats.total, color: "primary" },
+            { label: t.generation.stats.pending, value: stats.pending, color: "secondary" },
+            { label: t.generation.stats.processing, value: stats.processing, color: "blue" },
+            { label: t.generation.stats.completed, value: stats.completed, color: "green" },
+            { label: t.generation.stats.failed, value: stats.failed, color: "red" },
           ].map((stat) => (
             <Card key={stat.label}>
               <CardContent className="p-4">
@@ -1477,8 +1483,8 @@ export default function VideoGeneratePage() {
                   <TrendingUp className="w-5 h-5 text-primary" />
                 </div>
                 <div className="text-left">
-                  <CardTitle className="text-base">Trending Now</CardTitle>
-                  <p className="text-muted-foreground text-sm">Click a trend to use it as your prompt inspiration</p>
+                  <CardTitle className="text-base">{t.generation.trendingNow}</CardTitle>
+                  <p className="text-muted-foreground text-sm">{t.generation.trendingDescription}</p>
                 </div>
               </div>
               {trendsExpanded ? (
@@ -1579,7 +1585,7 @@ export default function VideoGeneratePage() {
         {/* Generation Form */}
         <Card>
           <CardHeader>
-            <CardTitle>New Generation</CardTitle>
+            <CardTitle>{pt.newGeneration}</CardTitle>
           </CardHeader>
           <CardContent>
             {/* Bridge Prompt Loaded Indicator */}
@@ -1605,7 +1611,7 @@ export default function VideoGeneratePage() {
               {/* Prompt */}
               <div>
                 <Label className="mb-2 block">
-                  Prompt <span className="text-destructive">*</span>
+                  {pt.promptLabel} <span className="text-destructive">*</span>
                 </Label>
                 <textarea
                   value={prompt}
@@ -1613,13 +1619,13 @@ export default function VideoGeneratePage() {
                     setPrompt(e.target.value);
                     setTransformedPrompt(null);
                   }}
-                  placeholder="Describe the video you want to generate..."
+                  placeholder={pt.promptPlaceholder}
                   rows={4}
                   className="w-full px-4 py-3 bg-background border border-input rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
                 />
                 <div className="mt-2 flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
-                    Tip: Write in Korean or English. The AI will optimize it.
+                    {pt.promptTip}
                   </p>
                   <Button
                     type="button"
@@ -1630,12 +1636,12 @@ export default function VideoGeneratePage() {
                     {transforming ? (
                       <>
                         <Spinner className="w-4 h-4 mr-2" />
-                        Optimizing...
+                        {pt.optimizing}
                       </>
                     ) : (
                       <>
                         <Zap className="w-4 h-4 mr-2" />
-                        Optimize with AI
+                        {pt.optimizeWithAi}
                       </>
                     )}
                   </Button>
@@ -1664,10 +1670,10 @@ export default function VideoGeneratePage() {
                 <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <Sparkles className="w-5 h-5 text-green-600" />
-                    <span className="text-green-600 font-medium text-sm">Prompt Optimized</span>
+                    <span className="text-green-600 font-medium text-sm">{pt.promptOptimized}</span>
                   </div>
                   <p className="text-xs text-muted-foreground mb-2">
-                    Intent: {transformedPrompt.analysis.intent}
+                    {pt.intent}: {transformedPrompt.analysis.intent}
                   </p>
                   {transformedPrompt.analysis.trend_applied.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-2">
@@ -1680,7 +1686,7 @@ export default function VideoGeneratePage() {
                   )}
                   <details className="cursor-pointer">
                     <summary className="text-xs text-muted-foreground hover:text-foreground">
-                      View optimized prompt
+                      {pt.viewOptimizedPrompt}
                     </summary>
                     <p className="mt-2 text-sm text-foreground bg-muted p-3 rounded-lg break-words">
                       {transformedPrompt.veo_prompt}
@@ -1691,11 +1697,11 @@ export default function VideoGeneratePage() {
 
               {/* Negative Prompt */}
               <div>
-                <Label className="mb-2 block">Negative Prompt</Label>
+                <Label className="mb-2 block">{pt.negativePromptLabel}</Label>
                 <textarea
                   value={negativePrompt}
                   onChange={(e) => setNegativePrompt(e.target.value)}
-                  placeholder="What to avoid in the video..."
+                  placeholder={pt.negativePromptPlaceholder}
                   rows={2}
                   className="w-full px-4 py-3 bg-background border border-input rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
                 />
@@ -1715,7 +1721,7 @@ export default function VideoGeneratePage() {
 
               {/* Aspect Ratio */}
               <div>
-                <Label className="mb-2 block">Aspect Ratio</Label>
+                <Label className="mb-2 block">{pt.aspectRatioLabel}</Label>
                 <Select value={aspectRatio} onValueChange={setAspectRatio}>
                   <SelectTrigger>
                     <SelectValue />
@@ -1729,7 +1735,7 @@ export default function VideoGeneratePage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Duration is auto-calculated (10-30s based on vibe)
+                  {pt.durationAuto}
                 </p>
               </div>
 
@@ -1738,8 +1744,8 @@ export default function VideoGeneratePage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <Label>
-                      Style Presets {selectedPresetIds.length > 0 && (
-                        <span className="text-primary">({selectedPresetIds.length} selected)</span>
+                      {pt.stylePresets} {selectedPresetIds.length > 0 && (
+                        <span className="text-primary">({selectedPresetIds.length} {pt.selected})</span>
                       )}
                     </Label>
                     {selectedPresetIds.length > 0 && (
@@ -1749,7 +1755,7 @@ export default function VideoGeneratePage() {
                         size="sm"
                         onClick={() => setSelectedPresetIds([])}
                       >
-                        Clear all
+                        {pt.clearAll}
                       </Button>
                     )}
                   </div>
@@ -1777,15 +1783,15 @@ export default function VideoGeneratePage() {
                     ))}
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Select multiple styles to generate variations in batch
+                    {pt.selectMultipleStyles}
                   </p>
                 </div>
               )}
 
               {/* Image Reference for I2V (NEW - optional) */}
-              <div className="p-4 bg-gradient-to-r from-purple-500/5 to-blue-500/5 border border-purple-500/20 rounded-lg">
+              <div className="p-4 bg-muted/50 border border-border rounded-lg">
                 <div className="flex items-center gap-2 mb-3">
-                  <Lightbulb className="w-4 h-4 text-purple-500" />
+                  <Lightbulb className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground">{t.generation.imageGuideGeneration}</span>
                   <Badge variant="secondary" className="text-xs">NEW</Badge>
                 </div>
@@ -1801,7 +1807,7 @@ export default function VideoGeneratePage() {
 
                 {/* Preview Image Section - Two-step workflow */}
                 {imageReference && imageReference.description && (
-                  <div className="mt-4 pt-4 border-t border-purple-500/20">
+                  <div className="mt-4 pt-4 border-t border-border">
                     {!previewImage ? (
                       // Step 1: Generate Preview Button
                       <Button
@@ -1809,7 +1815,7 @@ export default function VideoGeneratePage() {
                         onClick={handleGeneratePreview}
                         disabled={generatingPreview || !prompt.trim()}
                         variant="outline"
-                        className="w-full border-purple-500/50 text-purple-600 hover:bg-purple-500/10"
+                        className="w-full"
                       >
                         {generatingPreview ? (
                           <>
@@ -1920,12 +1926,12 @@ export default function VideoGeneratePage() {
                     {batchGenerating ? (
                       <>
                         <Spinner className="w-5 h-5 mr-2" />
-                        Starting Batch Generation...
+                        {pt.generatingBatch}
                       </>
                     ) : (
                       <>
                         <Layers className="w-5 h-5 mr-2" />
-                        Generate {selectedPresetIds.length} Variations
+                        {pt.generateVariations} ({selectedPresetIds.length})
                       </>
                     )}
                   </Button>
@@ -1937,7 +1943,7 @@ export default function VideoGeneratePage() {
                     onClick={handleGenerate}
                     disabled={generating || batchGenerating || merchandiseGenerating || !prompt.trim()}
                     variant={selectedPresetIds.length > 0 ? "outline" : "default"}
-                    className={`w-full ${imageReference ? "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700" : ""}`}
+                    className="w-full"
                     size="lg"
                   >
                     {generating ? (
@@ -1952,7 +1958,7 @@ export default function VideoGeneratePage() {
                             // Has preview image - generate video with it
                             <>
                               <Play className="w-5 h-5 mr-2" />
-                              이 이미지로 영상 생성
+                              {pt.useThisImageForVideo}
                             </>
                           ) : (
                             // No preview - standard I2V mode
@@ -1964,7 +1970,7 @@ export default function VideoGeneratePage() {
                         ) : (
                           <>
                             <Play className="w-5 h-5 mr-2" />
-                            {selectedPresetIds.length > 0 ? "Generate Single (No Style)" : "Generate Video"}
+                            {selectedPresetIds.length > 0 ? pt.generateSingle : pt.generateVideo}
                           </>
                         )}
                       </>
@@ -2258,6 +2264,6 @@ export default function VideoGeneratePage() {
         onCreateVariations={handleCreateVariations}
         isCreating={creatingVariations}
       />
-    </>
+    </div>
   );
 }

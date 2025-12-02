@@ -1,0 +1,113 @@
+Key,English,Korean,File,Line
+"campaigns.page.try_again","Try Again","[번역 필요] Try Again","app/(dashboard)/campaigns/[id]/analytics/page.tsx",350
+"campaigns.page.work_history","Work History","[번역 필요] Work History","app/(dashboard)/campaigns/[id]/analytics/page.tsx",522
+"campaigns.page.chronological_view_of_all","Chronological view of all activities","[번역 필요] Chronological view of all activities","app/(dashboard)/campaigns/[id]/analytics/page.tsx",523
+"campaigns.page.prompt_library","Prompt Library","[번역 필요] Prompt Library","app/(dashboard)/campaigns/[id]/analytics/page.tsx",617
+"campaigns.page.copy_prompt","Copy prompt","[번역 필요] Copy prompt","app/(dashboard)/campaigns/[id]/analytics/page.tsx",677
+"campaigns.page.keywords_and_hashtags_applied","Keywords and hashtags applied to generations","[번역 필요] Keywords and hashtags applied to generations","app/(dashboard)/campaigns/[id]/analytics/page.tsx",709
+"campaigns.page.external_links_used_as","External links used as reference","[번역 필요] External links used as reference","app/(dashboard)/campaigns/[id]/analytics/page.tsx",765
+"campaigns.page.generated_videos","Generated Videos","[번역 필요] Generated Videos","app/(dashboard)/campaigns/[id]/analytics/page.tsx",817
+"campaigns.page.all_videos_generated_for","All videos generated for this campaign","[번역 필요] All videos generated for this campaign","app/(dashboard)/campaigns/[id]/analytics/page.tsx",818
+"campaigns.page.search_prompts","Search prompts...","[번역 필요] Search prompts...","app/(dashboard)/campaigns/[id]/analytics/page.tsx",824
+"campaigns.page.all_status","All Status","[번역 필요] All Status","app/(dashboard)/campaigns/[id]/analytics/page.tsx",835
+"campaigns.page.published_content","Published Content","[번역 필요] Published Content","app/(dashboard)/campaigns/[id]/analytics/page.tsx",944
+"campaigns.page.","[TRANSLATE] 이미지","이미지","app/(dashboard)/campaigns/[id]/compose/page.tsx",335
+"campaigns.page.eg_carly_pearce_concert","e.g., Carly Pearce concert, country music live, Nashville stage...","[번역 필요] e.g., Carly Pearce concert, country music live, Nashville stage...","app/(dashboard)/campaigns/[id]/compose/page.tsx",681
+"campaigns.page.sort_by_score","Sort by Score","[번역 필요] Sort by Score","app/(dashboard)/campaigns/[id]/curation/page.tsx",462
+"campaigns.page.sort_by_date","Sort by Date","[번역 필요] Sort by Date","app/(dashboard)/campaigns/[id]/curation/page.tsx",463
+"campaigns.page.generation_details","Generation Details","[번역 필요] Generation Details","app/(dashboard)/campaigns/[id]/curation/page.tsx",730
+"campaigns.page.copy_caption","Copy caption","[번역 필요] Copy caption","app/(dashboard)/campaigns/[id]/curation/page.tsx",947
+"campaigns.page.choose_audio_file","Choose audio file...","[번역 필요] Choose audio file...","app/(dashboard)/campaigns/[id]/curation/page.tsx",1073
+"campaigns.page.create_video_variants_with","Create video variants with AI","[번역 필요] Create video variants with AI","app/(dashboard)/campaigns/[id]/generate/page.tsx",1427
+"campaigns.page.new_generation","New Generation","[번역 필요] New Generation","app/(dashboard)/campaigns/[id]/generate/page.tsx",1582
+"campaigns.page.describe_the_video_you","Describe the video you want to generate...","[번역 필요] Describe the video you want to generate...","app/(dashboard)/campaigns/[id]/generate/page.tsx",1616
+"campaigns.page.what_to_avoid_in","What to avoid in the video...","[번역 필요] What to avoid in the video...","app/(dashboard)/campaigns/[id]/generate/page.tsx",1698
+"campaigns.page.generation_history","Generation History","[번역 필요] Generation History","app/(dashboard)/campaigns/[id]/generate/page.tsx",1982
+"campaigns.page.overall_score","Overall Score","[번역 필요] Overall Score","app/(dashboard)/campaigns/[id]/generate/page.tsx",2120
+"campaigns.page.cancel","Cancel","[번역 필요] Cancel","app/(dashboard)/campaigns/[id]/generate/page.tsx",2225
+"campaigns.page.delete","Delete","[번역 필요] Delete","app/(dashboard)/campaigns/[id]/generate/page.tsx",2234
+"campaigns.layout.","[TRANSLATE] 캠페인","캠페인","app/(dashboard)/campaigns/[id]/layout.tsx",15
+"campaigns.page.campaign_name","Campaign Name","[번역 필요] Campaign Name","app/(dashboard)/campaigns/[id]/page.tsx",315
+"campaigns.page.enter_description","Enter description...","[번역 필요] Enter description...","app/(dashboard)/campaigns/[id]/page.tsx",328
+"campaigns.page.asset_locker","Asset Locker","[번역 필요] Asset Locker","app/(dashboard)/campaigns/[id]/page.tsx",472
+"campaigns.page.upload_asset_type","Upload Asset Type","[번역 필요] Upload Asset Type","app/(dashboard)/campaigns/[id]/page.tsx",671
+"campaigns.page.merchandise_type","Merchandise Type","[번역 필요] Merchandise Type","app/(dashboard)/campaigns/[id]/page.tsx",710
+"campaigns.page.schedule_to_social_platforms","Schedule to social platforms","[번역 필요] Schedule to social platforms","app/(dashboard)/campaigns/[id]/publish/page.tsx",200
+"campaigns.page.all_platforms","All Platforms","[번역 필요] All Platforms","app/(dashboard)/campaigns/[id]/publish/page.tsx",268
+"campaigns.page.schedule_post","Schedule Post","[번역 필요] Schedule Post","app/(dashboard)/campaigns/[id]/publish/page.tsx",525
+"campaigns.page.write_your_caption","Write your caption...","[번역 필요] Write your caption...","app/(dashboard)/campaigns/[id]/publish/page.tsx",614
+"campaigns.page.eg_summer_comeback_2025","e.g., Summer Comeback 2025","[번역 필요] e.g., Summer Comeback 2025","app/(dashboard)/campaigns/new/page.tsx",148
+"campaigns.page.select_an_artist","Select an artist","[번역 필요] Select an artist","app/(dashboard)/campaigns/new/page.tsx",162
+"campaigns.page.brief_description_of_the","Brief description of the campaign...","[번역 필요] Brief description of the campaign...","app/(dashboard)/campaigns/new/page.tsx",186
+"campaigns.page.target_countries","Target Countries","[번역 필요] Target Countries","app/(dashboard)/campaigns/new/page.tsx",194
+"campaigns.page.start_date","Start Date","[번역 필요] Start Date","app/(dashboard)/campaigns/new/page.tsx",215
+"campaigns.page.end_date","End Date","[번역 필요] End Date","app/(dashboard)/campaigns/new/page.tsx",224
+"campaigns.page.all_statuses","All Statuses","[번역 필요] All Statuses","app/(dashboard)/campaigns/page.tsx",135
+"campaigns.page.all_artists","All Artists","[번역 필요] All Artists","app/(dashboard)/campaigns/page.tsx",157
+"campaigns.page.create_campaign","Create Campaign","[번역 필요] Create Campaign","app/(dashboard)/campaigns/page.tsx",201
+"campaigns.page.analytics","Analytics","[번역 필요] Analytics","app/(dashboard)/campaigns/page.tsx",247
+"common.page.search_by_campaign_artist","Search by campaign, artist, or prompt...","[번역 필요] Search by campaign, artist, or prompt...","app/(dashboard)/compose/gallery/page.tsx",192
+"common.page.video_not_available","Video not available","[번역 필요] Video not available","app/(dashboard)/compose/gallery/page.tsx",352
+"common.page.search_campaigns","Search campaigns...","[번역 필요] Search campaigns...","app/(dashboard)/compose/page.tsx",149
+"create.page.how_compose_works","How Compose Works","[번역 필요] How Compose Works","app/(dashboard)/create/compose/page.tsx",150
+"create.page.select_a_campaign_to","Select a campaign to start...","[번역 필요] Select a campaign to start...","app/(dashboard)/create/compose/page.tsx",198
+"create.page.select_a_campaign","Select a Campaign","[번역 필요] Select a Campaign","app/(dashboard)/create/compose/page.tsx",273
+"create.page.campaign_name_eg_carly","Campaign name (e.g., Carly Pearce Summer)","[번역 필요] Campaign name (e.g., Carly Pearce Summer)","app/(dashboard)/create/compose/page.tsx",328
+"create.page.how_ai_generation_works","How AI Generation Works","[번역 필요] How AI Generation Works","app/(dashboard)/create/generate/page.tsx",151
+"create.page.","[TRANSLATE] 통합","통합","app/(dashboard)/create/page.tsx",18
+"common.page.try_again","Try Again","[번역 필요] Try Again","app/(dashboard)/dashboard/page.tsx",201
+"common.page.overall_workflow_progress_across","Overall workflow progress across all campaigns","[번역 필요] Overall workflow progress across all campaigns","app/(dashboard)/dashboard/page.tsx",333
+"common.page.analytics_from_all_published","Analytics from all published content","[번역 필요] Analytics from all published content","app/(dashboard)/dashboard/page.tsx",444
+"common.page.campaign_progress","Campaign Progress","[번역 필요] Campaign Progress","app/(dashboard)/dashboard/page.tsx",516
+"common.page.generation_and_publishing_status","Generation and publishing status per campaign","[번역 필요] Generation and publishing status per campaign","app/(dashboard)/dashboard/page.tsx",517
+"common.page.create_campaign","Create Campaign","[번역 필요] Create Campaign","app/(dashboard)/dashboard/page.tsx",537
+"common.page.latest_completed_video_generations","Latest completed video generations","[번역 필요] Latest completed video generations","app/(dashboard)/dashboard/page.tsx",613
+"common.page.no_completed_generations_yet","No completed generations yet","[번역 필요] No completed generations yet","app/(dashboard)/dashboard/page.tsx",619
+"common.page.latest_published_content_on","Latest published content on SNS","[번역 필요] Latest published content on SNS","app/(dashboard)/dashboard/page.tsx",668
+"common.page.no_published_content_yet","No published content yet","[번역 필요] No published content yet","app/(dashboard)/dashboard/page.tsx",674
+"insights.page.","[TRANSLATE] 트렌드를","트렌드를","app/(dashboard)/insights/page.tsx",80
+"common.layout.","[TRANSLATE] 완료될","완료될","app/(dashboard)/layout.tsx",46
+"common.page.","[TRANSLATE] 파이프라인","파이프라인","app/(dashboard)/pipeline/page.tsx",427
+"settings.page.select_label","Select Label","[번역 필요] Select Label","app/(dashboard)/settings/accounts/page.tsx",251
+"settings.page.other_platforms","Other Platforms","[번역 필요] Other Platforms","app/(dashboard)/settings/accounts/page.tsx",309
+"settings.page.how_to_connect","How to Connect","[번역 필요] How to Connect","app/(dashboard)/settings/accounts/page.tsx",343
+"common.page.countrymusic_carlypearce_nashville","countrymusic, carlypearce, nashville","[번역 필요] countrymusic, carlypearce, nashville","app/(dashboard)/trends/page.tsx",364
+"common.page.fyp_viral_trending","fyp, viral, trending","[번역 필요] fyp, viral, trending","app/(dashboard)/trends/page.tsx",376
+"common.page.enter_keyword_eg_country","Enter keyword (e.g., country song)","[번역 필요] Enter keyword (e.g., country song)","app/(dashboard)/trends/page.tsx",479
+"common.page.enter_hashtag_eg_countrymusic","Enter hashtag (e.g., countrymusic)","[번역 필요] Enter hashtag (e.g., countrymusic)","app/(dashboard)/trends/page.tsx",508
+"videos.page.search_by_prompt","Search by prompt...","[번역 필요] Search by prompt...","app/(dashboard)/videos/page.tsx",169
+"videos.page.status","Status","[번역 필요] Status","app/(dashboard)/videos/page.tsx",178
+"videos.page.all_status","All Status","[번역 필요] All Status","app/(dashboard)/videos/page.tsx",181
+"videos.page.campaign","Campaign","[번역 필요] Campaign","app/(dashboard)/videos/page.tsx",189
+"videos.page.all_campaigns","All Campaigns","[번역 필요] All Campaigns","app/(dashboard)/videos/page.tsx",192
+"components.audio-structure-preview.","[TRANSLATE] 음악","음악","components/features/audio-structure-preview.tsx",109
+"components.CampaignTabs.","[TRANSLATE] 캠페인","캠페인","components/features/campaign/CampaignTabs.tsx",32
+"components.CampaignWorkspaceHeader.","[TRANSLATE] 초안","초안","components/features/campaign/CampaignWorkspaceHeader.tsx",42
+"components.index.","[TRANSLATE] 캠페인","캠페인","components/features/campaign/index.ts",2
+"create.BatchMode.","[TRANSLATE] 영상","영상","components/features/create/BatchMode.tsx",27
+"create.ComposeMode.","[TRANSLATE] 스크립트","스크립트","components/features/create/ComposeMode.tsx",50
+"create.GenerateMode.","[TRANSLATE] 프롬프트","프롬프트","components/features/create/GenerateMode.tsx",51
+"create.ModeSelector.","[TRANSLATE] 통합","통합","components/features/create/ModeSelector.tsx",28
+"create.QuickCreateMode.","[TRANSLATE] 빠른","빠른","components/features/create/QuickCreateMode.tsx",41
+"create.index.","[TRANSLATE] 만들기","만들기","components/features/create/index.ts",2
+"components.image-picker-modal.","[TRANSLATE] 에서","에서","components/features/image-reference/image-picker-modal.tsx",51
+"components.image-text-preview.","[TRANSLATE] 이미지","이미지","components/features/image-text-preview.tsx",89
+"components.MerchandiseSelector.","[TRANSLATE] 아티스트","아티스트","components/features/merchandise/MerchandiseSelector.tsx",38
+"components.MerchandiseSelector.search_merchandise","Search merchandise...","[번역 필요] Search merchandise...","components/features/merchandise/MerchandiseSelector.tsx",330
+"components.MerchandiseSelector.all_types","All Types","[번역 필요] All Types","components/features/merchandise/MerchandiseSelector.tsx",336
+"components.MerchandiseSelector.no_suggestions_available","No suggestions available","[번역 필요] No suggestions available","components/features/merchandise/MerchandiseSelector.tsx",381
+"components.pipeline-card.","[TRANSLATE] 완료","완료","components/features/pipeline-card.tsx",62
+"components.url-scraper.youtube_tiktok_instagram_url","YouTube, TikTok, Instagram URL...","[번역 필요] YouTube, TikTok, Instagram URL...","components/features/scraper/url-scraper.tsx",97
+"components.url-scraper.paste_youtube_tiktok_or","Paste YouTube, TikTok, or Instagram URL...","[번역 필요] Paste YouTube, TikTok, or Instagram URL...","components/features/scraper/url-scraper.tsx",245
+"components.script-timeline.","[TRANSLATE] 텍스트","텍스트","components/features/script-timeline.tsx",57
+"components.tiktok-seo-preview.","[TRANSLATE] 최적화","최적화","components/features/tiktok-seo-preview.tsx",65
+"components.text-trend-panel.thematic_groupings_of_related","Thematic groupings of related hashtags","[번역 필요] Thematic groupings of related hashtags","components/features/trend-analysis/text-trend-panel.tsx",157
+"components.trend-recommendations-card.enter_trend_topic_eg","Enter trend topic (e.g., countrymusic)","[번역 필요] Enter trend topic (e.g., countrymusic)","components/features/trend-analysis/trend-recommendations-card.tsx",130
+"components.variation-modal.","[TRANSLATE] 분위기","분위기","components/features/variation-modal.tsx",64
+"components.campaign-sidebar.select_campaign","Select campaign...","[번역 필요] Select campaign...","components/layout/campaign-sidebar.tsx",189
+"components.main-navigation.","[TRANSLATE] 간소화된","간소화된","components/layout/main-navigation.tsx",27
+"components.BilingualLabel.","[TRANSLATE] 사용자의","사용자의","components/shared/BilingualLabel.tsx",25
+"components.CollapsiblePanel.","[TRANSLATE] 설정의","설정의","components/shared/CollapsiblePanel.tsx",23
+"components.GlobalJobTracker.","[TRANSLATE] 헤더에","헤더에","components/shared/GlobalJobTracker.tsx",37
+"components.ProgressIndicator.","[TRANSLATE] 상태","상태","components/shared/ProgressIndicator.tsx",18
+"components.spinner.loading","Loading","[번역 필요] Loading","components/ui/spinner.tsx",9

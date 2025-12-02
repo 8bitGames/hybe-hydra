@@ -207,6 +207,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           data: { status: "PROCESSING", progress: 10 },
         });
 
+        // Determine callback URL (works for both local and deployed)
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : "http://localhost:3000";
+        const callbackUrl = `${baseUrl}/api/v1/jobs/callback`;
+
         // Call compose-engine to search and render
         const response = await fetch(`${composeEngineUrl}/api/v1/compose/auto`, {
           method: "POST",
@@ -220,6 +226,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             aspect_ratio: seedGeneration.aspectRatio,
             target_duration: seedGeneration.durationSeconds,
             campaign_id: seedGeneration.campaignId,
+            callback_url: callbackUrl,
           }),
         });
 

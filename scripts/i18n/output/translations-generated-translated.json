@@ -1,0 +1,450 @@
+{
+  "campaigns.page.try_again": {
+    "en": "Try Again",
+    "ko": "다시 시도"
+  },
+  "campaigns.page.work_history": {
+    "en": "Work History",
+    "ko": "작업 내역"
+  },
+  "campaigns.page.chronological_view_of_all": {
+    "en": "Chronological view of all activities",
+    "ko": "모든 활동 연대기"
+  },
+  "campaigns.page.prompt_library": {
+    "en": "Prompt Library",
+    "ko": "프롬프트 라이브러리"
+  },
+  "campaigns.page.copy_prompt": {
+    "en": "Copy prompt",
+    "ko": "프롬프트 복사"
+  },
+  "campaigns.page.keywords_and_hashtags_applied": {
+    "en": "Keywords and hashtags applied to generations",
+    "ko": "생성에 적용된 키워드 및 해시태그"
+  },
+  "campaigns.page.external_links_used_as": {
+    "en": "External links used as reference",
+    "ko": "참조로 사용된 외부 링크"
+  },
+  "campaigns.page.generated_videos": {
+    "en": "Generated Videos",
+    "ko": "생성된 비디오"
+  },
+  "campaigns.page.all_videos_generated_for": {
+    "en": "All videos generated for this campaign",
+    "ko": "이 캠페인에 대해 생성된 모든 비디오"
+  },
+  "campaigns.page.search_prompts": {
+    "en": "Search prompts...",
+    "ko": "프롬프트 검색..."
+  },
+  "campaigns.page.all_status": {
+    "en": "All Status",
+    "ko": "전체 상태"
+  },
+  "campaigns.page.published_content": {
+    "en": "Published Content",
+    "ko": "게시된 콘텐츠"
+  },
+  "campaigns.page.": {
+    "en": "Image",
+    "ko": "이미지"
+  },
+  "campaigns.page.eg_carly_pearce_concert": {
+    "en": "e.g., Carly Pearce concert, country music live, Nashville stage...",
+    "ko": "예: Carly Pearce 콘서트, 컨트리 음악 라이브, 내슈빌 무대..."
+  },
+  "campaigns.page.sort_by_score": {
+    "en": "Sort by Score",
+    "ko": "점수순 정렬"
+  },
+  "campaigns.page.sort_by_date": {
+    "en": "Sort by Date",
+    "ko": "날짜순 정렬"
+  },
+  "campaigns.page.generation_details": {
+    "en": "Generation Details",
+    "ko": "생성 세부 정보"
+  },
+  "campaigns.page.copy_caption": {
+    "en": "Copy caption",
+    "ko": "캡션 복사"
+  },
+  "campaigns.page.choose_audio_file": {
+    "en": "Choose audio file...",
+    "ko": "오디오 파일 선택..."
+  },
+  "campaigns.page.create_video_variants_with": {
+    "en": "Create video variants with AI",
+    "ko": "AI로 비디오 변형 생성"
+  },
+  "campaigns.page.new_generation": {
+    "en": "New Generation",
+    "ko": "새로운 생성"
+  },
+  "campaigns.page.describe_the_video_you": {
+    "en": "Describe the video you want to generate...",
+    "ko": "생성할 영상을 설명해주세요..."
+  },
+  "campaigns.page.what_to_avoid_in": {
+    "en": "What to avoid in the video...",
+    "ko": "영상에서 피해야 할 것..."
+  },
+  "campaigns.page.generation_history": {
+    "en": "Generation History",
+    "ko": "생성 기록"
+  },
+  "campaigns.page.overall_score": {
+    "en": "Overall Score",
+    "ko": "전체 점수"
+  },
+  "campaigns.page.cancel": {
+    "en": "Cancel",
+    "ko": "취소"
+  },
+  "campaigns.page.delete": {
+    "en": "Delete",
+    "ko": "삭제"
+  },
+  "campaigns.layout.": {
+    "en": "Campaigns",
+    "ko": "캠페인"
+  },
+  "campaigns.page.campaign_name": {
+    "en": "Campaign Name",
+    "ko": "캠페인 이름"
+  },
+  "campaigns.page.enter_description": {
+    "en": "Enter description...",
+    "ko": "설명을 입력하세요..."
+  },
+  "campaigns.page.asset_locker": {
+    "en": "Asset Locker",
+    "ko": "자산 보관함"
+  },
+  "campaigns.page.upload_asset_type": {
+    "en": "Upload Asset Type",
+    "ko": "자산 유형 업로드"
+  },
+  "campaigns.page.merchandise_type": {
+    "en": "Merchandise Type",
+    "ko": "상품 유형"
+  },
+  "campaigns.page.schedule_to_social_platforms": {
+    "en": "Schedule to social platforms",
+    "ko": "소셜 플랫폼에 예약"
+  },
+  "campaigns.page.all_platforms": {
+    "en": "All Platforms",
+    "ko": "모든 플랫폼"
+  },
+  "campaigns.page.schedule_post": {
+    "en": "Schedule Post",
+    "ko": "게시물 예약"
+  },
+  "campaigns.page.write_your_caption": {
+    "en": "Write your caption...",
+    "ko": "캡션을 작성하세요..."
+  },
+  "campaigns.page.eg_summer_comeback_2025": {
+    "en": "e.g., Summer Comeback 2025",
+    "ko": "예: 2025년 여름 컴백"
+  },
+  "campaigns.page.select_an_artist": {
+    "en": "Select an artist",
+    "ko": "아티스트 선택"
+  },
+  "campaigns.page.brief_description_of_the": {
+    "en": "Brief description of the campaign...",
+    "ko": "캠페인에 대한 간단한 설명..."
+  },
+  "campaigns.page.target_countries": {
+    "en": "Target Countries",
+    "ko": "타겟 국가"
+  },
+  "campaigns.page.start_date": {
+    "en": "Start Date",
+    "ko": "시작 날짜"
+  },
+  "campaigns.page.end_date": {
+    "en": "End Date",
+    "ko": "종료 날짜"
+  },
+  "campaigns.page.all_statuses": {
+    "en": "All Statuses",
+    "ko": "전체 상태"
+  },
+  "campaigns.page.all_artists": {
+    "en": "All Artists",
+    "ko": "전체 아티스트"
+  },
+  "campaigns.page.create_campaign": {
+    "en": "Create Campaign",
+    "ko": "캠페인 생성"
+  },
+  "campaigns.page.analytics": {
+    "en": "Analytics",
+    "ko": "분석"
+  },
+  "common.page.search_by_campaign_artist": {
+    "en": "Search by campaign, artist, or prompt...",
+    "ko": "캠페인, 아티스트 또는 프롬프트 검색..."
+  },
+  "common.page.video_not_available": {
+    "en": "Video not available",
+    "ko": "영상을 사용할 수 없습니다"
+  },
+  "common.page.search_campaigns": {
+    "en": "Search campaigns...",
+    "ko": "캠페인 검색..."
+  },
+  "create.page.how_compose_works": {
+    "en": "How Compose Works",
+    "ko": "Compose 작동 방식"
+  },
+  "create.page.select_a_campaign_to": {
+    "en": "Select a campaign to start...",
+    "ko": "시작할 캠페인을 선택하세요..."
+  },
+  "create.page.select_a_campaign": {
+    "en": "Select a Campaign",
+    "ko": "캠페인 선택"
+  },
+  "create.page.campaign_name_eg_carly": {
+    "en": "Campaign name (e.g., Carly Pearce Summer)",
+    "ko": "캠페인 이름 (예: Carly Pearce Summer)"
+  },
+  "create.page.how_ai_generation_works": {
+    "en": "How AI Generation Works",
+    "ko": "AI 생성 방식"
+  },
+  "create.page.": {
+    "en": "Combine",
+    "ko": "통합"
+  },
+  "common.page.try_again": {
+    "en": "Try Again",
+    "ko": "다시 시도"
+  },
+  "common.page.overall_workflow_progress_across": {
+    "en": "Overall workflow progress across all campaigns",
+    "ko": "전체 캠페인 워크플로우 진행 상황"
+  },
+  "common.page.analytics_from_all_published": {
+    "en": "Analytics from all published content",
+    "ko": "게시된 모든 콘텐츠의 분석"
+  },
+  "common.page.campaign_progress": {
+    "en": "Campaign Progress",
+    "ko": "캠페인 진행 상황"
+  },
+  "common.page.generation_and_publishing_status": {
+    "en": "Generation and publishing status per campaign",
+    "ko": "캠페인별 생성 및 게시 상태"
+  },
+  "common.page.create_campaign": {
+    "en": "Create Campaign",
+    "ko": "캠페인 만들기"
+  },
+  "common.page.latest_completed_video_generations": {
+    "en": "Latest completed video generations",
+    "ko": "최근 완료된 비디오 생성"
+  },
+  "common.page.no_completed_generations_yet": {
+    "en": "No completed generations yet",
+    "ko": "완료된 생성 없음"
+  },
+  "common.page.latest_published_content_on": {
+    "en": "Latest published content on SNS",
+    "ko": "SNS에 게시된 최신 콘텐츠"
+  },
+  "common.page.no_published_content_yet": {
+    "en": "No published content yet",
+    "ko": "게시된 콘텐츠 없음"
+  },
+  "insights.page.": {
+    "en": "Trends",
+    "ko": "트렌드를"
+  },
+  "common.layout.": {
+    "en": "Complete",
+    "ko": "완료될"
+  },
+  "common.page.": {
+    "en": "Pipeline",
+    "ko": "파이프라인"
+  },
+  "settings.page.select_label": {
+    "en": "Select Label",
+    "ko": "라벨 선택"
+  },
+  "settings.page.other_platforms": {
+    "en": "Other Platforms",
+    "ko": "다른 플랫폼"
+  },
+  "settings.page.how_to_connect": {
+    "en": "How to Connect",
+    "ko": "연결 방법"
+  },
+  "common.page.countrymusic_carlypearce_nashville": {
+    "en": "countrymusic, carlypearce, nashville",
+    "ko": "countrymusic, carlypearce, nashville"
+  },
+  "common.page.fyp_viral_trending": {
+    "en": "fyp, viral, trending",
+    "ko": "fyp, viral, trending"
+  },
+  "common.page.enter_keyword_eg_country": {
+    "en": "Enter keyword (e.g., country song)",
+    "ko": "키워드 입력 (예: 컨트리송)"
+  },
+  "common.page.enter_hashtag_eg_countrymusic": {
+    "en": "Enter hashtag (e.g., countrymusic)",
+    "ko": "해시태그 입력 (예: countrymusic)"
+  },
+  "videos.page.search_by_prompt": {
+    "en": "Search by prompt...",
+    "ko": "프롬프트로 검색..."
+  },
+  "videos.page.status": {
+    "en": "Status",
+    "ko": "상태"
+  },
+  "videos.page.all_status": {
+    "en": "All Status",
+    "ko": "전체 상태"
+  },
+  "videos.page.campaign": {
+    "en": "Campaign",
+    "ko": "캠페인"
+  },
+  "videos.page.all_campaigns": {
+    "en": "All Campaigns",
+    "ko": "전체 캠페인"
+  },
+  "components.audio-structure-preview.": {
+    "en": "Music",
+    "ko": "음악"
+  },
+  "components.CampaignTabs.": {
+    "en": "Campaigns",
+    "ko": "캠페인"
+  },
+  "components.CampaignWorkspaceHeader.": {
+    "en": "Draft",
+    "ko": "초안"
+  },
+  "components.index.": {
+    "en": "Campaigns",
+    "ko": "캠페인"
+  },
+  "create.BatchMode.": {
+    "en": "Video",
+    "ko": "영상"
+  },
+  "create.ComposeMode.": {
+    "en": "Script",
+    "ko": "스크립트"
+  },
+  "create.GenerateMode.": {
+    "en": "Prompt",
+    "ko": "프롬프트"
+  },
+  "create.ModeSelector.": {
+    "en": "Combined",
+    "ko": "통합"
+  },
+  "create.QuickCreateMode.": {
+    "en": "Quick",
+    "ko": "빠른"
+  },
+  "create.index.": {
+    "en": "Create",
+    "ko": "만들기"
+  },
+  "components.image-picker-modal.": {
+    "en": "From",
+    "ko": "에서"
+  },
+  "components.image-text-preview.": {
+    "en": "Image",
+    "ko": "이미지"
+  },
+  "components.MerchandiseSelector.": {
+    "en": "Artist",
+    "ko": "아티스트"
+  },
+  "components.MerchandiseSelector.search_merchandise": {
+    "en": "Search merchandise...",
+    "ko": "상품 검색..."
+  },
+  "components.MerchandiseSelector.all_types": {
+    "en": "All Types",
+    "ko": "전체 유형"
+  },
+  "components.MerchandiseSelector.no_suggestions_available": {
+    "en": "No suggestions available",
+    "ko": "추천 없음"
+  },
+  "components.pipeline-card.": {
+    "en": "Complete",
+    "ko": "완료"
+  },
+  "components.url-scraper.youtube_tiktok_instagram_url": {
+    "en": "YouTube, TikTok, Instagram URL...",
+    "ko": "YouTube, TikTok, Instagram URL..."
+  },
+  "components.url-scraper.paste_youtube_tiktok_or": {
+    "en": "Paste YouTube, TikTok, or Instagram URL...",
+    "ko": "YouTube, TikTok, 또는 Instagram URL 붙여넣기..."
+  },
+  "components.script-timeline.": {
+    "en": "Text",
+    "ko": "텍스트"
+  },
+  "components.tiktok-seo-preview.": {
+    "en": "Optimization",
+    "ko": "최적화"
+  },
+  "components.text-trend-panel.thematic_groupings_of_related": {
+    "en": "Thematic groupings of related hashtags",
+    "ko": "관련 해시태그의 테마별 그룹"
+  },
+  "components.trend-recommendations-card.enter_trend_topic_eg": {
+    "en": "Enter trend topic (e.g., countrymusic)",
+    "ko": "트렌드 주제를 입력하세요 (예: countrymusic)"
+  },
+  "components.variation-modal.": {
+    "en": "Mood",
+    "ko": "분위기"
+  },
+  "components.campaign-sidebar.select_campaign": {
+    "en": "Select campaign...",
+    "ko": "캠페인 선택..."
+  },
+  "components.main-navigation.": {
+    "en": "Simplified",
+    "ko": "간소화된"
+  },
+  "components.BilingualLabel.": {
+    "en": "User's",
+    "ko": "사용자의"
+  },
+  "components.CollapsiblePanel.": {
+    "en": "Settings",
+    "ko": "설정의"
+  },
+  "components.GlobalJobTracker.": {
+    "en": "Header",
+    "ko": "헤더에"
+  },
+  "components.ProgressIndicator.": {
+    "en": "Status",
+    "ko": "상태"
+  },
+  "components.spinner.loading": {
+    "en": "Loading",
+    "ko": "로딩 중"
+  }
+}

@@ -5,25 +5,26 @@ import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Settings, Users, Bell, Shield } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 const settingsNavItems = [
   {
-    name: "Accounts",
+    name: { ko: "계정", en: "Accounts" },
     href: "/settings/accounts",
     icon: Users,
-    description: "Manage connected social accounts",
+    description: { ko: "연결된 소셜 계정 관리", en: "Manage connected social accounts" },
   },
   {
-    name: "Notifications",
+    name: { ko: "알림", en: "Notifications" },
     href: "/settings/notifications",
     icon: Bell,
-    description: "Configure notification preferences",
+    description: { ko: "알림 설정 구성", en: "Configure notification preferences" },
   },
   {
-    name: "Security",
+    name: { ko: "보안", en: "Security" },
     href: "/settings/security",
     icon: Shield,
-    description: "Security and access settings",
+    description: { ko: "보안 및 접근 설정", en: "Security and access settings" },
   },
 ];
 
@@ -33,6 +34,8 @@ export default function SettingsLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { language } = useI18n();
+  const isKorean = language === "ko";
 
   return (
     <div className="space-y-6 pb-8">
@@ -40,10 +43,12 @@ export default function SettingsLayout({
       <div>
         <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
           <Settings className="h-8 w-8" />
-          Settings
+          {isKorean ? "설정" : "Settings"}
         </h1>
         <p className="text-muted-foreground mt-1">
-          Manage your account settings and preferences
+          {isKorean
+            ? "계정 설정 및 환경 설정을 관리하세요"
+            : "Manage your account settings and preferences"}
         </p>
       </div>
 
@@ -64,9 +69,9 @@ export default function SettingsLayout({
                   >
                     <item.icon className="h-5 w-5 shrink-0" />
                     <div className="text-left">
-                      <div className="font-medium">{item.name}</div>
+                      <div className="font-medium">{isKorean ? item.name.ko : item.name.en}</div>
                       <div className="text-xs text-muted-foreground font-normal">
-                        {item.description}
+                        {isKorean ? item.description.ko : item.description.en}
                       </div>
                     </div>
                   </Button>

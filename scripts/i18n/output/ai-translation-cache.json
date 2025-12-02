@@ -1,0 +1,2166 @@
+{
+  "Try Again": {
+    "ko": "다시 시도",
+    "en": "Try Again"
+  },
+  "Work History": {
+    "ko": "작업 내역",
+    "en": "Work History"
+  },
+  "Chronological view of all activities": {
+    "ko": "모든 활동 연대기 보기",
+    "en": "Chronological view of all activities"
+  },
+  "Prompt Library": {
+    "ko": "프롬프트 라이브러리",
+    "en": "Prompt Library"
+  },
+  "Copy prompt": {
+    "ko": "프롬프트 복사",
+    "en": "Copy prompt"
+  },
+  "Keywords and hashtags applied to generations": {
+    "ko": "생성에 적용된 키워드 및 해시태그",
+    "en": "Keywords and hashtags applied to generations"
+  },
+  "External links used as reference": {
+    "ko": "참고 자료로 사용된 외부 링크",
+    "en": "External links used as reference"
+  },
+  "Generated Videos": {
+    "ko": "생성된 동영상",
+    "en": "Generated Videos"
+  },
+  "All videos generated for this campaign": {
+    "ko": "이 캠페인에 대해 생성된 모든 동영상",
+    "en": "All videos generated for this campaign"
+  },
+  "Search prompts...": {
+    "ko": "프롬프트 검색...",
+    "en": "Search prompts..."
+  },
+  "All Status": {
+    "ko": "전체 상태",
+    "en": "All Status"
+  },
+  "Published Content": {
+    "ko": "게시된 콘텐츠",
+    "en": "Published Content"
+  },
+  "e.g., Carly Pearce concert, country music live, Nashville stage...": {
+    "ko": "예: 칼리 피어스 콘서트, 컨트리 음악 라이브, 내슈빌 무대...",
+    "en": "e.g., Carly Pearce concert, country music live, Nashville stage..."
+  },
+  "이미지": {
+    "ko": "이미지",
+    "en": "Image"
+  },
+  "다운로드": {
+    "ko": "다운로드",
+    "en": "Download"
+  },
+  "업로드": {
+    "ko": "업로드",
+    "en": "Upload"
+  },
+  "실패": {
+    "ko": "실패",
+    "en": "Failed"
+  },
+  "최소": {
+    "ko": "최소",
+    "en": "Minimum"
+  },
+  "이미지가": {
+    "ko": "이미지가",
+    "en": "Images"
+  },
+  "필요합니다": {
+    "ko": "필요합니다",
+    "en": "Required"
+  },
+  "영상": {
+    "ko": "영상",
+    "en": "Video"
+  },
+  "렌더링": {
+    "ko": "렌더링",
+    "en": "Rendering"
+  },
+  "시작": {
+    "ko": "시작",
+    "en": "Start"
+  },
+  "컨셉에": {
+    "ko": "컨셉에",
+    "en": "For the concept"
+  },
+  "맞는": {
+    "ko": "맞는",
+    "en": "Matching"
+  },
+  "스크립트와": {
+    "ko": "스크립트와",
+    "en": "Script and"
+  },
+  "분위기를": {
+    "ko": "분위기를",
+    "en": "Atmosphere"
+  },
+  "분석합니다": {
+    "ko": "분석합니다",
+    "en": "Analyzing"
+  },
+  "길이는": {
+    "ko": "길이는",
+    "en": "Length"
+  },
+  "따라": {
+    "ko": "따라",
+    "en": "Based on"
+  },
+  "자동": {
+    "ko": "자동",
+    "en": "Automatic"
+  },
+  "계산됩니다": {
+    "ko": "계산됩니다",
+    "en": "Calculated"
+  },
+  "검색에": {
+    "ko": "검색에",
+    "en": "For search"
+  },
+  "사용할": {
+    "ko": "사용할",
+    "en": "To use"
+  },
+  "키워드를": {
+    "ko": "키워드를",
+    "en": "Keywords"
+  },
+  "미리": {
+    "ko": "미리",
+    "en": "First"
+  },
+  "설정하세요": {
+    "ko": "설정하세요",
+    "en": "Set up"
+  },
+  "스크립트": {
+    "ko": "스크립트",
+    "en": "Script"
+  },
+  "생성": {
+    "ko": "생성",
+    "en": "Generate"
+  },
+  "추가": {
+    "ko": "추가",
+    "en": "Add"
+  },
+  "키워드가": {
+    "ko": "키워드가",
+    "en": "Keyword(s)"
+  },
+  "자동으로": {
+    "ko": "자동으로",
+    "en": "Automatically"
+  },
+  "생성됩니다": {
+    "ko": "생성됩니다",
+    "en": "Generated"
+  },
+  "아직": {
+    "ko": "아직",
+    "en": "Yet"
+  },
+  "없습니다": {
+    "ko": "없습니다",
+    "en": "None"
+  },
+  "아래에서": {
+    "ko": "아래에서",
+    "en": "Below"
+  },
+  "추가하세요": {
+    "ko": "추가하세요",
+    "en": "Add"
+  },
+  "키워드": {
+    "ko": "키워드",
+    "en": "Keyword"
+  },
+  "키워드 추가...": {
+    "ko": "키워드 추가...",
+    "en": "Add Keyword..."
+  },
+  "참고": {
+    "ko": "참고",
+    "en": "Note"
+  },
+  "소스": {
+    "ko": "소스",
+    "en": "Source"
+  },
+  "키워드로": {
+    "ko": "키워드로",
+    "en": "By keyword"
+  },
+  "다시": {
+    "ko": "다시",
+    "en": "Again"
+  },
+  "검색": {
+    "ko": "검색",
+    "en": "Search"
+  },
+  "음악을": {
+    "ko": "음악을",
+    "en": "Music"
+  },
+  "선택하세요": {
+    "ko": "선택하세요",
+    "en": "Select"
+  },
+  "추정": {
+    "ko": "추정",
+    "en": "Estimate"
+  },
+  "설정을": {
+    "ko": "설정을",
+    "en": "Settings"
+  },
+  "확인하고": {
+    "ko": "확인하고",
+    "en": "Confirm and"
+  },
+  "렌더링을": {
+    "ko": "렌더링을",
+    "en": "Rendering"
+  },
+  "시작하세요": {
+    "ko": "시작하세요",
+    "en": "Start"
+  },
+  "보기": {
+    "ko": "보기",
+    "en": "View"
+  },
+  "관리": {
+    "ko": "관리",
+    "en": "Manage"
+  },
+  "Sort by Score": {
+    "ko": "점수순 정렬",
+    "en": "Sort by Score"
+  },
+  "Sort by Date": {
+    "ko": "날짜순 정렬",
+    "en": "Sort by Date"
+  },
+  "Generation Details": {
+    "ko": "생성 정보",
+    "en": "Generation Details"
+  },
+  "Copy caption": {
+    "ko": "설명 복사",
+    "en": "Copy caption"
+  },
+  "Choose audio file...": {
+    "ko": "오디오 파일 선택...",
+    "en": "Choose audio file..."
+  },
+  "오디오": {
+    "ko": "오디오",
+    "en": "Audio"
+  },
+  "조합": {
+    "ko": "조합",
+    "en": "Combination"
+  },
+  "Create video variants with AI": {
+    "ko": "AI로 영상 변형 만들기",
+    "en": "Create video variants with AI"
+  },
+  "New Generation": {
+    "ko": "새로운 생성",
+    "en": "New Generation"
+  },
+  "Describe the video you want to generate...": {
+    "ko": "생성하고 싶은 영상을 설명해주세요...",
+    "en": "Describe the video you want to generate..."
+  },
+  "What to avoid in the video...": {
+    "ko": "영상에서 피해야 할 것...",
+    "en": "What to avoid in the video..."
+  },
+  "Generation History": {
+    "ko": "생성 기록",
+    "en": "Generation History"
+  },
+  "Overall Score": {
+    "ko": "전체 점수",
+    "en": "Overall Score"
+  },
+  "Cancel": {
+    "ko": "취소",
+    "en": "Cancel"
+  },
+  "Delete": {
+    "ko": "삭제",
+    "en": "Delete"
+  },
+  "완료": {
+    "ko": "완료",
+    "en": "Done"
+  },
+  "생성한": {
+    "ko": "생성한",
+    "en": "Generated"
+  },
+  "프롬프트": {
+    "ko": "프롬프트",
+    "en": "Prompt"
+  },
+  "마음에": {
+    "ko": "마음에",
+    "en": "If you like"
+  },
+  "드시면": {
+    "ko": "드시면",
+    "en": "it"
+  },
+  "아래": {
+    "ko": "아래",
+    "en": "Below"
+  },
+  "버튼으로": {
+    "ko": "버튼으로",
+    "en": "the button to"
+  },
+  "영상을": {
+    "ko": "영상을",
+    "en": "video"
+  },
+  "생성하세요": {
+    "ko": "생성하세요",
+    "en": "generate"
+  },
+  "이미지로": {
+    "ko": "이미지로",
+    "en": "image"
+  },
+  "음원": {
+    "ko": "음원",
+    "en": "Audio"
+  },
+  "없음": {
+    "ko": "없음",
+    "en": "None"
+  },
+  "변형": {
+    "ko": "변형",
+    "en": "Variation"
+  },
+  "캠페인": {
+    "ko": "캠페인",
+    "en": "Campaigns"
+  },
+  "작업공간": {
+    "ko": "작업공간",
+    "en": "Workspace"
+  },
+  "레이아웃": {
+    "ko": "레이아웃",
+    "en": "Layout"
+  },
+  "모든": {
+    "ko": "모든",
+    "en": "All"
+  },
+  "하위": {
+    "ko": "하위",
+    "en": "Sub"
+  },
+  "페이지를": {
+    "ko": "페이지를",
+    "en": "Pages"
+  },
+  "감싸는": {
+    "ko": "감싸는",
+    "en": "Wrapping"
+  },
+  "Campaign Name": {
+    "ko": "캠페인 이름",
+    "en": "Campaign Name"
+  },
+  "Enter description...": {
+    "ko": "설명 입력...",
+    "en": "Enter description..."
+  },
+  "Asset Locker": {
+    "ko": "자산 보관함",
+    "en": "Asset Locker"
+  },
+  "Upload Asset Type": {
+    "ko": "자산 유형 업로드",
+    "en": "Upload Asset Type"
+  },
+  "Merchandise Type": {
+    "ko": "상품 유형",
+    "en": "Merchandise Type"
+  },
+  "처리중": {
+    "ko": "처리중",
+    "en": "Processing"
+  },
+  "대기중": {
+    "ko": "대기중",
+    "en": "Queued"
+  },
+  "파이프라인을": {
+    "ko": "파이프라인을",
+    "en": "Pipeline"
+  },
+  "찾을": {
+    "ko": "찾을",
+    "en": "Find"
+  },
+  "목록으로": {
+    "ko": "목록으로",
+    "en": "Back to List"
+  },
+  "파이프라인": {
+    "ko": "파이프라인",
+    "en": "Pipeline"
+  },
+  "상세": {
+    "ko": "상세",
+    "en": "Details"
+  },
+  "새로고침": {
+    "ko": "새로고침",
+    "en": "Refresh"
+  },
+  "진행률": {
+    "ko": "진행률",
+    "en": "Progress"
+  },
+  "시드": {
+    "ko": "시드",
+    "en": "Seed"
+  },
+  "원본": {
+    "ko": "원본",
+    "en": "Original"
+  },
+  "선택": {
+    "ko": "선택",
+    "en": "Select"
+  },
+  "해제": {
+    "ko": "해제",
+    "en": "Deselect"
+  },
+  "완료된": {
+    "ko": "완료된",
+    "en": "Completed"
+  },
+  "항목": {
+    "ko": "항목",
+    "en": "Items"
+  },
+  "큐레이션으로": {
+    "ko": "큐레이션으로",
+    "en": "To Curation"
+  },
+  "작업을": {
+    "ko": "작업을",
+    "en": "Tasks"
+  },
+  "모니터링하고": {
+    "ko": "모니터링하고",
+    "en": "Monitor"
+  },
+  "관리합니다": {
+    "ko": "관리합니다",
+    "en": "Manage"
+  },
+  "전체": {
+    "ko": "전체",
+    "en": "All"
+  },
+  "일부": {
+    "ko": "일부",
+    "en": "Some"
+  },
+  "또는": {
+    "ko": "또는",
+    "en": "or"
+  },
+  "카테고리": {
+    "ko": "카테고리",
+    "en": "Category"
+  },
+  "파이프라인이": {
+    "ko": "파이프라인이",
+    "en": "Pipeline"
+  },
+  "영상이": {
+    "ko": "영상이",
+    "en": "Video"
+  },
+  "있으면": {
+    "ko": "있으면",
+    "en": "If"
+  },
+  "글로벌": {
+    "ko": "글로벌",
+    "en": "Global"
+  },
+  "페이지에서": {
+    "ko": "페이지에서",
+    "en": "page"
+  },
+  "변형을": {
+    "ko": "변형을",
+    "en": "Transform"
+  },
+  "생성할": {
+    "ko": "생성할",
+    "en": "Create"
+  },
+  "있습니다": {
+    "ko": "있습니다",
+    "en": "Available"
+  },
+  "으로": {
+    "ko": "으로",
+    "en": "To"
+  },
+  "이동": {
+    "ko": "이동",
+    "en": "Go to"
+  },
+  "Schedule to social platforms": {
+    "ko": "소셜 플랫폼에 예약하기",
+    "en": "Schedule to social platforms"
+  },
+  "All Platforms": {
+    "ko": "전체 플랫폼",
+    "en": "All Platforms"
+  },
+  "Schedule Post": {
+    "ko": "게시물 예약",
+    "en": "Schedule Post"
+  },
+  "Write your caption...": {
+    "ko": "캡션을 작성하세요...",
+    "en": "Write your caption..."
+  },
+  "Select an artist": {
+    "ko": "아티스트를 선택하세요",
+    "en": "Select an artist"
+  },
+  "Brief description of the campaign...": {
+    "ko": "캠페인에 대한 간략한 설명...",
+    "en": "Brief description of the campaign..."
+  },
+  "Target Countries": {
+    "ko": "대상 국가",
+    "en": "Target Countries"
+  },
+  "Start Date": {
+    "ko": "시작 날짜",
+    "en": "Start Date"
+  },
+  "End Date": {
+    "ko": "종료 날짜",
+    "en": "End Date"
+  },
+  "All Statuses": {
+    "ko": "전체 상태",
+    "en": "All Statuses"
+  },
+  "All Artists": {
+    "ko": "전체 아티스트",
+    "en": "All Artists"
+  },
+  "Create Campaign": {
+    "ko": "캠페인 만들기",
+    "en": "Create Campaign"
+  },
+  "Analytics": {
+    "ko": "분석",
+    "en": "Analytics"
+  },
+  "Search by campaign, artist, or prompt...": {
+    "ko": "캠페인, 아티스트, 또는 프롬프트 검색...",
+    "en": "Search by campaign, artist, or prompt..."
+  },
+  "Video not available": {
+    "ko": "비디오를 사용할 수 없습니다",
+    "en": "Video not available"
+  },
+  "Search campaigns...": {
+    "ko": "캠페인 검색...",
+    "en": "Search campaigns..."
+  },
+  "How Compose Works": {
+    "ko": "작성 방식 안내",
+    "en": "How Compose Works"
+  },
+  "Select a campaign to start...": {
+    "ko": "시작할 캠페인을 선택하세요...",
+    "en": "Select a campaign to start..."
+  },
+  "Select a Campaign": {
+    "ko": "캠페인 선택",
+    "en": "Select a Campaign"
+  },
+  "Select a campaign": {
+    "ko": "캠페인 선택",
+    "en": "Select a campaign"
+  },
+  "How AI Generation Works": {
+    "ko": "AI 생성 방식",
+    "en": "How AI Generation Works"
+  },
+  "통합": {
+    "ko": "통합",
+    "en": "Integrate"
+  },
+  "만들기": {
+    "ko": "만들기",
+    "en": "Create"
+  },
+  "페이지": {
+    "ko": "페이지",
+    "en": "Page"
+  },
+  "모드의": {
+    "ko": "모드의",
+    "en": "Mode's"
+  },
+  "허브": {
+    "ko": "허브",
+    "en": "Hub"
+  },
+  "모드는": {
+    "ko": "모드는",
+    "en": "Mode"
+  },
+  "컨텍스트를": {
+    "ko": "컨텍스트를",
+    "en": "Context"
+  },
+  "유지하기": {
+    "ko": "유지하기",
+    "en": "Maintain"
+  },
+  "위해": {
+    "ko": "위해",
+    "en": "To"
+  },
+  "내에": {
+    "ko": "내에",
+    "en": "Within"
+  },
+  "임베드됩니다": {
+    "ko": "임베드됩니다",
+    "en": "Embedded"
+  },
+  "방식": {
+    "ko": "방식",
+    "en": "Way"
+  },
+  "Overall workflow progress across all campaigns": {
+    "ko": "전체 캠페인 워크플로우 진행 상황",
+    "en": "Overall workflow progress across all campaigns"
+  },
+  "Analytics from all published content": {
+    "ko": "게시된 모든 콘텐츠의 분석",
+    "en": "Analytics from all published content"
+  },
+  "Campaign Progress": {
+    "ko": "캠페인 진행 상황",
+    "en": "Campaign Progress"
+  },
+  "Generation and publishing status per campaign": {
+    "ko": "캠페인별 생성 및 게시 상태",
+    "en": "Generation and publishing status per campaign"
+  },
+  "Latest completed video generations": {
+    "ko": "최근 완료된 영상 생성",
+    "en": "Latest completed video generations"
+  },
+  "No completed generations yet": {
+    "ko": "완료된 영상이 아직 없습니다",
+    "en": "No completed generations yet"
+  },
+  "Latest published content on SNS": {
+    "ko": "SNS에 게시된 최신 콘텐츠",
+    "en": "Latest published content on SNS"
+  },
+  "No published content yet": {
+    "ko": "게시된 콘텐츠가 아직 없습니다",
+    "en": "No published content yet"
+  },
+  "트렌드를": {
+    "ko": "트렌드를",
+    "en": "Trends"
+  },
+  "분석하고": {
+    "ko": "분석하고",
+    "en": "Analyze"
+  },
+  "효과적인": {
+    "ko": "효과적인",
+    "en": "Effective"
+  },
+  "콘텐츠를": {
+    "ko": "콘텐츠를",
+    "en": "Content"
+  },
+  "발견하세요": {
+    "ko": "발견하세요",
+    "en": "Discover"
+  },
+  "입력하여": {
+    "ko": "입력하여",
+    "en": "Enter"
+  },
+  "스타일과": {
+    "ko": "스타일과",
+    "en": "Style &"
+  },
+  "트렌드": {
+    "ko": "트렌드",
+    "en": "Trends"
+  },
+  "분석": {
+    "ko": "분석",
+    "en": "Analysis"
+  },
+  "인기": {
+    "ko": "인기",
+    "en": "Popular"
+  },
+  "해시태그와": {
+    "ko": "해시태그와",
+    "en": "Hashtags &"
+  },
+  "콘텐츠": {
+    "ko": "콘텐츠",
+    "en": "Content"
+  },
+  "패턴": {
+    "ko": "패턴",
+    "en": "Patterns"
+  },
+  "발견": {
+    "ko": "발견",
+    "en": "Discover"
+  },
+  "있는": {
+    "ko": "있는",
+    "en": "Available"
+  },
+  "분석하여": {
+    "ko": "분석하여",
+    "en": "By analyzing"
+  },
+  "비슷한": {
+    "ko": "비슷한",
+    "en": "Similar"
+  },
+  "스타일의": {
+    "ko": "스타일의",
+    "en": "Style"
+  },
+  "데이터는": {
+    "ko": "데이터는",
+    "en": "Data"
+  },
+  "시간마다": {
+    "ko": "시간마다",
+    "en": "Hourly"
+  },
+  "수집됩니다": {
+    "ko": "수집됩니다",
+    "en": "Collected"
+  },
+  "스타일을": {
+    "ko": "스타일을",
+    "en": "Styles"
+  },
+  "유사한": {
+    "ko": "유사한",
+    "en": "Similar"
+  },
+  "스타일": {
+    "ko": "스타일",
+    "en": "Style"
+  },
+  "색상": {
+    "ko": "색상",
+    "en": "Color"
+  },
+  "속도": {
+    "ko": "속도",
+    "en": "Speed"
+  },
+  "분위기": {
+    "ko": "분위기",
+    "en": "Mood"
+  },
+  "요소": {
+    "ko": "요소",
+    "en": "Elements"
+  },
+  "식별": {
+    "ko": "식별",
+    "en": "Identify"
+  },
+  "유사": {
+    "ko": "유사",
+    "en": "Similar"
+  },
+  "콘텐츠용": {
+    "ko": "콘텐츠용",
+    "en": "For content"
+  },
+  "결과로": {
+    "ko": "결과로",
+    "en": "As a result"
+  },
+  "바로": {
+    "ko": "바로",
+    "en": "Instantly"
+  },
+  "생성하기": {
+    "ko": "생성하기",
+    "en": "Generate"
+  },
+  "분석과": {
+    "ko": "분석과",
+    "en": "With analysis"
+  },
+  "함께": {
+    "ko": "함께",
+    "en": "With"
+  },
+  "고급": {
+    "ko": "고급",
+    "en": "Advanced"
+  },
+  "기능": {
+    "ko": "기능",
+    "en": "Features"
+  },
+  "사용": {
+    "ko": "사용",
+    "en": "Use"
+  },
+  "참조": {
+    "ko": "참조",
+    "en": "Reference"
+  },
+  "없이": {
+    "ko": "없이",
+    "en": "Without"
+  },
+  "패턴을": {
+    "ko": "패턴을",
+    "en": "Patterns"
+  },
+  "탐색하세요": {
+    "ko": "탐색하세요",
+    "en": "Explore"
+  },
+  "해시태그": {
+    "ko": "해시태그",
+    "en": "Hashtags"
+  },
+  "리포트": {
+    "ko": "리포트",
+    "en": "Report"
+  },
+  "트렌드는": {
+    "ko": "트렌드는",
+    "en": "Trends"
+  },
+  "에서": {
+    "ko": "에서",
+    "en": "From"
+  },
+  "기능을": {
+    "ko": "기능을",
+    "en": "Feature"
+  },
+  "사용하여": {
+    "ko": "사용하여",
+    "en": "Using"
+  },
+  "스크립트에": {
+    "ko": "스크립트에",
+    "en": "Script"
+  },
+  "반영하세요": {
+    "ko": "반영하세요",
+    "en": "Reflect"
+  },
+  "완료될": {
+    "ko": "완료될",
+    "en": "Finishing"
+  },
+  "때까지": {
+    "ko": "때까지",
+    "en": "Until"
+  },
+  "대기": {
+    "ko": "대기",
+    "en": "Waiting"
+  },
+  "로딩": {
+    "ko": "로딩",
+    "en": "Loading"
+  },
+  "중이거나": {
+    "ko": "중이거나",
+    "en": "Or"
+  },
+  "없으면": {
+    "ko": "없으면",
+    "en": "If not"
+  },
+  "표시": {
+    "ko": "표시",
+    "en": "Show"
+  },
+  "기존": {
+    "ko": "기존",
+    "en": "Existing"
+  },
+  "선택하여": {
+    "ko": "선택하여",
+    "en": "Select to"
+  },
+  "다양한": {
+    "ko": "다양한",
+    "en": "Various"
+  },
+  "탭에서": {
+    "ko": "탭에서",
+    "en": "In the tab"
+  },
+  "선택하면": {
+    "ko": "선택하면",
+    "en": "When selected"
+  },
+  "해당": {
+    "ko": "해당",
+    "en": "This"
+  },
+  "영상의": {
+    "ko": "영상의",
+    "en": "Video's"
+  },
+  "기반으로": {
+    "ko": "기반으로",
+    "en": "Based on"
+  },
+  "캠페인의": {
+    "ko": "캠페인의",
+    "en": "Campaign's"
+  },
+  "먼저": {
+    "ko": "먼저",
+    "en": "First"
+  },
+  "생성해주세요": {
+    "ko": "생성해주세요",
+    "en": "Create"
+  },
+  "캠페인으로": {
+    "ko": "캠페인으로",
+    "en": "To the campaign"
+  },
+  "만든": {
+    "ko": "만든",
+    "en": "Created"
+  },
+  "슬라이드쇼": {
+    "ko": "슬라이드쇼",
+    "en": "Slideshow"
+  },
+  "영상입니다": {
+    "ko": "영상입니다",
+    "en": "Video"
+  },
+  "원클릭으로": {
+    "ko": "원클릭으로",
+    "en": "With one click"
+  },
+  "최적화된": {
+    "ko": "최적화된",
+    "en": "Optimized"
+  },
+  "생성하거나": {
+    "ko": "생성하거나",
+    "en": "Create or"
+  },
+  "수동으로": {
+    "ko": "수동으로",
+    "en": "Manually"
+  },
+  "세부": {
+    "ko": "세부",
+    "en": "Details"
+  },
+  "선택할": {
+    "ko": "선택할",
+    "en": "Select"
+  },
+  "Select Label": {
+    "ko": "라벨 선택",
+    "en": "Select Label"
+  },
+  "Other Platforms": {
+    "ko": "다른 플랫폼",
+    "en": "Other Platforms"
+  },
+  "How to Connect": {
+    "ko": "연결 방법",
+    "en": "How to Connect"
+  },
+  "countrymusic, carlypearce, nashville": {
+    "ko": "컨트리, 칼리 피어스, 내슈빌",
+    "en": "countrymusic, carlypearce, nashville"
+  },
+  "fyp, viral, trending": {
+    "ko": "추천, 바이럴, 인기",
+    "en": "fyp, viral, trending"
+  },
+  "Search by prompt...": {
+    "ko": "프롬프트로 검색...",
+    "en": "Search by prompt..."
+  },
+  "Status": {
+    "ko": "상태",
+    "en": "Status"
+  },
+  "Campaign": {
+    "ko": "캠페인",
+    "en": "Campaign"
+  },
+  "All Campaigns": {
+    "ko": "모든 캠페인",
+    "en": "All Campaigns"
+  },
+  "음악": {
+    "ko": "음악",
+    "en": "Music"
+  },
+  "구조": {
+    "ko": "구조",
+    "en": "Structure"
+  },
+  "전략": {
+    "ko": "전략",
+    "en": "Strategy"
+  },
+  "볼륨": {
+    "ko": "볼륨",
+    "en": "Volume"
+  },
+  "차분하게": {
+    "ko": "차분하게",
+    "en": "Calm"
+  },
+  "호기심": {
+    "ko": "호기심",
+    "en": "Curiosity"
+  },
+  "유발": {
+    "ko": "유발",
+    "en": "Prompt"
+  },
+  "텍스트": {
+    "ko": "텍스트",
+    "en": "Text"
+  },
+  "임팩트": {
+    "ko": "임팩트",
+    "en": "Impact"
+  },
+  "메인": {
+    "ko": "메인",
+    "en": "Main"
+  },
+  "전개": {
+    "ko": "전개",
+    "en": "Development"
+  },
+  "자막": {
+    "ko": "자막",
+    "en": "Subtitles"
+  },
+  "동기화": {
+    "ko": "동기화",
+    "en": "Sync"
+  },
+  "작업공간의": {
+    "ko": "작업공간의",
+    "en": "Workspace"
+  },
+  "네비게이션": {
+    "ko": "네비게이션",
+    "en": "Navigation"
+  },
+  "컴팩트": {
+    "ko": "컴팩트",
+    "en": "Compact"
+  },
+  "모바일": {
+    "ko": "모바일",
+    "en": "Mobile"
+  },
+  "선택기": {
+    "ko": "선택기",
+    "en": "Selector"
+  },
+  "초안": {
+    "ko": "초안",
+    "en": "Draft"
+  },
+  "활성": {
+    "ko": "활성",
+    "en": "Active"
+  },
+  "보관됨": {
+    "ko": "보관됨",
+    "en": "Archived"
+  },
+  "헤더": {
+    "ko": "헤더",
+    "en": "Header"
+  },
+  "정보와": {
+    "ko": "정보와",
+    "en": "Info &"
+  },
+  "포함": {
+    "ko": "포함",
+    "en": "Includes"
+  },
+  "이름": {
+    "ko": "이름",
+    "en": "Name"
+  },
+  "저장": {
+    "ko": "저장",
+    "en": "Save"
+  },
+  "컴포넌트": {
+    "ko": "컴포넌트",
+    "en": "Components"
+  },
+  "생성된": {
+    "ko": "생성된",
+    "en": "Generated"
+  },
+  "영상에서": {
+    "ko": "영상에서",
+    "en": "From video"
+  },
+  "합성": {
+    "ko": "합성",
+    "en": "Compositing"
+  },
+  "모니터링": {
+    "ko": "모니터링",
+    "en": "Monitoring"
+  },
+  "작업": {
+    "ko": "작업",
+    "en": "Tasks"
+  },
+  "시간": {
+    "ko": "시간",
+    "en": "Time"
+  },
+  "절약": {
+    "ko": "절약",
+    "en": "Saving"
+  },
+  "번에": {
+    "ko": "번에",
+    "en": "At once"
+  },
+  "여러": {
+    "ko": "여러",
+    "en": "Multiple"
+  },
+  "테스트": {
+    "ko": "테스트",
+    "en": "Tests"
+  },
+  "테스트하고": {
+    "ko": "테스트하고",
+    "en": "Test"
+  },
+  "최적의": {
+    "ko": "최적의",
+    "en": "Optimal"
+  },
+  "결과": {
+    "ko": "결과",
+    "en": "Results"
+  },
+  "효율적": {
+    "ko": "효율적",
+    "en": "Efficient"
+  },
+  "워크플로우": {
+    "ko": "워크플로우",
+    "en": "Workflow"
+  },
+  "파이프라인에서": {
+    "ko": "파이프라인에서",
+    "en": "In the pipeline"
+  },
+  "배치": {
+    "ko": "배치",
+    "en": "Batch"
+  },
+  "모드": {
+    "ko": "모드",
+    "en": "Mode"
+  },
+  "대량": {
+    "ko": "대량",
+    "en": "Bulk"
+  },
+  "생성하고": {
+    "ko": "생성하고",
+    "en": "Generate"
+  },
+  "관리하세요": {
+    "ko": "관리하세요",
+    "en": "Manage"
+  },
+  "생성의": {
+    "ko": "생성의",
+    "en": "Generation"
+  },
+  "장점": {
+    "ko": "장점",
+    "en": "Benefits"
+  },
+  "시작하기": {
+    "ko": "시작하기",
+    "en": "Get Started"
+  },
+  "기능은": {
+    "ko": "기능은",
+    "en": "Features"
+  },
+  "관리됩니다": {
+    "ko": "관리됩니다",
+    "en": "Managed"
+  },
+  "파이프라인으로": {
+    "ko": "파이프라인으로",
+    "en": "With pipelines"
+  },
+  "사용하는": {
+    "ko": "사용하는",
+    "en": "Using"
+  },
+  "경우": {
+    "ko": "경우",
+    "en": "If"
+  },
+  "싶을": {
+    "ko": "싶을",
+    "en": "Want to"
+  },
+  "테스트용": {
+    "ko": "테스트용",
+    "en": "For testing"
+  },
+  "콘텐츠가": {
+    "ko": "콘텐츠가",
+    "en": "Content"
+  },
+  "필요할": {
+    "ko": "필요할",
+    "en": "Need"
+  },
+  "소셜": {
+    "ko": "소셜",
+    "en": "Social"
+  },
+  "미디어": {
+    "ko": "미디어",
+    "en": "Media"
+  },
+  "채널별": {
+    "ko": "채널별",
+    "en": "By channel"
+  },
+  "변형이": {
+    "ko": "변형이",
+    "en": "Variations"
+  },
+  "시간을": {
+    "ko": "시간을",
+    "en": "Time"
+  },
+  "절약하며": {
+    "ko": "절약하며",
+    "en": "Save time"
+  },
+  "트렌딩": {
+    "ko": "트렌딩",
+    "en": "Trending"
+  },
+  "영상에": {
+    "ko": "영상에",
+    "en": "To video"
+  },
+  "분위기에": {
+    "ko": "분위기에",
+    "en": "To match the mood"
+  },
+  "매칭": {
+    "ko": "매칭",
+    "en": "Matching"
+  },
+  "효과와": {
+    "ko": "효과와",
+    "en": "With effects"
+  },
+  "단계로": {
+    "ko": "단계로",
+    "en": "In steps"
+  },
+  "이미지와": {
+    "ko": "이미지와",
+    "en": "With images"
+  },
+  "합성한": {
+    "ko": "합성한",
+    "en": "Synthesized"
+  },
+  "만드세요": {
+    "ko": "만드세요",
+    "en": "Create"
+  },
+  "캠페인을": {
+    "ko": "캠페인을",
+    "en": "Campaign"
+  },
+  "에셋에": {
+    "ko": "에셋에",
+    "en": "To assets"
+  },
+  "접근하고": {
+    "ko": "접근하고",
+    "en": "Access"
+  },
+  "저장하세요": {
+    "ko": "저장하세요",
+    "en": "Save"
+  },
+  "캠페인이": {
+    "ko": "캠페인이",
+    "en": "Campaign"
+  },
+  "새로": {
+    "ko": "새로",
+    "en": "New"
+  },
+  "에셋을": {
+    "ko": "에셋을",
+    "en": "Assets"
+  },
+  "매칭에": {
+    "ko": "매칭에",
+    "en": "To match"
+  },
+  "합성을": {
+    "ko": "합성을",
+    "en": "Synthesize"
+  },
+  "이미지를": {
+    "ko": "이미지를",
+    "en": "Images"
+  },
+  "영상으로": {
+    "ko": "영상으로",
+    "en": "To video"
+  },
+  "만들고": {
+    "ko": "만들고",
+    "en": "Create"
+  },
+  "특정": {
+    "ko": "특정",
+    "en": "Specific"
+  },
+  "음악에": {
+    "ko": "음악에",
+    "en": "To music"
+  },
+  "비주얼을": {
+    "ko": "비주얼을",
+    "en": "Visuals"
+  },
+  "맞추고": {
+    "ko": "맞추고",
+    "en": "Match"
+  },
+  "미디어용": {
+    "ko": "미디어용",
+    "en": "For media"
+  },
+  "빠른": {
+    "ko": "빠른",
+    "en": "Quick"
+  },
+  "키워드와": {
+    "ko": "키워드와",
+    "en": "Keywords"
+  },
+  "활용하고": {
+    "ko": "활용하고",
+    "en": "Use"
+  },
+  "에셋": {
+    "ko": "에셋",
+    "en": "Assets"
+  },
+  "취소": {
+    "ko": "취소",
+    "en": "Cancel"
+  },
+  "계속": {
+    "ko": "계속",
+    "en": "Continue"
+  },
+  "작성": {
+    "ko": "작성",
+    "en": "Create"
+  },
+  "비주얼": {
+    "ko": "비주얼",
+    "en": "Visual"
+  },
+  "프리셋과": {
+    "ko": "프리셋과",
+    "en": "Presets and"
+  },
+  "효과": {
+    "ko": "효과",
+    "en": "Effects"
+  },
+  "생성합니다": {
+    "ko": "생성합니다",
+    "en": "Generates"
+  },
+  "옵션을": {
+    "ko": "옵션을",
+    "en": "Options"
+  },
+  "포함한": {
+    "ko": "포함한",
+    "en": "Including"
+  },
+  "컴포넌트는": {
+    "ko": "컴포넌트는",
+    "en": "Component"
+  },
+  "페이지에": {
+    "ko": "페이지에",
+    "en": "On page"
+  },
+  "오디오와": {
+    "ko": "오디오와",
+    "en": "Audio and"
+  },
+  "생성을": {
+    "ko": "생성을",
+    "en": "Generate"
+  },
+  "텍스트로": {
+    "ko": "텍스트로",
+    "en": "With text"
+  },
+  "독특한": {
+    "ko": "독특한",
+    "en": "Unique"
+  },
+  "맞춘": {
+    "ko": "맞춘",
+    "en": "Custom"
+  },
+  "고품질": {
+    "ko": "고품질",
+    "en": "High-quality"
+  },
+  "비주얼이": {
+    "ko": "비주얼이",
+    "en": "Visuals"
+  },
+  "콘텐츠와": {
+    "ko": "콘텐츠와",
+    "en": "Content and"
+  },
+  "바이럴": {
+    "ko": "바이럴",
+    "en": "Viral"
+  },
+  "페이지의": {
+    "ko": "페이지의",
+    "en": "Of the page"
+  },
+  "추천": {
+    "ko": "추천",
+    "en": "Recommended"
+  },
+  "좁은": {
+    "ko": "좁은",
+    "en": "Narrow"
+  },
+  "화면용": {
+    "ko": "화면용",
+    "en": "For screen"
+  },
+  "간소화된": {
+    "ko": "간소화된",
+    "en": "Simplified"
+  },
+  "클릭": {
+    "ko": "클릭",
+    "en": "Click"
+  },
+  "프롬프트를": {
+    "ko": "프롬프트를",
+    "en": "Prompts"
+  },
+  "입력해주세요": {
+    "ko": "입력해주세요",
+    "en": "Please enter"
+  },
+  "최적화": {
+    "ko": "최적화",
+    "en": "Optimize"
+  },
+  "선택하거나": {
+    "ko": "선택하거나",
+    "en": "Or select"
+  },
+  "무엇을": {
+    "ko": "무엇을",
+    "en": "What"
+  },
+  "만들까요": {
+    "ko": "만들까요",
+    "en": "to create?"
+  },
+  "아이디어를": {
+    "ko": "아이디어를",
+    "en": "Ideas"
+  },
+  "자유롭게": {
+    "ko": "자유롭게",
+    "en": "Freely"
+  },
+  "적어주세요": {
+    "ko": "적어주세요",
+    "en": "Write here"
+  },
+  "한국어": {
+    "ko": "한국어",
+    "en": "Korean"
+  },
+  "영어로": {
+    "ko": "영어로",
+    "en": "English"
+  },
+  "입력하세요": {
+    "ko": "입력하세요",
+    "en": "Enter"
+  },
+  "밤하늘": {
+    "ko": "밤하늘",
+    "en": "Night sky"
+  },
+  "춤추는": {
+    "ko": "춤추는",
+    "en": "Dancing"
+  },
+  "소녀": {
+    "ko": "소녀",
+    "en": "Girl"
+  },
+  "네온": {
+    "ko": "네온",
+    "en": "Neon"
+  },
+  "불빛이": {
+    "ko": "불빛이",
+    "en": "Lights"
+  },
+  "반짝이는": {
+    "ko": "반짝이는",
+    "en": "Sparkling"
+  },
+  "도시": {
+    "ko": "도시",
+    "en": "City"
+  },
+  "필수": {
+    "ko": "필수",
+    "en": "Required"
+  },
+  "모드로": {
+    "ko": "모드로",
+    "en": "To Mode"
+  },
+  "전환": {
+    "ko": "전환",
+    "en": "Switch"
+  },
+  "이미지 검색...": {
+    "ko": "이미지 검색...",
+    "en": "Search Image..."
+  },
+  "업로드된": {
+    "ko": "업로드된",
+    "en": "Uploaded"
+  },
+  "업로드하러": {
+    "ko": "업로드하러",
+    "en": "Upload"
+  },
+  "가기": {
+    "ko": "가기",
+    "en": "Go"
+  },
+  "해당하는": {
+    "ko": "해당하는",
+    "en": "Matching"
+  },
+  "개의": {
+    "ko": "개의",
+    "en": "of"
+  },
+  "프리뷰": {
+    "ko": "프리뷰",
+    "en": "Preview"
+  },
+  "배경": {
+    "ko": "배경",
+    "en": "Background"
+  },
+  "Search merchandise...": {
+    "ko": "상품 검색...",
+    "en": "Search merchandise..."
+  },
+  "All Types": {
+    "ko": "전체",
+    "en": "All Types"
+  },
+  "No suggestions available": {
+    "ko": "검색어 없음",
+    "en": "No suggestions available"
+  },
+  "아티스트": {
+    "ko": "아티스트",
+    "en": "Artists"
+  },
+  "굿즈": {
+    "ko": "굿즈",
+    "en": "Merchandise"
+  },
+  "최근": {
+    "ko": "최근",
+    "en": "Recent"
+  },
+  "신규": {
+    "ko": "신규",
+    "en": "New"
+  },
+  "상세보기": {
+    "ko": "상세보기",
+    "en": "View Details"
+  },
+  "일시정지": {
+    "ko": "일시정지",
+    "en": "Pause"
+  },
+  "삭제": {
+    "ko": "삭제",
+    "en": "Delete"
+  },
+  "YouTube, TikTok, Instagram URL...": {
+    "ko": "YouTube, TikTok, Instagram URL...",
+    "en": "YouTube, TikTok, Instagram URL..."
+  },
+  "Paste YouTube, TikTok, or Instagram URL...": {
+    "ko": "YouTube, TikTok, Instagram URL을 붙여넣으세요...",
+    "en": "Paste YouTube, TikTok, or Instagram URL..."
+  },
+  "타임라인": {
+    "ko": "타임라인",
+    "en": "Timeline"
+  },
+  "텍스트에": {
+    "ko": "텍스트에",
+    "en": "In the text"
+  },
+  "포함하면": {
+    "ko": "포함하면",
+    "en": "Include"
+  },
+  "좋은": {
+    "ko": "좋은",
+    "en": "Good"
+  },
+  "알고리즘이": {
+    "ko": "알고리즘이",
+    "en": "Algorithm"
+  },
+  "인식": {
+    "ko": "인식",
+    "en": "Recognition"
+  },
+  "초에": {
+    "ko": "초에",
+    "en": "Seconds"
+  },
+  "주요": {
+    "ko": "주요",
+    "en": "Key"
+  },
+  "텍스트와": {
+    "ko": "텍스트와",
+    "en": "Text and"
+  },
+  "음성으로": {
+    "ko": "음성으로",
+    "en": "Voiceover"
+  },
+  "노출하세요": {
+    "ko": "노출하세요",
+    "en": "Display"
+  },
+  "해시태그는": {
+    "ko": "해시태그는",
+    "en": "Hashtags"
+  },
+  "개만": {
+    "ko": "개만",
+    "en": "{count} only"
+  },
+  "피하기": {
+    "ko": "피하기",
+    "en": "Avoid"
+  },
+  "설명": {
+    "ko": "설명",
+    "en": "Description"
+  },
+  "줄에": {
+    "ko": "줄에",
+    "en": "Lines"
+  },
+  "핵심": {
+    "ko": "핵심",
+    "en": "Core"
+  },
+  "배치하세요": {
+    "ko": "배치하세요",
+    "en": "Place"
+  },
+  "시청": {
+    "ko": "시청",
+    "en": "View"
+  },
+  "완료율과": {
+    "ko": "완료율과",
+    "en": "Completion rate and"
+  },
+  "수가": {
+    "ko": "수가",
+    "en": "Count"
+  },
+  "랭킹에": {
+    "ko": "랭킹에",
+    "en": "To Rank"
+  },
+  "중요합니다": {
+    "ko": "중요합니다",
+    "en": "Important"
+  },
+  "최적": {
+    "ko": "최적",
+    "en": "Optimal"
+  },
+  "시간에": {
+    "ko": "시간에",
+    "en": "At a time"
+  },
+  "게시하여": {
+    "ko": "게시하여",
+    "en": "By posting"
+  },
+  "초기": {
+    "ko": "초기",
+    "en": "Initial"
+  },
+  "높이세요": {
+    "ko": "높이세요",
+    "en": "Increase"
+  },
+  "Thematic groupings of related hashtags": {
+    "ko": "관련 해시태그의 테마별 그룹",
+    "en": "Thematic groupings of related hashtags"
+  },
+  "감정적": {
+    "ko": "감정적",
+    "en": "Emotional"
+  },
+  "조명": {
+    "ko": "조명",
+    "en": "Lighting"
+  },
+  "빛과": {
+    "ko": "빛과",
+    "en": "Light &"
+  },
+  "그림자": {
+    "ko": "그림자",
+    "en": "Shadows"
+  },
+  "시네마틱": {
+    "ko": "시네마틱",
+    "en": "Cinematic"
+  },
+  "영화": {
+    "ko": "영화",
+    "en": "Film"
+  },
+  "이펙트": {
+    "ko": "이펙트",
+    "en": "Effects"
+  },
+  "시각": {
+    "ko": "시각",
+    "en": "Visual"
+  },
+  "필터": {
+    "ko": "필터",
+    "en": "Filters"
+  },
+  "고정": {
+    "ko": "고정",
+    "en": "Fixed"
+  },
+  "설정": {
+    "ko": "설정",
+    "en": "Settings"
+  },
+  "의미는": {
+    "ko": "의미는",
+    "en": "Meaning"
+  },
+  "유지하면서": {
+    "ko": "유지하면서",
+    "en": "While maintaining"
+  },
+  "표현으로": {
+    "ko": "표현으로",
+    "en": "To express"
+  },
+  "변형합니다": {
+    "ko": "변형합니다",
+    "en": "Transform"
+  },
+  "카메라": {
+    "ko": "카메라",
+    "en": "Camera"
+  },
+  "앵글": {
+    "ko": "앵글",
+    "en": "Angle"
+  },
+  "표현": {
+    "ko": "표현",
+    "en": "Expression"
+  },
+  "최대": {
+    "ko": "최대",
+    "en": "Max"
+  },
+  "비용": {
+    "ko": "비용",
+    "en": "Cost"
+  },
+  "관리를": {
+    "ko": "관리를",
+    "en": "Manage"
+  },
+  "수를": {
+    "ko": "수를",
+    "en": "Number"
+  },
+  "제한합니다": {
+    "ko": "제한합니다",
+    "en": "Limit"
+  },
+  "예상": {
+    "ko": "예상",
+    "en": "Estimate"
+  },
+  "카테고리를": {
+    "ko": "카테고리를",
+    "en": "Category"
+  },
+  "선택해주세요": {
+    "ko": "선택해주세요",
+    "en": "Please select"
+  },
+  "비용이": {
+    "ko": "비용이",
+    "en": "Cost"
+  },
+  "많이": {
+    "ko": "많이",
+    "en": "High"
+  },
+  "발생할": {
+    "ko": "발생할",
+    "en": "Incur"
+  },
+  "Select campaign...": {
+    "ko": "캠페인을 선택하세요...",
+    "en": "Select campaign..."
+  },
+  "위한": {
+    "ko": "위한",
+    "en": "For"
+  },
+  "평면화된": {
+    "ko": "평면화된",
+    "en": "Flattened"
+  },
+  "발행": {
+    "ko": "발행",
+    "en": "Publish"
+  },
+  "인사이트": {
+    "ko": "인사이트",
+    "en": "Insights"
+  },
+  "기간": {
+    "ko": "기간",
+    "en": "Period"
+  },
+  "동안": {
+    "ko": "동안",
+    "en": "During"
+  },
+  "호환성을": {
+    "ko": "호환성을",
+    "en": "Compatibility"
+  },
+  "레거시": {
+    "ko": "레거시",
+    "en": "Legacy"
+  },
+  "사용자의": {
+    "ko": "사용자의",
+    "en": "User's"
+  },
+  "선호": {
+    "ko": "선호",
+    "en": "Preferred"
+  },
+  "언어로": {
+    "ko": "언어로",
+    "en": "Language"
+  },
+  "텍스트를": {
+    "ko": "텍스트를",
+    "en": "Text"
+  },
+  "표시합니다": {
+    "ko": "표시합니다",
+    "en": "Displays"
+  },
+  "명확성을": {
+    "ko": "명확성을",
+    "en": "Clarity"
+  },
+  "선택적으로": {
+    "ko": "선택적으로",
+    "en": "Optionally"
+  },
+  "언어를": {
+    "ko": "언어를",
+    "en": "Language"
+  },
+  "모두": {
+    "ko": "모두",
+    "en": "All"
+  },
+  "언어에": {
+    "ko": "언어에",
+    "en": "For Language"
+  },
+  "따른": {
+    "ko": "따른",
+    "en": "Based on"
+  },
+  "적절한": {
+    "ko": "적절한",
+    "en": "Appropriate"
+  },
+  "가져오는": {
+    "ko": "가져오는",
+    "en": "Fetching"
+  },
+  "안녕하세요": {
+    "ko": "안녕하세요",
+    "en": "Hello"
+  },
+  "이중": {
+    "ko": "이중",
+    "en": "Dual"
+  },
+  "언어": {
+    "ko": "언어",
+    "en": "Language"
+  },
+  "객체를": {
+    "ko": "객체를",
+    "en": "Object"
+  },
+  "생성하는": {
+    "ko": "생성하는",
+    "en": "Creating"
+  },
+  "헬퍼": {
+    "ko": "헬퍼",
+    "en": "Helper"
+  },
+  "파라미터로": {
+    "ko": "파라미터로",
+    "en": "As a parameter"
+  },
+  "포맷팅": {
+    "ko": "포맷팅",
+    "en": "Formatting"
+  },
+  "편의를": {
+    "ko": "편의를",
+    "en": "Convenience"
+  },
+  "재내보내기": {
+    "ko": "재내보내기",
+    "en": "Re-export"
+  },
+  "설정의": {
+    "ko": "설정의",
+    "en": "Settings"
+  },
+  "점진적": {
+    "ko": "점진적",
+    "en": "Progressive"
+  },
+  "공개를": {
+    "ko": "공개를",
+    "en": "Disclosure"
+  },
+  "접을": {
+    "ko": "접을",
+    "en": "Close"
+  },
+  "패널": {
+    "ko": "패널",
+    "en": "Panel"
+  },
+  "제어": {
+    "ko": "제어",
+    "en": "Control"
+  },
+  "버전의": {
+    "ko": "버전의",
+    "en": "Version"
+  },
+  "헤더에": {
+    "ko": "헤더에",
+    "en": "In Header"
+  },
+  "표시되는": {
+    "ko": "표시되는",
+    "en": "Displayed"
+  },
+  "트래커": {
+    "ko": "트래커",
+    "en": "Tracker"
+  },
+  "진행": {
+    "ko": "진행",
+    "en": "Progress"
+  },
+  "상태": {
+    "ko": "상태",
+    "en": "Status"
+  },
+  "중인": {
+    "ko": "중인",
+    "en": "Ongoing"
+  },
+  "작업이": {
+    "ko": "작업이",
+    "en": "Tasks"
+  },
+  "선택적": {
+    "ko": "선택적",
+    "en": "Optional"
+  },
+  "추정이": {
+    "ko": "추정이",
+    "en": "Estimate"
+  },
+  "표시기": {
+    "ko": "표시기",
+    "en": "Indicator"
+  },
+  "다단계": {
+    "ko": "다단계",
+    "en": "Multi-stage"
+  },
+  "프로세스를": {
+    "ko": "프로세스를",
+    "en": "Process"
+  },
+  "단계": {
+    "ko": "단계",
+    "en": "Step"
+  },
+  "공유": {
+    "ko": "공유",
+    "en": "Share"
+  },
+  "Loading": {
+    "ko": "불러오는 중",
+    "en": "Loading"
+  }
+}

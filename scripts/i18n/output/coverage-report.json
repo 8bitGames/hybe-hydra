@@ -1,0 +1,1313 @@
+{
+  "summary": {
+    "totalFiles": 95,
+    "filesUsingI18n": 45,
+    "totalStrings": 1450,
+    "translatedStrings": 65,
+    "hardcodedStrings": 1385,
+    "overallCoverage": 4
+  },
+  "byDirectory": {
+    "app/(dashboard)/bridge": {
+      "files": 1,
+      "coverage": 60
+    },
+    "app/(dashboard)/campaigns/[id]/analytics": {
+      "files": 1,
+      "coverage": 4
+    },
+    "app/(dashboard)/campaigns/[id]/compose": {
+      "files": 1,
+      "coverage": 4
+    },
+    "app/(dashboard)/campaigns/[id]/curation": {
+      "files": 1,
+      "coverage": 6
+    },
+    "app/(dashboard)/campaigns/[id]/generate": {
+      "files": 1,
+      "coverage": 6
+    },
+    "app/(dashboard)/campaigns/[id]": {
+      "files": 2,
+      "coverage": 4
+    },
+    "app/(dashboard)/campaigns/[id]/pipeline/[batchId]": {
+      "files": 1,
+      "coverage": 4
+    },
+    "app/(dashboard)/campaigns/[id]/pipeline": {
+      "files": 1,
+      "coverage": 2
+    },
+    "app/(dashboard)/campaigns/[id]/publish": {
+      "files": 1,
+      "coverage": 7
+    },
+    "app/(dashboard)/campaigns/new": {
+      "files": 1,
+      "coverage": 7
+    },
+    "app/(dashboard)/campaigns": {
+      "files": 1,
+      "coverage": 8
+    },
+    "app/(dashboard)/compose/gallery": {
+      "files": 1,
+      "coverage": 8
+    },
+    "app/(dashboard)/compose": {
+      "files": 1,
+      "coverage": 33
+    },
+    "app/(dashboard)/create/batch": {
+      "files": 1,
+      "coverage": 100
+    },
+    "app/(dashboard)/create/compose": {
+      "files": 1,
+      "coverage": 8
+    },
+    "app/(dashboard)/create/generate": {
+      "files": 1,
+      "coverage": 9
+    },
+    "app/(dashboard)/create": {
+      "files": 1,
+      "coverage": 10
+    },
+    "app/(dashboard)/dashboard": {
+      "files": 1,
+      "coverage": 2
+    },
+    "app/(dashboard)/home": {
+      "files": 1,
+      "coverage": 100
+    },
+    "app/(dashboard)/insights": {
+      "files": 1,
+      "coverage": 1
+    },
+    "app/(dashboard)": {
+      "files": 1,
+      "coverage": 0
+    },
+    "app/(dashboard)/pipeline": {
+      "files": 1,
+      "coverage": 1
+    },
+    "app/(dashboard)/publishing": {
+      "files": 1,
+      "coverage": 100
+    },
+    "app/(dashboard)/settings/accounts/callback": {
+      "files": 1,
+      "coverage": 100
+    },
+    "app/(dashboard)/settings/accounts": {
+      "files": 1,
+      "coverage": 14
+    },
+    "app/(dashboard)/settings": {
+      "files": 2,
+      "coverage": 100
+    },
+    "app/(dashboard)/trends": {
+      "files": 1,
+      "coverage": 10
+    },
+    "app/(dashboard)/videos": {
+      "files": 1,
+      "coverage": 11
+    },
+    "components/features": {
+      "files": 7,
+      "coverage": 16
+    },
+    "components/features/campaign": {
+      "files": 3,
+      "coverage": 11
+    },
+    "components/features/create": {
+      "files": 6,
+      "coverage": 4
+    },
+    "components/features/home": {
+      "files": 4,
+      "coverage": 100
+    },
+    "components/features/image-reference": {
+      "files": 4,
+      "coverage": 77
+    },
+    "components/features/merchandise": {
+      "files": 1,
+      "coverage": 6
+    },
+    "components/features/scraper": {
+      "files": 1,
+      "coverage": 50
+    },
+    "components/features/trend-analysis": {
+      "files": 5,
+      "coverage": 62
+    },
+    "components/layout": {
+      "files": 2,
+      "coverage": 21
+    },
+    "components/shared": {
+      "files": 5,
+      "coverage": 13
+    },
+    "components/ui": {
+      "files": 27,
+      "coverage": 96
+    }
+  },
+  "fileDetails": [
+    {
+      "file": "app/(dashboard)/bridge/page.tsx",
+      "totalStrings": 5,
+      "translatedStrings": 3,
+      "hardcodedStrings": 2,
+      "coveragePercent": 60,
+      "usesI18n": true,
+      "issues": [
+        "Line 1270: \"페이지로...\"",
+        "Line 1270: \"이동합니다...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/analytics/page.tsx",
+      "totalStrings": 54,
+      "translatedStrings": 2,
+      "hardcodedStrings": 52,
+      "coveragePercent": 4,
+      "usesI18n": true,
+      "issues": [
+        "Line 353: \"다시...\"",
+        "Line 353: \"시도...\"",
+        "Line 525: \"작업...\"",
+        "Line 525: \"내역...\"",
+        "Line 526: \"모든...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/compose/page.tsx",
+      "totalStrings": 76,
+      "translatedStrings": 3,
+      "hardcodedStrings": 73,
+      "coveragePercent": 4,
+      "usesI18n": true,
+      "issues": [
+        "Line 337: \"이미지...\"",
+        "Line 337: \"다운로드...\"",
+        "Line 337: \"업로드...\"",
+        "Line 346: \"이미지...\"",
+        "Line 346: \"업로드...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/curation/page.tsx",
+      "totalStrings": 16,
+      "translatedStrings": 1,
+      "hardcodedStrings": 15,
+      "coveragePercent": 6,
+      "usesI18n": true,
+      "issues": [
+        "Line 465: \"점수순...\"",
+        "Line 465: \"정렬...\"",
+        "Line 466: \"날짜순...\"",
+        "Line 466: \"정렬...\"",
+        "Line 733: \"생성...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/generate/page.tsx",
+      "totalStrings": 52,
+      "translatedStrings": 3,
+      "hardcodedStrings": 49,
+      "coveragePercent": 6,
+      "usesI18n": true,
+      "issues": [
+        "Line 1429: \"영상...\"",
+        "Line 1429: \"변형...\"",
+        "Line 1429: \"만들기...\"",
+        "Line 1584: \"새로운...\"",
+        "Line 1584: \"생성...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/layout.tsx",
+      "totalStrings": 9,
+      "translatedStrings": 0,
+      "hardcodedStrings": 9,
+      "coveragePercent": 0,
+      "usesI18n": false,
+      "issues": [
+        "Line 15: \"캠페인...\"",
+        "Line 15: \"작업공간...\"",
+        "Line 15: \"레이아웃...\"",
+        "Line 15: \"모든...\"",
+        "Line 15: \"캠페인...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/page.tsx",
+      "totalStrings": 12,
+      "translatedStrings": 1,
+      "hardcodedStrings": 11,
+      "coveragePercent": 8,
+      "usesI18n": true,
+      "issues": [
+        "Line 318: \"캠페인...\"",
+        "Line 318: \"이름...\"",
+        "Line 331: \"설명...\"",
+        "Line 331: \"입력...\"",
+        "Line 475: \"자산...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/pipeline/[batchId]/page.tsx",
+      "totalStrings": 24,
+      "translatedStrings": 1,
+      "hardcodedStrings": 23,
+      "coveragePercent": 4,
+      "usesI18n": true,
+      "issues": [
+        "Line 107: \"완료...\"",
+        "Line 113: \"처리중...\"",
+        "Line 120: \"실패...\"",
+        "Line 126: \"대기중...\"",
+        "Line 145: \"파이프라인을...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/pipeline/page.tsx",
+      "totalStrings": 41,
+      "translatedStrings": 1,
+      "hardcodedStrings": 40,
+      "coveragePercent": 2,
+      "usesI18n": true,
+      "issues": [
+        "Line 139: \"파이프라인...\"",
+        "Line 139: \"관리...\"",
+        "Line 143: \"변형...\"",
+        "Line 143: \"생성...\"",
+        "Line 143: \"작업을...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/publish/page.tsx",
+      "totalStrings": 15,
+      "translatedStrings": 1,
+      "hardcodedStrings": 14,
+      "coveragePercent": 7,
+      "usesI18n": true,
+      "issues": [
+        "Line 203: \"소셜...\"",
+        "Line 203: \"플랫폼에...\"",
+        "Line 203: \"예약하기...\"",
+        "Line 203: \"소셜...\"",
+        "Line 203: \"플랫폼에...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/new/page.tsx",
+      "totalStrings": 14,
+      "translatedStrings": 1,
+      "hardcodedStrings": 13,
+      "coveragePercent": 7,
+      "usesI18n": true,
+      "issues": [
+        "Line 151: \"e.g., Summer Comeback 2025...\"",
+        "Line 165: \"아티스트를...\"",
+        "Line 165: \"선택하세요...\"",
+        "Line 189: \"캠페인에...\"",
+        "Line 189: \"대한...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/campaigns/page.tsx",
+      "totalStrings": 12,
+      "translatedStrings": 1,
+      "hardcodedStrings": 11,
+      "coveragePercent": 8,
+      "usesI18n": true,
+      "issues": [
+        "Line 138: \"전체...\"",
+        "Line 138: \"상태...\"",
+        "Line 141: \"전체...\"",
+        "Line 141: \"상태...\"",
+        "Line 160: \"전체...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/compose/gallery/page.tsx",
+      "totalStrings": 12,
+      "translatedStrings": 1,
+      "hardcodedStrings": 11,
+      "coveragePercent": 8,
+      "usesI18n": true,
+      "issues": [
+        "Line 195: \"캠페인...\"",
+        "Line 195: \"아티스트...\"",
+        "Line 195: \"또는...\"",
+        "Line 195: \"프롬프트...\"",
+        "Line 195: \"검색...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/compose/page.tsx",
+      "totalStrings": 3,
+      "translatedStrings": 1,
+      "hardcodedStrings": 2,
+      "coveragePercent": 33,
+      "usesI18n": true,
+      "issues": [
+        "Line 152: \"캠페인...\"",
+        "Line 152: \"검색...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/create/batch/page.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "app/(dashboard)/create/compose/page.tsx",
+      "totalStrings": 12,
+      "translatedStrings": 1,
+      "hardcodedStrings": 11,
+      "coveragePercent": 8,
+      "usesI18n": true,
+      "issues": [
+        "Line 153: \"작성...\"",
+        "Line 153: \"방식...\"",
+        "Line 153: \"안내...\"",
+        "Line 201: \"시작할...\"",
+        "Line 201: \"캠페인을...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/create/generate/page.tsx",
+      "totalStrings": 11,
+      "translatedStrings": 1,
+      "hardcodedStrings": 10,
+      "coveragePercent": 9,
+      "usesI18n": true,
+      "issues": [
+        "Line 154: \"생성...\"",
+        "Line 154: \"방식...\"",
+        "Line 202: \"시작할...\"",
+        "Line 202: \"캠페인을...\"",
+        "Line 202: \"선택하세요...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/create/page.tsx",
+      "totalStrings": 21,
+      "translatedStrings": 2,
+      "hardcodedStrings": 19,
+      "coveragePercent": 10,
+      "usesI18n": true,
+      "issues": [
+        "Line 18: \"통합...\"",
+        "Line 18: \"만들기...\"",
+        "Line 18: \"페이지...\"",
+        "Line 18: \"모든...\"",
+        "Line 18: \"영상...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/dashboard/page.tsx",
+      "totalStrings": 61,
+      "translatedStrings": 1,
+      "hardcodedStrings": 60,
+      "coveragePercent": 2,
+      "usesI18n": true,
+      "issues": [
+        "Line 204: \"다시...\"",
+        "Line 204: \"시도...\"",
+        "Line 336: \"전체...\"",
+        "Line 336: \"캠페인...\"",
+        "Line 336: \"워크플로우...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/home/page.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "app/(dashboard)/insights/page.tsx",
+      "totalStrings": 134,
+      "translatedStrings": 2,
+      "hardcodedStrings": 132,
+      "coveragePercent": 1,
+      "usesI18n": true,
+      "issues": [
+        "Line 76: \"인사이트...\"",
+        "Line 80: \"트렌드를...\"",
+        "Line 80: \"분석하고...\"",
+        "Line 80: \"효과적인...\"",
+        "Line 80: \"콘텐츠를...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/layout.tsx",
+      "totalStrings": 9,
+      "translatedStrings": 0,
+      "hardcodedStrings": 9,
+      "coveragePercent": 0,
+      "usesI18n": false,
+      "issues": [
+        "Line 46: \"완료될...\"",
+        "Line 46: \"때까지...\"",
+        "Line 46: \"대기...\"",
+        "Line 66: \"또는...\"",
+        "Line 66: \"로딩...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/pipeline/page.tsx",
+      "totalStrings": 98,
+      "translatedStrings": 1,
+      "hardcodedStrings": 97,
+      "coveragePercent": 1,
+      "usesI18n": true,
+      "issues": [
+        "Line 426: \"파이프라인...\"",
+        "Line 429: \"기존...\"",
+        "Line 429: \"영상을...\"",
+        "Line 429: \"선택하여...\"",
+        "Line 429: \"다양한...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/publishing/page.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "app/(dashboard)/settings/accounts/callback/page.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "app/(dashboard)/settings/accounts/page.tsx",
+      "totalStrings": 7,
+      "translatedStrings": 1,
+      "hardcodedStrings": 6,
+      "coveragePercent": 14,
+      "usesI18n": true,
+      "issues": [
+        "Line 254: \"라벨...\"",
+        "Line 254: \"선택...\"",
+        "Line 312: \"다른...\"",
+        "Line 312: \"플랫폼...\"",
+        "Line 346: \"연결...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/settings/layout.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "app/(dashboard)/settings/page.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "app/(dashboard)/trends/page.tsx",
+      "totalStrings": 10,
+      "translatedStrings": 1,
+      "hardcodedStrings": 9,
+      "coveragePercent": 10,
+      "usesI18n": true,
+      "issues": [
+        "Line 367: \"컨트리...\"",
+        "Line 367: \"칼리...\"",
+        "Line 367: \"피어스...\"",
+        "Line 367: \"내슈빌...\"",
+        "Line 379: \"추천...\""
+      ]
+    },
+    {
+      "file": "app/(dashboard)/videos/page.tsx",
+      "totalStrings": 9,
+      "translatedStrings": 1,
+      "hardcodedStrings": 8,
+      "coveragePercent": 11,
+      "usesI18n": true,
+      "issues": [
+        "Line 172: \"프롬프트로...\"",
+        "Line 172: \"검색...\"",
+        "Line 181: \"상태...\"",
+        "Line 184: \"전체...\"",
+        "Line 184: \"상태...\""
+      ]
+    },
+    {
+      "file": "components/features/audio-structure-preview.tsx",
+      "totalStrings": 20,
+      "translatedStrings": 0,
+      "hardcodedStrings": 20,
+      "coveragePercent": 0,
+      "usesI18n": false,
+      "issues": [
+        "Line 109: \"음악...\"",
+        "Line 109: \"구조...\"",
+        "Line 109: \"분석...\"",
+        "Line 113: \"추정...\"",
+        "Line 274: \"전략...\""
+      ]
+    },
+    {
+      "file": "components/features/campaign/CampaignTabs.tsx",
+      "totalStrings": 8,
+      "translatedStrings": 2,
+      "hardcodedStrings": 6,
+      "coveragePercent": 25,
+      "usesI18n": true,
+      "issues": [
+        "Line 32: \"캠페인...\"",
+        "Line 32: \"작업공간의...\"",
+        "Line 32: \"네비게이션...\"",
+        "Line 110: \"컴팩트...\"",
+        "Line 110: \"모바일...\""
+      ]
+    },
+    {
+      "file": "components/features/campaign/CampaignWorkspaceHeader.tsx",
+      "totalStrings": 14,
+      "translatedStrings": 1,
+      "hardcodedStrings": 13,
+      "coveragePercent": 7,
+      "usesI18n": true,
+      "issues": [
+        "Line 42: \"초안...\"",
+        "Line 43: \"활성...\"",
+        "Line 44: \"완료...\"",
+        "Line 45: \"보관됨...\"",
+        "Line 50: \"캠페인...\""
+      ]
+    },
+    {
+      "file": "components/features/campaign/index.ts",
+      "totalStrings": 3,
+      "translatedStrings": 0,
+      "hardcodedStrings": 3,
+      "coveragePercent": 0,
+      "usesI18n": false,
+      "issues": [
+        "Line 2: \"캠페인...\"",
+        "Line 2: \"기능...\"",
+        "Line 2: \"컴포넌트...\""
+      ]
+    },
+    {
+      "file": "components/features/campaign-flow-indicator.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/features/create/BatchMode.tsx",
+      "totalStrings": 96,
+      "translatedStrings": 1,
+      "hardcodedStrings": 95,
+      "coveragePercent": 1,
+      "usesI18n": true,
+      "issues": [
+        "Line 34: \"영상...\"",
+        "Line 34: \"변형...\"",
+        "Line 34: \"생성된...\"",
+        "Line 34: \"영상에서...\"",
+        "Line 34: \"스타일...\""
+      ]
+    },
+    {
+      "file": "components/features/create/ComposeMode.tsx",
+      "totalStrings": 100,
+      "translatedStrings": 1,
+      "hardcodedStrings": 99,
+      "coveragePercent": 1,
+      "usesI18n": true,
+      "issues": [
+        "Line 58: \"스크립트...\"",
+        "Line 58: \"트렌딩...\"",
+        "Line 58: \"키워드로...\"",
+        "Line 58: \"스크립트...\"",
+        "Line 58: \"생성...\""
+      ]
+    },
+    {
+      "file": "components/features/create/GenerateMode.tsx",
+      "totalStrings": 101,
+      "translatedStrings": 1,
+      "hardcodedStrings": 100,
+      "coveragePercent": 1,
+      "usesI18n": true,
+      "issues": [
+        "Line 51: \"프롬프트...\"",
+        "Line 53: \"최적화된...\"",
+        "Line 53: \"프롬프트...\"",
+        "Line 53: \"작성...\"",
+        "Line 59: \"오디오...\""
+      ]
+    },
+    {
+      "file": "components/features/create/ModeSelector.tsx",
+      "totalStrings": 15,
+      "translatedStrings": 3,
+      "hardcodedStrings": 12,
+      "coveragePercent": 20,
+      "usesI18n": true,
+      "issues": [
+        "Line 28: \"통합...\"",
+        "Line 28: \"만들기...\"",
+        "Line 28: \"페이지의...\"",
+        "Line 28: \"모드...\"",
+        "Line 28: \"선택...\""
+      ]
+    },
+    {
+      "file": "components/features/create/QuickCreateMode.tsx",
+      "totalStrings": 71,
+      "translatedStrings": 2,
+      "hardcodedStrings": 69,
+      "coveragePercent": 3,
+      "usesI18n": true,
+      "issues": [
+        "Line 41: \"빠른...\"",
+        "Line 41: \"생성...\"",
+        "Line 41: \"모드...\"",
+        "Line 41: \"간소화된...\"",
+        "Line 41: \"클릭...\""
+      ]
+    },
+    {
+      "file": "components/features/create/index.ts",
+      "totalStrings": 3,
+      "translatedStrings": 0,
+      "hardcodedStrings": 3,
+      "coveragePercent": 0,
+      "usesI18n": false,
+      "issues": [
+        "Line 2: \"만들기...\"",
+        "Line 2: \"기능...\"",
+        "Line 2: \"컴포넌트...\""
+      ]
+    },
+    {
+      "file": "components/features/home/continue-work-section.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/features/home/index.ts",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/features/home/quick-start-cards.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/features/home/quick-stats.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/features/image-reference/image-picker-modal.tsx",
+      "totalStrings": 18,
+      "translatedStrings": 1,
+      "hardcodedStrings": 17,
+      "coveragePercent": 6,
+      "usesI18n": true,
+      "issues": [
+        "Line 54: \"에서...\"",
+        "Line 54: \"이미지...\"",
+        "Line 54: \"선택...\"",
+        "Line 64: \"이미지...\"",
+        "Line 64: \"검색...\""
+      ]
+    },
+    {
+      "file": "components/features/image-reference/image-reference-section.tsx",
+      "totalStrings": 2,
+      "translatedStrings": 2,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": true,
+      "issues": []
+    },
+    {
+      "file": "components/features/image-reference/index.ts",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/features/image-reference/selected-image-card.tsx",
+      "totalStrings": 2,
+      "translatedStrings": 2,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": true,
+      "issues": []
+    },
+    {
+      "file": "components/features/image-text-preview.tsx",
+      "totalStrings": 10,
+      "translatedStrings": 0,
+      "hardcodedStrings": 10,
+      "coveragePercent": 0,
+      "usesI18n": false,
+      "issues": [
+        "Line 89: \"이미지...\"",
+        "Line 89: \"텍스트...\"",
+        "Line 89: \"매칭...\"",
+        "Line 89: \"프리뷰...\"",
+        "Line 92: \"이미지...\""
+      ]
+    },
+    {
+      "file": "components/features/merchandise/MerchandiseSelector.tsx",
+      "totalStrings": 17,
+      "translatedStrings": 1,
+      "hardcodedStrings": 16,
+      "coveragePercent": 6,
+      "usesI18n": true,
+      "issues": [
+        "Line 39: \"아티스트...\"",
+        "Line 39: \"굿즈...\"",
+        "Line 40: \"최근...\"",
+        "Line 40: \"사용...\"",
+        "Line 41: \"인기...\""
+      ]
+    },
+    {
+      "file": "components/features/pipeline-card.tsx",
+      "totalStrings": 12,
+      "translatedStrings": 1,
+      "hardcodedStrings": 11,
+      "coveragePercent": 8,
+      "usesI18n": true,
+      "issues": [
+        "Line 61: \"완료...\"",
+        "Line 68: \"처리중...\"",
+        "Line 76: \"일부...\"",
+        "Line 76: \"실패...\"",
+        "Line 84: \"대기중...\""
+      ]
+    },
+    {
+      "file": "components/features/scraper/url-scraper.tsx",
+      "totalStrings": 2,
+      "translatedStrings": 1,
+      "hardcodedStrings": 1,
+      "coveragePercent": 50,
+      "usesI18n": true,
+      "issues": [
+        "Line 248: \"붙여넣으세요...\""
+      ]
+    },
+    {
+      "file": "components/features/script-timeline.tsx",
+      "totalStrings": 3,
+      "translatedStrings": 0,
+      "hardcodedStrings": 3,
+      "coveragePercent": 0,
+      "usesI18n": false,
+      "issues": [
+        "Line 57: \"텍스트...\"",
+        "Line 57: \"타임라인...\"",
+        "Line 60: \"자막...\""
+      ]
+    },
+    {
+      "file": "components/features/tiktok-seo-preview.tsx",
+      "totalStrings": 37,
+      "translatedStrings": 0,
+      "hardcodedStrings": 37,
+      "coveragePercent": 0,
+      "usesI18n": false,
+      "issues": [
+        "Line 65: \"최적화...\"",
+        "Line 210: \"취소...\"",
+        "Line 213: \"저장...\"",
+        "Line 250: \"영상...\"",
+        "Line 250: \"텍스트에...\""
+      ]
+    },
+    {
+      "file": "components/features/trend-analysis/index.ts",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/features/trend-analysis/recommendations-panel.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/features/trend-analysis/text-trend-panel.tsx",
+      "totalStrings": 9,
+      "translatedStrings": 1,
+      "hardcodedStrings": 8,
+      "coveragePercent": 11,
+      "usesI18n": true,
+      "issues": [
+        "Line 160: \"관련...\"",
+        "Line 160: \"해시태그의...\"",
+        "Line 160: \"테마별...\"",
+        "Line 160: \"그룹...\"",
+        "Line 160: \"관련...\""
+      ]
+    },
+    {
+      "file": "components/features/trend-analysis/trend-recommendations-card.tsx",
+      "totalStrings": 1,
+      "translatedStrings": 0,
+      "hardcodedStrings": 1,
+      "coveragePercent": 0,
+      "usesI18n": false,
+      "issues": [
+        "Line 130: \"Enter trend topic (e.g., countrymusic)...\""
+      ]
+    },
+    {
+      "file": "components/features/trend-analysis/video-trend-panel.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/features/variation-modal.tsx",
+      "totalStrings": 70,
+      "translatedStrings": 2,
+      "hardcodedStrings": 68,
+      "coveragePercent": 3,
+      "usesI18n": true,
+      "issues": [
+        "Line 64: \"분위기...\"",
+        "Line 66: \"감정적...\"",
+        "Line 66: \"분위기...\"",
+        "Line 66: \"변형...\"",
+        "Line 72: \"조명...\""
+      ]
+    },
+    {
+      "file": "components/layout/campaign-sidebar.tsx",
+      "totalStrings": 3,
+      "translatedStrings": 1,
+      "hardcodedStrings": 2,
+      "coveragePercent": 33,
+      "usesI18n": true,
+      "issues": [
+        "Line 192: \"캠페인을...\"",
+        "Line 192: \"선택하세요...\""
+      ]
+    },
+    {
+      "file": "components/layout/main-navigation.tsx",
+      "totalStrings": 22,
+      "translatedStrings": 2,
+      "hardcodedStrings": 20,
+      "coveragePercent": 9,
+      "usesI18n": true,
+      "issues": [
+        "Line 27: \"간소화된...\"",
+        "Line 27: \"위한...\"",
+        "Line 27: \"평면화된...\"",
+        "Line 27: \"네비게이션...\"",
+        "Line 27: \"구조...\""
+      ]
+    },
+    {
+      "file": "components/shared/BilingualLabel.tsx",
+      "totalStrings": 38,
+      "translatedStrings": 3,
+      "hardcodedStrings": 35,
+      "coveragePercent": 8,
+      "usesI18n": true,
+      "issues": [
+        "Line 25: \"사용자의...\"",
+        "Line 25: \"선호...\"",
+        "Line 25: \"언어로...\"",
+        "Line 25: \"텍스트를...\"",
+        "Line 25: \"표시합니다...\""
+      ]
+    },
+    {
+      "file": "components/shared/CollapsiblePanel.tsx",
+      "totalStrings": 14,
+      "translatedStrings": 2,
+      "hardcodedStrings": 12,
+      "coveragePercent": 14,
+      "usesI18n": true,
+      "issues": [
+        "Line 24: \"설정의...\"",
+        "Line 24: \"점진적...\"",
+        "Line 24: \"공개를...\"",
+        "Line 24: \"위한...\"",
+        "Line 24: \"접을...\""
+      ]
+    },
+    {
+      "file": "components/shared/GlobalJobTracker.tsx",
+      "totalStrings": 24,
+      "translatedStrings": 1,
+      "hardcodedStrings": 23,
+      "coveragePercent": 4,
+      "usesI18n": true,
+      "issues": [
+        "Line 37: \"헤더에...\"",
+        "Line 37: \"표시되는...\"",
+        "Line 37: \"글로벌...\"",
+        "Line 37: \"작업...\"",
+        "Line 37: \"트래커...\""
+      ]
+    },
+    {
+      "file": "components/shared/ProgressIndicator.tsx",
+      "totalStrings": 13,
+      "translatedStrings": 1,
+      "hardcodedStrings": 12,
+      "coveragePercent": 8,
+      "usesI18n": true,
+      "issues": [
+        "Line 18: \"상태...\"",
+        "Line 18: \"선택적...\"",
+        "Line 18: \"시간...\"",
+        "Line 18: \"추정이...\"",
+        "Line 18: \"있는...\""
+      ]
+    },
+    {
+      "file": "components/shared/index.ts",
+      "totalStrings": 3,
+      "translatedStrings": 1,
+      "hardcodedStrings": 2,
+      "coveragePercent": 33,
+      "usesI18n": true,
+      "issues": [
+        "Line 2: \"공유...\"",
+        "Line 2: \"컴포넌트...\""
+      ]
+    },
+    {
+      "file": "components/ui/alert-dialog.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/avatar.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/badge.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/button.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/card.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/checkbox.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/collapsible.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/dialog.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/dropdown-menu.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/index.ts",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/input.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/label.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/lazy-image.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/lazy-video.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/progress.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/scroll-area.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/select.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/separator.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/sheet.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/skeleton.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/slider.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/spinner.tsx",
+      "totalStrings": 1,
+      "translatedStrings": 0,
+      "hardcodedStrings": 1,
+      "coveragePercent": 0,
+      "usesI18n": false,
+      "issues": [
+        "Line 10: \"불러오는...\""
+      ]
+    },
+    {
+      "file": "components/ui/table.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/tabs.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/textarea.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    },
+    {
+      "file": "components/ui/toast.tsx",
+      "totalStrings": 1,
+      "translatedStrings": 1,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": true,
+      "issues": []
+    },
+    {
+      "file": "components/ui/video-player.tsx",
+      "totalStrings": 0,
+      "translatedStrings": 0,
+      "hardcodedStrings": 0,
+      "coveragePercent": 100,
+      "usesI18n": false,
+      "issues": []
+    }
+  ],
+  "recommendations": [
+    "Focus on 50 files with low coverage (<50%)",
+    "Highest priority: app/(dashboard)/campaigns/[id]/layout.tsx (0%)",
+    "10 files don't use i18n system at all",
+    "Overall coverage is 4%. Target is 80%+"
+  ]
+}

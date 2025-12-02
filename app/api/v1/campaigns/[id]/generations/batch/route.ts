@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
-import { generateVideo, VeoGenerationParams } from "@/lib/veo";
+import { inngest } from "@/lib/inngest";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -13,91 +13,6 @@ interface StylePresetParams {
   aspectRatio?: string;
   fps?: number;
   [key: string]: string | number | boolean | null | undefined | string[] | number[];
-}
-
-// Async video generation handler for batch items (runs in background)
-function startBatchVideoGeneration(
-  generationId: string,
-  params: {
-    prompt: string;
-    negativePrompt?: string;
-    durationSeconds: number;
-    aspectRatio: string;
-    style?: string;
-  }
-) {
-  // Don't await - let it run in background
-  (async () => {
-    try {
-      // Update status to processing
-      await prisma.videoGeneration.update({
-        where: { id: generationId },
-        data: {
-          status: "PROCESSING",
-          progress: 10,
-        },
-      });
-
-      // Call Veo API
-      const veoParams: VeoGenerationParams = {
-        prompt: params.prompt,
-        negativePrompt: params.negativePrompt,
-        durationSeconds: params.durationSeconds,
-        aspectRatio: params.aspectRatio as "16:9" | "9:16" | "1:1",
-        style: params.style,
-      };
-
-      // Update progress
-      await prisma.videoGeneration.update({
-        where: { id: generationId },
-        data: { progress: 50 },
-      });
-
-      const result = await generateVideo(veoParams);
-
-      if (result.success && result.videoUrl) {
-        // Success - update with video URL
-        const existingGen = await prisma.videoGeneration.findUnique({
-          where: { id: generationId },
-        });
-        const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
-
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: {
-            status: "COMPLETED",
-            progress: 100,
-            outputUrl: result.videoUrl,
-            qualityScore: 75 + Math.floor(Math.random() * 20), // Will be replaced by AI scoring
-            qualityMetadata: {
-              ...existingMetadata,
-              veoMetadata: result.metadata,
-            },
-          },
-        });
-      } else {
-        // Failed
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: {
-            status: "FAILED",
-            progress: 100,
-            errorMessage: result.error || "Video generation failed",
-          },
-        });
-      }
-    } catch (error) {
-      console.error("Batch video generation error:", error);
-      await prisma.videoGeneration.update({
-        where: { id: generationId },
-        data: {
-          status: "FAILED",
-          progress: 100,
-          errorMessage: error instanceof Error ? error.message : "Unknown error",
-        },
-      });
-    }
-  })();
 }
 
 // POST /api/v1/campaigns/[id]/generations/batch - Create multiple generations with style presets
@@ -257,17 +172,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const results = await Promise.all(generationPromises);
 
-    // Start async video generation for all items
-    results.forEach(({ generation, preset }) => {
-      // Run in background (don't await)
-      startBatchVideoGeneration(generation.id, {
-        prompt: generation.prompt,
-        negativePrompt: generation.negativePrompt || undefined,
-        durationSeconds: generation.durationSeconds,
-        aspectRatio: generation.aspectRatio,
-        style: preset.name,
-      });
-    });
+    // Trigger video generation via Inngest for each item
+    await Promise.all(
+      results.map(({ generation, preset }) =>
+        inngest.send({
+          name: "video/generate",
+          data: {
+            generationId: generation.id,
+            campaignId,
+            userId: user.id,
+            prompt: generation.prompt,
+            options: {
+              negativePrompt: generation.negativePrompt || undefined,
+              duration: generation.durationSeconds,
+              aspectRatio: generation.aspectRatio,
+              stylePreset: preset.name,
+            },
+          },
+        })
+      )
+    );
 
     // Format response
     const generations = results.map(({ generation, preset }) => ({

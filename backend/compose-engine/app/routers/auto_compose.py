@@ -4,6 +4,10 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List
 import asyncio
+import httpx
+import logging
+
+logger = logging.getLogger(__name__)
 
 from ..models.render_job import (
     RenderRequest, RenderSettings, ImageData, AudioData,
@@ -29,6 +33,7 @@ class AutoComposeRequest(BaseModel):
     aspect_ratio: str = Field(default="9:16", description="Output aspect ratio")
     target_duration: int = Field(default=15, description="Target duration in seconds")
     campaign_id: Optional[str] = Field(default=None, description="Campaign ID for S3 path")
+    callback_url: Optional[str] = Field(default=None, description="URL to call when job completes")
 
 
 class AutoComposeResponse(BaseModel):
@@ -39,9 +44,31 @@ class AutoComposeResponse(BaseModel):
     search_results: Optional[int] = None
 
 
+async def send_callback(callback_url: str, job_id: str, status: str, output_url: Optional[str] = None, error: Optional[str] = None):
+    """Send callback to notify job completion."""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            payload = {
+                "job_id": job_id,
+                "status": status,
+                "output_url": output_url,
+                "error": error,
+            }
+            response = await client.post(callback_url, json=payload)
+            if response.status_code != 200:
+                logger.error(f"Callback failed with status {response.status_code}: {response.text}")
+            else:
+                logger.info(f"Callback sent successfully for job {job_id}")
+    except Exception as e:
+        logger.error(f"Failed to send callback for job {job_id}: {e}")
+
+
 async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[JobQueue]):
     """Background task to process auto-compose job."""
     settings = get_settings()
+    output_url = None
+    final_status = "failed"
+    error_message = None
 
     try:
         # Update status
@@ -85,12 +112,16 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
                 unique_candidates.append(candidate)
 
         if len(unique_candidates) < 3:
+            error_message = f"Not enough images found. Only {len(unique_candidates)} images."
             if job_queue:
                 await job_queue.update_job(
                     request.job_id,
                     status="failed",
-                    error=f"Not enough images found. Only {len(unique_candidates)} images."
+                    error=error_message
                 )
+            # Send callback for failure
+            if request.callback_url:
+                await send_callback(request.callback_url, request.job_id, "failed", error=error_message)
             return
 
         # Select images for the video (8-12 images typically)
@@ -166,6 +197,7 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
                 await job_queue.update_job(job_id, progress=overall_progress, current_step=step)
 
         output_url = await renderer.render(render_request, progress_callback)
+        final_status = "completed"
 
         # Update completion
         if job_queue:
@@ -182,13 +214,22 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
                 }
             )
 
+        # Send success callback
+        if request.callback_url:
+            await send_callback(request.callback_url, request.job_id, "completed", output_url=output_url)
+
     except Exception as e:
+        error_message = str(e)
         if job_queue:
             await job_queue.update_job(
                 request.job_id,
                 status="failed",
-                error=str(e)
+                error=error_message
             )
+
+        # Send failure callback
+        if request.callback_url:
+            await send_callback(request.callback_url, request.job_id, "failed", error=error_message)
 
 
 @router.post("/auto", response_model=AutoComposeResponse)

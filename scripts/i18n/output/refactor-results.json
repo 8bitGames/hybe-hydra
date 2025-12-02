@@ -1,0 +1,377 @@
+{
+  "results": [
+    {
+      "file": "app/(dashboard)/campaigns/[id]/analytics/page.tsx",
+      "originalLines": 1154,
+      "refactoredLines": 1157,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/compose/page.tsx",
+      "originalLines": 1304,
+      "refactoredLines": 1306,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/curation/page.tsx",
+      "originalLines": 1282,
+      "refactoredLines": 1285,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/generate/page.tsx",
+      "originalLines": 2264,
+      "refactoredLines": 2266,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/layout.tsx",
+      "originalLines": 102,
+      "refactoredLines": 105,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/page.tsx",
+      "originalLines": 744,
+      "refactoredLines": 747,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/pipeline/[batchId]/page.tsx",
+      "originalLines": 434,
+      "refactoredLines": 434,
+      "stringsConverted": 13,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/pipeline/page.tsx",
+      "originalLines": 281,
+      "refactoredLines": 277,
+      "stringsConverted": 18,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/campaigns/[id]/publish/page.tsx",
+      "originalLines": 810,
+      "refactoredLines": 813,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/campaigns/new/page.tsx",
+      "originalLines": 256,
+      "refactoredLines": 259,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/campaigns/page.tsx",
+      "originalLines": 304,
+      "refactoredLines": 307,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/compose/gallery/page.tsx",
+      "originalLines": 442,
+      "refactoredLines": 445,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/compose/page.tsx",
+      "originalLines": 269,
+      "refactoredLines": 272,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/create/compose/page.tsx",
+      "originalLines": 358,
+      "refactoredLines": 361,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/create/generate/page.tsx",
+      "originalLines": 359,
+      "refactoredLines": 362,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/create/page.tsx",
+      "originalLines": 97,
+      "refactoredLines": 97,
+      "stringsConverted": 1,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/dashboard/page.tsx",
+      "originalLines": 720,
+      "refactoredLines": 723,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/insights/page.tsx",
+      "originalLines": 493,
+      "refactoredLines": 493,
+      "stringsConverted": 1,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/layout.tsx",
+      "originalLines": 186,
+      "refactoredLines": 189,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/pipeline/page.tsx",
+      "originalLines": 917,
+      "refactoredLines": 909,
+      "stringsConverted": 24,
+      "importAdded": false,
+      "hookAdded": false,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/settings/accounts/page.tsx",
+      "originalLines": 501,
+      "refactoredLines": 504,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/trends/page.tsx",
+      "originalLines": 861,
+      "refactoredLines": 864,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "app/(dashboard)/videos/page.tsx",
+      "originalLines": 311,
+      "refactoredLines": 314,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/campaign/CampaignTabs.tsx",
+      "originalLines": 174,
+      "refactoredLines": 174,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/campaign/CampaignWorkspaceHeader.tsx",
+      "originalLines": 195,
+      "refactoredLines": 195,
+      "stringsConverted": 5,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/create/GenerateMode.tsx",
+      "originalLines": 422,
+      "refactoredLines": 402,
+      "stringsConverted": 23,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/create/ModeSelector.tsx",
+      "originalLines": 108,
+      "refactoredLines": 108,
+      "stringsConverted": 1,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/create/QuickCreateMode.tsx",
+      "originalLines": 360,
+      "refactoredLines": 352,
+      "stringsConverted": 17,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/image-reference/image-picker-modal.tsx",
+      "originalLines": 155,
+      "refactoredLines": 158,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/merchandise/MerchandiseSelector.tsx",
+      "originalLines": 497,
+      "refactoredLines": 500,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/pipeline-card.tsx",
+      "originalLines": 243,
+      "refactoredLines": 243,
+      "stringsConverted": 11,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/scraper/url-scraper.tsx",
+      "originalLines": 443,
+      "refactoredLines": 446,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/tiktok-seo-preview.tsx",
+      "originalLines": 291,
+      "refactoredLines": 294,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/trend-analysis/text-trend-panel.tsx",
+      "originalLines": 303,
+      "refactoredLines": 306,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/trend-analysis/trend-recommendations-card.tsx",
+      "originalLines": 251,
+      "refactoredLines": 254,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/features/variation-modal.tsx",
+      "originalLines": 438,
+      "refactoredLines": 430,
+      "stringsConverted": 14,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/layout/campaign-sidebar.tsx",
+      "originalLines": 445,
+      "refactoredLines": 448,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/layout/main-navigation.tsx",
+      "originalLines": 146,
+      "refactoredLines": 146,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/shared/BilingualLabel.tsx",
+      "originalLines": 137,
+      "refactoredLines": 137,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/shared/CollapsiblePanel.tsx",
+      "originalLines": 168,
+      "refactoredLines": 171,
+      "stringsConverted": 0,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    },
+    {
+      "file": "components/shared/GlobalJobTracker.tsx",
+      "originalLines": 337,
+      "refactoredLines": 335,
+      "stringsConverted": 10,
+      "importAdded": true,
+      "hookAdded": true,
+      "backup": ""
+    }
+  ],
+  "summary": {
+    "total": 41,
+    "skipped": 10
+  }
+}

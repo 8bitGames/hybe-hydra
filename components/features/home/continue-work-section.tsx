@@ -18,6 +18,7 @@ import {
   LayoutGrid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 interface CampaignActivity {
   id: string;
@@ -55,6 +56,7 @@ const activityColors = {
 
 export function ContinueWorkSection({ campaigns, loading }: ContinueWorkSectionProps) {
   const router = useRouter();
+  const { language } = useI18n();
 
   if (loading) {
     return (
@@ -62,7 +64,7 @@ export function ContinueWorkSection({ campaigns, loading }: ContinueWorkSectionP
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FolderOpen className="h-5 w-5" />
-            Continue where you left off
+            {language === "ko" ? "이어서 작업하기" : "Continue where you left off"}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -80,7 +82,7 @@ export function ContinueWorkSection({ campaigns, loading }: ContinueWorkSectionP
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FolderOpen className="h-5 w-5" />
-            Continue where you left off
+            {language === "ko" ? "이어서 작업하기" : "Continue where you left off"}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -88,16 +90,20 @@ export function ContinueWorkSection({ campaigns, loading }: ContinueWorkSectionP
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mx-auto mb-4">
               <Sparkles className="h-6 w-6 text-muted-foreground" />
             </div>
-            <h3 className="font-medium mb-2">No active campaigns</h3>
+            <h3 className="font-medium mb-2">
+              {language === "ko" ? "활성 캠페인이 없습니다" : "No active campaigns"}
+            </h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Create your first campaign or use Quick Create to get started
+              {language === "ko"
+                ? "첫 캠페인을 만들거나 빠른 생성을 사용하세요"
+                : "Create your first campaign or use Quick Create to get started"}
             </p>
             <div className="flex gap-2 justify-center">
               <Button variant="outline" onClick={() => router.push("/campaigns/new")}>
-                New Campaign
+                {language === "ko" ? "새 캠페인" : "New Campaign"}
               </Button>
               <Button onClick={() => router.push("/create/generate")}>
-                Create Video
+                {language === "ko" ? "영상 만들기" : "Create Video"}
               </Button>
             </div>
           </div>
@@ -111,11 +117,11 @@ export function ContinueWorkSection({ campaigns, loading }: ContinueWorkSectionP
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="flex items-center gap-2">
           <FolderOpen className="h-5 w-5" />
-          Continue where you left off
+          {language === "ko" ? "이어서 작업하기" : "Continue where you left off"}
         </CardTitle>
         <Link href="/campaigns">
           <Button variant="ghost" size="sm">
-            View All
+            {language === "ko" ? "전체 보기" : "View All"}
             <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         </Link>
@@ -138,7 +144,9 @@ export function ContinueWorkSection({ campaigns, loading }: ContinueWorkSectionP
               <Badge
                 variant={campaign.status === "active" ? "default" : "secondary"}
               >
-                {campaign.status}
+                {campaign.status === "active"
+                  ? (language === "ko" ? "활성" : "active")
+                  : campaign.status}
               </Badge>
             </div>
 
@@ -146,6 +154,21 @@ export function ContinueWorkSection({ campaigns, loading }: ContinueWorkSectionP
               <div className="space-y-2">
                 {campaign.activities.map((activity, idx) => {
                   const Icon = activityIcons[activity.type];
+                  const getActionLabel = () => {
+                    if (language === "ko") {
+                      if (activity.type === "curation") return "검토";
+                      if (activity.type === "processing") return "상태 확인";
+                      if (activity.type === "scheduled") return "일정 보기";
+                      if (activity.type === "published") return "분석 보기";
+                    } else {
+                      if (activity.type === "curation") return "Review";
+                      if (activity.type === "processing") return "Check Status";
+                      if (activity.type === "scheduled") return "View Schedule";
+                      if (activity.type === "published") return "View Analytics";
+                    }
+                    return "";
+                  };
+
                   return (
                     <div
                       key={idx}
@@ -164,10 +187,7 @@ export function ContinueWorkSection({ campaigns, loading }: ContinueWorkSectionP
                         </span>
                       </div>
                       <Button variant="ghost" size="sm" className="h-7 text-xs">
-                        {activity.type === "curation" && "Review"}
-                        {activity.type === "processing" && "Check Status"}
-                        {activity.type === "scheduled" && "View Schedule"}
-                        {activity.type === "published" && "View Analytics"}
+                        {getActionLabel()}
                         <ChevronRight className="h-3 w-3 ml-1" />
                       </Button>
                     </div>
@@ -178,7 +198,7 @@ export function ContinueWorkSection({ campaigns, loading }: ContinueWorkSectionP
 
             {campaign.activities.length === 0 && (
               <p className="text-sm text-muted-foreground">
-                No pending activities
+                {language === "ko" ? "대기 중인 활동 없음" : "No pending activities"}
               </p>
             )}
           </div>

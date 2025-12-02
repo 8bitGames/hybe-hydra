@@ -29,7 +29,7 @@ export default function LoginPage() {
     if (result.success) {
       router.push("/dashboard");
     } else {
-      setError(result.error || "Login failed");
+      setError(result.error || "로그인에 실패했습니다");
     }
   };
 
@@ -48,15 +48,15 @@ export default function LoginPage() {
               priority
             />
           </div>
-          <p className="text-muted-foreground">Sign in to your account</p>
+          <p className="text-muted-foreground">계정에 로그인하세요</p>
         </div>
 
         {/* Login Form */}
         <Card>
           <CardHeader className="space-y-1">
-            <CardTitle className="text-xl">Welcome back</CardTitle>
+            <CardTitle className="text-xl">다시 오신 것을 환영합니다</CardTitle>
             <CardDescription>
-              Enter your credentials to access your account
+              계정에 접근하려면 자격 증명을 입력하세요
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -68,7 +68,7 @@ export default function LoginPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">이메일</Label>
                 <Input
                   id="email"
                   type="email"
@@ -80,39 +80,39 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">비밀번호</Label>
                 <Input
                   id="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  placeholder="Enter your password"
+                  placeholder="비밀번호를 입력하세요"
                 />
               </div>
 
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? <Spinner className="h-4 w-4" /> : "Sign In"}
+                {isLoading ? <Spinner className="h-4 w-4" /> : "로그인"}
               </Button>
             </form>
 
             <div className="mt-6 text-center text-sm">
-              <span className="text-muted-foreground">Don&apos;t have an account? </span>
+              <span className="text-muted-foreground">계정이 없으신가요? </span>
               <Link href="/register" className="font-medium hover:underline">
-                Sign up
+                회원가입
               </Link>
             </div>
           </CardContent>
         </Card>
 
-        {/* Back to home */}
+        {/* 홈으로 돌아가기 */}
         <div className="mt-6 text-center">
           <Link
             href="/"
             className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Back to home
+            홈으로 돌아가기
           </Link>
         </div>
       </div>

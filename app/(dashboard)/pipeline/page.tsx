@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { campaignsApi, Campaign } from "@/lib/campaigns-api";
 import { pipelineApi, PipelineItem } from "@/lib/pipeline-api";
 import { presetsApi, StylePreset, variationsApi, VariationConfigRequest, videoApi, VideoGeneration, composeVariationsApi } from "@/lib/video-api";
 import { socialAccountsApi, SocialAccount } from "@/lib/publishing-api";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -21,7 +22,6 @@ import {
 import {
   Layers,
   RefreshCw,
-  Filter,
   Search,
   ArrowRight,
   Sparkles,
@@ -33,17 +33,44 @@ import {
   Wand2,
   Zap,
   Film,
+  Grid3X3,
+  List,
+  TrendingUp,
+  XCircle,
+  Loader2,
+  MoreHorizontal,
+  Eye,
+  ChevronRight,
+  PlayCircle,
+  LayoutGrid,
+  TableIcon,
+  ArrowUpDown,
+  Calendar,
+  Tag,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { PipelineCard } from "@/components/features/pipeline-card";
 import { VariationModal, VariationConfig } from "@/components/features/variation-modal";
 import { LazyVideo } from "@/components/ui/lazy-video";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import Link from "next/link";
 
 type StatusFilter = "all" | "pending" | "processing" | "completed" | "partial_failure";
 type VideoType = "ai" | "compose";
+type ViewMode = "grid" | "table";
 
-// Extended VideoGeneration with campaign info
 interface SeedCandidate extends VideoGeneration {
   campaign_name?: string;
   video_type?: VideoType;
@@ -63,6 +90,10 @@ export default function GlobalPipelinePage() {
   const [loadingCompose, setLoadingCompose] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState("pipelines");
+
+  // View mode
+  const [pipelineViewMode, setPipelineViewMode] = useState<ViewMode>("table");
+  const [videoViewMode, setVideoViewMode] = useState<ViewMode>("grid");
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -162,7 +193,6 @@ export default function GlobalPipelinePage() {
         campaignNames[c.id] = c.name;
       });
 
-      // Fetch completed videos from all campaigns
       const results = await Promise.all(
         campaigns.map(async (campaign) => {
           try {
@@ -172,7 +202,7 @@ export default function GlobalPipelinePage() {
             });
             if (response.data) {
               return response.data.items
-                .filter((video: VideoGeneration) => !video.id.startsWith("compose-")) // Exclude compose videos
+                .filter((video: VideoGeneration) => !video.id.startsWith("compose-"))
                 .map((video: VideoGeneration) => ({
                   ...video,
                   campaign_name: campaignNames[campaign.id],
@@ -186,7 +216,6 @@ export default function GlobalPipelinePage() {
         })
       );
 
-      // Combine and sort by created_at
       const allSeeds = results.flat().sort(
         (a: SeedCandidate, b: SeedCandidate) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
@@ -209,7 +238,6 @@ export default function GlobalPipelinePage() {
         campaignNames[c.id] = c.name;
       });
 
-      // Fetch completed videos from all campaigns
       const results = await Promise.all(
         campaigns.map(async (campaign) => {
           try {
@@ -219,7 +247,7 @@ export default function GlobalPipelinePage() {
             });
             if (response.data) {
               return response.data.items
-                .filter((video: VideoGeneration) => video.id.startsWith("compose-")) // Only compose videos
+                .filter((video: VideoGeneration) => video.id.startsWith("compose-"))
                 .map((video: VideoGeneration) => ({
                   ...video,
                   campaign_name: campaignNames[campaign.id],
@@ -233,7 +261,6 @@ export default function GlobalPipelinePage() {
         })
       );
 
-      // Combine and sort by created_at
       const allCompose = results.flat().sort(
         (a: SeedCandidate, b: SeedCandidate) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
@@ -251,21 +278,18 @@ export default function GlobalPipelinePage() {
     }
   }, [campaigns, fetchPipelines]);
 
-  // Fetch seed candidates when tab changes to "create"
   useEffect(() => {
     if (activeTab === "create" && campaigns.length > 0 && seedCandidates.length === 0) {
       fetchSeedCandidates();
     }
   }, [activeTab, campaigns, seedCandidates.length, fetchSeedCandidates]);
 
-  // Fetch compose candidates when tab changes to "compose"
   useEffect(() => {
     if (activeTab === "compose" && campaigns.length > 0 && composeCandidates.length === 0) {
       fetchComposeCandidates();
     }
   }, [activeTab, campaigns, composeCandidates.length, fetchComposeCandidates]);
 
-  // Auto-refresh for processing pipelines
   useEffect(() => {
     const hasProcessing = pipelines.some((p) => p.status === "processing");
     if (hasProcessing) {
@@ -274,7 +298,6 @@ export default function GlobalPipelinePage() {
     }
   }, [pipelines, fetchPipelines]);
 
-  // Handle refresh
   const handleRefresh = () => {
     setRefreshing(true);
     if (activeTab === "pipelines") {
@@ -288,33 +311,28 @@ export default function GlobalPipelinePage() {
     }
   };
 
-  // Auto-pipeline for compose videos (automatic preset selection)
   const handleAutoCreateVariations = async (video: VideoGeneration) => {
     setCreatingAutoPipeline(true);
     try {
-      // Check if this is a Compose video (ID starts with "compose-")
       const isComposeVideo = video.id.startsWith("compose-");
 
       if (isComposeVideo) {
-        // For Compose videos: Re-search images with 2-3 tags and create new slideshow
-        // This uses the compose-engine to search different images and render new videos
         await composeVariationsApi.create(video.id, {
           variation_count: 4,
-          tag_count: 2, // Use 2-3 tags extracted from original prompt
+          tag_count: 2,
         });
       } else {
-        // For AI videos: Use style presets to create variations via VEO
         const autoConfig: VariationConfigRequest = {
-          style_categories: ["mood", "motion"], // Best for slideshow content
-          enable_prompt_variation: false, // Keep original prompt for compose
+          style_categories: ["mood", "motion"],
+          enable_prompt_variation: false,
           prompt_variation_types: [],
-          max_variations: 4, // Reasonable default
+          max_variations: 4,
         };
         await variationsApi.create(video.id, autoConfig);
       }
 
       setActiveTab("pipelines");
-      fetchPipelines(); // Refresh to show new pipeline
+      fetchPipelines();
     } catch (error) {
       console.error("Failed to create auto variations:", error);
     } finally {
@@ -322,28 +340,23 @@ export default function GlobalPipelinePage() {
     }
   };
 
-  // Open variation modal for creating variations from a seed video
   const handleSelectSeed = (video: VideoGeneration) => {
     setSelectedSeedGeneration(video);
     setVariationModalOpen(true);
   };
 
-  // Open variation modal for creating more variations from a completed pipeline
   const handleCreateMoreVariations = (pipeline: PipelineItem) => {
     setSelectedSeedGeneration(pipeline.seed_generation);
     setVariationModalOpen(true);
   };
 
-  // Create variations
   const handleCreateVariations = async (config: VariationConfig) => {
     if (!selectedSeedGeneration) return;
 
     setCreatingVariations(true);
     try {
-      // Check if this is a Compose video
       const isComposeVideo = selectedSeedGeneration.id.startsWith("compose-");
 
-      // Prepare auto-publish config for API
       const autoPublishConfig = config.autoPublish?.enabled ? {
         social_account_id: config.autoPublish.socialAccountId,
         interval_minutes: config.autoPublish.intervalMinutes,
@@ -352,14 +365,12 @@ export default function GlobalPipelinePage() {
       } : undefined;
 
       if (isComposeVideo) {
-        // For Compose videos: Re-search images with tags and create new slideshow
         await composeVariationsApi.create(selectedSeedGeneration.id, {
           variation_count: config.maxVariations || 4,
-          tag_count: 2, // Use 2-3 tags extracted from original prompt
+          tag_count: 2,
           auto_publish: autoPublishConfig,
         });
       } else {
-        // For AI videos: Use style presets to create variations via VEO
         const requestConfig: VariationConfigRequest = {
           style_categories: config.styleCategories,
           enable_prompt_variation: config.enablePromptVariation,
@@ -372,7 +383,7 @@ export default function GlobalPipelinePage() {
 
       setVariationModalOpen(false);
       setActiveTab("pipelines");
-      fetchPipelines(); // Refresh to show new pipeline
+      fetchPipelines();
     } catch (error) {
       console.error("Failed to create variations:", error);
     } finally {
@@ -429,11 +440,53 @@ export default function GlobalPipelinePage() {
   });
 
   // Stats
-  const stats = {
+  const stats = useMemo(() => ({
     total: pipelines.length,
     processing: pipelines.filter((p) => p.status === "processing").length,
     completed: pipelines.filter((p) => p.status === "completed").length,
     failed: pipelines.filter((p) => p.status === "partial_failure").length,
+    totalVariations: pipelines.reduce((acc, p) => acc + p.total, 0),
+    completedVariations: pipelines.reduce((acc, p) => acc + p.completed, 0),
+  }), [pipelines]);
+
+  // Status config helper
+  const getStatusConfig = (status: string) => {
+    switch (status) {
+      case "completed":
+        return {
+          label: isKorean ? "완료" : "Completed",
+          variant: "default" as const,
+          icon: CheckCircle2,
+          color: "text-green-500",
+          bgColor: "bg-green-500/10",
+        };
+      case "processing":
+        return {
+          label: isKorean ? "처리중" : "Processing",
+          variant: "secondary" as const,
+          icon: Loader2,
+          color: "text-blue-500",
+          bgColor: "bg-blue-500/10",
+          animate: true,
+        };
+      case "partial_failure":
+        return {
+          label: isKorean ? "일부 실패" : "Partial Failure",
+          variant: "destructive" as const,
+          icon: XCircle,
+          color: "text-yellow-500",
+          bgColor: "bg-yellow-500/10",
+        };
+      case "pending":
+      default:
+        return {
+          label: isKorean ? "대기중" : "Pending",
+          variant: "outline" as const,
+          icon: Clock,
+          color: "text-muted-foreground",
+          bgColor: "bg-muted",
+        };
+    }
   };
 
   if (loading) {
@@ -445,558 +498,885 @@ export default function GlobalPipelinePage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Layers className="w-6 h-6" />
-            {isKorean ? "파이프라인" : "Pipeline"}
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            {isKorean
-              ? "기존 영상을 선택하여 다양한 변형을 생성하세요"
-              : "Select existing videos to create various variations"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing}
-          >
-            <RefreshCw
-              className={`w-4 h-4 mr-2 ${refreshing ? "animate-spin" : ""}`}
-            />
-            {isKorean ? "새로고침" : "Refresh"}
-          </Button>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full max-w-2xl grid-cols-3">
-          <TabsTrigger value="pipelines" className="gap-2">
-            <Layers className="w-4 h-4" />
-            {isKorean ? "파이프라인" : "Pipelines"}
-            {stats.processing > 0 && (
-              <Badge variant="secondary" className="ml-1">
-                {stats.processing}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="create" className="gap-2">
-            <Video className="w-4 h-4" />
-            {isKorean ? "AI 영상" : "AI Videos"}
-          </TabsTrigger>
-          <TabsTrigger value="compose" className="gap-2">
-            <Film className="w-4 h-4" />
-            {isKorean ? "Compose 영상" : "Compose"}
-            {composeCandidates.length > 0 && (
-              <Badge variant="outline" className="ml-1">
-                {composeCandidates.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Pipelines Tab */}
-        <TabsContent value="pipelines" className="space-y-6">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="pt-4">
-                <div className="text-2xl font-bold">{stats.total}</div>
-                <p className="text-xs text-muted-foreground">
-                  {isKorean ? "전체 파이프라인" : "Total Pipelines"}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <div className="text-2xl font-bold text-blue-500">
-                  {stats.processing}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {isKorean ? "처리중" : "Processing"}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <div className="text-2xl font-bold text-green-500">
-                  {stats.completed}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {isKorean ? "완료" : "Completed"}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <div className="text-2xl font-bold text-yellow-500">
-                  {stats.failed}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {isKorean ? "일부 실패" : "Partial Failure"}
-                </p>
-              </CardContent>
-            </Card>
+    <TooltipProvider>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Layers className="w-6 h-6" />
+              {isKorean ? "변형 파이프라인" : "Variation Pipeline"}
+            </h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              {isKorean
+                ? "기존 영상을 선택하여 다양한 변형을 생성하고 A/B 테스트하세요"
+                : "Select existing videos to create variations and A/B test"}
+            </p>
           </div>
-
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder={isKorean ? "검색..." : "Search..."}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Select value={campaignFilter} onValueChange={setCampaignFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder={isKorean ? "캠페인" : "Campaign"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{isKorean ? "모든 캠페인" : "All Campaigns"}</SelectItem>
-                {campaigns.map((campaign) => (
-                  <SelectItem key={campaign.id} value={campaign.id}>
-                    {campaign.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={statusFilter}
-              onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={refreshing}
             >
-              <SelectTrigger className="w-40">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{isKorean ? "전체" : "All"}</SelectItem>
-                <SelectItem value="pending">{isKorean ? "대기중" : "Pending"}</SelectItem>
-                <SelectItem value="processing">{isKorean ? "처리중" : "Processing"}</SelectItem>
-                <SelectItem value="completed">{isKorean ? "완료" : "Completed"}</SelectItem>
-                <SelectItem value="partial_failure">{isKorean ? "일부 실패" : "Partial Failure"}</SelectItem>
-              </SelectContent>
-            </Select>
+              <RefreshCw
+                className={`w-4 h-4 mr-2 ${refreshing ? "animate-spin" : ""}`}
+              />
+              {isKorean ? "새로고침" : "Refresh"}
+            </Button>
           </div>
+        </div>
 
-          {/* Pipeline List */}
-          {filteredPipelines.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Layers className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">
-                  {isKorean ? "파이프라인이 없습니다" : "No Pipelines Yet"}
-                </h3>
-                <p className="text-muted-foreground text-sm mb-4">
-                  {isKorean
-                    ? "'새 변형 생성' 탭에서 영상을 선택하여 파이프라인을 시작하세요"
-                    : "Select a video from the 'Create New' tab to start a pipeline"}
-                </p>
-                <Button onClick={() => setActiveTab("create")}>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  {isKorean ? "새 변형 생성" : "Create New Variation"}
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4">
-              {filteredPipelines.map((pipeline) => (
-                <div key={pipeline.batch_id} className="relative">
-                  <PipelineCard
-                    pipeline={pipeline}
-                    campaignId={pipeline.campaign_id}
-                    onSendToCuration={() => {
-                      router.push(`/campaigns/${pipeline.campaign_id}/curation`);
-                    }}
-                  />
-                  {/* Create More Variations Button */}
-                  {pipeline.status === "completed" && (
-                    <div className="absolute top-4 right-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleCreateMoreVariations(pipeline)}
-                        className="border-primary/50 text-primary hover:bg-primary/10"
-                      >
-                        <Sparkles className="w-4 h-4 mr-2" />
-                        {isKorean ? "추가 변형" : "More Variations"}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Create New Tab - Seed Selection */}
-        <TabsContent value="create" className="space-y-6">
-          {/* Header Info */}
-          <Card className="bg-primary/5 border-primary/20">
-            <CardContent className="py-4">
-              <div className="flex items-start gap-3">
-                <Sparkles className="w-5 h-5 text-primary mt-0.5" />
+        {/* Stats Dashboard - PC Optimized */}
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+          <Card className="col-span-1">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-medium">
-                    {isKorean ? "Seed 영상 선택" : "Select Seed Video"}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {isKorean
-                      ? "아래에서 완료된 영상을 선택하면 해당 영상의 설정을 기반으로 다양한 변형을 생성할 수 있습니다."
-                      : "Select a completed video below to create various variations based on its settings."}
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                    {isKorean ? "전체" : "Total"}
                   </p>
+                  <p className="text-2xl font-bold mt-1">{stats.total}</p>
+                </div>
+                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Layers className="h-5 w-5 text-primary" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder={isKorean ? "프롬프트 검색..." : "Search prompts..."}
-                value={seedSearchQuery}
-                onChange={(e) => setSeedSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Select value={seedCampaignFilter} onValueChange={setSeedCampaignFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder={isKorean ? "캠페인" : "Campaign"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{isKorean ? "모든 캠페인" : "All Campaigns"}</SelectItem>
-                {campaigns.map((campaign) => (
-                  <SelectItem key={campaign.id} value={campaign.id}>
-                    {campaign.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Seed Videos Grid */}
-          {loadingSeeds ? (
-            <div className="flex items-center justify-center h-48">
-              <Spinner className="w-8 h-8" />
-            </div>
-          ) : filteredSeedCandidates.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Video className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">
-                  {isKorean ? "완료된 영상이 없습니다" : "No Completed Videos"}
-                </h3>
-                <p className="text-muted-foreground text-sm mb-4">
-                  {isKorean
-                    ? "캠페인의 Generate 페이지에서 먼저 영상을 생성해주세요"
-                    : "Create videos on a campaign's Generate page first"}
-                </p>
-                <Button onClick={() => router.push("/campaigns")}>
-                  <ArrowRight className="w-4 h-4 mr-2" />
-                  {isKorean ? "캠페인으로 이동" : "Go to Campaigns"}
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredSeedCandidates.map((video) => (
-                <Card
-                  key={video.id}
-                  className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer group"
-                  onClick={() => handleSelectSeed(video)}
-                >
-                  <CardContent className="p-0">
-                    {/* Video Thumbnail */}
-                    <div className="relative aspect-video bg-muted">
-                      {video.output_url ? (
-                        <LazyVideo
-                          src={video.output_url}
-                          className="w-full h-full object-cover"
-                          autoPlay={false}
-                          muted
-                          loop
-                          playsInline
-                        />
-                      ) : video.composed_output_url ? (
-                        <LazyVideo
-                          src={video.composed_output_url}
-                          className="w-full h-full object-cover"
-                          autoPlay={false}
-                          muted
-                          loop
-                          playsInline
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Video className="w-12 h-12 text-muted-foreground" />
-                        </div>
-                      )}
-                      {/* Overlay on hover */}
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="secondary" size="sm">
-                          <Sparkles className="w-4 h-4 mr-2" />
-                          {isKorean ? "변형 생성" : "Create Variations"}
-                        </Button>
-                      </div>
-                      {/* Status Badge */}
-                      <div className="absolute top-2 right-2">
-                        <Badge variant="default" className="bg-green-500">
-                          <CheckCircle2 className="w-3 h-3 mr-1" />
-                          {isKorean ? "완료" : "Completed"}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    {/* Video Info */}
-                    <div className="p-3 space-y-2">
-                      {/* Campaign Name */}
-                      {video.campaign_name && (
-                        <p className="text-xs text-primary font-medium">
-                          {video.campaign_name}
-                        </p>
-                      )}
-
-                      {/* Prompt */}
-                      <p className="text-sm line-clamp-2">
-                        {video.prompt}
-                      </p>
-
-                      {/* Meta Info */}
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {video.duration_seconds}s
-                        </span>
-                        {video.audio_asset && (
-                          <span className="flex items-center gap-1">
-                            <Music className="w-3 h-3" />
-                            {isKorean ? "오디오" : "Audio"}
-                          </span>
-                        )}
-                        <span>
-                          {new Date(video.created_at).toLocaleDateString(
-                            isKorean ? "ko-KR" : "en-US",
-                            { month: "short", day: "numeric" }
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Compose Videos Tab - Auto Pipeline */}
-        <TabsContent value="compose" className="space-y-6">
-          {/* Header Info */}
-          <Card className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-purple-500/20">
-            <CardContent className="py-4">
-              <div className="flex items-start gap-3">
-                <Wand2 className="w-5 h-5 text-purple-500 mt-0.5" />
+          <Card className="col-span-1">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-medium flex items-center gap-2">
-                    {isKorean ? "Compose 영상 자동 파이프라인" : "Compose Auto Pipeline"}
-                    <Badge variant="secondary" className="text-xs">
-                      <Zap className="w-3 h-3 mr-1" />
-                      Auto
-                    </Badge>
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {isKorean
-                      ? "Compose로 만든 슬라이드쇼 영상입니다. 원클릭으로 최적화된 변형을 자동 생성하거나, 수동으로 세부 설정을 선택할 수 있습니다."
-                      : "Slideshow videos created with Compose. Create optimized variations with one click, or manually select detailed settings."}
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                    {isKorean ? "처리중" : "Processing"}
                   </p>
+                  <p className="text-2xl font-bold mt-1 text-blue-500">{stats.processing}</p>
+                </div>
+                <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                  <Loader2 className={cn("h-5 w-5 text-blue-500", stats.processing > 0 && "animate-spin")} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder={isKorean ? "프롬프트 검색..." : "Search prompts..."}
-                value={composeSearchQuery}
-                onChange={(e) => setComposeSearchQuery(e.target.value)}
-                className="pl-10"
+          <Card className="col-span-1">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                    {isKorean ? "완료" : "Completed"}
+                  </p>
+                  <p className="text-2xl font-bold mt-1 text-green-500">{stats.completed}</p>
+                </div>
+                <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="col-span-1">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                    {isKorean ? "실패" : "Failed"}
+                  </p>
+                  <p className="text-2xl font-bold mt-1 text-yellow-500">{stats.failed}</p>
+                </div>
+                <div className="h-10 w-10 rounded-lg bg-yellow-500/10 flex items-center justify-center">
+                  <XCircle className="h-5 w-5 text-yellow-500" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="col-span-2 lg:col-span-2">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                  {isKorean ? "변형 진행률" : "Variation Progress"}
+                </p>
+                <span className="text-sm font-medium">
+                  {stats.completedVariations}/{stats.totalVariations}
+                </span>
+              </div>
+              <Progress
+                value={stats.totalVariations > 0 ? (stats.completedVariations / stats.totalVariations) * 100 : 0}
+                className="h-2"
               />
-            </div>
-            <Select value={composeCampaignFilter} onValueChange={setComposeCampaignFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder={isKorean ? "캠페인" : "Campaign"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{isKorean ? "모든 캠페인" : "All Campaigns"}</SelectItem>
-                {campaigns.map((campaign) => (
-                  <SelectItem key={campaign.id} value={campaign.id}>
-                    {campaign.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <p className="text-xs text-muted-foreground mt-2">
+                {stats.totalVariations > 0
+                  ? `${Math.round((stats.completedVariations / stats.totalVariations) * 100)}% ${isKorean ? "완료" : "complete"}`
+                  : isKorean ? "변형 없음" : "No variations"}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <TabsList className="h-10">
+              <TabsTrigger value="pipelines" className="gap-2 px-4">
+                <Layers className="w-4 h-4" />
+                {isKorean ? "파이프라인" : "Pipelines"}
+                {stats.processing > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5">
+                    {stats.processing}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="create" className="gap-2 px-4">
+                <Video className="w-4 h-4" />
+                {isKorean ? "AI 영상" : "AI Videos"}
+                <Badge variant="outline" className="ml-1 h-5 px-1.5">
+                  {seedCandidates.length}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="compose" className="gap-2 px-4">
+                <Film className="w-4 h-4" />
+                {isKorean ? "Compose" : "Compose"}
+                <Badge variant="outline" className="ml-1 h-5 px-1.5">
+                  {composeCandidates.length}
+                </Badge>
+              </TabsTrigger>
+            </TabsList>
+
+            {/* View Mode Toggle - Only for pipelines tab */}
+            {activeTab === "pipelines" && (
+              <div className="flex items-center gap-2 bg-muted rounded-lg p-1">
+                <Button
+                  variant={pipelineViewMode === "table" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => setPipelineViewMode("table")}
+                >
+                  <TableIcon className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={pipelineViewMode === "grid" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => setPipelineViewMode("grid")}
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           </div>
 
-          {/* Compose Videos Grid */}
-          {loadingCompose ? (
-            <div className="flex items-center justify-center h-48">
-              <Spinner className="w-8 h-8" />
-            </div>
-          ) : filteredComposeCandidates.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Film className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">
-                  {isKorean ? "Compose 영상이 없습니다" : "No Compose Videos"}
-                </h3>
-                <p className="text-muted-foreground text-sm mb-4">
-                  {isKorean
-                    ? "Compose 페이지에서 슬라이드쇼 영상을 먼저 생성해주세요"
-                    : "Create slideshow videos on the Compose page first"}
-                </p>
-                <Button onClick={() => router.push("/compose")}>
-                  <Wand2 className="w-4 h-4 mr-2" />
-                  {isKorean ? "Compose로 이동" : "Go to Compose"}
-                </Button>
+          {/* Pipelines Tab */}
+          <TabsContent value="pipelines" className="space-y-4 mt-4">
+            {/* Filters Toolbar */}
+            <Card className="border-dashed">
+              <CardContent className="py-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder={isKorean ? "프롬프트, 캠페인 검색..." : "Search prompts, campaigns..."}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9 h-9"
+                    />
+                  </div>
+                  <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+                    <SelectTrigger className="w-[180px] h-9">
+                      <SelectValue placeholder={isKorean ? "캠페인" : "Campaign"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{isKorean ? "모든 캠페인" : "All Campaigns"}</SelectItem>
+                      {campaigns.map((campaign) => (
+                        <SelectItem key={campaign.id} value={campaign.id}>
+                          {campaign.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={statusFilter}
+                    onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+                  >
+                    <SelectTrigger className="w-[140px] h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{isKorean ? "모든 상태" : "All Status"}</SelectItem>
+                      <SelectItem value="pending">{isKorean ? "대기중" : "Pending"}</SelectItem>
+                      <SelectItem value="processing">{isKorean ? "처리중" : "Processing"}</SelectItem>
+                      <SelectItem value="completed">{isKorean ? "완료" : "Completed"}</SelectItem>
+                      <SelectItem value="partial_failure">{isKorean ? "일부 실패" : "Partial"}</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <div className="flex-1" />
+
+                  <p className="text-sm text-muted-foreground">
+                    {filteredPipelines.length} {isKorean ? "개 결과" : "results"}
+                  </p>
+                </div>
               </CardContent>
             </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredComposeCandidates.map((video) => (
-                <Card
-                  key={video.id}
-                  className="overflow-hidden hover:shadow-md transition-shadow group"
-                >
-                  <CardContent className="p-0">
-                    {/* Video Thumbnail */}
-                    <div className="relative aspect-video bg-muted">
-                      {video.composed_output_url ? (
-                        <LazyVideo
-                          src={video.composed_output_url}
-                          className="w-full h-full object-cover"
-                          autoPlay={false}
-                          muted
-                          loop
-                          playsInline
-                        />
-                      ) : video.output_url ? (
-                        <LazyVideo
-                          src={video.output_url}
-                          className="w-full h-full object-cover"
-                          autoPlay={false}
-                          muted
-                          loop
-                          playsInline
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Film className="w-12 h-12 text-muted-foreground" />
+
+            {/* Pipeline List/Table */}
+            {filteredPipelines.length === 0 ? (
+              <Card>
+                <CardContent className="py-16 text-center">
+                  <Layers className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">
+                    {isKorean ? "파이프라인이 없습니다" : "No Pipelines Yet"}
+                  </h3>
+                  <p className="text-muted-foreground text-sm mb-6 max-w-md mx-auto">
+                    {isKorean
+                      ? "AI 영상 또는 Compose 탭에서 영상을 선택하여 변형을 생성하세요"
+                      : "Select a video from the AI Videos or Compose tab to create variations"}
+                  </p>
+                  <div className="flex items-center justify-center gap-3">
+                    <Button onClick={() => setActiveTab("create")} variant="outline">
+                      <Video className="w-4 h-4 mr-2" />
+                      {isKorean ? "AI 영상 보기" : "View AI Videos"}
+                    </Button>
+                    <Button onClick={() => setActiveTab("compose")}>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      {isKorean ? "Compose 영상 보기" : "View Compose Videos"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : pipelineViewMode === "table" ? (
+              /* Table View */
+              <div className="rounded-lg border bg-card overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 border-b">
+                      <tr>
+                        <th className="h-10 px-4 text-left font-medium text-muted-foreground w-20">{isKorean ? "미리보기" : "Preview"}</th>
+                        <th className="h-10 px-4 text-left font-medium text-muted-foreground min-w-[200px]">{isKorean ? "프롬프트" : "Prompt"}</th>
+                        <th className="h-10 px-4 text-left font-medium text-muted-foreground">{isKorean ? "캠페인" : "Campaign"}</th>
+                        <th className="h-10 px-4 text-center font-medium text-muted-foreground">{isKorean ? "상태" : "Status"}</th>
+                        <th className="h-10 px-4 text-center font-medium text-muted-foreground">{isKorean ? "변형" : "Vars"}</th>
+                        <th className="h-10 px-4 text-center font-medium text-muted-foreground w-28">{isKorean ? "진행률" : "Progress"}</th>
+                        <th className="h-10 px-4 text-left font-medium text-muted-foreground">{isKorean ? "스타일" : "Styles"}</th>
+                        <th className="h-10 px-4 text-right font-medium text-muted-foreground">{isKorean ? "생성일" : "Created"}</th>
+                        <th className="h-10 px-4 text-right font-medium text-muted-foreground w-24">{isKorean ? "작업" : "Actions"}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {filteredPipelines.map((pipeline) => {
+                        const statusConfig = getStatusConfig(pipeline.status);
+                        const StatusIcon = statusConfig.icon;
+                        return (
+                          <tr key={pipeline.batch_id} className="hover:bg-muted/30 transition-colors group">
+                            <td className="px-4 py-3">
+                              <div className="relative w-16 h-10 bg-muted rounded overflow-hidden flex-shrink-0">
+                                {pipeline.seed_generation.output_url || pipeline.seed_generation.composed_output_url ? (
+                                  <LazyVideo
+                                    src={pipeline.seed_generation.output_url || pipeline.seed_generation.composed_output_url || ""}
+                                    className="w-full h-full object-cover"
+                                    autoPlay={false}
+                                    muted
+                                    loop
+                                    playsInline
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <Video className="w-4 h-4 text-muted-foreground" />
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <p className="font-medium text-sm truncate max-w-[280px] cursor-default">
+                                    {pipeline.seed_generation.prompt}
+                                  </p>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-md">
+                                  <p>{pipeline.seed_generation.prompt}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className="font-normal whitespace-nowrap">
+                                {pipeline.campaign_name || "Unknown"}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <Badge variant={statusConfig.variant} className="gap-1 whitespace-nowrap">
+                                <StatusIcon className={cn("w-3 h-3", statusConfig.color, statusConfig.animate && "animate-spin")} />
+                                {statusConfig.label}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                                <span className="text-green-600 font-medium">{pipeline.completed}</span>
+                                <span className="text-muted-foreground">/</span>
+                                <span>{pipeline.total}</span>
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="w-24 mx-auto">
+                                <Progress value={pipeline.overall_progress} className="h-1.5" />
+                                <p className="text-xs text-muted-foreground text-center mt-1">{pipeline.overall_progress}%</p>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-nowrap gap-1">
+                                {pipeline.style_categories.length > 0 ? (
+                                  <>
+                                    {pipeline.style_categories.slice(0, 2).map((cat) => (
+                                      <Badge key={cat} variant="secondary" className="text-xs py-0 whitespace-nowrap">
+                                        {cat}
+                                      </Badge>
+                                    ))}
+                                    {pipeline.style_categories.length > 2 && (
+                                      <Badge variant="secondary" className="text-xs py-0">
+                                        +{pipeline.style_categories.length - 2}
+                                      </Badge>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm text-muted-foreground whitespace-nowrap">
+                              {new Date(pipeline.created_at).toLocaleDateString(
+                                isKorean ? "ko-KR" : "en-US",
+                                { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-1">
+                                <Link href={`/campaigns/${pipeline.campaign_id}/pipeline/${pipeline.batch_id}?seed=${pipeline.seed_generation_id}`}>
+                                  <Button variant="ghost" size="sm" className="h-8 px-2">
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                </Link>
+                                {pipeline.status === "completed" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 px-2"
+                                    onClick={() => handleCreateMoreVariations(pipeline)}
+                                  >
+                                    <Sparkles className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => router.push(`/campaigns/${pipeline.campaign_id}/curation`)}>
+                                      <ArrowRight className="w-4 h-4 mr-2" />
+                                      {isKorean ? "큐레이션으로" : "To Curation"}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="text-destructive">
+                                      <XCircle className="w-4 h-4 mr-2" />
+                                      {isKorean ? "삭제" : "Delete"}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              /* Grid View */
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredPipelines.map((pipeline) => {
+                  const statusConfig = getStatusConfig(pipeline.status);
+                  const StatusIcon = statusConfig.icon;
+                  return (
+                    <Card key={pipeline.batch_id} className="overflow-hidden hover:shadow-md transition-shadow group">
+                      <CardContent className="p-0">
+                        <div className="flex gap-4 p-4">
+                          {/* Thumbnail */}
+                          <div className="relative w-28 h-20 bg-muted rounded-lg overflow-hidden shrink-0">
+                            {pipeline.seed_generation.output_url || pipeline.seed_generation.composed_output_url ? (
+                              <LazyVideo
+                                src={pipeline.seed_generation.output_url || pipeline.seed_generation.composed_output_url || ""}
+                                className="w-full h-full object-cover"
+                                autoPlay={false}
+                                muted
+                                loop
+                                playsInline
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Layers className="w-6 h-6 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Play className="w-6 h-6 text-white" />
+                            </div>
+                          </div>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0 flex flex-col">
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <div className="min-w-0 flex-1">
+                                {pipeline.campaign_name && (
+                                  <p className="text-xs text-primary font-medium truncate">
+                                    {pipeline.campaign_name}
+                                  </p>
+                                )}
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <p className="font-medium text-sm truncate cursor-default">
+                                      {pipeline.seed_generation.prompt.slice(0, 60)}
+                                      {pipeline.seed_generation.prompt.length > 60 ? "..." : ""}
+                                    </p>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="bottom" className="max-w-md">
+                                    <p>{pipeline.seed_generation.prompt}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                              <Badge variant={statusConfig.variant} className="shrink-0 gap-1">
+                                <StatusIcon className={cn("w-3 h-3", statusConfig.animate && "animate-spin")} />
+                                {statusConfig.label}
+                              </Badge>
+                            </div>
+
+                            {/* Stats Row */}
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-auto">
+                              <span className="flex items-center gap-1">
+                                <Layers className="w-3 h-3" />
+                                <span className="text-green-600 font-medium">{pipeline.completed}</span>/{pipeline.total}
+                              </span>
+                              {pipeline.failed > 0 && (
+                                <span className="flex items-center gap-1 text-red-500">
+                                  <XCircle className="w-3 h-3" />
+                                  {pipeline.failed}
+                                </span>
+                              )}
+                              <span className="flex-1" />
+                              <span>
+                                {new Date(pipeline.created_at).toLocaleDateString(
+                                  isKorean ? "ko-KR" : "en-US",
+                                  { month: "short", day: "numeric" }
+                                )}
+                              </span>
+                            </div>
+
+                            {/* Progress */}
+                            {pipeline.status === "processing" && (
+                              <div className="mt-2">
+                                <Progress value={pipeline.overall_progress} className="h-1" />
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      )}
-                      {/* Type Badge */}
-                      <div className="absolute top-2 left-2">
-                        <Badge variant="secondary" className="bg-purple-500/90 text-white">
-                          <Wand2 className="w-3 h-3 mr-1" />
-                          Compose
-                        </Badge>
-                      </div>
-                      {/* Status Badge */}
-                      <div className="absolute top-2 right-2">
-                        <Badge variant="default" className="bg-green-500">
-                          <CheckCircle2 className="w-3 h-3 mr-1" />
-                          {isKorean ? "완료" : "Completed"}
-                        </Badge>
-                      </div>
-                    </div>
 
-                    {/* Video Info */}
-                    <div className="p-3 space-y-2">
-                      {/* Campaign Name */}
-                      {video.campaign_name && (
-                        <p className="text-xs text-purple-500 font-medium">
-                          {video.campaign_name}
-                        </p>
-                      )}
+                        {/* Actions */}
+                        <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t">
+                          <div className="flex items-center gap-1.5">
+                            {pipeline.style_categories.slice(0, 2).map((cat) => (
+                              <Badge key={cat} variant="outline" className="text-xs py-0 bg-background">
+                                {cat}
+                              </Badge>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Link href={`/campaigns/${pipeline.campaign_id}/pipeline/${pipeline.batch_id}?seed=${pipeline.seed_generation_id}`}>
+                              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
+                                {isKorean ? "상세" : "Details"}
+                                <ChevronRight className="w-3 h-3 ml-1" />
+                              </Button>
+                            </Link>
+                            {pipeline.status === "completed" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2"
+                                onClick={() => handleCreateMoreVariations(pipeline)}
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
 
-                      {/* Prompt */}
-                      <p className="text-sm line-clamp-2">
-                        {video.prompt}
-                      </p>
+          {/* AI Videos Tab */}
+          <TabsContent value="create" className="space-y-4 mt-4">
+            {/* Info Banner */}
+            <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                    <Video className="w-6 h-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold">
+                      {isKorean ? "AI 생성 영상에서 변형 만들기" : "Create Variations from AI Videos"}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {isKorean
+                        ? "완료된 AI 영상을 선택하여 스타일 변형을 생성합니다. 각 변형은 원본의 프롬프트를 기반으로 다양한 스타일로 재생성됩니다."
+                        : "Select a completed AI video to generate style variations. Each variation is regenerated with different styles based on the original prompt."}
+                    </p>
+                  </div>
+                  <Button onClick={() => router.push("/create/generate")} className="shrink-0">
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    {isKorean ? "새 영상 생성" : "Generate New"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
-                      {/* Meta Info */}
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {video.duration_seconds}s
-                        </span>
-                        {video.audio_asset && (
-                          <span className="flex items-center gap-1">
-                            <Music className="w-3 h-3" />
-                            {isKorean ? "오디오" : "Audio"}
-                          </span>
+            {/* Filters */}
+            <Card className="border-dashed">
+              <CardContent className="py-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder={isKorean ? "프롬프트 검색..." : "Search prompts..."}
+                      value={seedSearchQuery}
+                      onChange={(e) => setSeedSearchQuery(e.target.value)}
+                      className="pl-9 h-9"
+                    />
+                  </div>
+                  <Select value={seedCampaignFilter} onValueChange={setSeedCampaignFilter}>
+                    <SelectTrigger className="w-[180px] h-9">
+                      <SelectValue placeholder={isKorean ? "캠페인" : "Campaign"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{isKorean ? "모든 캠페인" : "All Campaigns"}</SelectItem>
+                      {campaigns.map((campaign) => (
+                        <SelectItem key={campaign.id} value={campaign.id}>
+                          {campaign.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex-1" />
+                  <p className="text-sm text-muted-foreground">
+                    {filteredSeedCandidates.length} {isKorean ? "개 영상" : "videos"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Videos Grid - PC Optimized with more columns */}
+            {loadingSeeds ? (
+              <div className="flex items-center justify-center h-48">
+                <Spinner className="w-8 h-8" />
+              </div>
+            ) : filteredSeedCandidates.length === 0 ? (
+              <Card>
+                <CardContent className="py-16 text-center">
+                  <Video className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">
+                    {isKorean ? "완료된 AI 영상이 없습니다" : "No Completed AI Videos"}
+                  </h3>
+                  <p className="text-muted-foreground text-sm mb-6">
+                    {isKorean
+                      ? "먼저 AI 영상을 생성해주세요"
+                      : "Generate AI videos first to create variations"}
+                  </p>
+                  <Button onClick={() => router.push("/create/generate")}>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    {isKorean ? "영상 생성하기" : "Generate Videos"}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {filteredSeedCandidates.map((video) => (
+                  <Card
+                    key={video.id}
+                    className="overflow-hidden hover:shadow-lg transition-all cursor-pointer group hover:ring-2 hover:ring-primary/50"
+                    onClick={() => handleSelectSeed(video)}
+                  >
+                    <CardContent className="p-0">
+                      {/* Video Thumbnail */}
+                      <div className="relative aspect-[9/16] bg-muted">
+                        {video.output_url || video.composed_output_url ? (
+                          <LazyVideo
+                            src={video.output_url || video.composed_output_url || ""}
+                            className="w-full h-full object-cover"
+                            autoPlay={false}
+                            muted
+                            loop
+                            playsInline
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Video className="w-8 h-8 text-muted-foreground" />
+                          </div>
                         )}
-                        <span>
-                          {new Date(video.created_at).toLocaleDateString(
-                            isKorean ? "ko-KR" : "en-US",
-                            { month: "short", day: "numeric" }
-                          )}
-                        </span>
+                        {/* Hover Overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all flex flex-col items-center justify-end p-4">
+                          <Button size="sm" className="gap-2">
+                            <Sparkles className="w-4 h-4" />
+                            {isKorean ? "변형 생성" : "Create Variations"}
+                          </Button>
+                        </div>
+                        {/* Status Badge */}
+                        <div className="absolute top-2 right-2">
+                          <Badge className="bg-green-500/90 backdrop-blur-sm">
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            {isKorean ? "완료" : "Done"}
+                          </Badge>
+                        </div>
+                        {/* Duration Badge */}
+                        <div className="absolute bottom-2 right-2 opacity-100 group-hover:opacity-0 transition-opacity">
+                          <Badge variant="secondary" className="bg-black/60 text-white border-0">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {video.duration_seconds}s
+                          </Badge>
+                        </div>
                       </div>
 
-                      {/* Action Buttons */}
-                      <div className="flex items-center gap-2 pt-2">
-                        <Button
-                          size="sm"
-                          className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-                          onClick={() => handleAutoCreateVariations(video)}
-                          disabled={creatingAutoPipeline}
-                        >
-                          {creatingAutoPipeline ? (
-                            <Spinner className="w-4 h-4 mr-2" />
-                          ) : (
-                            <Zap className="w-4 h-4 mr-2" />
+                      {/* Info */}
+                      <div className="p-3 space-y-1.5">
+                        {video.campaign_name && (
+                          <p className="text-xs text-primary font-medium truncate">
+                            {video.campaign_name}
+                          </p>
+                        )}
+                        <p className="text-sm line-clamp-2 leading-snug">
+                          {video.prompt}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                          {video.audio_asset && (
+                            <span className="flex items-center gap-1">
+                              <Music className="w-3 h-3" />
+                            </span>
                           )}
-                          {isKorean ? "자동 변형" : "Auto Generate"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleSelectSeed(video)}
-                        >
-                          <Sparkles className="w-4 h-4" />
-                        </Button>
+                          <span>
+                            {new Date(video.created_at).toLocaleDateString(
+                              isKorean ? "ko-KR" : "en-US",
+                              { month: "short", day: "numeric" }
+                            )}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
 
-      {/* Variation Modal */}
-      <VariationModal
-        isOpen={variationModalOpen}
-        onClose={() => setVariationModalOpen(false)}
-        seedGeneration={selectedSeedGeneration}
-        presets={presets}
-        onCreateVariations={handleCreateVariations}
-        isCreating={creatingVariations}
-        socialAccounts={socialAccounts}
-      />
-    </div>
+          {/* Compose Videos Tab */}
+          <TabsContent value="compose" className="space-y-4 mt-4">
+            {/* Info Banner */}
+            <Card className="bg-gradient-to-r from-purple-500/5 to-pink-500/10 border-purple-500/20">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center shrink-0">
+                    <Wand2 className="w-6 h-6 text-purple-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      {isKorean ? "Compose 슬라이드쇼 자동 변형" : "Compose Slideshow Auto-Variations"}
+                      <Badge variant="secondary" className="text-xs">
+                        <Zap className="w-3 h-3 mr-1" />
+                        Auto
+                      </Badge>
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {isKorean
+                        ? "Compose로 만든 슬라이드쇼입니다. 자동 변형은 새로운 이미지를 검색하여 다른 시각적 스타일의 영상을 생성합니다."
+                        : "Slideshows created with Compose. Auto-variation searches for new images and generates videos with different visual styles."}
+                    </p>
+                  </div>
+                  <Button onClick={() => router.push("/compose")} variant="outline" className="shrink-0 border-purple-500/50 text-purple-600 hover:bg-purple-500/10">
+                    <Film className="w-4 h-4 mr-2" />
+                    {isKorean ? "Compose로 이동" : "Go to Compose"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Filters */}
+            <Card className="border-dashed">
+              <CardContent className="py-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder={isKorean ? "프롬프트 검색..." : "Search prompts..."}
+                      value={composeSearchQuery}
+                      onChange={(e) => setComposeSearchQuery(e.target.value)}
+                      className="pl-9 h-9"
+                    />
+                  </div>
+                  <Select value={composeCampaignFilter} onValueChange={setComposeCampaignFilter}>
+                    <SelectTrigger className="w-[180px] h-9">
+                      <SelectValue placeholder={isKorean ? "캠페인" : "Campaign"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{isKorean ? "모든 캠페인" : "All Campaigns"}</SelectItem>
+                      {campaigns.map((campaign) => (
+                        <SelectItem key={campaign.id} value={campaign.id}>
+                          {campaign.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex-1" />
+                  <p className="text-sm text-muted-foreground">
+                    {filteredComposeCandidates.length} {isKorean ? "개 영상" : "videos"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Compose Videos Grid */}
+            {loadingCompose ? (
+              <div className="flex items-center justify-center h-48">
+                <Spinner className="w-8 h-8" />
+              </div>
+            ) : filteredComposeCandidates.length === 0 ? (
+              <Card>
+                <CardContent className="py-16 text-center">
+                  <Film className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">
+                    {isKorean ? "Compose 영상이 없습니다" : "No Compose Videos"}
+                  </h3>
+                  <p className="text-muted-foreground text-sm mb-6">
+                    {isKorean
+                      ? "Compose 페이지에서 슬라이드쇼 영상을 먼저 생성해주세요"
+                      : "Create slideshow videos on the Compose page first"}
+                  </p>
+                  <Button onClick={() => router.push("/compose")} className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600">
+                    <Wand2 className="w-4 h-4 mr-2" />
+                    {isKorean ? "Compose로 이동" : "Go to Compose"}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {filteredComposeCandidates.map((video) => (
+                  <Card
+                    key={video.id}
+                    className="overflow-hidden hover:shadow-lg transition-all group"
+                  >
+                    <CardContent className="p-0">
+                      {/* Video Thumbnail */}
+                      <div className="relative aspect-[9/16] bg-muted">
+                        {video.composed_output_url || video.output_url ? (
+                          <LazyVideo
+                            src={video.composed_output_url || video.output_url || ""}
+                            className="w-full h-full object-cover"
+                            autoPlay={false}
+                            muted
+                            loop
+                            playsInline
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Film className="w-8 h-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        {/* Type Badge */}
+                        <div className="absolute top-2 left-2">
+                          <Badge className="bg-purple-500/90 text-white backdrop-blur-sm">
+                            <Wand2 className="w-3 h-3 mr-1" />
+                            Compose
+                          </Badge>
+                        </div>
+                        {/* Duration Badge */}
+                        <div className="absolute bottom-2 right-2">
+                          <Badge variant="secondary" className="bg-black/60 text-white border-0">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {video.duration_seconds}s
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {/* Info */}
+                      <div className="p-3 space-y-2">
+                        {video.campaign_name && (
+                          <p className="text-xs text-purple-500 font-medium truncate">
+                            {video.campaign_name}
+                          </p>
+                        )}
+                        <p className="text-sm line-clamp-2 leading-snug">
+                          {video.prompt}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {video.audio_asset && (
+                            <span className="flex items-center gap-1">
+                              <Music className="w-3 h-3" />
+                            </span>
+                          )}
+                          <span>
+                            {new Date(video.created_at).toLocaleDateString(
+                              isKorean ? "ko-KR" : "en-US",
+                              { month: "short", day: "numeric" }
+                            )}
+                          </span>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            className="flex-1 h-8 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                            onClick={() => handleAutoCreateVariations(video)}
+                            disabled={creatingAutoPipeline}
+                          >
+                            {creatingAutoPipeline ? (
+                              <Spinner className="w-3 h-3 mr-1" />
+                            ) : (
+                              <Zap className="w-3 h-3 mr-1" />
+                            )}
+                            {isKorean ? "자동" : "Auto"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-2"
+                            onClick={() => handleSelectSeed(video)}
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+
+        {/* Variation Modal */}
+        <VariationModal
+          isOpen={variationModalOpen}
+          onClose={() => setVariationModalOpen(false)}
+          seedGeneration={selectedSeedGeneration}
+          presets={presets}
+          onCreateVariations={handleCreateVariations}
+          isCreating={creatingVariations}
+          socialAccounts={socialAccounts}
+        />
+      </div>
+    </TooltipProvider>
   );
 }

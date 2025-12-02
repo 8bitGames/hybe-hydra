@@ -26,12 +26,15 @@ import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Calendar, X, Play, Trash2, ExternalLink, Clock, Check, ChevronLeft, CheckCircle } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
+import type { Translations } from "@/lib/i18n/translations";
 
 type ViewTab = "calendar" | "list" | "queue";
 
 export default function PublishingPage() {
   const params = useParams();
   const router = useRouter();
+  const { t } = useI18n();
   const campaignId = params.id as string;
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -178,61 +181,22 @@ export default function PublishingPage() {
   if (!campaign) return null;
 
   return (
-    <>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-        <Link href="/campaigns" className="hover:text-foreground transition-colors">
-          Campaigns
-        </Link>
-        <span>/</span>
-        <Link href={`/campaigns/${campaignId}`} className="hover:text-foreground transition-colors">
-          {campaign.name}
-        </Link>
-        <span>/</span>
-        <span className="text-foreground">Publish</span>
-      </div>
-
-      {/* Header - Step 4 */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <Badge variant="outline" className="font-normal">Step 4</Badge>
-            <span>Schedule to social platforms</span>
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">Publish</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" asChild>
-            <Link href={`/campaigns/${campaignId}/curation`}>
-              <ChevronLeft className="w-4 h-4 mr-2" />
-              Curate
-            </Link>
-          </Button>
-          <Button
-            onClick={() => setShowScheduleModal(true)}
-            disabled={generations.length === 0 || accounts.length === 0}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Schedule Post
-          </Button>
-        </div>
-      </div>
-
+    <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-5 gap-4 mb-6">
         {[
-          { label: "Total", value: stats.total, key: "ALL" },
-          { label: "Scheduled", value: stats.scheduled, key: "SCHEDULED" },
-          { label: "Published", value: stats.published, key: "PUBLISHED" },
-          { label: "Drafts", value: stats.draft, key: "DRAFT" },
-          { label: "Failed", value: stats.failed, key: "FAILED" },
+          { label: t.publish.total, value: stats.total, key: "ALL" },
+          { label: t.publish.scheduled, value: stats.scheduled, key: "SCHEDULED" },
+          { label: t.publish.published, value: stats.published, key: "PUBLISHED" },
+          { label: t.publish.drafts, value: stats.draft, key: "DRAFT" },
+          { label: t.publish.failed, value: stats.failed, key: "FAILED" },
         ].map((stat) => (
           <button
             key={stat.label}
             onClick={() => setStatusFilter(stat.key as PublishStatus | "ALL")}
-            className={`rounded-xl p-4 border transition-all ${
+            className={`rounded-lg p-4 border transition-all ${
               statusFilter === stat.key
-                ? "border-primary ring-2 ring-primary/50 bg-primary/5"
+                ? "border-primary ring-2 ring-primary/30 bg-primary/5"
                 : "border-border hover:border-muted-foreground bg-card"
             }`}
           >
@@ -247,14 +211,18 @@ export default function PublishingPage() {
         <div className="flex items-center gap-4">
           {/* View Tabs */}
           <div className="flex items-center bg-muted rounded-lg p-1">
-            {(["queue", "list", "calendar"] as ViewTab[]).map((tab) => (
+            {([
+              { key: "queue", label: t.publish.queue },
+              { key: "list", label: t.publish.list },
+              { key: "calendar", label: t.publish.calendar }
+            ] as { key: ViewTab; label: string }[]).map((tab) => (
               <Button
-                key={tab}
-                variant={activeTab === tab ? "default" : "ghost"}
+                key={tab.key}
+                variant={activeTab === tab.key ? "default" : "ghost"}
                 size="sm"
-                onClick={() => setActiveTab(tab)}
+                onClick={() => setActiveTab(tab.key)}
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab.label}
               </Button>
             ))}
           </div>
@@ -265,7 +233,7 @@ export default function PublishingPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All Platforms</SelectItem>
+              <SelectItem value="ALL">{t.publish.allPlatforms}</SelectItem>
               <SelectItem value="TIKTOK">TikTok</SelectItem>
               <SelectItem value="YOUTUBE">YouTube</SelectItem>
               <SelectItem value="INSTAGRAM">Instagram</SelectItem>
@@ -276,7 +244,7 @@ export default function PublishingPage() {
 
         {/* Connected Accounts Indicator */}
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-sm">Connected:</span>
+          <span className="text-muted-foreground text-sm">{t.publish.connected}</span>
           {accounts.length > 0 ? (
             <div className="flex items-center gap-1">
               {Array.from(new Set(accounts.map((a) => a.platform))).map((platform) => (
@@ -290,7 +258,7 @@ export default function PublishingPage() {
               ))}
             </div>
           ) : (
-            <span className="text-yellow-600 text-sm">No accounts connected</span>
+            <span className="text-yellow-600 text-sm">{t.publish.noAccountsConnected}</span>
           )}
         </div>
       </div>
@@ -301,27 +269,27 @@ export default function PublishingPage() {
           <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <Calendar className="w-10 h-10 text-green-600" />
           </div>
-          <h3 className="text-xl font-medium text-foreground mb-2">No scheduled posts yet</h3>
+          <h3 className="text-xl font-medium text-foreground mb-2">{t.publish.noScheduledPosts}</h3>
           <p className="text-muted-foreground mb-6">
             {accounts.length === 0
-              ? "Connect your social media accounts to start publishing"
+              ? t.publish.connectAccountsMessage
               : generations.length === 0
-              ? "Generate some videos first, then schedule them for publishing"
-              : "Click 'Schedule Post' to create your first scheduled post"}
+              ? t.publish.generateVideosFirst
+              : t.publish.scheduleFirstPost}
           </p>
           {accounts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Contact your administrator to connect social media accounts
+              {t.publish.contactAdmin}
             </p>
           ) : generations.length === 0 ? (
             <Button asChild>
               <Link href={`/campaigns/${campaignId}/generate`}>
-                Generate Videos
+                {t.publish.generateVideos}
               </Link>
             </Button>
           ) : (
             <Button onClick={() => setShowScheduleModal(true)}>
-              Schedule Your First Post
+              {t.publish.scheduleFirstPost}
             </Button>
           )}
         </Card>
@@ -335,7 +303,7 @@ export default function PublishingPage() {
             <div>
               <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
                 <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                Scheduled ({queueGroups.scheduled.length})
+                {t.publish.scheduledPosts} ({queueGroups.scheduled.length})
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {queueGroups.scheduled
@@ -346,6 +314,7 @@ export default function PublishingPage() {
                       post={post}
                       onCancel={() => handleCancelPost(post.id)}
                       onDelete={() => handleDeletePost(post.id)}
+                      t={t}
                     />
                   ))}
               </div>
@@ -357,7 +326,7 @@ export default function PublishingPage() {
             <div>
               <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
                 <span className="w-2 h-2 bg-gray-500 rounded-full"></span>
-                Drafts ({queueGroups.draft.length})
+                {t.publish.draftPosts} ({queueGroups.draft.length})
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {queueGroups.draft.map((post) => (
@@ -366,6 +335,7 @@ export default function PublishingPage() {
                     post={post}
                     onCancel={() => handleCancelPost(post.id)}
                     onDelete={() => handleDeletePost(post.id)}
+                    t={t}
                   />
                 ))}
               </div>
@@ -377,7 +347,7 @@ export default function PublishingPage() {
             <div>
               <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
                 <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                Published ({queueGroups.published.length})
+                {t.publish.publishedPosts} ({queueGroups.published.length})
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {queueGroups.published.map((post) => (
@@ -386,6 +356,7 @@ export default function PublishingPage() {
                     post={post}
                     onCancel={() => handleCancelPost(post.id)}
                     onDelete={() => handleDeletePost(post.id)}
+                    t={t}
                   />
                 ))}
               </div>
@@ -397,7 +368,7 @@ export default function PublishingPage() {
             <div>
               <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
                 <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                Failed ({queueGroups.failed.length})
+                {t.publish.failedPosts} ({queueGroups.failed.length})
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {queueGroups.failed.map((post) => (
@@ -406,6 +377,7 @@ export default function PublishingPage() {
                     post={post}
                     onCancel={() => handleCancelPost(post.id)}
                     onDelete={() => handleDeletePost(post.id)}
+                    t={t}
                   />
                 ))}
               </div>
@@ -443,7 +415,7 @@ export default function PublishingPage() {
                       </span>
                     </div>
                     <p className="text-muted-foreground text-sm line-clamp-1">
-                      {post.caption || "No caption"}
+                      {post.caption || t.publish.noCaption}
                     </p>
                   </div>
 
@@ -456,7 +428,7 @@ export default function PublishingPage() {
                     )}
                     {post.status === "SCHEDULED" && post.scheduled_at && (
                       <p className="text-muted-foreground text-xs">
-                        in {getTimeUntilPublish(post.scheduled_at)}
+                        {t.publish.inTime} {getTimeUntilPublish(post.scheduled_at)}
                       </p>
                     )}
                   </div>
@@ -509,9 +481,9 @@ export default function PublishingPage() {
           <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <Calendar className="w-10 h-10 text-primary" />
           </div>
-          <h3 className="text-xl font-medium text-foreground mb-2">Calendar View</h3>
+          <h3 className="text-xl font-medium text-foreground mb-2">{t.publish.calendarView}</h3>
           <p className="text-muted-foreground">
-            Calendar view coming soon. Use Queue or List view for now.
+            {t.publish.comingSoon}
           </p>
         </Card>
       )}
@@ -522,7 +494,7 @@ export default function PublishingPage() {
           <Card className="max-w-2xl w-full max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
             <CardHeader className="flex flex-row items-center justify-between border-b">
-              <CardTitle>Schedule Post</CardTitle>
+              <CardTitle>{t.publish.schedulePost}</CardTitle>
               <Button
                 variant="ghost"
                 size="icon"
@@ -540,7 +512,7 @@ export default function PublishingPage() {
               {/* Select Video */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-2">
-                  Select Video
+                  {t.publish.selectVideo}
                 </label>
                 <div className="grid grid-cols-3 gap-3 max-h-48 overflow-y-auto">
                   {generations.map((gen) => (
@@ -573,7 +545,7 @@ export default function PublishingPage() {
               {/* Select Account */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-2">
-                  Publish To
+                  {t.publish.publishTo}
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   {accounts.map((account) => (
@@ -604,21 +576,21 @@ export default function PublishingPage() {
               {/* Caption */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-2">
-                  Caption
+                  {t.publish.caption}
                 </label>
                 <textarea
                   value={scheduleCaption}
                   onChange={(e) => setScheduleCaption(e.target.value)}
                   rows={3}
                   className="w-full px-4 py-3 bg-background border border-input rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-                  placeholder="Write your caption..."
+                  placeholder={t.publish.writeCaption}
                 />
               </div>
 
               {/* Schedule Time */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-2">
-                  Schedule Time (Optional)
+                  {t.publish.scheduleTime}
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <input
@@ -636,7 +608,7 @@ export default function PublishingPage() {
                   />
                 </div>
                 <p className="text-muted-foreground text-xs mt-2">
-                  Leave empty to save as draft
+                  {t.publish.leaveEmptyForDraft}
                 </p>
               </div>
             </CardContent>
@@ -650,7 +622,7 @@ export default function PublishingPage() {
                   resetScheduleForm();
                 }}
               >
-                Cancel
+                {t.publish.cancel}
               </Button>
               <Button
                 onClick={handleSchedule}
@@ -659,17 +631,17 @@ export default function PublishingPage() {
                 {scheduling ? (
                   <>
                     <Spinner className="h-4 w-4 mr-2" />
-                    Scheduling...
+                    {t.publish.scheduling}
                   </>
                 ) : scheduleDate && scheduleTime ? (
                   <>
                     <Calendar className="w-4 h-4 mr-2" />
-                    Schedule Post
+                    {t.publish.schedulePost}
                   </>
                 ) : (
                   <>
                     <Clock className="w-4 h-4 mr-2" />
-                    Save as Draft
+                    {t.publish.saveAsDraft}
                   </>
                 )}
               </Button>
@@ -677,7 +649,7 @@ export default function PublishingPage() {
           </Card>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -686,10 +658,12 @@ function PostCard({
   post,
   onCancel,
   onDelete,
+  t,
 }: {
   post: ScheduledPost;
   onCancel: () => void;
   onDelete: () => void;
+  t: Translations;
 }) {
   return (
     <Card className="overflow-hidden">
@@ -734,7 +708,7 @@ function PostCard({
         {post.status === "SCHEDULED" && post.scheduled_at && (
           <div className="absolute bottom-2 right-2">
             <span className="px-2 py-1 bg-black/60 rounded text-xs text-white">
-              in {getTimeUntilPublish(post.scheduled_at)}
+              {t.publish.inTime} {getTimeUntilPublish(post.scheduled_at)}
             </span>
           </div>
         )}
@@ -751,7 +725,7 @@ function PostCard({
 
         {/* Caption Preview */}
         <p className="text-muted-foreground text-sm line-clamp-2 mb-3">
-          {post.caption || "No caption"}
+          {post.caption || t.publish.noCaption}
         </p>
 
         {/* Schedule Time */}
@@ -764,7 +738,7 @@ function PostCard({
         {/* Error Message */}
         {post.error_message && (
           <p className="text-destructive text-xs mb-3 line-clamp-2">
-            Error: {post.error_message}
+            {t.publish.error}: {post.error_message}
           </p>
         )}
 
@@ -778,7 +752,7 @@ function PostCard({
                 rel="noopener noreferrer"
               >
                 <ExternalLink className="w-3 h-3 mr-1" />
-                View Post
+                {t.publish.viewPost}
               </a>
             </Button>
           )}
@@ -789,7 +763,7 @@ function PostCard({
               onClick={onCancel}
               className="text-yellow-600 hover:text-yellow-700"
             >
-              Cancel
+              {t.publish.cancel}
             </Button>
           )}
           {post.status !== "PUBLISHED" && post.status !== "PUBLISHING" && (
@@ -799,7 +773,7 @@ function PostCard({
               onClick={onDelete}
               className="text-destructive hover:text-destructive"
             >
-              Delete
+              {t.common.delete}
             </Button>
           )}
         </div>

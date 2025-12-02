@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { CampaignStatus } from "@prisma/client";
+import { invalidateCampaignCache } from "@/lib/cache";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -116,6 +117,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       },
     });
 
+    // Invalidate cache
+    await invalidateCampaignCache(id);
+
     return NextResponse.json({
       id: campaign.id,
       name: campaign.name,
@@ -168,6 +172,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     await prisma.campaign.delete({ where: { id } });
+
+    // Invalidate cache
+    await invalidateCampaignCache(id);
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {

@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/auth-store";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import { campaignsApi, Campaign } from "@/lib/campaigns-api";
+import { videoApi, VideoGeneration } from "@/lib/video-api";
 import {
   Card,
   CardContent,
@@ -14,32 +18,40 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
   FolderOpen,
   CheckCircle,
-  FileEdit,
   Plus,
   ChevronRight,
-  ArrowRight,
   Sparkles,
   Send,
   Eye,
   Heart,
-  MessageCircle,
-  Share2,
   TrendingUp,
   Clock,
-  Play,
   RefreshCw,
   BarChart3,
   Upload,
   LayoutGrid,
   ExternalLink,
   Star,
+  Bot,
+  Wand2,
+  Zap,
+  Play,
+  Hash,
+  Target,
+  Video,
+  XCircle,
+  ArrowRight,
+  MessageCircle,
+  Share2,
 } from "lucide-react";
+import { trackHome, trackTrends, trackQuickCreate } from "@/lib/analytics";
 
-// Types for dashboard API response
+// Types
 interface DashboardStats {
   summary: {
     campaigns: {
@@ -108,17 +120,98 @@ interface DashboardStats {
   };
 }
 
+interface PerformanceStats {
+  totalVideos: number;
+  completedVideos: number;
+  failedVideos: number;
+  processingVideos: number;
+  avgQualityScore: number;
+  successRate: number;
+}
+
 export default function DashboardPage() {
+  const router = useRouter();
   const { user, accessToken, isAuthenticated } = useAuthStore();
+  const { language } = useI18n();
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [performanceStats, setPerformanceStats] = useState<PerformanceStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tiktokUrl, setTiktokUrl] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
 
   useEffect(() => {
     if (accessToken) {
       api.setAccessToken(accessToken);
     }
   }, [accessToken]);
+
+  const calculatePerformanceStats = async (): Promise<PerformanceStats> => {
+    try {
+      const campaignsResult = await campaignsApi.getAll({ page_size: 50 });
+      if (!campaignsResult.data) {
+        return {
+          totalVideos: 0,
+          completedVideos: 0,
+          failedVideos: 0,
+          processingVideos: 0,
+          avgQualityScore: 0,
+          successRate: 0,
+        };
+      }
+
+      const campaignsList = campaignsResult.data.items;
+      const allVideos: VideoGeneration[] = [];
+
+      await Promise.all(
+        campaignsList.map(async (campaign) => {
+          try {
+            const videosResult = await videoApi.getAll(campaign.id, { page_size: 100 });
+            if (videosResult.data) {
+              allVideos.push(...videosResult.data.items);
+            }
+          } catch (error) {
+            console.error(`Failed to fetch videos for campaign ${campaign.id}:`, error);
+          }
+        })
+      );
+
+      const completed = allVideos.filter((v) => v.status === "completed");
+      const failed = allVideos.filter((v) => v.status === "failed");
+      const processing = allVideos.filter(
+        (v) => v.status === "processing" || v.status === "pending"
+      );
+
+      const qualityScores = completed
+        .map((v) => v.quality_score)
+        .filter((s): s is number => s !== null && s !== undefined);
+
+      return {
+        totalVideos: allVideos.length,
+        completedVideos: completed.length,
+        failedVideos: failed.length,
+        processingVideos: processing.length,
+        avgQualityScore:
+          qualityScores.length > 0
+            ? qualityScores.reduce((a, b) => a + b, 0) / qualityScores.length
+            : 0,
+        successRate:
+          completed.length + failed.length > 0
+            ? (completed.length / (completed.length + failed.length)) * 100
+            : 0,
+      };
+    } catch (error) {
+      console.error("Failed to calculate performance stats:", error);
+      return {
+        totalVideos: 0,
+        completedVideos: 0,
+        failedVideos: 0,
+        processingVideos: 0,
+        avgQualityScore: 0,
+        successRate: 0,
+      };
+    }
+  };
 
   const loadDashboard = useCallback(async () => {
     if (!isAuthenticated || !accessToken) return;
@@ -127,15 +220,19 @@ export default function DashboardPage() {
     setError(null);
 
     try {
-      const response = await api.get<DashboardStats>("/api/v1/dashboard/stats");
+      const [dashboardResponse, perfStats] = await Promise.all([
+        api.get<DashboardStats>("/api/v1/dashboard/stats"),
+        calculatePerformanceStats(),
+      ]);
 
-      if (response.error) {
-        setError(response.error.message);
+      if (dashboardResponse.error) {
+        setError(dashboardResponse.error.message);
         return;
       }
 
-      if (response.data) {
-        setStats(response.data);
+      if (dashboardResponse.data) {
+        setStats(dashboardResponse.data);
+        setPerformanceStats(perfStats);
       }
     } catch (err) {
       console.error("Failed to load dashboard:", err);
@@ -158,29 +255,32 @@ export default function DashboardPage() {
     return num.toLocaleString();
   };
 
-  const statusVariants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-    draft: "secondary",
-    active: "default",
-    completed: "outline",
-    archived: "outline",
-  };
-
-  const getPlatformIcon = (platform: string) => {
-    switch (platform) {
-      case "TIKTOK": return "🎵";
-      case "YOUTUBE": return "📺";
-      case "INSTAGRAM": return "📸";
-      case "TWITTER": return "🐦";
-      default: return "📱";
+  const handleAnalyzeVideo = () => {
+    if (tiktokUrl.trim()) {
+      router.push(`/bridge?url=${encodeURIComponent(tiktokUrl)}`);
     }
   };
+
+  const handleSearchTrends = () => {
+    if (searchKeyword.trim()) {
+      router.push(`/trends?keyword=${encodeURIComponent(searchKeyword)}`);
+    }
+  };
+
+  const popularHashtags = [
+    { tag: "#countrymusic", count: "2.5M" },
+    { tag: "#newmusic", count: "1.8M" },
+    { tag: "#nashville", count: "1.2M" },
+  ];
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <Spinner className="h-12 w-12 mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading dashboard...</p>
+          <p className="text-muted-foreground">
+            {language === "ko" ? "대시보드 로딩 중..." : "Loading dashboard..."}
+          </p>
         </div>
       </div>
     );
@@ -191,14 +291,29 @@ export default function DashboardPage() {
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Welcome back, {user?.name}!</CardTitle>
-            <CardDescription>Ready to create amazing AI-generated videos?</CardDescription>
+            <CardTitle className="text-2xl">
+              {language === "ko"
+                ? `다시 오신 것을 환영합니다, ${user?.name}님!`
+                : `Welcome back, ${user?.name}!`}
+            </CardTitle>
+            <CardDescription>
+              {language === "ko"
+                ? "멋진 AI 영상을 만들 준비가 되셨나요?"
+                : "Ready to create amazing AI-generated videos?"}
+            </CardDescription>
           </CardHeader>
         </Card>
         <Card>
           <CardContent className="pt-6 text-center">
-            <p className="text-muted-foreground mb-4">{error || "Failed to load dashboard"}</p>
-            <Button onClick={loadDashboard}>Try Again</Button>
+            <p className="text-muted-foreground mb-4">
+              {error ||
+                (language === "ko"
+                  ? "대시보드를 불러오지 못했습니다"
+                  : "Failed to load dashboard")}
+            </p>
+            <Button onClick={loadDashboard}>
+              {language === "ko" ? "다시 시도" : "Try Again"}
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -207,7 +322,6 @@ export default function DashboardPage() {
 
   const { summary, sns_performance, campaigns_overview, recent_activity } = stats;
 
-  // Calculate workflow progress
   const workflowProgress = {
     assets: campaigns_overview.reduce((sum, c) => sum + c.asset_count, 0),
     generated: summary.generations.by_status.COMPLETED || 0,
@@ -218,439 +332,456 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Overview of all campaigns and content generation progress
-          </p>
+    <div className="space-y-8 pb-8">
+      {/* Hero Section - Quick Actions */}
+      <div>
+        <h1 className="text-4xl font-bold tracking-tight mb-2">
+          {language === "ko" ? "대시보드" : "Dashboard"}
+        </h1>
+        <p className="text-muted-foreground mb-6">
+          {language === "ko"
+            ? "무엇을 도와드릴까요? 아래에서 빠르게 시작하세요"
+            : "What would you like to do? Get started quickly below"}
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* AI Generate Card */}
+          <Card
+            className="cursor-pointer hover:border-primary/50 transition-colors group"
+            onClick={() => {
+              trackQuickCreate.start();
+              router.push("/create?mode=generate");
+            }}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-lg bg-primary/10">
+                  <Bot className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-lg mb-1">
+                    {language === "ko" ? "AI 영상 생성" : "AI Generate"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {language === "ko"
+                      ? "텍스트 프롬프트로 즉시 영상 생성"
+                      : "Create videos instantly from text prompts"}
+                  </p>
+                </div>
+                <ArrowRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Analyze Video Card */}
+          <Card
+            className="cursor-pointer hover:border-primary/50 transition-colors group"
+            onClick={() => {
+              trackTrends.explore();
+              router.push("/bridge");
+            }}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-lg bg-orange-500/10">
+                  <Zap className="h-5 w-5 text-orange-500" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-lg mb-1">
+                    {language === "ko" ? "영상 분석" : "Analyze Video"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {language === "ko"
+                      ? "TikTok 영상 스타일 분석 및 재현"
+                      : "Analyze & recreate TikTok video styles"}
+                  </p>
+                </div>
+                <ArrowRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* View Trends Card */}
+          <Card
+            className="cursor-pointer hover:border-primary/50 transition-colors group"
+            onClick={() => {
+              trackTrends.explore();
+              router.push("/insights");
+            }}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-lg bg-green-500/10">
+                  <TrendingUp className="h-5 w-5 text-green-500" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-lg mb-1">
+                    {language === "ko" ? "트렌드 탐색" : "Explore Trends"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {language === "ko"
+                      ? "실시간 TikTok 트렌드 발견"
+                      : "Discover real-time TikTok trends"}
+                  </p>
+                </div>
+                <ArrowRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={loadDashboard}>
+      </div>
+
+      {/* Key Metrics */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold">
+            {language === "ko" ? "주요 지표" : "Key Metrics"}
+          </h2>
+          <Button variant="outline" size="sm" onClick={loadDashboard}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
+            {language === "ko" ? "새로고침" : "Refresh"}
           </Button>
-          <Link href="/campaigns/new">
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              New Campaign
-            </Button>
-          </Link>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-muted rounded-lg">
+                  <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    {language === "ko" ? "캠페인" : "Campaigns"}
+                  </p>
+                  <p className="text-2xl font-bold">{summary.campaigns.total}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-muted rounded-lg">
+                  <Video className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    {language === "ko" ? "총 영상" : "Total Videos"}
+                  </p>
+                  <p className="text-2xl font-bold">{performanceStats?.totalVideos || 0}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-muted rounded-lg">
+                  <Target className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    {language === "ko" ? "성공률" : "Success Rate"}
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {performanceStats?.successRate.toFixed(0) || 0}%
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-muted rounded-lg">
+                  <Star className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    {language === "ko" ? "평균 품질" : "Avg Quality"}
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {performanceStats?.avgQualityScore.toFixed(0) || 0}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-muted rounded-lg">
+                  <Eye className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    {language === "ko" ? "총 조회수" : "Total Views"}
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {formatNumber(sns_performance.total_views)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-muted rounded-lg">
+                  <TrendingUp className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    {language === "ko" ? "참여도" : "Engagement"}
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {sns_performance.avg_engagement_rate
+                      ? `${sns_performance.avg_engagement_rate.toFixed(1)}%`
+                      : "-"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
-      {/* Overview Stats - Key Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
-                <FolderOpen className="h-5 w-5 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Campaigns</p>
-                <p className="text-2xl font-bold">{summary.campaigns.total}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-500/10 rounded-lg">
-                <Sparkles className="h-5 w-5 text-purple-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Generated</p>
-                <p className="text-2xl font-bold">{workflowProgress.generated}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-yellow-500/10 rounded-lg">
-                <Clock className="h-5 w-5 text-yellow-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Processing</p>
-                <p className="text-2xl font-bold">{workflowProgress.processing}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-500/10 rounded-lg">
-                <Send className="h-5 w-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Published</p>
-                <p className="text-2xl font-bold">{workflowProgress.published}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-orange-500/10 rounded-lg">
-                <Eye className="h-5 w-5 text-orange-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Views</p>
-                <p className="text-2xl font-bold">{formatNumber(sns_performance.total_views)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-500/10 rounded-lg">
-                <Heart className="h-5 w-5 text-red-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Likes</p>
-                <p className="text-2xl font-bold">{formatNumber(sns_performance.total_likes)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Workflow Progress Overview */}
+      {/* Workflow Pipeline */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />
-            Content Production Pipeline
+            {language === "ko" ? "콘텐츠 제작 파이프라인" : "Content Production Pipeline"}
           </CardTitle>
-          <CardDescription>Overall workflow progress across all campaigns</CardDescription>
+          <CardDescription>
+            {language === "ko"
+              ? "에셋에서 발행까지의 전체 프로세스"
+              : "End-to-end process from assets to publishing"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {/* Step 1: Assets */}
-            <div className="relative">
-              <div className="flex items-center gap-3 mb-3">
-                <div className={`p-2 rounded-full ${workflowProgress.assets > 0 ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"}`}>
-                  {workflowProgress.assets > 0 ? <CheckCircle className="w-5 h-5" /> : <Upload className="w-5 h-5" />}
-                </div>
-                <div>
-                  <p className="font-medium">1. Assets</p>
-                  <p className="text-sm text-muted-foreground">{workflowProgress.assets} uploaded</p>
-                </div>
-              </div>
-              <div className="hidden md:block absolute top-5 left-full w-full h-0.5 bg-muted -translate-x-4" />
-            </div>
-
-            {/* Step 2: Generation */}
-            <div className="relative">
-              <div className="flex items-center gap-3 mb-3">
-                <div className={`p-2 rounded-full ${workflowProgress.generated > 0 ? "bg-green-500 text-white" : workflowProgress.processing > 0 ? "bg-blue-500 text-white" : "bg-muted text-muted-foreground"}`}>
-                  {workflowProgress.generated > 0 ? <CheckCircle className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
-                </div>
-                <div>
-                  <p className="font-medium">2. Generate</p>
-                  <p className="text-sm text-muted-foreground">
-                    {workflowProgress.generated} completed
-                    {workflowProgress.processing > 0 && <span className="text-blue-500"> ({workflowProgress.processing} processing)</span>}
-                  </p>
-                </div>
-              </div>
-              <div className="pl-10 space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Completed</span>
-                  <span className="text-green-500">{summary.generations.by_status.COMPLETED || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Processing</span>
-                  <span className="text-blue-500">{summary.generations.by_status.PROCESSING || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Pending</span>
-                  <span>{summary.generations.by_status.PENDING || 0}</span>
-                </div>
-              </div>
-              <div className="hidden md:block absolute top-5 left-full w-full h-0.5 bg-muted -translate-x-4" />
-            </div>
-
-            {/* Step 3: Curation */}
-            <div className="relative">
-              <div className="flex items-center gap-3 mb-3">
-                <div className={`p-2 rounded-full ${workflowProgress.curated > 0 ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"}`}>
-                  {workflowProgress.curated > 0 ? <CheckCircle className="w-5 h-5" /> : <LayoutGrid className="w-5 h-5" />}
-                </div>
-                <div>
-                  <p className="font-medium">3. Curate</p>
-                  <p className="text-sm text-muted-foreground">{workflowProgress.curated} high quality</p>
-                </div>
-              </div>
-              <div className="pl-10 space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">High Quality (70%+)</span>
-                  <span>{summary.generations.high_quality_count}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Avg Score</span>
-                  <span>{summary.generations.avg_quality_score ? `${summary.generations.avg_quality_score.toFixed(1)}%` : "-"}</span>
-                </div>
-              </div>
-              <div className="hidden md:block absolute top-5 left-full w-full h-0.5 bg-muted -translate-x-4" />
-            </div>
-
-            {/* Step 4: Publish */}
-            <div>
-              <div className="flex items-center gap-3 mb-3">
-                <div className={`p-2 rounded-full ${workflowProgress.published > 0 ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"}`}>
-                  {workflowProgress.published > 0 ? <CheckCircle className="w-5 h-5" /> : <Send className="w-5 h-5" />}
-                </div>
-                <div>
-                  <p className="font-medium">4. Publish</p>
-                  <p className="text-sm text-muted-foreground">{workflowProgress.published} live</p>
-                </div>
-              </div>
-              <div className="pl-10 space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Published</span>
-                  <span className="text-green-500">{summary.publishing.by_status.PUBLISHED || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Scheduled</span>
-                  <span className="text-blue-500">{summary.publishing.by_status.SCHEDULED || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Draft</span>
-                  <span>{summary.publishing.by_status.DRAFT || 0}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* SNS Performance Summary */}
-      {sns_performance.total_published > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              SNS Performance
-            </CardTitle>
-            <CardDescription>Analytics from all published content</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-              <div className="text-center p-4 bg-muted/50 rounded-lg">
-                <Eye className="w-5 h-5 mx-auto mb-2 text-muted-foreground" />
-                <p className="text-2xl font-bold">{formatNumber(sns_performance.total_views)}</p>
-                <p className="text-xs text-muted-foreground">Views</p>
-              </div>
-              <div className="text-center p-4 bg-muted/50 rounded-lg">
-                <Heart className="w-5 h-5 mx-auto mb-2 text-red-500" />
-                <p className="text-2xl font-bold">{formatNumber(sns_performance.total_likes)}</p>
-                <p className="text-xs text-muted-foreground">Likes</p>
-              </div>
-              <div className="text-center p-4 bg-muted/50 rounded-lg">
-                <MessageCircle className="w-5 h-5 mx-auto mb-2 text-blue-500" />
-                <p className="text-2xl font-bold">{formatNumber(sns_performance.total_comments)}</p>
-                <p className="text-xs text-muted-foreground">Comments</p>
-              </div>
-              <div className="text-center p-4 bg-muted/50 rounded-lg">
-                <Share2 className="w-5 h-5 mx-auto mb-2 text-green-500" />
-                <p className="text-2xl font-bold">{formatNumber(sns_performance.total_shares)}</p>
-                <p className="text-xs text-muted-foreground">Shares</p>
-              </div>
-              <div className="text-center p-4 bg-muted/50 rounded-lg">
-                <Star className="w-5 h-5 mx-auto mb-2 text-yellow-500" />
-                <p className="text-2xl font-bold">{formatNumber(sns_performance.total_saves)}</p>
-                <p className="text-xs text-muted-foreground">Saves</p>
-              </div>
-              <div className="text-center p-4 bg-muted/50 rounded-lg">
-                <TrendingUp className="w-5 h-5 mx-auto mb-2 text-purple-500" />
-                <p className="text-2xl font-bold">
-                  {sns_performance.avg_engagement_rate ? `${sns_performance.avg_engagement_rate.toFixed(2)}%` : "-"}
-                </p>
-                <p className="text-xs text-muted-foreground">Engagement</p>
-              </div>
-            </div>
-
-            {/* Platform Breakdown */}
+          <div className="space-y-4">
+            {/* Stage Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Object.entries(sns_performance.by_platform).map(([platform, data]) => (
-                data.posts > 0 && (
-                  <div key={platform} className="p-4 border rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xl">{getPlatformIcon(platform)}</span>
-                      <span className="font-medium">{platform}</span>
-                      <Badge variant="secondary" className="ml-auto text-xs">
-                        {data.posts}
-                      </Badge>
-                    </div>
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>Views</span>
-                        <span className="text-foreground">{formatNumber(data.views)}</span>
-                      </div>
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>Likes</span>
-                        <span className="text-foreground">{formatNumber(data.likes)}</span>
-                      </div>
-                    </div>
+              {/* Stage 1: Assets */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-muted">
+                    <Upload className="h-4 w-4 text-muted-foreground" />
                   </div>
-                )
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Campaign Progress Table */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
-          <div>
-            <CardTitle>Campaign Progress</CardTitle>
-            <CardDescription>Generation and publishing status per campaign</CardDescription>
-          </div>
-          <Link href="/campaigns">
-            <Button variant="outline" size="sm">
-              View All
-              <ArrowRight className="h-4 w-4 ml-2" />
-            </Button>
-          </Link>
-        </CardHeader>
-        <CardContent className="pt-6">
-          {campaigns_overview.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mx-auto mb-4">
-                <Plus className="h-6 w-6 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {language === "ko" ? "에셋" : "Assets"}
+                    </p>
+                    <p className="text-xl font-bold">{workflowProgress.assets}</p>
+                  </div>
+                </div>
               </div>
-              <h3 className="font-medium mb-2">No campaigns yet</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Create your first campaign to start generating videos
-              </p>
-              <Link href="/campaigns/new">
-                <Button>Create Campaign</Button>
-              </Link>
+
+              {/* Stage 2: Generation */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-muted">
+                    <Sparkles className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {language === "ko" ? "생성됨" : "Generated"}
+                    </p>
+                    <p className="text-xl font-bold">{workflowProgress.generated}</p>
+                    {workflowProgress.processing > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        +{workflowProgress.processing} {language === "ko" ? "진행 중" : "processing"}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Stage 3: Curation */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-muted">
+                    <Star className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {language === "ko" ? "고품질" : "High Quality"}
+                    </p>
+                    <p className="text-xl font-bold">{workflowProgress.curated}</p>
+                    {workflowProgress.generated > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {((workflowProgress.curated / workflowProgress.generated) * 100).toFixed(0)}%
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Stage 4: Publishing */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-muted">
+                    <Send className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {language === "ko" ? "발행됨" : "Published"}
+                    </p>
+                    <p className="text-xl font-bold">{workflowProgress.published}</p>
+                    {workflowProgress.scheduled > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        +{workflowProgress.scheduled} {language === "ko" ? "예약" : "scheduled"}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-2 font-medium text-muted-foreground">Campaign</th>
-                    <th className="text-center py-3 px-2 font-medium text-muted-foreground">Status</th>
-                    <th className="text-center py-3 px-2 font-medium text-muted-foreground">Assets</th>
-                    <th className="text-center py-3 px-2 font-medium text-muted-foreground">Generated</th>
-                    <th className="text-center py-3 px-2 font-medium text-muted-foreground">Published</th>
-                    <th className="text-center py-3 px-2 font-medium text-muted-foreground">Views</th>
-                    <th className="text-right py-3 px-2"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {campaigns_overview.slice(0, 10).map((campaign) => (
-                    <tr key={campaign.id} className="border-b last:border-0 hover:bg-muted/50">
-                      <td className="py-3 px-2">
-                        <div>
-                          <p className="font-medium">{campaign.name}</p>
-                          <p className="text-sm text-muted-foreground">{campaign.artist_name}</p>
-                        </div>
-                      </td>
-                      <td className="text-center py-3 px-2">
-                        <Badge variant={statusVariants[campaign.status]}>{campaign.status}</Badge>
-                      </td>
-                      <td className="text-center py-3 px-2">
-                        <span className="text-sm">{campaign.asset_count}</span>
-                      </td>
-                      <td className="text-center py-3 px-2">
-                        <div className="flex items-center justify-center gap-1">
-                          <span className="text-sm font-medium">{campaign.completed_generations}</span>
-                          {campaign.processing_generations > 0 && (
-                            <span className="text-xs text-blue-500">+{campaign.processing_generations}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="text-center py-3 px-2">
-                        <div className="flex items-center justify-center gap-1">
-                          <span className="text-sm font-medium">{campaign.published_count}</span>
-                          {campaign.scheduled_count > 0 && (
-                            <span className="text-xs text-muted-foreground">({campaign.scheduled_count})</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="text-center py-3 px-2">
-                        <span className="text-sm">{formatNumber(campaign.total_views)}</span>
-                      </td>
-                      <td className="text-right py-3 px-2">
-                        <Link href={`/campaigns/${campaign.id}/analytics`}>
-                          <Button variant="ghost" size="sm">
-                            <BarChart3 className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            {/* Overall Progress */}
+            <div className="pt-4 border-t space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">
+                  {language === "ko" ? "전체 완료율" : "Overall Completion"}
+                </span>
+                <span className="font-medium">
+                  {workflowProgress.assets > 0
+                    ? `${((workflowProgress.published / workflowProgress.assets) * 100).toFixed(1)}%`
+                    : "0%"}
+                </span>
+              </div>
+              <Progress
+                value={
+                  workflowProgress.assets > 0
+                    ? (workflowProgress.published / workflowProgress.assets) * 100
+                    : 0
+                }
+                className="h-2"
+              />
+              {workflowProgress.processing > 0 && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                  {language === "ko"
+                    ? `${workflowProgress.processing}개 영상 처리 중`
+                    : `${workflowProgress.processing} videos processing`}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </CardContent>
       </Card>
 
-      {/* Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Generations */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5" />
-              Recent Generations
-            </CardTitle>
-            <CardDescription>Latest completed video generations</CardDescription>
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Active Campaigns - Takes 2 columns */}
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between pb-4">
+            <div>
+              <CardTitle>
+                {language === "ko" ? "활성 캠페인" : "Active Campaigns"}
+              </CardTitle>
+              <CardDescription>
+                {language === "ko"
+                  ? "진행 중인 캠페인 현황"
+                  : "Your ongoing campaigns at a glance"}
+              </CardDescription>
+            </div>
+            <Link href="/campaigns">
+              <Button variant="outline" size="sm">
+                {language === "ko" ? "전체 보기" : "View All"}
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </Link>
           </CardHeader>
           <CardContent>
-            {recent_activity.generations.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No completed generations yet</p>
+            {campaigns_overview.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mx-auto mb-4">
+                  <Plus className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <h3 className="font-medium mb-2">
+                  {language === "ko" ? "아직 캠페인이 없습니다" : "No campaigns yet"}
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {language === "ko"
+                    ? "첫 캠페인을 만들어 시작하세요"
+                    : "Create your first campaign to get started"}
+                </p>
+                <Link href="/campaigns/new">
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    {language === "ko" ? "새 캠페인" : "New Campaign"}
+                  </Button>
+                </Link>
               </div>
             ) : (
               <div className="space-y-3">
-                {recent_activity.generations.map((gen) => (
+                {campaigns_overview.slice(0, 5).map((campaign) => (
                   <Link
-                    key={gen.id}
-                    href={`/campaigns/${gen.campaign_id}/analytics`}
-                    className="flex items-center gap-3 p-3 -mx-3 rounded-lg hover:bg-muted/50 transition-colors"
+                    key={campaign.id}
+                    href={`/campaigns/${campaign.id}`}
+                    className="block p-4 rounded-lg border hover:bg-accent/50 transition-colors"
                   >
-                    <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden flex-shrink-0">
-                      {gen.output_url ? (
-                        <video src={gen.output_url} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Play className="h-6 w-6 text-muted-foreground" />
-                        </div>
-                      )}
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h4 className="font-medium">{campaign.name}</h4>
+                        <p className="text-sm text-muted-foreground">{campaign.artist_name}</p>
+                      </div>
+                      <Badge
+                        variant={
+                          campaign.status === "active"
+                            ? "default"
+                            : campaign.status === "completed"
+                            ? "outline"
+                            : "secondary"
+                        }
+                      >
+                        {language === "ko"
+                          ? campaign.status === "draft"
+                            ? "초안"
+                            : campaign.status === "active"
+                            ? "활성"
+                            : campaign.status === "completed"
+                            ? "완료"
+                            : campaign.status === "archived"
+                            ? "보관됨"
+                            : campaign.status
+                          : campaign.status}
+                      </Badge>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{gen.prompt}</p>
-                      <p className="text-xs text-muted-foreground">{gen.campaign_name}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        {gen.quality_score && (
-                          <Badge variant="outline" className="text-[10px]">
-                            <Star className="h-3 w-3 mr-1" />
-                            {gen.quality_score.toFixed(0)}%
-                          </Badge>
-                        )}
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(gen.created_at).toLocaleDateString()}
-                        </span>
+                    <div className="grid grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">
+                          {language === "ko" ? "에셋" : "Assets"}
+                        </p>
+                        <p className="font-medium">{campaign.asset_count}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">
+                          {language === "ko" ? "생성됨" : "Generated"}
+                        </p>
+                        <p className="font-medium">{campaign.completed_generations}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">
+                          {language === "ko" ? "발행됨" : "Published"}
+                        </p>
+                        <p className="font-medium">{campaign.published_count}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">
+                          {language === "ko" ? "조회수" : "Views"}
+                        </p>
+                        <p className="font-medium">{formatNumber(campaign.total_views)}</p>
                       </div>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                   </Link>
                 ))}
               </div>
@@ -658,61 +789,228 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Recent Published */}
+        {/* Insights & Trends - Takes 1 column */}
+        <div className="space-y-6">
+          {/* Quick Analysis */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Zap className="h-4 w-4" />
+                {language === "ko" ? "빠른 분석" : "Quick Analysis"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {language === "ko" ? "TikTok URL 분석" : "Analyze TikTok URL"}
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="https://tiktok.com/@..."
+                    value={tiktokUrl}
+                    onChange={(e) => setTiktokUrl(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button onClick={handleAnalyzeVideo} disabled={!tiktokUrl.trim()} size="sm">
+                    <Play className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Trending Hashtags */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Hash className="h-4 w-4" />
+                {language === "ko" ? "트렌딩 해시태그" : "Trending Hashtags"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {popularHashtags.map((hashtag) => (
+                <button
+                  key={hashtag.tag}
+                  onClick={() => {
+                    setSearchKeyword(hashtag.tag);
+                    handleSearchTrends();
+                  }}
+                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-accent transition-colors text-left"
+                >
+                  <span className="font-medium">{hashtag.tag}</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {hashtag.count}
+                  </Badge>
+                </button>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => router.push("/insights")}
+              >
+                {language === "ko" ? "더 보기" : "View More"}
+                <ChevronRight className="h-4 w-4 ml-2" />
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Performance Summary */}
+          {performanceStats && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4" />
+                  {language === "ko" ? "성능 요약" : "Performance Summary"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {language === "ko" ? "완료" : "Completed"}
+                    </span>
+                    <span className="font-medium">
+                      {performanceStats.completedVideos}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {language === "ko" ? "처리 중" : "Processing"}
+                    </span>
+                    <span className="font-medium">
+                      {performanceStats.processingVideos}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {language === "ko" ? "실패" : "Failed"}
+                    </span>
+                    <span className="font-medium">
+                      {performanceStats.failedVideos}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {/* Recent Activity & SNS Performance */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Activity */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Send className="h-5 w-5" />
-              Recent Published
+              <Clock className="h-5 w-5" />
+              {language === "ko" ? "최근 활동" : "Recent Activity"}
             </CardTitle>
-            <CardDescription>Latest published content on SNS</CardDescription>
+            <CardDescription>
+              {language === "ko" ? "최근 생성 및 발행" : "Latest generations and publishes"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {recent_activity.published.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Send className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No published content yet</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {recent_activity.published.map((post) => (
-                  <div
-                    key={post.id}
-                    className="flex items-center gap-3 p-3 -mx-3 rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="text-2xl">{getPlatformIcon(post.platform)}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{post.account_name}</p>
-                      <p className="text-xs text-muted-foreground">{post.campaign_name}</p>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                        {post.view_count !== null && (
-                          <span className="flex items-center gap-1">
-                            <Eye className="h-3 w-3" /> {formatNumber(post.view_count)}
-                          </span>
-                        )}
-                        {post.like_count !== null && (
-                          <span className="flex items-center gap-1">
-                            <Heart className="h-3 w-3" /> {formatNumber(post.like_count)}
-                          </span>
-                        )}
-                        {post.published_at && (
-                          <span>{new Date(post.published_at).toLocaleDateString()}</span>
+            <div className="space-y-4">
+              {recent_activity.generations.length === 0 &&
+              recent_activity.published.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>{language === "ko" ? "최근 활동이 없습니다" : "No recent activity"}</p>
+                </div>
+              ) : (
+                <>
+                  {recent_activity.generations.slice(0, 3).map((gen) => (
+                    <Link
+                      key={gen.id}
+                      href={`/campaigns/${gen.campaign_id}/analytics`}
+                      className="flex items-center gap-3 p-3 rounded-lg hover:bg-accent/50 transition-colors"
+                    >
+                      <div className="w-12 h-12 bg-muted rounded-lg overflow-hidden flex-shrink-0">
+                        {gen.output_url ? (
+                          <video src={gen.output_url} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Play className="h-5 w-5 text-muted-foreground" />
+                          </div>
                         )}
                       </div>
-                    </div>
-                    {post.published_url && (
-                      <a href={post.published_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="ghost" size="icon">
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{gen.prompt}</p>
+                        <p className="text-xs text-muted-foreground">{gen.campaign_name}</p>
+                        {gen.quality_score && (
+                          <Badge variant="outline" className="text-[10px] mt-1">
+                            <Star className="h-3 w-3 mr-1" />
+                            {gen.quality_score.toFixed(0)}%
+                          </Badge>
+                        )}
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    </Link>
+                  ))}
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
+
+        {/* SNS Performance */}
+        {sns_performance.total_published > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                {language === "ko" ? "SNS 성과" : "SNS Performance"}
+              </CardTitle>
+              <CardDescription>
+                {language === "ko" ? "소셜 미디어 지표" : "Social media metrics"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center p-3 bg-muted/50 rounded-lg">
+                  <Eye className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
+                  <p className="text-xl font-bold">{formatNumber(sns_performance.total_views)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {language === "ko" ? "조회수" : "Views"}
+                  </p>
+                </div>
+                <div className="text-center p-3 bg-muted/50 rounded-lg">
+                  <Heart className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
+                  <p className="text-xl font-bold">{formatNumber(sns_performance.total_likes)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {language === "ko" ? "좋아요" : "Likes"}
+                  </p>
+                </div>
+                <div className="text-center p-3 bg-muted/50 rounded-lg">
+                  <MessageCircle className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
+                  <p className="text-xl font-bold">
+                    {formatNumber(sns_performance.total_comments)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {language === "ko" ? "댓글" : "Comments"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Platform Breakdown */}
+              <div className="mt-4 space-y-2">
+                {Object.entries(sns_performance.by_platform)
+                  .filter(([_, data]) => data.posts > 0)
+                  .slice(0, 3)
+                  .map(([platform, data]) => (
+                    <div key={platform} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                      <span className="text-sm font-medium">{platform}</span>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{data.posts} posts</span>
+                        <span>{formatNumber(data.views)} views</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
