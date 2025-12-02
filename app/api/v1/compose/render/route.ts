@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
+import { inngest } from '@/lib/inngest/client';
 
 const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || 'http://localhost:8001';
 const S3_BUCKET = process.env.MINIO_BUCKET_NAME || 'hydra-assets';
+const USE_INNGEST = process.env.USE_INNGEST_COMPOSE === 'true';
 
 interface RenderRequest {
   generationId: string;
@@ -168,11 +170,49 @@ export async function POST(request: NextRequest) {
       has_script: !!(script && script.lines && script.lines.length > 0),
       script_lines_count: script?.lines?.length || 0,
       vibe,
-      target_duration: targetDuration
+      target_duration: targetDuration,
+      use_inngest: USE_INNGEST
     }));
 
-    // Call Python compose engine
-    const response = await fetch(`${COMPOSE_ENGINE_URL}/render`, {
+    // Option 1: Use Inngest for orchestration (recommended for production)
+    // Provides retries, monitoring, and better error handling
+    if (USE_INNGEST) {
+      await inngest.send({
+        name: 'video/compose',
+        data: {
+          generationId,
+          campaignId,
+          userId: user.id,
+          audioAssetId,
+          images,
+          script,
+          effectPreset,
+          aspectRatio,
+          targetDuration,
+          vibe,
+          textStyle,
+          colorGrade,
+          prompt
+        }
+      });
+
+      return NextResponse.json({
+        jobId: generationId,
+        generationId,
+        status: 'queued',
+        message: 'Render job queued via Inngest',
+        estimatedSeconds: targetDuration > 0 ? targetDuration * 8 : 60,
+        outputKey
+      });
+    }
+
+    // Option 2: Direct API call to compose engine (faster for local dev)
+    // Use /render/auto to automatically choose Modal (GPU) if enabled, else local
+    const renderEndpoint = process.env.USE_MODAL_RENDER === 'true'
+      ? '/render/auto'  // Auto-select Modal GPU if enabled
+      : '/render';      // Local rendering only
+
+    const response = await fetch(`${COMPOSE_ENGINE_URL}${renderEndpoint}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -191,7 +231,7 @@ export async function POST(request: NextRequest) {
       jobId: generationId,
       generationId,
       status: 'queued',
-      estimatedSeconds: targetDuration * 8,
+      estimatedSeconds: targetDuration > 0 ? targetDuration * 8 : 60,
       outputKey
     });
   } catch (error) {

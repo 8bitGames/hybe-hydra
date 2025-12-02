@@ -34,25 +34,35 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4">
+    <div
+      className="fixed inset-0 min-h-screen w-full flex items-center justify-center px-4"
+      style={{
+        backgroundColor: '#FEFEFE',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 9999
+      }}
+    >
       <div className="max-w-md w-full">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
             <Image
-              src="/logo.png"
+              src="/Vector.png"
               alt="HYDRA"
-              width={200}
-              height={60}
-              className="h-12 w-auto object-contain"
+              width={800}
+              height={800}
+              className="h-32 w-auto object-contain"
               priority
             />
           </div>
-          <p className="text-muted-foreground">계정에 로그인하세요</p>
         </div>
 
         {/* Login Form */}
-        <Card>
+        <Card className="bg-white shadow-lg">
           <CardHeader className="space-y-1">
             <CardTitle className="text-xl">다시 오신 것을 환영합니다</CardTitle>
             <CardDescription>

@@ -60,11 +60,11 @@ function DashboardContent({
             <SheetContent side="left" className="w-72">
               <div className="flex items-center gap-2 mb-6">
                 <Image
-                  src="/logo.svg"
+                  src="/Vector.png"
                   alt="HYDRA"
-                  width={360}
-                  height={96}
-                  className="h-24 w-auto"
+                  width={200}
+                  height={200}
+                  className="h-16 w-auto"
                 />
               </div>
               <MainNavigation mobile />
@@ -74,11 +74,11 @@ function DashboardContent({
           {/* Logo */}
           <Link href="/home" className="flex items-center gap-2">
             <Image
-              src="/logo.svg"
+              src="/Vector.png"
               alt="HYDRA"
-              width={360}
-              height={96}
-              className="h-24 w-auto"
+              width={200}
+              height={200}
+              className="h-20 w-auto"
             />
           </Link>
 

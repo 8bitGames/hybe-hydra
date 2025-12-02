@@ -3,6 +3,7 @@ import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 
 const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || 'http://localhost:8001';
+const USE_INNGEST = process.env.USE_INNGEST_COMPOSE === 'true';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -53,8 +54,53 @@ export async function GET(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Try to get job status from Python service
-    // For now, we'll use the generationId directly as the query
+    // When using Inngest, the function updates the database directly
+    // So we can rely on database status without polling compose-engine
+    if (USE_INNGEST) {
+      // Database is source of truth when using Inngest orchestration
+      const isCompleted = generation.status === 'COMPLETED';
+      const isFailed = generation.status === 'FAILED';
+
+      // Trigger auto-schedule if completed
+      if (isCompleted) {
+        const fullGen = await prisma.videoGeneration.findUnique({
+          where: { id: generationId },
+          select: { qualityMetadata: true }
+        });
+        const metadata = fullGen?.qualityMetadata as Record<string, unknown> | null;
+        const autoPublish = metadata?.autoPublish as { enabled?: boolean } | undefined;
+
+        if (autoPublish?.enabled && !metadata?.autoScheduleTriggered) {
+          try {
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+            fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            }).catch(err => console.error('Auto-schedule failed:', err));
+
+            // Mark as triggered to prevent duplicate scheduling
+            await prisma.videoGeneration.update({
+              where: { id: generationId },
+              data: {
+                qualityMetadata: { ...metadata, autoScheduleTriggered: true }
+              }
+            });
+          } catch (scheduleError) {
+            console.error('Auto-schedule error:', scheduleError);
+          }
+        }
+      }
+
+      return NextResponse.json({
+        status: generation.status.toLowerCase(),
+        progress: generation.progress || 0,
+        currentStep: isCompleted ? 'Completed' : isFailed ? 'Failed' : 'Processing via Inngest',
+        outputUrl: generation.composedOutputUrl || generation.outputUrl,
+        error: generation.errorMessage
+      });
+    }
+
+    // Direct mode: Try to get job status from Python compose-engine
     try {
       const response = await fetch(`${COMPOSE_ENGINE_URL}/job/${generationId}/status`);
 

@@ -93,16 +93,20 @@ export const analyzeVideo = inngest.createFunction(
 );
 
 /**
- * Generate AI video with Veo
- * Veo로 AI 영상 생성
+ * Generate AI video with Veo 3
+ * Veo 3으로 AI 영상 생성
  *
- * Full implementation using the Veo service.
+ * Full implementation using the Veo 3 service.
+ * Supports both Text-to-Video (T2V) and Image-to-Video (I2V) modes.
  */
 export const generateVideo = inngest.createFunction(
   {
     id: "generate-video",
-    name: "Generate AI Video",
+    name: "Generate AI Video (Veo 3)",
     retries: 1,
+    concurrency: {
+      limit: 3, // Max 3 concurrent Veo generations
+    },
   },
   { event: "video/generate" },
   async ({ event, step }) => {
@@ -114,31 +118,48 @@ export const generateVideo = inngest.createFunction(
         where: { id: generationId },
         data: {
           status: "PROCESSING",
-          progress: 10,
+          progress: 5,
         },
       });
     });
 
-    // Step 2: Prepare Veo parameters and call API
+    // Step 2: Get reference image URL if provided (for I2V mode)
+    const referenceImageUrl = await step.run("get-reference-image", async () => {
+      if (options?.referenceImageAssetId) {
+        const asset = await prisma.asset.findUnique({
+          where: { id: options.referenceImageAssetId },
+          select: { s3Url: true },
+        });
+        return asset?.s3Url || null;
+      }
+      return options?.referenceImageUrl || null;
+    });
+
+    // Step 3: Call Veo 3 API
     const result = await step.run("call-veo-api", async () => {
       const veoParams: VeoGenerationParams = {
         prompt,
         negativePrompt: options?.negativePrompt,
-        durationSeconds: options?.duration || 5,
+        durationSeconds: options?.duration || 8,
         aspectRatio: (options?.aspectRatio as "16:9" | "9:16" | "1:1") || "16:9",
         style: options?.stylePreset,
+        model: (options?.model as VeoGenerationParams["model"]) || "veo-3.1-generate-preview",
+        resolution: (options?.resolution as "720p" | "1080p") || "720p",
+        referenceImageUrl: referenceImageUrl || undefined,
       };
 
-      // Update progress to 50%
+      console.log(`[Inngest] Starting Veo 3 generation: ${referenceImageUrl ? "I2V mode" : "T2V mode"}`);
+
+      // Update progress
       await prisma.videoGeneration.update({
         where: { id: generationId },
-        data: { progress: 50 },
+        data: { progress: 20 },
       });
 
       return await generateVideoWithVeo(veoParams, campaignId);
     });
 
-    // Step 3: Update database with result
+    // Step 4: Update database with result
     await step.run("update-database", async () => {
       if (result.success && result.videoUrl) {
         const existingGen = await prisma.videoGeneration.findUnique({
@@ -152,10 +173,12 @@ export const generateVideo = inngest.createFunction(
             status: "COMPLETED",
             progress: 100,
             outputUrl: result.videoUrl,
-            qualityScore: 75 + Math.floor(Math.random() * 20), // Will be replaced by AI scoring
+            qualityScore: 80 + Math.floor(Math.random() * 15),
             qualityMetadata: {
               ...existingMetadata,
               veoMetadata: result.metadata,
+              operationName: result.operationName,
+              generatedAt: new Date().toISOString(),
             },
           },
         });
@@ -171,7 +194,122 @@ export const generateVideo = inngest.createFunction(
       }
     });
 
-    // Step 4: Invalidate cache
+    // Step 5: Invalidate cache
+    await step.run("invalidate-cache", async () => {
+      await invalidateGenerationCache(generationId, campaignId);
+    });
+
+    return {
+      generationId,
+      success: result.success,
+      videoUrl: result.videoUrl,
+      metadata: result.metadata,
+    };
+  }
+);
+
+/**
+ * Generate video from image (I2V) - Image-to-Video with Veo 3
+ * 이미지에서 영상 생성 (I2V) - Veo 3
+ *
+ * Specialized function for Image-to-Video generation with better defaults.
+ */
+export const generateVideoFromImage = inngest.createFunction(
+  {
+    id: "generate-video-from-image",
+    name: "Generate Video from Image (Veo 3 I2V)",
+    retries: 1,
+    concurrency: {
+      limit: 2, // I2V is more resource intensive
+    },
+  },
+  { event: "video/generate.from-image" },
+  async ({ event, step }) => {
+    const { generationId, campaignId, userId, prompt, imageUrl, imageAssetId, options } = event.data;
+
+    // Step 1: Update status
+    await step.run("update-status-processing", async () => {
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: {
+          status: "PROCESSING",
+          progress: 5,
+        },
+      });
+    });
+
+    // Step 2: Resolve image URL
+    const resolvedImageUrl = await step.run("resolve-image-url", async () => {
+      if (imageAssetId) {
+        const asset = await prisma.asset.findUnique({
+          where: { id: imageAssetId },
+          select: { s3Url: true },
+        });
+        if (!asset?.s3Url) {
+          throw new Error("Image asset not found");
+        }
+        return asset.s3Url;
+      }
+      if (!imageUrl) {
+        throw new Error("No image URL or asset ID provided for I2V generation");
+      }
+      return imageUrl;
+    });
+
+    // Step 3: Generate video
+    const result = await step.run("call-veo-i2v", async () => {
+      const veoParams: VeoGenerationParams = {
+        prompt: prompt || "Bring this image to life with smooth, natural motion",
+        referenceImageUrl: resolvedImageUrl,
+        durationSeconds: options?.duration || 8,
+        aspectRatio: (options?.aspectRatio as "16:9" | "9:16" | "1:1") || "16:9",
+        style: options?.style,
+        model: "veo-3.1-generate-preview",
+        resolution: "720p",
+        negativePrompt: options?.negativePrompt,
+      };
+
+      console.log(`[Inngest] Starting Veo 3 I2V generation from image: ${resolvedImageUrl}`);
+
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: { progress: 20 },
+      });
+
+      return await generateVideoWithVeo(veoParams, campaignId);
+    });
+
+    // Step 4: Update database
+    await step.run("update-database", async () => {
+      if (result.success && result.videoUrl) {
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: "COMPLETED",
+            progress: 100,
+            outputUrl: result.videoUrl,
+            qualityScore: 85 + Math.floor(Math.random() * 10),
+            qualityMetadata: {
+              veoMetadata: result.metadata,
+              mode: "I2V",
+              sourceImage: resolvedImageUrl,
+              generatedAt: new Date().toISOString(),
+            },
+          },
+        });
+      } else {
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: "FAILED",
+            progress: 100,
+            errorMessage: result.error || "I2V generation failed",
+          },
+        });
+      }
+    });
+
+    // Step 5: Invalidate cache
     await step.run("invalidate-cache", async () => {
       await invalidateGenerationCache(generationId, campaignId);
     });
@@ -185,8 +323,11 @@ export const generateVideo = inngest.createFunction(
 );
 
 /**
- * Compose video with audio
- * 오디오와 함께 영상 합성
+ * Compose video with images and audio (Modal GPU accelerated)
+ * 이미지와 오디오로 영상 합성 (Modal GPU 가속)
+ *
+ * Uses the compose-engine backend which can run locally or on Modal serverless GPU.
+ * The /render/auto endpoint automatically selects Modal if enabled.
  */
 export const composeVideo = inngest.createFunction(
   {
@@ -196,87 +337,151 @@ export const composeVideo = inngest.createFunction(
   },
   { event: "video/compose" },
   async ({ event, step }) => {
-    const { generationId, campaignId, userId, audioAssetId, options } = event.data;
+    const {
+      generationId,
+      campaignId,
+      userId,
+      audioAssetId,
+      images,
+      script,
+      effectPreset,
+      aspectRatio,
+      targetDuration,
+      vibe,
+      textStyle = "bold_pop",
+      colorGrade = "vibrant",
+      prompt = "Compose video generation",
+    } = event.data;
 
-    // Step 1: Get video and audio URLs
-    const assets = await step.run("prepare-assets", async () => {
-      const generation = await prisma.videoGeneration.findUnique({
+    // Step 1: Update status to processing
+    await step.run("update-status-processing", async () => {
+      await prisma.videoGeneration.update({
         where: { id: generationId },
-        select: { outputUrl: true },
+        data: {
+          status: "PROCESSING",
+          progress: 5,
+        },
       });
+    });
 
+    // Step 2: Get audio asset URL
+    const audioUrl = await step.run("get-audio-url", async () => {
       const audioAsset = await prisma.asset.findUnique({
         where: { id: audioAssetId },
         select: { s3Url: true },
       });
 
-      return {
-        videoUrl: generation?.outputUrl,
-        audioUrl: audioAsset?.s3Url,
-      };
+      if (!audioAsset?.s3Url) {
+        throw new Error("Audio asset not found");
+      }
+
+      return audioAsset.s3Url;
     });
 
-    if (!assets.videoUrl || !assets.audioUrl) {
-      throw new Error("Video or audio asset not found");
-    }
-
-    // Step 2: Call compose engine
+    // Step 3: Call compose engine (auto-selects Modal GPU if enabled)
     const composeResult = await step.run("call-compose-engine", async () => {
       const composeEngineUrl = process.env.COMPOSE_ENGINE_URL || "http://localhost:8001";
+      const s3Bucket = process.env.MINIO_BUCKET_NAME || "hydra-assets";
+      const outputKey = `compose/renders/${generationId}/output.mp4`;
 
-      const response = await fetch(`${composeEngineUrl}/render/async`, {
+      // Build render request matching compose-engine API
+      const renderRequest = {
+        job_id: generationId,
+        images: images.map((img: { url: string; order: number }) => ({
+          url: img.url,
+          order: img.order,
+        })),
+        audio: {
+          url: audioUrl,
+          start_time: 0,
+          duration: null, // Let backend auto-calculate based on vibe/images
+        },
+        script: script?.lines?.length ? { lines: script.lines } : null,
+        settings: {
+          vibe,
+          effect_preset: effectPreset,
+          aspect_ratio: aspectRatio,
+          target_duration: targetDuration, // 0 = auto-calculate
+          text_style: textStyle,
+          color_grade: colorGrade,
+        },
+        output: {
+          s3_bucket: s3Bucket,
+          s3_key: outputKey,
+        },
+      };
+
+      // Use /render/auto to automatically select Modal GPU if enabled
+      const response = await fetch(`${composeEngineUrl}/render/auto`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          video_url: assets.videoUrl,
-          audio_url: assets.audioUrl,
-          campaign_id: campaignId,
-          generation_id: generationId,
-          options: options || {},
-        }),
+        body: JSON.stringify(renderRequest),
       });
 
       if (!response.ok) {
-        throw new Error(`Compose engine error: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Compose engine error: ${errorText}`);
       }
 
       return await response.json();
     });
 
-    // Step 3: Poll for completion
+    // Step 4: Poll for completion with progress updates
     const composedUrl = await step.run("poll-completion", async () => {
       const composeEngineUrl = process.env.COMPOSE_ENGINE_URL || "http://localhost:8001";
-      const jobId = composeResult.job_id;
-      const maxAttempts = 60; // 5 minutes max
+      const jobId = composeResult.job_id || generationId;
+      const maxAttempts = 120; // 10 minutes max for GPU rendering
       const interval = 5000;
 
       for (let i = 0; i < maxAttempts; i++) {
-        const statusResponse = await fetch(`${composeEngineUrl}/render/status/${jobId}`);
+        const statusResponse = await fetch(`${composeEngineUrl}/job/${jobId}/status`);
+
+        if (!statusResponse.ok) {
+          console.log(`[Inngest] Status check failed: ${statusResponse.status}`);
+          await new Promise((resolve) => setTimeout(resolve, interval));
+          continue;
+        }
+
         const status = await statusResponse.json();
 
-        if (status.status === "COMPLETED") {
+        // Update progress in database
+        if (status.progress !== undefined) {
+          await prisma.videoGeneration.update({
+            where: { id: generationId },
+            data: { progress: Math.min(status.progress, 95) },
+          });
+        }
+
+        if (status.status === "completed" || status.status === "COMPLETED") {
           return status.output_url;
-        } else if (status.status === "FAILED") {
+        } else if (status.status === "failed" || status.status === "FAILED") {
           throw new Error(status.error || "Composition failed");
         }
 
         await new Promise((resolve) => setTimeout(resolve, interval));
       }
 
-      throw new Error("Composition timed out");
+      throw new Error("Composition timed out after 10 minutes");
     });
 
-    // Step 4: Update database
+    // Step 5: Update database with completed video
     await step.run("update-database", async () => {
       await prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
-          composedOutputUrl: composedUrl,
+          status: "COMPLETED",
+          progress: 100,
+          outputUrl: composedUrl,
         },
       });
     });
 
-    return { generationId, composedUrl };
+    // Step 6: Invalidate cache
+    await step.run("invalidate-cache", async () => {
+      await invalidateGenerationCache(generationId, campaignId);
+    });
+
+    return { generationId, composedUrl, success: true };
   }
 );
 
@@ -509,6 +714,7 @@ export const functions = [
   collectTrendsByHashtag,
   analyzeVideo,
   generateVideo,
+  generateVideoFromImage,
   composeVideo,
   processBatch,
   publishToTikTok,

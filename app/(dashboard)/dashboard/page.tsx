@@ -900,7 +900,7 @@ export default function DashboardPage() {
       {/* Recent Activity & SNS Performance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Activity */}
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="h-5 w-5" />
@@ -910,17 +910,17 @@ export default function DashboardPage() {
               {language === "ko" ? "최근 생성 및 발행" : "Latest generations and publishes"}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-h-[400px]">
             <div className="space-y-4">
               {recent_activity.generations.length === 0 &&
               recent_activity.published.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
+                <div className="text-center py-16 text-muted-foreground">
                   <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p>{language === "ko" ? "최근 활동이 없습니다" : "No recent activity"}</p>
                 </div>
               ) : (
                 <>
-                  {recent_activity.generations.slice(0, 3).map((gen) => (
+                  {recent_activity.generations.slice(0, 8).map((gen) => (
                     <Link
                       key={gen.id}
                       href={`/campaigns/${gen.campaign_id}/analytics`}
