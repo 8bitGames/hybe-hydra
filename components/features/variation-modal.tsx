@@ -307,24 +307,30 @@ export function VariationModal({
                 const Icon = category.icon;
 
                 return (
-                  <button
+                  <div
                     key={category.id}
-                    type="button"
-                    onClick={() => toggleCategory(category.id)}
-                    disabled={categoryPresets.length === 0}
+                    role="button"
+                    tabIndex={categoryPresets.length === 0 ? -1 : 0}
+                    onClick={() => categoryPresets.length > 0 && toggleCategory(category.id)}
+                    onKeyDown={(e) => {
+                      if ((e.key === "Enter" || e.key === " ") && categoryPresets.length > 0) {
+                        e.preventDefault();
+                        toggleCategory(category.id);
+                      }
+                    }}
                     className={`p-3 rounded-lg border-2 text-left transition-all ${
                       isSelected
                         ? "border-primary bg-primary/5"
                         : categoryPresets.length === 0
                         ? "border-border bg-muted/30 opacity-50 cursor-not-allowed"
-                        : "border-border hover:border-primary/50"
+                        : "border-border hover:border-primary/50 cursor-pointer"
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <Checkbox
                         checked={isSelected}
                         disabled={categoryPresets.length === 0}
-                        className="pointer-events-none"
+                        onCheckedChange={() => toggleCategory(category.id)}
                       />
                       <Icon className={`w-4 h-4 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
                       <span className="text-sm font-medium">
@@ -354,7 +360,7 @@ export function VariationModal({
                         )}
                       </div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
