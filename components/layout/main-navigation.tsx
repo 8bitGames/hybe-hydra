@@ -51,6 +51,11 @@ const navigationItems: NavItem[] = [
     icon: LayoutGrid,
   },
   {
+    name: { ko: "캠페인", en: "Campaigns" },
+    href: "/campaigns",
+    icon: FolderOpen,
+  },
+  {
     name: { ko: "만들기", en: "Create" },
     icon: Sparkles,
     items: [
@@ -73,11 +78,6 @@ const navigationItems: NavItem[] = [
         description: { ko: "이미지와 음악으로 제작", en: "Create with images & music" },
       },
     ],
-  },
-  {
-    name: { ko: "캠페인", en: "Campaigns" },
-    href: "/campaigns",
-    icon: FolderOpen,
   },
   {
     name: { ko: "라이브러리", en: "Library" },
@@ -137,6 +137,14 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
       const [currentPath] = (pathname || "").split("?");
 
       if (hrefPath === currentPath) return true;
+
+      // Special case: Pipeline detail pages under campaigns should activate "Pipeline", not "Campaigns"
+      const isPipelineDetailPage = pathname?.includes("/pipeline/") || pathname?.includes("/compose-pipeline/");
+      if (isPipelineDetailPage) {
+        // Only match if this is the pipeline nav item
+        return hrefPath === "/pipeline";
+      }
+
       if (pathname?.startsWith(hrefPath + "/")) return true;
 
       return false;

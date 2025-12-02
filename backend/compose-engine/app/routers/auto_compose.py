@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 from ..models.render_job import (
     RenderRequest, RenderSettings, ImageData, AudioData,
-    OutputSettings, VibeType, AspectRatio, EffectPreset
+    OutputSettings, VibeType, AspectRatio, EffectPreset, ColorGrade, TextStyle
 )
 from ..services.image_fetcher import ImageFetcher
 from ..services.video_renderer import VideoRenderer
@@ -30,6 +30,9 @@ class AutoComposeRequest(BaseModel):
     search_tags: List[str] = Field(..., description="2-3 tags for image search")
     audio_url: Optional[str] = Field(default=None, description="Audio file URL")
     vibe: str = Field(default="Pop", description="Vibe preset")
+    effect_preset: str = Field(default="zoom_beat", description="Effect preset (zoom_beat, crossfade, bounce, minimal)")
+    color_grade: str = Field(default="vibrant", description="Color grading (vibrant, cinematic, bright, natural, moody)")
+    text_style: str = Field(default="bold_pop", description="Text style (bold_pop, fade_in, slide_in, minimal, none)")
     aspect_ratio: str = Field(default="9:16", description="Output aspect ratio")
     target_duration: int = Field(default=15, description="Target duration in seconds")
     campaign_id: Optional[str] = Field(default=None, description="Campaign ID for S3 path")
@@ -84,24 +87,33 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
         image_fetcher = ImageFetcher()
 
         # Try each tag combination until we get enough images
+        # Use progressive resolution fallback: 720 -> 480 -> 360
         all_candidates = []
-        for tag in request.search_tags:
-            result = await image_fetcher.search(
-                query=tag,
-                max_results=10,
-                min_width=720,
-                min_height=720
-            )
-            all_candidates.extend(result.candidates)
+        min_resolutions = [720, 480, 360]
 
-        # Also try the full query
-        full_result = await image_fetcher.search(
-            query=request.search_query,
-            max_results=10,
-            min_width=720,
-            min_height=720
-        )
-        all_candidates.extend(full_result.candidates)
+        for min_res in min_resolutions:
+            if len(all_candidates) >= 3:
+                break
+
+            logger.info(f"[Auto-Compose] Job {request.job_id} searching with min_res={min_res}")
+
+            for tag in request.search_tags:
+                result = await image_fetcher.search(
+                    query=tag,
+                    max_results=10,
+                    min_width=min_res,
+                    min_height=min_res
+                )
+                all_candidates.extend(result.candidates)
+
+            # Also try the full query
+            full_result = await image_fetcher.search(
+                query=request.search_query,
+                max_results=10,
+                min_width=min_res,
+                min_height=min_res
+            )
+            all_candidates.extend(full_result.candidates)
 
         # Remove duplicates based on URL
         seen_urls = set()
@@ -131,14 +143,54 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
         if job_queue:
             await job_queue.update_job(
                 request.job_id,
-                progress=30,
-                current_step=f"Found {len(selected_images)} images. Preparing render..."
+                progress=20,
+                current_step=f"Found {len(selected_images)} images. Verifying accessibility..."
             )
 
-        # Prepare image data for rendering
+        # Verify images are accessible (filter out 403/blocked URLs)
+        verified_images = []
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+            for img in selected_images:
+                try:
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "Accept": "image/*,*/*;q=0.8",
+                    }
+                    resp = await client.head(img.source_url, headers=headers)
+                    if resp.status_code < 400:
+                        verified_images.append(img)
+                    else:
+                        logger.warning(f"[Auto-Compose] Image blocked ({resp.status_code}): {img.source_url[:80]}")
+                except Exception as e:
+                    logger.warning(f"[Auto-Compose] Image verification failed: {e}")
+                    continue
+
+        logger.info(f"[Auto-Compose] Verified {len(verified_images)}/{len(selected_images)} images accessible")
+
+        # Check we still have enough images after filtering
+        if len(verified_images) < 3:
+            error_message = f"Not enough accessible images. Only {len(verified_images)} images passed verification."
+            if job_queue:
+                await job_queue.update_job(
+                    request.job_id,
+                    status="failed",
+                    error=error_message
+                )
+            if request.callback_url:
+                await send_callback(request.callback_url, request.job_id, "failed", error=error_message)
+            return
+
+        if job_queue:
+            await job_queue.update_job(
+                request.job_id,
+                progress=30,
+                current_step=f"Verified {len(verified_images)} images. Preparing render..."
+            )
+
+        # Prepare image data for rendering (only verified images)
         images = [
             ImageData(url=img.source_url, order=i)
-            for i, img in enumerate(selected_images)
+            for i, img in enumerate(verified_images)
         ]
 
         # Map vibe string to enum
@@ -158,6 +210,51 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
         }
         aspect_ratio = aspect_map.get(request.aspect_ratio, AspectRatio.PORTRAIT)
 
+        # Map effect preset
+        effect_map = {
+            "zoom_beat": EffectPreset.ZOOM_BEAT,
+            "crossfade": EffectPreset.CROSSFADE,
+            "bounce": EffectPreset.BOUNCE,
+            "minimal": EffectPreset.MINIMAL,
+        }
+        effect_preset = effect_map.get(request.effect_preset, EffectPreset.ZOOM_BEAT)
+
+        # Map color grade
+        color_map = {
+            "vibrant": ColorGrade.VIBRANT,
+            "cinematic": ColorGrade.CINEMATIC,
+            "bright": ColorGrade.BRIGHT,
+            "natural": ColorGrade.NATURAL,
+            "moody": ColorGrade.MOODY,
+        }
+        color_grade = color_map.get(request.color_grade, ColorGrade.VIBRANT)
+
+        # Map text style
+        text_map = {
+            "bold_pop": TextStyle.BOLD_POP,
+            "fade_in": TextStyle.FADE_IN,
+            "slide_in": TextStyle.SLIDE_IN,
+            "minimal": TextStyle.MINIMAL,
+            "none": TextStyle.MINIMAL,  # "none" maps to minimal
+        }
+        text_style = text_map.get(request.text_style, TextStyle.BOLD_POP)
+
+        logger.info(f"[Auto-Compose] Job {request.job_id} settings: vibe={vibe}, effect={effect_preset}, color={color_grade}, text={text_style}")
+
+        # Validate audio URL is provided
+        if not request.audio_url:
+            error_message = "Audio URL is required for compose video generation"
+            logger.error(f"[Auto-Compose] Job {request.job_id} failed: {error_message}")
+            if job_queue:
+                await job_queue.update_job(
+                    request.job_id,
+                    status="failed",
+                    error=error_message
+                )
+            if request.callback_url:
+                await send_callback(request.callback_url, request.job_id, "failed", error=error_message)
+            return
+
         # Create render request
         s3_folder = request.campaign_id or "auto-compose"
         render_request = RenderRequest(
@@ -170,12 +267,14 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
             ),
             settings=RenderSettings(
                 vibe=vibe,
-                effect_preset=EffectPreset.ZOOM_BEAT,
+                effect_preset=effect_preset,
                 aspect_ratio=aspect_ratio,
                 target_duration=request.target_duration,
+                color_grade=color_grade,
+                text_style=text_style,
             ),
             output=OutputSettings(
-                s3_bucket=settings.s3_bucket,
+                s3_bucket=settings.aws_s3_bucket,
                 s3_key=f"compose/{s3_folder}/{request.job_id}.mp4"
             )
         )
@@ -210,6 +309,9 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
                 metadata={
                     "search_tags": request.search_tags,
                     "vibe": request.vibe,
+                    "effect_preset": request.effect_preset,
+                    "color_grade": request.color_grade,
+                    "text_style": request.text_style,
                     "image_count": len(selected_images),
                 }
             )

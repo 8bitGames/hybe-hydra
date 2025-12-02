@@ -8,9 +8,37 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// Extract 2-3 key tags from a prompt for image search variation
-function extractVariationTags(prompt: string): string[] {
-  // Remove common filler words and extract meaningful keywords
+// Variation settings combination
+interface VariationSettings {
+  effectPreset: string;
+  colorGrade: string;
+  textStyle: string;
+  vibe: string;
+}
+
+// Default presets when not provided
+const DEFAULT_EFFECT_PRESETS = ["zoom_beat", "crossfade"];
+const DEFAULT_COLOR_GRADES = ["vibrant"];
+const DEFAULT_TEXT_STYLES = ["bold_pop"];
+const DEFAULT_VIBE_PRESETS = ["Pop"];
+
+// Get keywords from metadata or extract from prompt as fallback
+function getVariationKeywords(
+  metadata: Record<string, unknown> | null,
+  prompt: string
+): string[] {
+  // Try to get keywords from composeData metadata (stored during compose creation)
+  const composeData = metadata?.composeData as Record<string, unknown> | null;
+  if (composeData?.keywords && Array.isArray(composeData.keywords) && composeData.keywords.length > 0) {
+    return composeData.keywords.slice(0, 3);
+  }
+
+  // Try searchKeywords from composeData
+  if (composeData?.searchKeywords && Array.isArray(composeData.searchKeywords) && composeData.searchKeywords.length > 0) {
+    return composeData.searchKeywords.slice(0, 3);
+  }
+
+  // Fallback: extract from prompt using stop words
   const stopWords = new Set([
     "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
     "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
@@ -18,45 +46,66 @@ function extractVariationTags(prompt: string): string[] {
     "should", "may", "might", "must", "shall", "can", "need", "video", "image",
     "photo", "picture", "style", "aesthetic", "vibe", "mood", "feeling",
     "generation", "create", "make", "show", "display", "featuring",
+    "compose", "variation", "composed", "slideshow",
   ]);
 
-  // Clean and split the prompt
   const words = prompt
     .toLowerCase()
     .replace(/[^a-z0-9가-힣\s]/g, " ")
     .split(/\s+/)
     .filter(word => word.length > 2 && !stopWords.has(word));
 
-  // Get unique words and prioritize longer/more specific ones
   const uniqueWords = [...new Set(words)]
     .sort((a, b) => b.length - a.length);
 
-  // Return 2-3 most meaningful tags
-  return uniqueWords.slice(0, 3);
+  const extracted = uniqueWords.slice(0, 3);
+
+  // If extraction failed (no meaningful words), use default creative tags
+  if (extracted.length === 0) {
+    return ["creative", "aesthetic"];
+  }
+
+  return extracted;
 }
 
-// Generate variation search queries from base tags
-function generateVariationQueries(baseTags: string[], variationCount: number): string[][] {
-  const variations: string[][] = [];
+// Generate all combinations of settings
+function generateSettingsCombinations(
+  effectPresets: string[],
+  colorGrades: string[],
+  textStyles: string[],
+  vibes: string[],
+  maxVariations: number
+): VariationSettings[] {
+  const combinations: VariationSettings[] = [];
 
-  // Original combination
-  variations.push(baseTags);
+  // Use defaults if arrays are empty
+  const effects = effectPresets.length > 0 ? effectPresets : DEFAULT_EFFECT_PRESETS;
+  const colors = colorGrades.length > 0 ? colorGrades : DEFAULT_COLOR_GRADES;
+  const texts = textStyles.length > 0 ? textStyles : DEFAULT_TEXT_STYLES;
+  const vibeList = vibes.length > 0 ? vibes : DEFAULT_VIBE_PRESETS;
 
-  // If we have 3 tags, create variations with 2 tags each
-  if (baseTags.length >= 3) {
-    variations.push([baseTags[0], baseTags[1]]);
-    variations.push([baseTags[0], baseTags[2]]);
-    variations.push([baseTags[1], baseTags[2]]);
+  // Generate all combinations
+  for (const effect of effects) {
+    for (const color of colors) {
+      for (const text of texts) {
+        for (const vibe of vibeList) {
+          combinations.push({
+            effectPreset: effect,
+            colorGrade: color,
+            textStyle: text,
+            vibe,
+          });
+
+          // Stop if we've reached max
+          if (combinations.length >= maxVariations) {
+            return combinations;
+          }
+        }
+      }
+    }
   }
 
-  // If we have 2 tags, try each individually with style modifiers
-  if (baseTags.length >= 2) {
-    variations.push([baseTags[0], "aesthetic"]);
-    variations.push([baseTags[1], "aesthetic"]);
-  }
-
-  // Limit to requested count
-  return variations.slice(0, variationCount);
+  return combinations;
 }
 
 // POST /api/v1/generations/[id]/compose-variations - Create compose variations
@@ -116,45 +165,53 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const {
-      max_variations = 4,
-      vibe_variations = ["Exciting", "Emotional", "Pop", "Minimal"], // Different vibe presets
-      auto_publish, // Auto-publish configuration
-    } = body;
 
-    // Extract base tags from original prompt (2-3 tags)
-    const baseTags = extractVariationTags(seedGeneration.prompt);
-
-    if (baseTags.length === 0) {
-      return NextResponse.json(
-        { detail: "Could not extract meaningful tags from the original prompt" },
-        { status: 400 }
-      );
-    }
-
-    // Generate variation search queries
-    const variationQueries = generateVariationQueries(baseTags, max_variations);
+    // Accept both field name conventions (snake_case from frontend, camelCase fallback)
+    const maxVariations = body.variation_count || body.max_variations || 9;
+    const effectPresets: string[] = body.effect_presets || body.effectPresets || [];
+    const colorGrades: string[] = body.color_grades || body.colorGrades || [];
+    const textStyles: string[] = body.text_styles || body.textStyles || [];
+    const vibeVariations: string[] = body.vibe_variations || body.vibeVariations || [];
+    const autoPublish = body.auto_publish;
 
     // Get original compose metadata
     const originalMetadata = seedGeneration.qualityMetadata as Record<string, unknown> | null;
     const originalComposeData = originalMetadata?.composeData as Record<string, unknown> | null;
+
+    // Get search tags from metadata (for image search)
+    const searchTags = getVariationKeywords(originalMetadata, seedGeneration.prompt);
+
+    // Generate all combinations of settings
+    const settingsCombinations = generateSettingsCombinations(
+      effectPresets,
+      colorGrades,
+      textStyles,
+      vibeVariations,
+      maxVariations
+    );
+
+    console.log(`[Compose Variations] Creating ${settingsCombinations.length} variations from:`, {
+      effectPresets: effectPresets.length || "default",
+      colorGrades: colorGrades.length || "default",
+      textStyles: textStyles.length || "default",
+      vibeVariations: vibeVariations.length || "default",
+      maxVariations,
+    });
 
     // Create batch ID
     const batchId = uuidv4();
 
     // Create placeholder generations for each variation
     const createdGenerations = await Promise.all(
-      variationQueries.map(async (tags, index) => {
-        const vibePreset = vibe_variations[index % vibe_variations.length];
-        const searchQuery = tags.join(" ");
-        const variationLabel = `${vibePreset} - "${searchQuery}"`;
+      settingsCombinations.map(async (settings, index) => {
+        const variationLabel = `${settings.vibe} - ${settings.effectPreset} / ${settings.colorGrade}`;
 
         // Create the generation placeholder
         const generation = await prisma.videoGeneration.create({
           data: {
             id: `compose-var-${uuidv4()}`,
             campaignId: seedGeneration.campaignId,
-            prompt: `Compose variation: ${searchQuery} (${vibePreset})`,
+            prompt: `Compose variation: ${settings.vibe} (${settings.effectPreset})`,
             negativePrompt: seedGeneration.negativePrompt,
             durationSeconds: seedGeneration.durationSeconds,
             aspectRatio: seedGeneration.aspectRatio,
@@ -168,18 +225,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               seedGenerationId,
               variationType: "compose_variation",
               variationLabel,
-              searchTags: tags,
-              vibePreset,
+              searchTags,
+              settings: {
+                effectPreset: settings.effectPreset,
+                colorGrade: settings.colorGrade,
+                textStyle: settings.textStyle,
+                vibe: settings.vibe,
+              },
               originalPrompt: seedGeneration.prompt,
               originalComposeData: originalComposeData as Prisma.InputJsonValue | null,
               // Auto-publish settings for scheduling on completion
-              autoPublish: auto_publish ? {
+              autoPublish: autoPublish ? {
                 enabled: true,
-                socialAccountId: auto_publish.social_account_id,
-                intervalMinutes: auto_publish.interval_minutes || 30,
-                caption: auto_publish.caption || "",
-                hashtags: auto_publish.hashtags || [],
-                variationIndex: index, // For calculating scheduled time offset
+                socialAccountId: autoPublish.social_account_id,
+                intervalMinutes: autoPublish.interval_minutes || 30,
+                caption: autoPublish.caption || "",
+                hashtags: autoPublish.hashtags || [],
+                variationIndex: index,
+                generateGeoAeo: autoPublish.generate_geo_aeo ?? true,  // Auto-generate GEO/AEO content
               } : null,
             } as Prisma.InputJsonValue,
           },
@@ -188,18 +251,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         return {
           generation,
           variationLabel,
-          searchTags: tags,
-          vibePreset,
+          settings,
         };
       })
     );
 
     // Trigger compose-engine for each variation (async)
-    // This would call the compose-engine API to search images and render
     const composeEngineUrl = process.env.COMPOSE_ENGINE_URL || "http://localhost:8001";
 
     // Start background jobs for each variation
-    createdGenerations.forEach(async ({ generation, searchTags, vibePreset }) => {
+    createdGenerations.forEach(async ({ generation, settings }) => {
       try {
         // Update to processing
         await prisma.videoGeneration.update({
@@ -213,7 +274,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           : "http://localhost:3000";
         const callbackUrl = `${baseUrl}/api/v1/jobs/callback`;
 
-        // Call compose-engine to search and render
+        // Call compose-engine to search and render with all settings
         const response = await fetch(`${composeEngineUrl}/api/v1/compose/auto`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -222,7 +283,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             search_query: searchTags.join(" "),
             search_tags: searchTags,
             audio_url: seedGeneration.audioAsset?.s3Url,
-            vibe: vibePreset,
+            vibe: settings.vibe,
+            effect_preset: settings.effectPreset,
+            color_grade: settings.colorGrade,
+            text_style: settings.textStyle,
             aspect_ratio: seedGeneration.aspectRatio,
             target_duration: seedGeneration.durationSeconds,
             campaign_id: seedGeneration.campaignId,
@@ -231,8 +295,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         });
 
         if (!response.ok) {
-          throw new Error(`Compose engine error: ${response.status}`);
+          const errorText = await response.text();
+          throw new Error(`Compose engine error: ${response.status} - ${errorText}`);
         }
+
+        console.log(`[Compose Variations] Started job ${generation.id} with settings:`, settings);
       } catch (error) {
         console.error(`Failed to start compose variation ${generation.id}:`, error);
         await prisma.videoGeneration.update({
@@ -247,11 +314,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
 
     // Format response
-    const variations = createdGenerations.map(({ generation, variationLabel, searchTags, vibePreset }) => ({
+    const variations = createdGenerations.map(({ generation, variationLabel, settings }) => ({
       id: generation.id,
       variation_label: variationLabel,
       search_tags: searchTags,
-      vibe_preset: vibePreset,
+      settings,
       status: "pending",
     }));
 
@@ -260,9 +327,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         seed_generation_id: seedGenerationId,
         batch_id: batchId,
         total_count: variations.length,
-        base_tags: baseTags,
+        search_tags: searchTags,
         variations,
-        message: `Created ${variations.length} compose variations with tags: ${baseTags.join(", ")}`,
+        message: `Created ${variations.length} compose variations`,
       },
       { status: 201 }
     );

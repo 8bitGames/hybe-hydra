@@ -38,6 +38,12 @@ enum VideoGenerationStatus {
   CANCELLED
 }
 
+// Video generation type enum
+enum VideoGenerationType {
+  AI       // Veo API generated video
+  COMPOSE  // MoviePy composed video from images + audio
+}
+
 // Trend platform enum
 enum TrendPlatform {
   TIKTOK
@@ -190,6 +196,7 @@ model VideoGeneration {
   id                  String                @id @default(uuid())
   campaignId          String?               @map("campaign_id")  // Nullable for Quick Create
   isQuickCreate       Boolean               @default(false) @map("is_quick_create")
+  generationType      VideoGenerationType   @default(AI) @map("generation_type") // AI or COMPOSE
   prompt              String
   negativePrompt      String?               @map("negative_prompt")
   durationSeconds     Int                   @default(5) @map("duration_seconds")
@@ -206,12 +213,17 @@ model VideoGeneration {
   qualityScore        Float?                @map("quality_score")
   qualityMetadata     Json?                 @map("quality_metadata")
 
-  // Audio track - optional (required only for Compose workflow)
+  // Audio track - for both AI (optional) and Compose (required)
   audioAssetId      String?  @map("audio_asset_id")
   audioAnalysis     Json?   @map("audio_analysis") // {bpm, energy_curve, segments, duration}
   audioStartTime    Float?  @map("audio_start_time") // Selected start time in audio (seconds)
   audioDuration     Float?  @map("audio_duration") // Duration of audio used (max 15s)
   composedOutputUrl String? @map("composed_output_url") // Final video with audio
+
+  // Compose-specific fields
+  scriptData    Json?   @map("script_data")    // {lines: [{text, duration, imageKeyword}], totalDuration}
+  imageAssets   Json?   @map("image_assets")   // [{id, url, keyword, sortOrder}]
+  effectPreset  String? @map("effect_preset")  // "zoom_pan", "ken_burns", etc.
 
   // Bridge context - tracks how this generation was created
   originalInput  String?  @map("original_input") // User's original idea/input

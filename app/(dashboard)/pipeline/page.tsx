@@ -49,10 +49,22 @@ import {
   Tag,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { VariationModal, VariationConfig } from "@/components/features/variation-modal";
 import { LazyVideo } from "@/components/ui/lazy-video";
+import {
+  AIVariationModal,
+  AIVariationConfig,
+  ComposeVariationModal,
+  ComposeVariationConfig,
+} from "@/components/features/pipeline";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import {
+  AIPipelineCard,
+  AIPipelineTableRow,
+  ComposePipelineCard,
+  ComposePipelineTableRow,
+  PipelineType,
+} from "@/components/features/pipeline";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,6 +82,7 @@ import Link from "next/link";
 type StatusFilter = "all" | "pending" | "processing" | "completed" | "partial_failure";
 type VideoType = "ai" | "compose";
 type ViewMode = "grid" | "table";
+type PipelineTypeFilter = "all" | "ai" | "compose";
 
 interface SeedCandidate extends VideoGeneration {
   campaign_name?: string;
@@ -99,6 +112,7 @@ export default function GlobalPipelinePage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [campaignFilter, setCampaignFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [pipelineTypeFilter, setPipelineTypeFilter] = useState<PipelineTypeFilter>("all");
   const [seedCampaignFilter, setSeedCampaignFilter] = useState<string>("all");
   const [seedSearchQuery, setSeedSearchQuery] = useState("");
   const [composeCampaignFilter, setComposeCampaignFilter] = useState<string>("all");
@@ -106,10 +120,13 @@ export default function GlobalPipelinePage() {
 
   // Auto-pipeline state for compose videos
   const [creatingAutoPipeline, setCreatingAutoPipeline] = useState(false);
+  const [deletingPipeline, setDeletingPipeline] = useState<string | null>(null);
 
   // Variation modal state
-  const [variationModalOpen, setVariationModalOpen] = useState(false);
+  const [aiVariationModalOpen, setAIVariationModalOpen] = useState(false);
+  const [composeVariationModalOpen, setComposeVariationModalOpen] = useState(false);
   const [selectedSeedGeneration, setSelectedSeedGeneration] = useState<VideoGeneration | null>(null);
+  const [selectedGenerationType, setSelectedGenerationType] = useState<"ai" | "compose">("ai");
   const [presets, setPresets] = useState<StylePreset[]>([]);
   const [creatingVariations, setCreatingVariations] = useState(false);
   const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>([]);
@@ -341,22 +358,54 @@ export default function GlobalPipelinePage() {
   };
 
   const handleSelectSeed = (video: VideoGeneration) => {
+    const isComposeVideo = video.id.startsWith("compose-");
     setSelectedSeedGeneration(video);
-    setVariationModalOpen(true);
+    setSelectedGenerationType(isComposeVideo ? "compose" : "ai");
+
+    if (isComposeVideo) {
+      setComposeVariationModalOpen(true);
+    } else {
+      setAIVariationModalOpen(true);
+    }
   };
 
   const handleCreateMoreVariations = (pipeline: PipelineItem) => {
     setSelectedSeedGeneration(pipeline.seed_generation);
-    setVariationModalOpen(true);
+    setSelectedGenerationType(pipeline.type || "ai");
+
+    if (pipeline.type === "compose") {
+      setComposeVariationModalOpen(true);
+    } else {
+      setAIVariationModalOpen(true);
+    }
   };
 
-  const handleCreateVariations = async (config: VariationConfig) => {
+  const handleDeletePipeline = async (pipeline: PipelineItem) => {
+    const confirmMessage = isKorean
+      ? `이 파이프라인의 모든 변형(${pipeline.total}개)을 삭제하시겠습니까?`
+      : `Delete all ${pipeline.total} variations in this pipeline?`;
+
+    if (!confirm(confirmMessage)) return;
+
+    setDeletingPipeline(pipeline.batch_id);
+    try {
+      const result = await pipelineApi.deleteBatch(pipeline.campaign_id, pipeline.batch_id);
+      console.log(`Deleted ${result.deleted} generations, ${result.failed} failed`);
+
+      // Remove from local state
+      setPipelines((prev) => prev.filter((p) => p.batch_id !== pipeline.batch_id));
+    } catch (error) {
+      console.error("Failed to delete pipeline:", error);
+    } finally {
+      setDeletingPipeline(null);
+    }
+  };
+
+  const handleCreateAIVariations = async (config: AIVariationConfig) => {
     if (!selectedSeedGeneration) return;
 
     setCreatingVariations(true);
     try {
-      const isComposeVideo = selectedSeedGeneration.id.startsWith("compose-");
-
       const autoPublishConfig = config.autoPublish?.enabled ? {
         social_account_id: config.autoPublish.socialAccountId,
         interval_minutes: config.autoPublish.intervalMinutes,
@@ -364,28 +413,52 @@ export default function GlobalPipelinePage() {
         hashtags: config.autoPublish.hashtags,
       } : undefined;
 
-      if (isComposeVideo) {
-        await composeVariationsApi.create(selectedSeedGeneration.id, {
-          variation_count: config.maxVariations || 4,
-          tag_count: 2,
-          auto_publish: autoPublishConfig,
-        });
-      } else {
-        const requestConfig: VariationConfigRequest = {
-          style_categories: config.styleCategories,
-          enable_prompt_variation: config.enablePromptVariation,
-          prompt_variation_types: config.promptVariationTypes,
-          max_variations: config.maxVariations,
-          auto_publish: autoPublishConfig,
-        };
-        await variationsApi.create(selectedSeedGeneration.id, requestConfig);
-      }
+      const requestConfig: VariationConfigRequest = {
+        style_categories: config.styleCategories,
+        enable_prompt_variation: config.enablePromptVariation,
+        prompt_variation_types: config.promptVariationTypes,
+        max_variations: config.maxVariations,
+        auto_publish: autoPublishConfig,
+      };
+      await variationsApi.create(selectedSeedGeneration.id, requestConfig);
 
-      setVariationModalOpen(false);
+      setAIVariationModalOpen(false);
       setActiveTab("pipelines");
       fetchPipelines();
     } catch (error) {
-      console.error("Failed to create variations:", error);
+      console.error("Failed to create AI variations:", error);
+    } finally {
+      setCreatingVariations(false);
+    }
+  };
+
+  const handleCreateComposeVariations = async (config: ComposeVariationConfig) => {
+    if (!selectedSeedGeneration) return;
+
+    setCreatingVariations(true);
+    try {
+      const autoPublishConfig = config.autoPublish?.enabled ? {
+        social_account_id: config.autoPublish.socialAccountId,
+        interval_minutes: config.autoPublish.intervalMinutes,
+        caption: config.autoPublish.caption,
+        hashtags: config.autoPublish.hashtags,
+      } : undefined;
+
+      await composeVariationsApi.create(selectedSeedGeneration.id, {
+        variation_count: config.maxVariations || 4,
+        tag_count: 2,
+        effect_presets: config.effectPresets,
+        color_grades: config.colorGrades,
+        text_styles: config.textStyles,
+        vibe_variations: config.vibeVariations,
+        auto_publish: autoPublishConfig,
+      });
+
+      setComposeVariationModalOpen(false);
+      setActiveTab("pipelines");
+      fetchPipelines();
+    } catch (error) {
+      console.error("Failed to create Compose variations:", error);
     } finally {
       setCreatingVariations(false);
     }
@@ -393,6 +466,10 @@ export default function GlobalPipelinePage() {
 
   // Filter pipelines
   const filteredPipelines = pipelines.filter((pipeline) => {
+    // Type filter
+    if (pipelineTypeFilter !== "all" && pipeline.type !== pipelineTypeFilter) {
+      return false;
+    }
     if (statusFilter !== "all" && pipeline.status !== statusFilter) {
       return false;
     }
@@ -410,6 +487,10 @@ export default function GlobalPipelinePage() {
     }
     return true;
   });
+
+  // Separate AI and Compose pipelines for rendering
+  const aiPipelines = filteredPipelines.filter((p) => p.type === "ai");
+  const composePipelines = filteredPipelines.filter((p) => p.type === "compose");
 
   // Filter seed candidates
   const filteredSeedCandidates = seedCandidates.filter((video) => {
@@ -447,6 +528,8 @@ export default function GlobalPipelinePage() {
     failed: pipelines.filter((p) => p.status === "partial_failure").length,
     totalVariations: pipelines.reduce((acc, p) => acc + p.total, 0),
     completedVariations: pipelines.reduce((acc, p) => acc + p.completed, 0),
+    aiCount: pipelines.filter((p) => p.type === "ai").length,
+    composeCount: pipelines.filter((p) => p.type === "compose").length,
   }), [pipelines]);
 
   // Status config helper
@@ -698,6 +781,29 @@ export default function GlobalPipelinePage() {
                     </SelectContent>
                   </Select>
                   <Select
+                    value={pipelineTypeFilter}
+                    onValueChange={(value) => setPipelineTypeFilter(value as PipelineTypeFilter)}
+                  >
+                    <SelectTrigger className="w-[130px] h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{isKorean ? "전체 타입" : "All Types"}</SelectItem>
+                      <SelectItem value="ai">
+                        <span className="flex items-center gap-1.5">
+                          <Video className="w-3 h-3 text-blue-500" />
+                          AI
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="compose">
+                        <span className="flex items-center gap-1.5">
+                          <Film className="w-3 h-3 text-purple-500" />
+                          Compose
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
                     value={statusFilter}
                     onValueChange={(value) => setStatusFilter(value as StatusFilter)}
                   >
@@ -755,7 +861,7 @@ export default function GlobalPipelinePage() {
                     <thead className="bg-muted/50 border-b">
                       <tr>
                         <th className="h-10 px-4 text-left font-medium text-muted-foreground w-20">{isKorean ? "미리보기" : "Preview"}</th>
-                        <th className="h-10 px-4 text-left font-medium text-muted-foreground min-w-[200px]">{isKorean ? "프롬프트" : "Prompt"}</th>
+                        <th className="h-10 px-4 text-center font-medium text-muted-foreground w-20">{isKorean ? "타입" : "Type"}</th>
                         <th className="h-10 px-4 text-left font-medium text-muted-foreground">{isKorean ? "캠페인" : "Campaign"}</th>
                         <th className="h-10 px-4 text-center font-medium text-muted-foreground">{isKorean ? "상태" : "Status"}</th>
                         <th className="h-10 px-4 text-center font-medium text-muted-foreground">{isKorean ? "변형" : "Vars"}</th>
@@ -766,130 +872,23 @@ export default function GlobalPipelinePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {filteredPipelines.map((pipeline) => {
-                        const statusConfig = getStatusConfig(pipeline.status);
-                        const StatusIcon = statusConfig.icon;
-                        return (
-                          <tr key={pipeline.batch_id} className="hover:bg-muted/30 transition-colors group">
-                            <td className="px-4 py-3">
-                              <div className="relative w-16 h-10 bg-muted rounded overflow-hidden flex-shrink-0">
-                                {pipeline.seed_generation.output_url || pipeline.seed_generation.composed_output_url ? (
-                                  <LazyVideo
-                                    src={pipeline.seed_generation.output_url || pipeline.seed_generation.composed_output_url || ""}
-                                    className="w-full h-full object-cover"
-                                    autoPlay={false}
-                                    muted
-                                    loop
-                                    playsInline
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center">
-                                    <Video className="w-4 h-4 text-muted-foreground" />
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <p className="font-medium text-sm truncate max-w-[280px] cursor-default">
-                                    {pipeline.seed_generation.prompt}
-                                  </p>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom" className="max-w-md">
-                                  <p>{pipeline.seed_generation.prompt}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </td>
-                            <td className="px-4 py-3">
-                              <Badge variant="outline" className="font-normal whitespace-nowrap">
-                                {pipeline.campaign_name || "Unknown"}
-                              </Badge>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <Badge variant={statusConfig.variant} className="gap-1 whitespace-nowrap">
-                                <StatusIcon className={cn("w-3 h-3", statusConfig.color, statusConfig.animate && "animate-spin")} />
-                                {statusConfig.label}
-                              </Badge>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                                <span className="text-green-600 font-medium">{pipeline.completed}</span>
-                                <span className="text-muted-foreground">/</span>
-                                <span>{pipeline.total}</span>
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="w-24 mx-auto">
-                                <Progress value={pipeline.overall_progress} className="h-1.5" />
-                                <p className="text-xs text-muted-foreground text-center mt-1">{pipeline.overall_progress}%</p>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex flex-nowrap gap-1">
-                                {pipeline.style_categories.length > 0 ? (
-                                  <>
-                                    {pipeline.style_categories.slice(0, 2).map((cat) => (
-                                      <Badge key={cat} variant="secondary" className="text-xs py-0 whitespace-nowrap">
-                                        {cat}
-                                      </Badge>
-                                    ))}
-                                    {pipeline.style_categories.length > 2 && (
-                                      <Badge variant="secondary" className="text-xs py-0">
-                                        +{pipeline.style_categories.length - 2}
-                                      </Badge>
-                                    )}
-                                  </>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">-</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-right text-sm text-muted-foreground whitespace-nowrap">
-                              {new Date(pipeline.created_at).toLocaleDateString(
-                                isKorean ? "ko-KR" : "en-US",
-                                { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
-                              )}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center justify-end gap-1">
-                                <Link href={`/campaigns/${pipeline.campaign_id}/pipeline/${pipeline.batch_id}?seed=${pipeline.seed_generation_id}`}>
-                                  <Button variant="ghost" size="sm" className="h-8 px-2">
-                                    <Eye className="w-4 h-4" />
-                                  </Button>
-                                </Link>
-                                {pipeline.status === "completed" && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-8 px-2"
-                                    onClick={() => handleCreateMoreVariations(pipeline)}
-                                  >
-                                    <Sparkles className="w-4 h-4" />
-                                  </Button>
-                                )}
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                                      <MoreHorizontal className="w-4 h-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => router.push(`/campaigns/${pipeline.campaign_id}/curation`)}>
-                                      <ArrowRight className="w-4 h-4 mr-2" />
-                                      {isKorean ? "큐레이션으로" : "To Curation"}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="text-destructive">
-                                      <XCircle className="w-4 h-4 mr-2" />
-                                      {isKorean ? "삭제" : "Delete"}
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {filteredPipelines.map((pipeline) =>
+                        pipeline.type === "compose" ? (
+                          <ComposePipelineTableRow
+                            key={pipeline.batch_id}
+                            pipeline={pipeline}
+                            onCreateVariations={() => handleCreateMoreVariations(pipeline)}
+                            onDelete={() => handleDeletePipeline(pipeline)}
+                          />
+                        ) : (
+                          <AIPipelineTableRow
+                            key={pipeline.batch_id}
+                            pipeline={pipeline}
+                            onCreateVariations={() => handleCreateMoreVariations(pipeline)}
+                            onDelete={() => handleDeletePipeline(pipeline)}
+                          />
+                        )
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -897,123 +896,23 @@ export default function GlobalPipelinePage() {
             ) : (
               /* Grid View */
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredPipelines.map((pipeline) => {
-                  const statusConfig = getStatusConfig(pipeline.status);
-                  const StatusIcon = statusConfig.icon;
-                  return (
-                    <Card key={pipeline.batch_id} className="overflow-hidden hover:shadow-md transition-shadow group">
-                      <CardContent className="p-0">
-                        <div className="flex gap-4 p-4">
-                          {/* Thumbnail */}
-                          <div className="relative w-28 h-20 bg-muted rounded-lg overflow-hidden shrink-0">
-                            {pipeline.seed_generation.output_url || pipeline.seed_generation.composed_output_url ? (
-                              <LazyVideo
-                                src={pipeline.seed_generation.output_url || pipeline.seed_generation.composed_output_url || ""}
-                                className="w-full h-full object-cover"
-                                autoPlay={false}
-                                muted
-                                loop
-                                playsInline
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <Layers className="w-6 h-6 text-muted-foreground" />
-                              </div>
-                            )}
-                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Play className="w-6 h-6 text-white" />
-                            </div>
-                          </div>
-
-                          {/* Info */}
-                          <div className="flex-1 min-w-0 flex flex-col">
-                            <div className="flex items-start justify-between gap-2 mb-1">
-                              <div className="min-w-0 flex-1">
-                                {pipeline.campaign_name && (
-                                  <p className="text-xs text-primary font-medium truncate">
-                                    {pipeline.campaign_name}
-                                  </p>
-                                )}
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <p className="font-medium text-sm truncate cursor-default">
-                                      {pipeline.seed_generation.prompt.slice(0, 60)}
-                                      {pipeline.seed_generation.prompt.length > 60 ? "..." : ""}
-                                    </p>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom" className="max-w-md">
-                                    <p>{pipeline.seed_generation.prompt}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </div>
-                              <Badge variant={statusConfig.variant} className="shrink-0 gap-1">
-                                <StatusIcon className={cn("w-3 h-3", statusConfig.animate && "animate-spin")} />
-                                {statusConfig.label}
-                              </Badge>
-                            </div>
-
-                            {/* Stats Row */}
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-auto">
-                              <span className="flex items-center gap-1">
-                                <Layers className="w-3 h-3" />
-                                <span className="text-green-600 font-medium">{pipeline.completed}</span>/{pipeline.total}
-                              </span>
-                              {pipeline.failed > 0 && (
-                                <span className="flex items-center gap-1 text-red-500">
-                                  <XCircle className="w-3 h-3" />
-                                  {pipeline.failed}
-                                </span>
-                              )}
-                              <span className="flex-1" />
-                              <span>
-                                {new Date(pipeline.created_at).toLocaleDateString(
-                                  isKorean ? "ko-KR" : "en-US",
-                                  { month: "short", day: "numeric" }
-                                )}
-                              </span>
-                            </div>
-
-                            {/* Progress */}
-                            {pipeline.status === "processing" && (
-                              <div className="mt-2">
-                                <Progress value={pipeline.overall_progress} className="h-1" />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t">
-                          <div className="flex items-center gap-1.5">
-                            {pipeline.style_categories.slice(0, 2).map((cat) => (
-                              <Badge key={cat} variant="outline" className="text-xs py-0 bg-background">
-                                {cat}
-                              </Badge>
-                            ))}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Link href={`/campaigns/${pipeline.campaign_id}/pipeline/${pipeline.batch_id}?seed=${pipeline.seed_generation_id}`}>
-                              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
-                                {isKorean ? "상세" : "Details"}
-                                <ChevronRight className="w-3 h-3 ml-1" />
-                              </Button>
-                            </Link>
-                            {pipeline.status === "completed" && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2"
-                                onClick={() => handleCreateMoreVariations(pipeline)}
-                              >
-                                <Sparkles className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                {filteredPipelines.map((pipeline) =>
+                  pipeline.type === "compose" ? (
+                    <ComposePipelineCard
+                      key={pipeline.batch_id}
+                      pipeline={pipeline}
+                      onCreateVariations={() => handleCreateMoreVariations(pipeline)}
+                      onDelete={() => handleDeletePipeline(pipeline)}
+                    />
+                  ) : (
+                    <AIPipelineCard
+                      key={pipeline.batch_id}
+                      pipeline={pipeline}
+                      onCreateVariations={() => handleCreateMoreVariations(pipeline)}
+                      onDelete={() => handleDeletePipeline(pipeline)}
+                    />
+                  )
+                )}
               </div>
             )}
           </TabsContent>
@@ -1366,13 +1265,23 @@ export default function GlobalPipelinePage() {
           </TabsContent>
         </Tabs>
 
-        {/* Variation Modal */}
-        <VariationModal
-          isOpen={variationModalOpen}
-          onClose={() => setVariationModalOpen(false)}
+        {/* AI Variation Modal */}
+        <AIVariationModal
+          isOpen={aiVariationModalOpen}
+          onClose={() => setAIVariationModalOpen(false)}
           seedGeneration={selectedSeedGeneration}
           presets={presets}
-          onCreateVariations={handleCreateVariations}
+          onCreateVariations={handleCreateAIVariations}
+          isCreating={creatingVariations}
+          socialAccounts={socialAccounts}
+        />
+
+        {/* Compose Variation Modal */}
+        <ComposeVariationModal
+          isOpen={composeVariationModalOpen}
+          onClose={() => setComposeVariationModalOpen(false)}
+          seedGeneration={selectedSeedGeneration}
+          onCreateVariations={handleCreateComposeVariations}
           isCreating={creatingVariations}
           socialAccounts={socialAccounts}
         />

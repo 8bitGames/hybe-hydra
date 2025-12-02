@@ -17,6 +17,8 @@ def apply_color_grade(
         return _apply_cinematic(video)
     elif grade == "bright":
         return _apply_bright(video)
+    elif grade == "moody":
+        return _apply_moody(video)
     elif grade == "bw":
         return _apply_bw(video)
     else:  # natural
@@ -63,6 +65,28 @@ def _apply_bright(video: VideoClip) -> VideoClip:
         frame = frame.astype(np.float32)
         # Increase brightness
         frame = frame * 1.1 + 10
+        frame = np.clip(frame, 0, 255).astype(np.uint8)
+        return frame
+
+    return video.image_transform(process_frame)
+
+
+def _apply_moody(video: VideoClip) -> VideoClip:
+    """Apply moody/dark color grading (low saturation, darker, blue shadows)."""
+    def process_frame(frame):
+        frame = frame.astype(np.float32)
+        # Darken overall
+        frame = frame * 0.85
+
+        # Add blue tint to shadows
+        frame[:, :, 2] = np.clip(frame[:, :, 2] * 1.1, 0, 255)  # Blue boost
+
+        # Desaturate
+        gray = np.mean(frame, axis=2, keepdims=True)
+        frame = gray + 0.7 * (frame - gray)
+
+        # Increase contrast slightly
+        frame = (frame - 128) * 1.15 + 128
         frame = np.clip(frame, 0, 255).astype(np.uint8)
         return frame
 

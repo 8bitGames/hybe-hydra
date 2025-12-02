@@ -49,6 +49,7 @@ import {
   Globe,
   Film,
   ArrowRight,
+  FolderOpen,
 } from "lucide-react";
 import { ScriptTimeline } from "@/components/features/script-timeline";
 import { ImageTextPreview } from "@/components/features/image-text-preview";
@@ -58,6 +59,9 @@ import { TikTokSEOPreview } from "@/components/features/tiktok-seo-preview";
 
 // Wizard Steps
 type WizardStep = 1 | 2 | 3 | 4;
+
+// Image Source Mode
+type ImageSourceMode = "assets_only" | "search_only" | "mixed";
 
 const STEPS = [
   { step: 1 as const, key: "script", icon: FileText, label: "스크립트", labelEn: "Script" },
@@ -89,6 +93,9 @@ export default function ComposePage() {
   const [imageCandidates, setImageCandidates] = useState<ImageCandidate[]>([]);
   const [selectedImages, setSelectedImages] = useState<ImageCandidate[]>([]);
   const [generationId, setGenerationId] = useState<string | null>(null);
+  const [imageSourceMode, setImageSourceMode] = useState<ImageSourceMode>("mixed");
+  const [assetImages, setAssetImages] = useState<ImageCandidate[]>([]);
+  const [loadingAssets, setLoadingAssets] = useState(false);
 
   // Step 3: Music state
   const [matchingMusic, setMatchingMusic] = useState(false);
@@ -128,6 +135,44 @@ export default function ComposePage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Load asset images for the campaign
+  const loadAssetImages = useCallback(async () => {
+    setLoadingAssets(true);
+    try {
+      const result = await assetsApi.getByCampaign(campaignId, {
+        type: "image",
+        page_size: 100,
+      });
+
+      if (result.data) {
+        // Convert Asset to ImageCandidate format
+        const assetImageCandidates: ImageCandidate[] = result.data.items.map(
+          (asset, idx) => ({
+            id: `asset-${asset.id}`,
+            sourceUrl: asset.s3_url,
+            thumbnailUrl: asset.thumbnail_url || asset.s3_url,
+            sourceTitle: asset.original_filename,
+            sourceDomain: "Campaign Asset",
+            width: (asset.metadata?.width as number) || 1080,
+            height: (asset.metadata?.height as number) || 1920,
+            isSelected: false,
+            sortOrder: idx,
+            qualityScore: 0.9, // Assets are pre-vetted, so give them high quality score
+          })
+        );
+        setAssetImages(assetImageCandidates);
+      }
+    } catch (err) {
+      console.error("Failed to load asset images:", err);
+    } finally {
+      setLoadingAssets(false);
+    }
+  }, [campaignId]);
+
+  useEffect(() => {
+    loadAssetImages();
+  }, [loadAssetImages]);
 
   // Load prompt from Bridge on mount
   useEffect(() => {
@@ -404,6 +449,21 @@ export default function ComposePage() {
     }
   };
 
+  // Get displayed images based on source mode
+  const getDisplayedImages = () => {
+    switch (imageSourceMode) {
+      case "assets_only":
+        return assetImages;
+      case "search_only":
+        return imageCandidates;
+      case "mixed":
+      default:
+        return [...assetImages, ...imageCandidates];
+    }
+  };
+
+  const displayedImages = getDisplayedImages();
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -670,49 +730,132 @@ export default function ComposePage() {
                   </Badge>
                 </div>
 
-                {/* Keyword Search */}
-                <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
-                  <div className="flex-1 flex flex-wrap gap-1.5">
-                    {editableKeywords.slice(0, 5).map((kw, idx) => (
-                      <Badge key={idx} variant="secondary" className="text-xs">
-                        {kw}
-                      </Badge>
-                    ))}
-                    {editableKeywords.length > 5 && (
-                      <Badge variant="outline" className="text-xs">
-                        +{editableKeywords.length - 5}
-                      </Badge>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleSearchImages(editableKeywords)}
-                    disabled={searchingImages}
+                {/* Image Source Mode Selection */}
+                <div className="flex items-center gap-2 p-1 bg-muted/50 rounded-lg">
+                  <button
+                    onClick={() => setImageSourceMode("mixed")}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                      imageSourceMode === "mixed"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
                   >
-                    <Search className="w-4 h-4 mr-2" />
-                    {language === "ko" ? "다시 검색" : "Search Again"}
-                  </Button>
+                    <Sparkles className="w-4 h-4" />
+                    <span>{language === "ko" ? "혼합" : "Mixed"}</span>
+                    <Badge variant="secondary" className="text-xs px-1.5">
+                      {assetImages.length + imageCandidates.length}
+                    </Badge>
+                  </button>
+                  <button
+                    onClick={() => setImageSourceMode("assets_only")}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                      imageSourceMode === "assets_only"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    <span>{language === "ko" ? "에셋만" : "Assets Only"}</span>
+                    <Badge variant="secondary" className="text-xs px-1.5">
+                      {assetImages.length}
+                    </Badge>
+                  </button>
+                  <button
+                    onClick={() => setImageSourceMode("search_only")}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                      imageSourceMode === "search_only"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Globe className="w-4 h-4" />
+                    <span>{language === "ko" ? "검색만" : "Search Only"}</span>
+                    <Badge variant="secondary" className="text-xs px-1.5">
+                      {imageCandidates.length}
+                    </Badge>
+                  </button>
                 </div>
 
-                {searchingImages ? (
-                  <div className="flex flex-col items-center justify-center py-16">
-                    <Spinner className="w-10 h-10 mb-4" />
-                    <p className="text-muted-foreground">{language === "ko" ? "이미지를 검색하고 있습니다..." : "Searching images..."}</p>
-                  </div>
-                ) : imageCandidates.length === 0 ? (
-                  <div className="text-center py-16">
-                    <ImageIcon className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
-                    <p className="text-muted-foreground mb-4">{language === "ko" ? "검색 결과가 없습니다" : "No results found"}</p>
-                    <Button onClick={() => handleSearchImages()} variant="outline">
+                {/* Keyword Search - Only show when search is relevant */}
+                {imageSourceMode !== "assets_only" && (
+                  <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
+                    <div className="flex-1 flex flex-wrap gap-1.5">
+                      {editableKeywords.slice(0, 5).map((kw, idx) => (
+                        <Badge key={idx} variant="secondary" className="text-xs">
+                          {kw}
+                        </Badge>
+                      ))}
+                      {editableKeywords.length > 5 && (
+                        <Badge variant="outline" className="text-xs">
+                          +{editableKeywords.length - 5}
+                        </Badge>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleSearchImages(editableKeywords)}
+                      disabled={searchingImages}
+                    >
                       <Search className="w-4 h-4 mr-2" />
                       {language === "ko" ? "다시 검색" : "Search Again"}
                     </Button>
                   </div>
+                )}
+
+                {/* Asset upload hint when no assets */}
+                {imageSourceMode === "assets_only" && assetImages.length === 0 && (
+                  <div className="p-4 bg-muted/30 rounded-lg border border-dashed border-border">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+                        <FolderOpen className="w-5 h-5 text-muted-foreground" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">
+                          {language === "ko" ? "업로드된 에셋 이미지가 없습니다" : "No uploaded asset images"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {language === "ko" ? "에셋 페이지에서 이미지를 먼저 업로드하세요" : "Upload images from the Assets page first"}
+                        </p>
+                      </div>
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href={`/campaigns/${campaignId}`}>
+                          {language === "ko" ? "에셋 업로드" : "Upload Assets"}
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {searchingImages || loadingAssets ? (
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <Spinner className="w-10 h-10 mb-4" />
+                    <p className="text-muted-foreground">
+                      {loadingAssets
+                        ? (language === "ko" ? "에셋 이미지를 불러오고 있습니다..." : "Loading asset images...")
+                        : (language === "ko" ? "이미지를 검색하고 있습니다..." : "Searching images...")}
+                    </p>
+                  </div>
+                ) : displayedImages.length === 0 ? (
+                  <div className="text-center py-16">
+                    <ImageIcon className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+                    <p className="text-muted-foreground mb-4">
+                      {imageSourceMode === "assets_only"
+                        ? (language === "ko" ? "에셋 이미지가 없습니다" : "No asset images")
+                        : (language === "ko" ? "검색 결과가 없습니다" : "No results found")}
+                    </p>
+                    {imageSourceMode !== "assets_only" && (
+                      <Button onClick={() => handleSearchImages()} variant="outline">
+                        <Search className="w-4 h-4 mr-2" />
+                        {language === "ko" ? "다시 검색" : "Search Again"}
+                      </Button>
+                    )}
+                  </div>
                 ) : (
                   <>
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                      {imageCandidates.map((image) => {
+                      {displayedImages.map((image) => {
+                        const isAsset = image.id.startsWith("asset-");
                         const isSelected = selectedImages.some((img) => img.id === image.id);
                         const selectionIndex = selectedImages.findIndex((img) => img.id === image.id);
                         return (
@@ -736,6 +879,19 @@ export default function ComposePage() {
                             {isSelected && (
                               <div className="absolute top-2 right-2 w-6 h-6 bg-primary rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold shadow-lg">
                                 {selectionIndex + 1}
+                              </div>
+                            )}
+                            {/* Asset indicator badge */}
+                            {isAsset && (
+                              <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-blue-500/90 rounded text-white text-[10px] font-medium flex items-center gap-1">
+                                <FolderOpen className="w-3 h-3" />
+                                {language === "ko" ? "에셋" : "Asset"}
+                              </div>
+                            )}
+                            {!isAsset && imageSourceMode === "mixed" && (
+                              <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-green-500/90 rounded text-white text-[10px] font-medium flex items-center gap-1">
+                                <Globe className="w-3 h-3" />
+                                {language === "ko" ? "검색" : "Search"}
                               </div>
                             )}
                             {image.qualityScore && (
@@ -1029,7 +1185,19 @@ export default function ComposePage() {
                     <p className="text-sm font-medium">{language === "ko" ? "이미지" : "Images"}</p>
                     <p className="text-xs text-muted-foreground">
                       {selectedImages.length > 0
-                        ? (language === "ko" ? `${selectedImages.length}장 선택됨` : `${selectedImages.length} selected`)
+                        ? (() => {
+                            const assetCount = selectedImages.filter(img => img.id.startsWith("asset-")).length;
+                            const searchCount = selectedImages.length - assetCount;
+                            if (assetCount > 0 && searchCount > 0) {
+                              return language === "ko"
+                                ? `에셋 ${assetCount}장 + 검색 ${searchCount}장`
+                                : `${assetCount} assets + ${searchCount} search`;
+                            } else if (assetCount > 0) {
+                              return language === "ko" ? `에셋 ${assetCount}장` : `${assetCount} assets`;
+                            } else {
+                              return language === "ko" ? `검색 ${searchCount}장` : `${searchCount} search`;
+                            }
+                          })()
                         : (language === "ko" ? "대기 중" : "Pending")}
                     </p>
                   </div>

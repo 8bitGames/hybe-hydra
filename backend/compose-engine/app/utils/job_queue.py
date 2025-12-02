@@ -80,7 +80,8 @@ class JobQueue:
         progress: Optional[int] = None,
         current_step: Optional[str] = None,
         output_url: Optional[str] = None,
-        error: Optional[str] = None
+        error: Optional[str] = None,
+        metadata: Optional[dict] = None
     ) -> None:
         """Update job status."""
         job_data = await self.get_job(job_id)
@@ -98,6 +99,8 @@ class JobQueue:
             job_data["output_url"] = output_url
         if error:
             job_data["error"] = error
+        if metadata:
+            job_data["metadata"] = metadata
 
         job_data["updated_at"] = datetime.utcnow().isoformat()
 

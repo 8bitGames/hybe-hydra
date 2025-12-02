@@ -53,6 +53,9 @@ export interface AudioAnalysis {
   best_15s_energy: number;
 }
 
+// Generation type for distinguishing AI vs Compose pipelines
+export type VideoGenerationType = "AI" | "COMPOSE";
+
 export interface VideoGeneration {
   id: string;
   campaign_id: string;
@@ -85,6 +88,12 @@ export interface VideoGeneration {
   created_by: string;
   created_at: string;
   updated_at: string;
+  // Generation type - AI (Veo) vs COMPOSE (MoviePy)
+  generation_type: VideoGenerationType;
+  // Compose-specific fields
+  script_data?: Record<string, unknown> | null;
+  image_assets?: Record<string, unknown> | null;
+  effect_preset?: string | null;
   // Metadata for batch/variation tracking
   quality_metadata?: Record<string, unknown> | null;
 }
@@ -285,6 +294,7 @@ export const videoApi = {
       page?: number;
       page_size?: number;
       status?: VideoGenerationStatus;
+      generation_type?: VideoGenerationType;
     }
   ) => {
     const searchParams = new URLSearchParams();
@@ -292,6 +302,7 @@ export const videoApi = {
     if (params?.page_size)
       searchParams.set("page_size", params.page_size.toString());
     if (params?.status) searchParams.set("status", params.status);
+    if (params?.generation_type) searchParams.set("generation_type", params.generation_type);
 
     const query = searchParams.toString();
     return api.get<VideoGenerationList>(
@@ -302,10 +313,14 @@ export const videoApi = {
   getById: (generationId: string) =>
     api.get<VideoGeneration>(`/api/v1/generations/${generationId}`),
 
-  getStats: (campaignId: string) =>
-    api.get<VideoGenerationStats>(
-      `/api/v1/campaigns/${campaignId}/generations/stats`
-    ),
+  getStats: (campaignId: string, params?: { generation_type?: VideoGenerationType }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.generation_type) searchParams.set("generation_type", params.generation_type);
+    const query = searchParams.toString();
+    return api.get<VideoGenerationStats>(
+      `/api/v1/campaigns/${campaignId}/generations/stats${query ? `?${query}` : ""}`
+    );
+  },
 
   cancel: (generationId: string) =>
     api.post<VideoGeneration>(`/api/v1/generations/${generationId}/cancel`),
@@ -710,6 +725,11 @@ export const variationsApi = {
 export interface ComposeVariationConfigRequest {
   variation_count?: number; // Number of variations to create (default: 4)
   tag_count?: number; // Number of tags to use per variation (default: 2-3)
+  // Compose-specific variation options
+  effect_presets?: string[]; // Effect presets to apply (zoom_beat, crossfade, etc.)
+  color_grades?: string[]; // Color grading presets (warm, cool, vintage, etc.)
+  text_styles?: string[]; // Text overlay styles (minimal, bold, animated, etc.)
+  vibe_variations?: string[]; // Vibe/mood variations (exciting, emotional, pop, etc.)
   auto_publish?: AutoPublishConfig;
 }
 

@@ -129,6 +129,8 @@ export const campaignsApi = {
       description?: string;
       status?: string;
       target_countries?: string[];
+      start_date?: string | null;
+      end_date?: string | null;
     }
   ) => api.patch<Campaign>(`/api/v1/campaigns/${id}`, data),
 

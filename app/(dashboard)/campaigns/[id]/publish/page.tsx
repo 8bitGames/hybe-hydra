@@ -242,24 +242,35 @@ export default function PublishingPage() {
           </Select>
         </div>
 
-        {/* Connected Accounts Indicator */}
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-sm">{t.publish.connected}</span>
-          {accounts.length > 0 ? (
-            <div className="flex items-center gap-1">
-              {Array.from(new Set(accounts.map((a) => a.platform))).map((platform) => (
-                <span
-                  key={platform}
-                  className="px-2 py-1 rounded text-xs font-medium"
-                  style={{ backgroundColor: `${getPlatformColor(platform)}20`, color: getPlatformColor(platform) }}
-                >
-                  {getPlatformIcon(platform)} {accounts.filter((a) => a.platform === platform).length}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <span className="text-yellow-600 text-sm">{t.publish.noAccountsConnected}</span>
+        {/* Schedule Button & Connected Accounts */}
+        <div className="flex items-center gap-4">
+          {/* New Schedule Button - Always visible when accounts and generations exist */}
+          {accounts.length > 0 && generations.length > 0 && (
+            <Button onClick={() => setShowScheduleModal(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              {t.publish.schedulePost}
+            </Button>
           )}
+
+          {/* Connected Accounts Indicator */}
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground text-sm">{t.publish.connected}</span>
+            {accounts.length > 0 ? (
+              <div className="flex items-center gap-1">
+                {Array.from(new Set(accounts.map((a) => a.platform))).map((platform) => (
+                  <span
+                    key={platform}
+                    className="px-2 py-1 rounded text-xs font-medium"
+                    style={{ backgroundColor: `${getPlatformColor(platform)}20`, color: getPlatformColor(platform) }}
+                  >
+                    {getPlatformIcon(platform)} {accounts.filter((a) => a.platform === platform).length}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-yellow-600 text-sm">{t.publish.noAccountsConnected}</span>
+            )}
+          </div>
         </div>
       </div>
 

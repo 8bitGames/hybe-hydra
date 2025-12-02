@@ -117,7 +117,8 @@ TRANSITIONS = {
     "zoom_beat": apply_zoom_transition,
     "bounce": apply_bounce_transition,
     "slide": apply_slide_transition,
-    "cut": apply_cut_transition
+    "cut": apply_cut_transition,
+    "minimal": apply_cut_transition  # minimal = simple cuts, no fancy transitions
 }
 
 

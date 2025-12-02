@@ -79,6 +79,12 @@ export async function GET(request: NextRequest) {
             profileUrl: true,
           },
         },
+        campaign: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
 
@@ -103,6 +109,7 @@ export async function GET(request: NextRequest) {
       return {
         id: post.id,
         campaign_id: post.campaignId,
+        campaign_name: post.campaign?.name || null,
         generation_id: post.generationId,
         platform: post.platform,
         status: post.status,
@@ -117,6 +124,10 @@ export async function GET(request: NextRequest) {
         platform_post_id: post.platformPostId,
         error_message: post.errorMessage,
         retry_count: post.retryCount,
+        view_count: post.viewCount,
+        like_count: post.likeCount,
+        comment_count: post.commentCount,
+        share_count: post.shareCount,
         created_at: post.createdAt.toISOString(),
         updated_at: post.updatedAt.toISOString(),
         social_account: {

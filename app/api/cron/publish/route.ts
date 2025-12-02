@@ -1,18 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import {
-  publishVideoToTikTok,
+  publishVideoToTikTokInbox,
   refreshAccessToken,
-  TikTokPostSettings,
 } from "@/lib/tiktok";
-
-interface PlatformSettings {
-  privacy_level?: string;
-  disable_duet?: boolean;
-  disable_comment?: boolean;
-  disable_stitch?: boolean;
-  video_cover_timestamp_ms?: number;
-}
 
 // Verify cron secret to prevent unauthorized access
 function verifyCronSecret(request: NextRequest): boolean {
@@ -39,14 +30,11 @@ function isTokenExpired(expiresAt: Date | null): boolean {
   return new Date().getTime() + bufferMs > expiresAt.getTime();
 }
 
-// Execute publish for a single post
+// Execute publish for a single post (Inbox Upload mode)
 async function executePublish(
   postId: string,
   socialAccountId: string,
-  videoUrl: string,
-  caption: string,
-  hashtags: string[],
-  platformSettings: PlatformSettings | null
+  videoUrl: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const account = await prisma.socialAccount.findUnique({
@@ -117,22 +105,14 @@ async function executePublish(
       accessToken = refreshResult.accessToken!;
     }
 
-    // Prepare TikTok settings
-    const tiktokSettings: Partial<TikTokPostSettings> = {
-      privacy_level: (platformSettings?.privacy_level as TikTokPostSettings["privacy_level"]) || "PUBLIC_TO_EVERYONE",
-      disable_duet: platformSettings?.disable_duet,
-      disable_comment: platformSettings?.disable_comment,
-      disable_stitch: platformSettings?.disable_stitch,
-      video_cover_timestamp_ms: platformSettings?.video_cover_timestamp_ms,
-    };
+    // Use Inbox Upload method for Sandbox mode compatibility
+    // This sends the video to user's TikTok inbox as a draft
+    // Note: Caption and settings are not used in inbox upload
+    console.log(`[CRON-PUBLISH] Using Inbox Upload method for post ${postId}`);
 
-    // Publish to TikTok
-    const result = await publishVideoToTikTok(
+    const result = await publishVideoToTikTokInbox(
       accessToken,
-      videoUrl,
-      caption || "",
-      hashtags || [],
-      tiktokSettings
+      videoUrl
     );
 
     if (result.success) {
@@ -262,14 +242,11 @@ export async function GET(request: NextRequest) {
         data: { status: "PUBLISHING" },
       });
 
-      // Execute publish
+      // Execute publish (Inbox Upload - sends to user's TikTok inbox)
       const result = await executePublish(
         post.id,
         post.socialAccount.id,
-        videoUrl,
-        post.caption || "",
-        post.hashtags,
-        post.platformSettings as PlatformSettings | null
+        videoUrl
       );
 
       results.push({

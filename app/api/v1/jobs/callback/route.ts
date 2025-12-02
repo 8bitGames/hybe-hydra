@@ -1,11 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { generateGeoAeoContent } from "@/lib/geo-aeo-generator";
 
 interface CallbackPayload {
   job_id: string;
   status: "completed" | "failed";
   output_url?: string;
   error?: string;
+}
+
+interface AutoPublishSettings {
+  enabled: boolean;
+  socialAccountId: string;
+  intervalMinutes: number;
+  caption: string;
+  hashtags: string[];
+  variationIndex: number;
+  generateGeoAeo?: boolean;
+}
+
+interface VariationSettings {
+  effectPreset: string;
+  colorGrade: string;
+  textStyle: string;
+  vibe: string;
 }
 
 // POST /api/v1/jobs/callback - Receive job completion callbacks from compose-engine
@@ -41,16 +59,96 @@ export async function POST(request: NextRequest) {
     // Check if this job has auto-publish settings
     const generation = await prisma.videoGeneration.findUnique({
       where: { id: job_id },
-      select: { qualityMetadata: true },
+      select: {
+        qualityMetadata: true,
+        composedOutputUrl: true,
+        campaignId: true,
+        createdBy: true,
+      },
     });
 
     if (generation?.qualityMetadata && status === "completed") {
       const metadata = generation.qualityMetadata as Record<string, unknown>;
-      const autoPublish = metadata.autoPublish as Record<string, unknown> | null;
+      const autoPublish = metadata.autoPublish as AutoPublishSettings | null;
+      const searchTags = metadata.searchTags as string[] | undefined;
+      const settings = metadata.settings as VariationSettings | undefined;
+      const originalPrompt = metadata.originalPrompt as string | undefined;
 
       if (autoPublish?.enabled && autoPublish.socialAccountId) {
         console.log(`[Job Callback] Auto-publish enabled for job ${job_id}`);
-        // Auto-publish logic would go here (or trigger a separate job)
+
+        let caption = autoPublish.caption || "";
+        let hashtags = autoPublish.hashtags || [];
+
+        // Generate GEO/AEO content if enabled
+        if (autoPublish.generateGeoAeo && searchTags && searchTags.length > 0) {
+          console.log(`[Job Callback] Generating GEO/AEO content for job ${job_id}`);
+          try {
+            const geoAeoResult = await generateGeoAeoContent({
+              keywords: searchTags,
+              prompt: originalPrompt,
+              vibe: settings?.vibe as "Exciting" | "Emotional" | "Pop" | "Minimal" | undefined,
+              language: "ko",
+              platform: "tiktok",
+            });
+
+            caption = geoAeoResult.combinedCaption;
+            hashtags = geoAeoResult.combinedHashtags.map(tag => tag.replace(/^#/, ""));
+
+            console.log(`[Job Callback] GEO/AEO content generated. Score: ${geoAeoResult.scores.overallScore}`);
+
+            // Update metadata with generated content
+            await prisma.videoGeneration.update({
+              where: { id: job_id },
+              data: {
+                qualityMetadata: {
+                  ...metadata,
+                  geoAeoContent: {
+                    caption,
+                    hashtags,
+                    score: geoAeoResult.scores.overallScore,
+                    generatedAt: new Date().toISOString(),
+                  },
+                },
+              },
+            });
+          } catch (geoAeoError) {
+            console.error(`[Job Callback] GEO/AEO generation failed for job ${job_id}:`, geoAeoError);
+            // Continue with manual caption/hashtags if GEO/AEO fails
+          }
+        }
+
+        // Schedule the post with the generated or manual content
+        const baseTime = new Date();
+        const scheduledTime = new Date(
+          baseTime.getTime() + (autoPublish.variationIndex * autoPublish.intervalMinutes * 60 * 1000)
+        );
+
+        // Only schedule if we have required fields
+        if (generation.campaignId && generation.createdBy) {
+          try {
+            await prisma.scheduledPost.create({
+              data: {
+                generationId: job_id,
+                socialAccountId: autoPublish.socialAccountId,
+                campaignId: generation.campaignId,
+                createdBy: generation.createdBy,
+                platform: "TIKTOK",
+                status: "SCHEDULED",
+                caption,
+                hashtags,
+                scheduledAt: scheduledTime,
+                timezone: "Asia/Seoul",
+              },
+            });
+
+            console.log(`[Job Callback] Scheduled post for job ${job_id} at ${scheduledTime.toISOString()}`);
+          } catch (scheduleError) {
+            console.error(`[Job Callback] Failed to schedule post for job ${job_id}:`, scheduleError);
+          }
+        } else {
+          console.warn(`[Job Callback] Cannot schedule post for job ${job_id}: missing campaignId or createdBy`);
+        }
       }
     }
 

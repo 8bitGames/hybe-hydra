@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # AWS S3
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
-    aws_region: str = "ap-northeast-2"
+    aws_region: str = "ap-southeast-2"
     aws_s3_bucket: str = "hydra-assets-hybe"
 
     # Google Custom Search
@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # Ignore extra env vars from parent project
 
 
 @lru_cache()

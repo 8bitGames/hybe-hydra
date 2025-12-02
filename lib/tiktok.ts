@@ -223,20 +223,25 @@ export async function initVideoPublishFileUpload(
  */
 export async function uploadVideoChunk(
   uploadUrl: string,
-  videoData: ArrayBuffer,
+  videoData: Buffer | ArrayBuffer,
   startByte: number,
   endByte: number,
   totalSize: number
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // Convert Buffer to Uint8Array for fetch compatibility
+    const bodyData = Buffer.isBuffer(videoData)
+      ? new Uint8Array(videoData)
+      : new Uint8Array(videoData);
+
     const response = await fetch(uploadUrl, {
       method: "PUT",
       headers: {
         "Content-Type": "video/mp4",
-        "Content-Length": String(videoData.byteLength),
+        "Content-Length": String(bodyData.byteLength),
         "Content-Range": `bytes ${startByte}-${endByte}/${totalSize}`,
       },
-      body: videoData,
+      body: bodyData,
     });
 
     if (!response.ok) {
@@ -352,6 +357,311 @@ export async function waitForPublishComplete(
 }
 
 /**
+ * Download video from URL and return as Buffer
+ */
+async function downloadVideoFromUrl(videoUrl: string): Promise<{ success: boolean; data?: Buffer; size?: number; error?: string }> {
+  try {
+    console.log("[TikTok] Downloading video from:", videoUrl);
+    const response = await fetch(videoUrl);
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `Failed to download video: ${response.status} ${response.statusText}`,
+      };
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    console.log("[TikTok] Downloaded video size:", buffer.length, "bytes");
+
+    return {
+      success: true,
+      data: buffer,
+      size: buffer.length,
+    };
+  } catch (error) {
+    console.error("[TikTok] downloadVideoFromUrl error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Publish video to TikTok using FILE_UPLOAD method
+ * Downloads video from URL and uploads directly to TikTok
+ * This method doesn't require domain verification
+ */
+export async function publishVideoToTikTokViaUpload(
+  accessToken: string,
+  videoUrl: string,
+  caption: string,
+  hashtags: string[],
+  settings?: Partial<TikTokPostSettings>
+): Promise<TikTokPublishResult> {
+  try {
+    // Step 1: Download video from URL
+    const downloadResult = await downloadVideoFromUrl(videoUrl);
+    if (!downloadResult.success || !downloadResult.data) {
+      return {
+        success: false,
+        error: downloadResult.error || "Failed to download video",
+      };
+    }
+
+    const videoBuffer = downloadResult.data;
+    const videoSize = downloadResult.size!;
+
+    // Step 2: Prepare title and settings
+    const hashtagsStr = hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ");
+    const title = `${caption} ${hashtagsStr}`.trim();
+
+    const postSettings: TikTokPostSettings = {
+      privacy_level: settings?.privacy_level || "PUBLIC_TO_EVERYONE",
+      disable_duet: settings?.disable_duet ?? false,
+      disable_comment: settings?.disable_comment ?? false,
+      disable_stitch: settings?.disable_stitch ?? false,
+      video_cover_timestamp_ms: settings?.video_cover_timestamp_ms ?? 1000,
+      brand_content_toggle: settings?.brand_content_toggle ?? false,
+      brand_organic_toggle: settings?.brand_organic_toggle ?? false,
+    };
+
+    // Step 3: Calculate chunk info
+    // TikTok requires: min 5MB per chunk (except last), max 64MB, max 4GB total
+    // For small videos (<5MB), use single chunk upload
+    const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB minimum
+    const DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB default
+
+    // If video is smaller than min chunk size, upload as single chunk
+    const CHUNK_SIZE = videoSize < MIN_CHUNK_SIZE ? videoSize : DEFAULT_CHUNK_SIZE;
+    const totalChunkCount = videoSize < MIN_CHUNK_SIZE ? 1 : Math.ceil(videoSize / CHUNK_SIZE);
+
+    console.log("[TikTok] Initializing FILE_UPLOAD:", {
+      videoSize,
+      chunkSize: CHUNK_SIZE,
+      totalChunkCount,
+    });
+
+    // Step 4: Initialize upload
+    const initResult = await initVideoPublishFileUpload(
+      accessToken,
+      title,
+      videoSize,
+      CHUNK_SIZE,
+      totalChunkCount,
+      postSettings
+    );
+
+    if (!initResult.success || !initResult.publishId || !initResult.uploadUrl) {
+      return {
+        success: false,
+        error: initResult.error || "Failed to initialize upload",
+      };
+    }
+
+    console.log("[TikTok] Upload initialized, publishId:", initResult.publishId);
+
+    // Step 5: Upload video in chunks
+    for (let chunkIndex = 0; chunkIndex < totalChunkCount; chunkIndex++) {
+      const startByte = chunkIndex * CHUNK_SIZE;
+      const endByte = Math.min(startByte + CHUNK_SIZE - 1, videoSize - 1);
+      const chunkData = videoBuffer.slice(startByte, endByte + 1);
+
+      console.log(`[TikTok] Uploading chunk ${chunkIndex + 1}/${totalChunkCount}: bytes ${startByte}-${endByte}`);
+
+      const uploadResult = await uploadVideoChunk(
+        initResult.uploadUrl,
+        chunkData,
+        startByte,
+        endByte,
+        videoSize
+      );
+
+      if (!uploadResult.success) {
+        return {
+          success: false,
+          publishId: initResult.publishId,
+          error: uploadResult.error || `Failed to upload chunk ${chunkIndex + 1}`,
+        };
+      }
+    }
+
+    console.log("[TikTok] All chunks uploaded, waiting for processing...");
+
+    // Step 6: Wait for publish to complete
+    const result = await waitForPublishComplete(accessToken, initResult.publishId);
+    return result;
+  } catch (error) {
+    console.error("[TikTok] publishVideoToTikTokViaUpload error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Initialize video upload to TikTok Inbox (Sandbox compatible)
+ * Uses /v2/post/publish/inbox/video/init/ endpoint
+ * This works with video.upload scope and sends video to user's TikTok inbox
+ */
+export async function initInboxVideoUpload(
+  accessToken: string,
+  videoSize: number,
+  chunkSize: number,
+  totalChunkCount: number
+): Promise<{ success: boolean; publishId?: string; uploadUrl?: string; error?: string; errorCode?: string }> {
+  try {
+    const requestBody = {
+      source_info: {
+        source: "FILE_UPLOAD",
+        video_size: videoSize,
+        chunk_size: chunkSize,
+        total_chunk_count: totalChunkCount,
+      },
+    };
+
+    console.log("[TikTok Inbox] Initializing upload:", JSON.stringify(requestBody));
+
+    const response = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/inbox/video/init/`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const result = await response.json();
+    console.log("[TikTok Inbox] Init response:", JSON.stringify(result));
+
+    if (result.error?.code !== "ok") {
+      return {
+        success: false,
+        error: result.error?.message || "Failed to initialize inbox upload",
+        errorCode: result.error?.code,
+      };
+    }
+
+    return {
+      success: true,
+      publishId: result.data?.publish_id,
+      uploadUrl: result.data?.upload_url,
+    };
+  } catch (error) {
+    console.error("[TikTok Inbox] initInboxVideoUpload error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Publish video to TikTok Inbox (Sandbox compatible)
+ * Downloads video from URL and uploads to user's TikTok inbox as a draft
+ * This method uses video.upload scope and works in Sandbox mode
+ */
+export async function publishVideoToTikTokInbox(
+  accessToken: string,
+  videoUrl: string
+): Promise<TikTokPublishResult> {
+  try {
+    // Step 1: Download video from URL
+    console.log("[TikTok Inbox] Starting inbox upload for:", videoUrl);
+    const downloadResult = await downloadVideoFromUrl(videoUrl);
+    if (!downloadResult.success || !downloadResult.data) {
+      return {
+        success: false,
+        error: downloadResult.error || "Failed to download video",
+      };
+    }
+
+    const videoBuffer = downloadResult.data;
+    const videoSize = downloadResult.size!;
+
+    // Step 2: Calculate chunk info
+    // TikTok requires: min 5MB per chunk (except last), max 64MB, max 4GB total
+    // For small videos (<5MB), use single chunk upload
+    const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB minimum
+    const DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB default
+
+    // If video is smaller than min chunk size, upload as single chunk
+    const CHUNK_SIZE = videoSize < MIN_CHUNK_SIZE ? videoSize : DEFAULT_CHUNK_SIZE;
+    const totalChunkCount = videoSize < MIN_CHUNK_SIZE ? 1 : Math.ceil(videoSize / CHUNK_SIZE);
+
+    console.log("[TikTok Inbox] Upload params:", {
+      videoSize,
+      chunkSize: CHUNK_SIZE,
+      totalChunkCount,
+    });
+
+    // Step 3: Initialize inbox upload
+    const initResult = await initInboxVideoUpload(
+      accessToken,
+      videoSize,
+      CHUNK_SIZE,
+      totalChunkCount
+    );
+
+    if (!initResult.success || !initResult.publishId || !initResult.uploadUrl) {
+      return {
+        success: false,
+        error: initResult.error || "Failed to initialize inbox upload",
+        errorCode: initResult.errorCode,
+      };
+    }
+
+    console.log("[TikTok Inbox] Upload initialized, publishId:", initResult.publishId);
+
+    // Step 4: Upload video in chunks
+    for (let chunkIndex = 0; chunkIndex < totalChunkCount; chunkIndex++) {
+      const startByte = chunkIndex * CHUNK_SIZE;
+      const endByte = Math.min(startByte + CHUNK_SIZE - 1, videoSize - 1);
+      const chunkData = videoBuffer.slice(startByte, endByte + 1);
+
+      console.log(`[TikTok Inbox] Uploading chunk ${chunkIndex + 1}/${totalChunkCount}: bytes ${startByte}-${endByte}`);
+
+      const uploadResult = await uploadVideoChunk(
+        initResult.uploadUrl,
+        chunkData,
+        startByte,
+        endByte,
+        videoSize
+      );
+
+      if (!uploadResult.success) {
+        return {
+          success: false,
+          publishId: initResult.publishId,
+          error: uploadResult.error || `Failed to upload chunk ${chunkIndex + 1}`,
+        };
+      }
+    }
+
+    console.log("[TikTok Inbox] All chunks uploaded, waiting for processing...");
+
+    // Step 5: Wait for upload to complete (sends to inbox)
+    const result = await waitForPublishComplete(accessToken, initResult.publishId);
+
+    if (result.success) {
+      console.log("[TikTok Inbox] Video successfully sent to user's TikTok inbox!");
+    }
+
+    return result;
+  } catch (error) {
+    console.error("[TikTok Inbox] publishVideoToTikTokInbox error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
  * Publish video to TikTok using URL pull method (recommended)
  * This is the main function to use for publishing
  */
@@ -462,7 +772,9 @@ export function getAuthorizationUrl(
   state: string,
   codeVerifier?: string
 ): string {
-  const scope = "video.publish,user.info.basic";
+  // Request both video.publish (Direct Post) and video.upload (Inbox Upload) scopes
+  // video.upload works in Sandbox mode, video.publish requires Production approval
+  const scope = "video.publish,video.upload,user.info.basic";
 
   const params = new URLSearchParams({
     client_key: clientKey,

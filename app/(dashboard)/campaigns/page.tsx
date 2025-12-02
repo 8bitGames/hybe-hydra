@@ -248,8 +248,8 @@ export default function CampaignsPage() {
                             <BarChart3 className="h-5 w-5" />
                           </Button>
                         </Link>
-                        <Link href={`/campaigns/${campaign.id}`}>
-                          <Button variant="ghost" size="icon">
+                        <Link href={`/campaigns/${campaign.id}/info`}>
+                          <Button variant="ghost" size="icon" title={language === "ko" ? "상세보기" : "View Details"}>
                             <Eye className="h-5 w-5" />
                           </Button>
                         </Link>

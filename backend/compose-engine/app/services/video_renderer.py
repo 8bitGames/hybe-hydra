@@ -180,8 +180,11 @@ class VideoRenderer:
                 )
 
             # Step 7: Apply transitions
+            # Use effect_preset from request if specified, otherwise use preset's default
             await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
-            transition_func = transitions.get_transition(preset.transition_type)
+            effect_preset = request.settings.effect_preset.value if request.settings.effect_preset else preset.transition_type
+            logger.info(f"[{job_id}] Using transition/effect: {effect_preset}")
+            transition_func = transitions.get_transition(effect_preset)
             video = transition_func(clips, duration=preset.transition_duration)
 
             # Step 8: Add text overlays

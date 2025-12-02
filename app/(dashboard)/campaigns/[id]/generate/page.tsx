@@ -851,7 +851,7 @@ export default function VideoGeneratePage() {
           campaignsApi.getById(campaignId),
           assetsApi.getByCampaign(campaignId, { type: "image", page_size: 50 }),
           assetsApi.getByCampaign(campaignId, { type: "audio", page_size: 50 }),  // Load audio assets
-          videoApi.getAll(campaignId, { page_size: 10 }),
+          videoApi.getAll(campaignId, { page_size: 50, generation_type: "AI" }),
           videoApi.getStats(campaignId),
           presetsApi.getAll({ active_only: true }),
         ]);
@@ -874,7 +874,11 @@ export default function VideoGeneratePage() {
       }
       if (imageAssetsResult.data) setImages(imageAssetsResult.data.items);
       if (audioAssetsResult.data) setAudioTracks(audioAssetsResult.data.items);  // Set audio tracks
-      if (generationsResult.data) setGenerations(generationsResult.data.items);
+      // Filter to only show AI generations (client-side safety filter)
+      if (generationsResult.data) {
+        const aiGenerations = generationsResult.data.items.filter(g => g.generation_type === "AI");
+        setGenerations(aiGenerations);
+      }
       if (statsResult.data) setStats(statsResult.data);
       if (presetsResult.data) setPresets(presetsResult.data.presets);
     } catch (err) {
@@ -1243,6 +1247,12 @@ export default function VideoGeneratePage() {
           created_by: gen.created_by,
           created_at: gen.created_at,
           updated_at: gen.created_at,
+          // Generation type - this is AI generation page
+          generation_type: "AI",
+          // Compose-specific fields (not applicable for AI generation)
+          script_data: null,
+          image_assets: null,
+          effect_preset: null,
         }));
         setGenerations((prev) => [...newGenerations, ...prev]);
         // Keep form data for convenience - user can generate more variants
@@ -1297,10 +1307,11 @@ export default function VideoGeneratePage() {
       });
 
       if (result.data) {
-        // Reload generations to show new variations
-        const generationsResult = await videoApi.getAll(campaignId, { page_size: 50 });
+        // Reload generations to show new variations (AI only)
+        const generationsResult = await videoApi.getAll(campaignId, { page_size: 50, generation_type: "AI" });
         if (generationsResult.data) {
-          setGenerations(generationsResult.data.items);
+          const aiGenerations = generationsResult.data.items.filter(g => g.generation_type === "AI");
+          setGenerations(aiGenerations);
         }
         // Reload stats
         const statsResult = await videoApi.getStats(campaignId);
@@ -1450,26 +1461,6 @@ export default function VideoGeneratePage() {
 
   return (
     <div className="space-y-6">
-      {/* Stats */}
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          {[
-            { label: t.generation.stats.total, value: stats.total, color: "primary" },
-            { label: t.generation.stats.pending, value: stats.pending, color: "secondary" },
-            { label: t.generation.stats.processing, value: stats.processing, color: "blue" },
-            { label: t.generation.stats.completed, value: stats.completed, color: "green" },
-            { label: t.generation.stats.failed, value: stats.failed, color: "red" },
-          ].map((stat) => (
-            <Card key={stat.label}>
-              <CardContent className="p-4">
-                <p className="text-muted-foreground text-xs">{stat.label}</p>
-                <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
       {/* Trending Topics Section */}
       {trendSuggestions.length > 0 && (
         <Card className="mb-8 border-primary/20">
@@ -1581,7 +1572,7 @@ export default function VideoGeneratePage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="max-w-2xl">
         {/* Generation Form */}
         <Card>
           <CardHeader>
@@ -1979,275 +1970,6 @@ export default function VideoGeneratePage() {
                 )}
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Generation History */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Generation History</CardTitle>
-            {generations.some((g) => g.status === "completed" && !g.quality_score) && (
-              <Button
-                onClick={handleScoreAll}
-                disabled={scoringAll}
-                size="sm"
-              >
-                {scoringAll ? (
-                  <>
-                    <Spinner className="w-4 h-4 mr-2" />
-                    Scoring...
-                  </>
-                ) : (
-                  <>
-                    <Star className="w-4 h-4 mr-2" />
-                    Score All
-                  </>
-                )}
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent>
-            {generations.length === 0 ? (
-              <div className="p-8 text-center">
-                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Play className="w-8 h-8 text-primary" />
-                </div>
-                <h3 className="text-lg font-medium text-foreground mb-2">
-                  No generations yet
-                </h3>
-                <p className="text-muted-foreground">
-                  Start generating videos with the form on the left
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-border max-h-[600px] overflow-y-auto">
-                {generations.map((gen) => (
-                  <div key={gen.id} className="py-4 first:pt-0 last:pb-0">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <Badge variant={getStatusVariant(gen.status)}>
-                            {gen.status}
-                          </Badge>
-                          {gen.quality_score ? (
-                            <button
-                              onClick={() => handleGetScoreDetails(gen.id)}
-                              className="flex items-center gap-1.5 group"
-                            >
-                              <span
-                                className={`px-2 py-0.5 rounded text-xs font-bold ${getGradeColor(
-                                  scoreDetails[gen.id]?.grade ||
-                                    (gen.quality_score >= 90
-                                      ? "S"
-                                      : gen.quality_score >= 80
-                                      ? "A"
-                                      : gen.quality_score >= 70
-                                      ? "B"
-                                      : gen.quality_score >= 60
-                                      ? "C"
-                                      : "D")
-                                )}`}
-                              >
-                                {scoreDetails[gen.id]?.grade ||
-                                  (gen.quality_score >= 90
-                                    ? "S"
-                                    : gen.quality_score >= 80
-                                    ? "A"
-                                    : gen.quality_score >= 70
-                                    ? "B"
-                                    : gen.quality_score >= 60
-                                    ? "C"
-                                    : "D")}
-                              </span>
-                              <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">
-                                {gen.quality_score.toFixed(1)}
-                              </span>
-                              {expandedScoreId === gen.id ? (
-                                <ChevronUp className="w-3 h-3 text-muted-foreground" />
-                              ) : (
-                                <ChevronDown className="w-3 h-3 text-muted-foreground" />
-                              )}
-                            </button>
-                          ) : gen.status === "completed" ? (
-                            <Button
-                              onClick={() => handleScoreGeneration(gen.id)}
-                              disabled={scoringId === gen.id}
-                              size="sm"
-                              variant="outline"
-                            >
-                              {scoringId === gen.id ? (
-                                <Spinner className="w-3 h-3 mr-1" />
-                              ) : (
-                                <Star className="w-3 h-3 mr-1" />
-                              )}
-                              Score
-                            </Button>
-                          ) : null}
-                        </div>
-                        <p className="text-foreground text-sm line-clamp-2 mb-2">
-                          {gen.prompt}
-                        </p>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <span>{gen.duration_seconds}s</span>
-                          <span>{gen.aspect_ratio}</span>
-                          <span>
-                            {new Date(gen.created_at).toLocaleString()}
-                          </span>
-                        </div>
-
-                        {/* Progress Bar */}
-                        {(gen.status === "pending" || gen.status === "processing") && (
-                          <div className="mt-3">
-                            <div className="h-2 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-primary transition-all"
-                                style={{ width: `${gen.progress}%` }}
-                              />
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {gen.progress.toFixed(0)}%
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Error Message */}
-                        {gen.status === "failed" && gen.error_message && (
-                          <p className="mt-2 text-xs text-destructive">
-                            {gen.error_message}
-                          </p>
-                        )}
-
-                        {/* Score Details */}
-                        {expandedScoreId === gen.id && scoreDetails[gen.id] && (
-                          <div className="mt-3 p-3 bg-muted rounded-lg space-y-3">
-                            {/* Score Bar */}
-                            <div>
-                              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                                <span>Overall Score</span>
-                                <span className="font-medium text-foreground">
-                                  {scoreDetails[gen.id].total_score.toFixed(1)} / 100
-                                </span>
-                              </div>
-                              <div className="h-2 bg-background rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full bg-gradient-to-r ${getScoreBarColor(
-                                    scoreDetails[gen.id].total_score
-                                  )} transition-all`}
-                                  style={{ width: `${scoreDetails[gen.id].total_score}%` }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Breakdown */}
-                            <div className="grid grid-cols-2 gap-2">
-                              {[
-                                {
-                                  label: "Prompt",
-                                  score: scoreDetails[gen.id].breakdown.promptQuality.score,
-                                  weight: "35%",
-                                },
-                                {
-                                  label: "Technical",
-                                  score: scoreDetails[gen.id].breakdown.technicalSettings.score,
-                                  weight: "20%",
-                                },
-                                {
-                                  label: "Style",
-                                  score: scoreDetails[gen.id].breakdown.styleAlignment.score,
-                                  weight: "30%",
-                                },
-                                {
-                                  label: "Trend",
-                                  score: scoreDetails[gen.id].breakdown.trendAlignment.score,
-                                  weight: "15%",
-                                },
-                              ].map((item) => (
-                                <div key={item.label} className="flex items-center justify-between">
-                                  <span className="text-xs text-muted-foreground">
-                                    {item.label} <span className="opacity-50">({item.weight})</span>
-                                  </span>
-                                  <span className="text-xs text-foreground">{item.score}</span>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Recommendations */}
-                            {scoreDetails[gen.id].recommendations.length > 0 && (
-                              <div>
-                                <p className="text-xs text-muted-foreground mb-1">Recommendations:</p>
-                                <ul className="space-y-1">
-                                  {scoreDetails[gen.id].recommendations.slice(0, 3).map((rec, idx) => (
-                                    <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1.5">
-                                      <span className="text-amber-500">•</span>
-                                      {rec}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Output Video - Prioritize composed video with audio */}
-                        {gen.status === "completed" && (gen.composed_output_url || gen.output_url) && (
-                          <div className="mt-3 flex items-center gap-2 flex-wrap">
-                            <Button variant="outline" size="sm" asChild>
-                              <a
-                                href={gen.composed_output_url || gen.output_url || ""}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                <Play className="w-4 h-4 mr-2" />
-                                {gen.composed_output_url ? "영상 보기 🎵" : "영상 보기 (음원 없음)"}
-                              </a>
-                            </Button>
-                            {/* Create Variations Button */}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleOpenVariationModal(gen)}
-                              className="border-primary/50 text-primary hover:bg-primary/10"
-                            >
-                              <Sparkles className="w-4 h-4 mr-2" />
-                              변형 생성
-                            </Button>
-                            {gen.composed_output_url && gen.audio_asset && (
-                              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                <Music className="w-3 h-3" />
-                                {gen.audio_asset.original_filename?.slice(0, 20)}...
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-2">
-                        {(gen.status === "pending" || gen.status === "processing") && (
-                          <Button
-                            onClick={() => handleCancel(gen.id)}
-                            variant="ghost"
-                            size="icon"
-                            title="Cancel"
-                          >
-                            <X className="w-5 h-5" />
-                          </Button>
-                        )}
-                        <Button
-                          onClick={() => handleDelete(gen.id)}
-                          variant="ghost"
-                          size="icon"
-                          title="Delete"
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>

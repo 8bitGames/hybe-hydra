@@ -24,8 +24,7 @@ import {
   Check,
   X,
   FolderOpen,
-  Sparkles,
-  Images,
+  Wand2,
   Video,
   Send,
   BarChart3,
@@ -57,8 +56,7 @@ interface TabConfig {
 
 const tabs: TabConfig[] = [
   { id: "assets", icon: FolderOpen, path: "" },
-  { id: "generate", icon: Sparkles, path: "/generate" },
-  { id: "compose", icon: Images, path: "/compose" },
+  { id: "create", icon: Wand2, path: "/create" },
   { id: "videos", icon: Video, path: "/curation" },
   { id: "publish", icon: Send, path: "/publish" },
   { id: "analytics", icon: BarChart3, path: "/analytics" },
@@ -109,6 +107,10 @@ export default function CampaignWorkspaceLayout({
     loadCampaign();
   }, [loadCampaign]);
 
+  // Check if we're on a standalone page (should not show workspace tabs)
+  // Includes: pipeline detail pages and info page
+  const isStandalonePage = pathname?.includes("/pipeline/") || pathname?.includes("/compose-pipeline/") || pathname?.endsWith("/info");
+
   // Determine current tab from pathname
   const getCurrentTab = (): CampaignTab => {
     if (!pathname) return "assets";
@@ -116,11 +118,13 @@ export default function CampaignWorkspaceLayout({
     const subPath = pathname.replace(basePath, "");
 
     if (subPath === "" || subPath === "/") return "assets";
-    if (subPath.startsWith("/generate")) return "generate";
-    if (subPath.startsWith("/compose")) return "compose";
+    if (subPath.startsWith("/create")) return "create";
+    if (subPath.startsWith("/generate")) return "create"; // Generate is under create
+    if (subPath.startsWith("/compose")) return "create"; // Compose is under create
     if (subPath.startsWith("/curation")) return "videos";
     if (subPath.startsWith("/publish")) return "publish";
     if (subPath.startsWith("/analytics")) return "analytics";
+    if (subPath.startsWith("/info")) return "info";
     return "assets";
   };
 
@@ -165,6 +169,15 @@ export default function CampaignWorkspaceLayout({
 
   if (error || !campaign) {
     return null;
+  }
+
+  // Standalone pages should render without the campaign workspace tabs
+  if (isStandalonePage) {
+    return (
+      <div className="min-h-full">
+        {children}
+      </div>
+    );
   }
 
   return (

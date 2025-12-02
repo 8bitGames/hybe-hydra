@@ -35,14 +35,19 @@ interface ScheduledPost {
   id: string;
   campaignId: string;
   campaignName: string;
+  generationId: string;
   platform: string;
   accountName: string;
   status: string;
-  scheduledAt: string;
+  scheduledAt: string | null;
   publishedAt: string | null;
   publishedUrl: string | null;
   viewCount: number | null;
   likeCount: number | null;
+  commentCount: number | null;
+  shareCount: number | null;
+  errorMessage: string | null;
+  thumbnailUrl: string | null;
 }
 
 interface SocialAccount {
@@ -114,24 +119,35 @@ export default function PublishingPage() {
 
     setLoading(true);
     try {
-      // Load dashboard data which includes publishing info
-      const response = await api.get<any>("/api/v1/dashboard/stats");
-      if (response.data) {
-        // Transform recent_activity.published into ScheduledPost format
-        const publishedPosts: ScheduledPost[] = response.data.recent_activity?.published?.map((post: any) => ({
+      // Load all scheduled/published posts using the publishing schedule API
+      const response = await api.get<{
+        items: any[];
+        total: number;
+        page: number;
+        page_size: number;
+        pages: number;
+      }>("/api/v1/publishing/schedule?page_size=100");
+
+      if (response.data?.items) {
+        const allPosts: ScheduledPost[] = response.data.items.map((post: any) => ({
           id: post.id,
           campaignId: post.campaign_id,
-          campaignName: post.campaign_name,
+          campaignName: post.campaign_name || "Unknown Campaign",
+          generationId: post.generation_id,
           platform: post.platform,
-          accountName: post.account_name,
-          status: "PUBLISHED",
-          scheduledAt: post.published_at,
+          accountName: post.social_account?.account_name || "Unknown",
+          status: post.status,
+          scheduledAt: post.scheduled_at,
           publishedAt: post.published_at,
           publishedUrl: post.published_url,
           viewCount: post.view_count,
           likeCount: post.like_count,
-        })) || [];
-        setPosts(publishedPosts);
+          commentCount: post.comment_count,
+          shareCount: post.share_count,
+          errorMessage: post.error_message,
+          thumbnailUrl: post.thumbnail_url,
+        }));
+        setPosts(allPosts);
       }
     } catch (err) {
       console.error("Failed to load publishing data:", err);
@@ -298,7 +314,7 @@ export default function PublishingPage() {
                         <p className="text-sm text-muted-foreground">
                           {post.campaignName} •{" "}
                           {language === "ko" ? "예약 시간: " : "Scheduled for "}
-                          {new Date(post.scheduledAt).toLocaleString()}
+                          {post.scheduledAt ? new Date(post.scheduledAt).toLocaleString() : "-"}
                         </p>
                       </div>
                       <Button

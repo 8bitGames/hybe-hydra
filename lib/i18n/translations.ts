@@ -383,11 +383,13 @@ export interface Translations {
   campaignWorkspace: {
     tabs: {
       assets: string;
+      create: string;
       generate: string;
       compose: string;
       videos: string;
       publish: string;
       analytics: string;
+      info: string;
     };
   };
   workspace: {
@@ -952,11 +954,13 @@ export const translations: Record<Language, Translations> = {
     campaignWorkspace: {
       tabs: {
         assets: "에셋",
+        create: "만들기",
         generate: "생성",
         compose: "컴포즈",
         videos: "영상",
         publish: "발행",
         analytics: "분석",
+        info: "정보",
       },
     },
     workspace: {
@@ -1513,11 +1517,13 @@ export const translations: Record<Language, Translations> = {
     campaignWorkspace: {
       tabs: {
         assets: "Assets",
+        create: "Create",
         generate: "Generate",
         compose: "Compose",
         videos: "Videos",
         publish: "Publish",
         analytics: "Analytics",
+        info: "Info",
       },
     },
     workspace: {

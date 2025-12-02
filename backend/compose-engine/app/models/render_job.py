@@ -42,6 +42,7 @@ class ColorGrade(str, Enum):
     CINEMATIC = "cinematic"
     BRIGHT = "bright"
     NATURAL = "natural"
+    MOODY = "moody"
 
 
 class ImageData(BaseModel):

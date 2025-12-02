@@ -13,7 +13,5 @@ export default defineConfig({
   datasource: {
     // Transaction mode for runtime queries (via PgBouncer)
     url: env("DATABASE_URL"),
-    // Direct connection for migrations (bypasses PgBouncer)
-    // Note: directUrl is handled in schema.prisma instead
   },
 });

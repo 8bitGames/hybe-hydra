@@ -31,6 +31,7 @@ import { useI18n } from "@/lib/i18n";
 
 type SortOption = "score" | "date" | "status";
 type ViewMode = "mosaic" | "list";
+type GenerationTypeFilter = "all" | "AI" | "COMPOSE";
 
 export default function CurationDashboardPage() {
   const params = useParams();
@@ -105,6 +106,10 @@ export default function CurationDashboardPage() {
     off: language === "ko" ? "꺼짐" : "Off",
     volume: language === "ko" ? "볼륨" : "Volume",
     start: language === "ko" ? "시작" : "Start",
+    // Type filter
+    typeAll: language === "ko" ? "전체 타입" : "All Types",
+    typeAI: language === "ko" ? "AI 생성" : "AI Generated",
+    typeCompose: language === "ko" ? "컴포즈" : "Compose",
   };
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -117,6 +122,7 @@ export default function CurationDashboardPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("mosaic");
   const [sortBy, setSortBy] = useState<SortOption>("score");
   const [statusFilter, setStatusFilter] = useState<string>("completed");
+  const [typeFilter, setTypeFilter] = useState<GenerationTypeFilter>("all");
 
   // Selection state for A/B comparison
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -180,7 +186,17 @@ export default function CurationDashboardPage() {
 
   // Sort and filter generations
   const sortedGenerations = [...generations]
-    .filter((g) => statusFilter === "all" || g.status === statusFilter)
+    .filter((g) => {
+      // Status filter
+      if (statusFilter !== "all" && g.status !== statusFilter) {
+        return false;
+      }
+      // Type filter
+      if (typeFilter !== "all" && g.generation_type !== typeFilter) {
+        return false;
+      }
+      return true;
+    })
     .sort((a, b) => {
       if (sortBy === "score") {
         return (b.quality_score || 0) - (a.quality_score || 0);
@@ -472,6 +488,18 @@ export default function CurationDashboardPage() {
             <SelectContent>
               <SelectItem value="score">{t.sortByScore}</SelectItem>
               <SelectItem value="date">{t.sortByDate}</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Type Filter */}
+          <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as GenerationTypeFilter)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t.typeAll}</SelectItem>
+              <SelectItem value="AI">{t.typeAI}</SelectItem>
+              <SelectItem value="COMPOSE">{t.typeCompose}</SelectItem>
             </SelectContent>
           </Select>
         </div>

@@ -14,7 +14,7 @@ function getS3Client(): S3Client {
   if (!_s3Client) {
     const accessKey = process.env.AWS_ACCESS_KEY_ID;
     const secretKey = process.env.AWS_SECRET_ACCESS_KEY;
-    const region = process.env.AWS_REGION || "ap-northeast-2";
+    const region = process.env.AWS_REGION || "ap-southeast-2";
 
     if (!accessKey || !secretKey) {
       throw new Error("AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.");
