@@ -76,7 +76,8 @@ export const pipelineApi = {
       const seedGenerationId = metadata?.seedGenerationId as string | undefined;
       const variationType = metadata?.variationType as string | undefined;
 
-      if (batchId && variationType === "variation") {
+      // Handle both AI variations and compose variations
+      if (batchId && (variationType === "variation" || variationType === "compose_variation")) {
         if (!batchMap.has(batchId)) {
           batchMap.set(batchId, { generations: [] });
         }
