@@ -181,6 +181,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Get search tags from metadata (for image search)
     const searchTags = getVariationKeywords(originalMetadata, seedGeneration.prompt);
 
+    // Get script lines from original compose data (for subtitles/captions)
+    const originalScriptLines = originalComposeData?.script as Array<{
+      text: string;
+      timing: number;
+      duration: number;
+    }> | undefined;
+
     // Generate all combinations of settings
     const settingsCombinations = generateSettingsCombinations(
       effectPresets,
@@ -196,6 +203,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       textStyles: textStyles.length || "default",
       vibeVariations: vibeVariations.length || "default",
       maxVariations,
+      searchTags,
+      hasScriptLines: !!originalScriptLines && originalScriptLines.length > 0,
+      scriptLinesCount: originalScriptLines?.length || 0,
+      originalPrompt: originalComposeData?.originalPrompt || seedGeneration.prompt,
+      hasComposeData: !!originalComposeData,
     });
 
     // Create batch ID
@@ -290,6 +302,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             target_duration: seedGeneration.durationSeconds,
             campaign_id: seedGeneration.campaignId,
             callback_url: callbackUrl,
+            // Pass original script lines for subtitles/captions
+            script_lines: originalScriptLines,
           }),
         });
 

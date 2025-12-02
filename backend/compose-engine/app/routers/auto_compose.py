@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 
 from ..models.render_job import (
     RenderRequest, RenderSettings, ImageData, AudioData,
-    OutputSettings, VibeType, AspectRatio, EffectPreset, ColorGrade, TextStyle
+    OutputSettings, VibeType, AspectRatio, EffectPreset, ColorGrade, TextStyle,
+    ScriptData, ScriptLine
 )
 from ..services.image_fetcher import ImageFetcher
 from ..services.video_renderer import VideoRenderer
@@ -21,6 +22,13 @@ from ..config import get_settings
 
 
 router = APIRouter()
+
+
+class ScriptLineInput(BaseModel):
+    """Input format for script line from frontend."""
+    text: str
+    timing: float
+    duration: float
 
 
 class AutoComposeRequest(BaseModel):
@@ -37,6 +45,8 @@ class AutoComposeRequest(BaseModel):
     target_duration: int = Field(default=15, description="Target duration in seconds")
     campaign_id: Optional[str] = Field(default=None, description="Campaign ID for S3 path")
     callback_url: Optional[str] = Field(default=None, description="URL to call when job completes")
+    # Script lines for text overlays (subtitles/captions)
+    script_lines: Optional[List[ScriptLineInput]] = Field(default=None, description="Script lines for text overlays")
 
 
 class AutoComposeResponse(BaseModel):
@@ -282,6 +292,16 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
 
         # Create render request
         s3_folder = request.campaign_id or "auto-compose"
+
+        # Convert script_lines to ScriptData if provided
+        script_data = None
+        if request.script_lines:
+            script_data = ScriptData(
+                lines=[ScriptLine(text=sl.text, timing=sl.timing, duration=sl.duration)
+                       for sl in request.script_lines]
+            )
+            logger.info(f"[Auto-Compose] Job {request.job_id} has {len(request.script_lines)} script lines for subtitles")
+
         render_request = RenderRequest(
             job_id=request.job_id,
             images=images,
@@ -290,6 +310,7 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
                 start_time=0,
                 duration=None
             ),
+            script=script_data,
             settings=RenderSettings(
                 vibe=vibe,
                 effect_preset=effect_preset,

@@ -384,6 +384,10 @@ export default function ComposePage() {
         aspectRatio,
         targetDuration: 0,
         vibe: scriptData.vibe,
+        // Pass compose data for variations to use
+        prompt,  // User's original video concept prompt
+        searchKeywords: editableKeywords,  // User's keywords (includes AI-suggested merged)
+        tiktokSEO: scriptData.tiktokSEO,
       });
 
       const finalStatus = await composeApi.waitForRender(

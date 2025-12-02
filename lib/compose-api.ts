@@ -145,6 +145,10 @@ export interface RenderRequest {
   vibe: string;
   textStyle?: string;
   colorGrade?: string;
+  // Additional compose data for variations
+  prompt?: string;  // User's original video concept prompt
+  searchKeywords?: string[];
+  tiktokSEO?: TikTokSEO;
 }
 
 export interface RenderResponse {
