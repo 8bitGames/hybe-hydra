@@ -244,10 +244,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch user info from TikTok
+    // Fetch user info from TikTok (only request fields available with user.info.basic scope)
     console.log("[TikTok OAuth POST] Fetching user info with token:", tokenResult.accessToken?.substring(0, 20) + "...");
     const userInfoResponse = await fetch(
-      "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username",
+      "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name",
       {
         method: "GET",
         headers: {
@@ -279,20 +279,20 @@ export async function POST(request: NextRequest) {
 
     let socialAccount;
 
+    console.log("[TikTok OAuth POST] Creating/updating social account for:", tiktokUser.display_name);
+
     if (existingAccount) {
       // Update existing account
       socialAccount = await prisma.socialAccount.update({
         where: { id: existingAccount.id },
         data: {
-          accountName: tiktokUser.display_name || tiktokUser.username || "TikTok User",
+          accountName: tiktokUser.display_name || "TikTok User",
           accessToken: tokenResult.accessToken,
           refreshToken: tokenResult.refreshToken,
           tokenExpiresAt: tokenResult.expiresIn
             ? new Date(Date.now() + tokenResult.expiresIn * 1000)
             : null,
-          profileUrl: tiktokUser.username
-            ? `https://www.tiktok.com/@${tiktokUser.username}`
-            : null,
+          profileUrl: `https://www.tiktok.com/@${tokenResult.openId}`,
           isActive: true,
         },
       });
@@ -302,15 +302,13 @@ export async function POST(request: NextRequest) {
         data: {
           platform: "TIKTOK",
           accountId: tokenResult.openId!,
-          accountName: tiktokUser.display_name || tiktokUser.username || "TikTok User",
+          accountName: tiktokUser.display_name || "TikTok User",
           accessToken: tokenResult.accessToken,
           refreshToken: tokenResult.refreshToken,
           tokenExpiresAt: tokenResult.expiresIn
             ? new Date(Date.now() + tokenResult.expiresIn * 1000)
             : null,
-          profileUrl: tiktokUser.username
-            ? `https://www.tiktok.com/@${tiktokUser.username}`
-            : null,
+          profileUrl: `https://www.tiktok.com/@${tokenResult.openId}`,
           labelId: stateDataCamel.labelId,
           createdBy: stateDataCamel.userId,
           isActive: true,
