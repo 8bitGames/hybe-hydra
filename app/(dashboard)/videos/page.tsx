@@ -582,7 +582,7 @@ export default function AllVideosPage() {
                             {String(selectedVideo.quality_metadata.variationLabel)}
                           </p>
                         )}
-                        {selectedVideo.quality_metadata.searchTags && Array.isArray(selectedVideo.quality_metadata.searchTags) && (
+                        {Array.isArray(selectedVideo.quality_metadata.searchTags) && selectedVideo.quality_metadata.searchTags.length > 0 && (
                           <div>
                             <span className="text-sm text-muted-foreground">{language === "ko" ? "검색 태그: " : "Search Tags: "}</span>
                             <div className="flex flex-wrap gap-1 mt-1">
@@ -594,7 +594,7 @@ export default function AllVideosPage() {
                             </div>
                           </div>
                         )}
-                        {selectedVideo.quality_metadata.settings && typeof selectedVideo.quality_metadata.settings === 'object' && (
+                        {Boolean(selectedVideo.quality_metadata.settings) && typeof selectedVideo.quality_metadata.settings === 'object' && (
                           <div>
                             <span className="text-sm text-muted-foreground">{language === "ko" ? "설정: " : "Settings: "}</span>
                             <div className="flex flex-wrap gap-1 mt-1">
@@ -606,7 +606,7 @@ export default function AllVideosPage() {
                             </div>
                           </div>
                         )}
-                        {selectedVideo.quality_metadata.appliedPresets && Array.isArray(selectedVideo.quality_metadata.appliedPresets) && (
+                        {Array.isArray(selectedVideo.quality_metadata.appliedPresets) && selectedVideo.quality_metadata.appliedPresets.length > 0 && (
                           <div>
                             <span className="text-sm text-muted-foreground">{language === "ko" ? "적용된 프리셋: " : "Applied Presets: "}</span>
                             <div className="flex flex-wrap gap-1 mt-1">
