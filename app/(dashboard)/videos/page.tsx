@@ -564,19 +564,19 @@ export default function AllVideosPage() {
                         {language === "ko" ? "메타데이터" : "Metadata"}
                       </h3>
                       <div className="bg-muted p-3 rounded-lg space-y-2">
-                        {selectedVideo.quality_metadata.batchId && (
+                        {Boolean(selectedVideo.quality_metadata.batchId) && (
                           <p className="text-sm">
                             <span className="text-muted-foreground">Batch ID: </span>
                             <code className="text-xs">{String(selectedVideo.quality_metadata.batchId)}</code>
                           </p>
                         )}
-                        {selectedVideo.quality_metadata.variationType && (
+                        {Boolean(selectedVideo.quality_metadata.variationType) && (
                           <p className="text-sm">
                             <span className="text-muted-foreground">{language === "ko" ? "변형 타입: " : "Variation Type: "}</span>
                             {String(selectedVideo.quality_metadata.variationType)}
                           </p>
                         )}
-                        {selectedVideo.quality_metadata.variationLabel && (
+                        {Boolean(selectedVideo.quality_metadata.variationLabel) && (
                           <p className="text-sm">
                             <span className="text-muted-foreground">{language === "ko" ? "변형 라벨: " : "Variation Label: "}</span>
                             {String(selectedVideo.quality_metadata.variationLabel)}
