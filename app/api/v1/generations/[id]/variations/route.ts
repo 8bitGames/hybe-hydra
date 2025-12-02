@@ -114,6 +114,21 @@ function startVariationVideoGeneration(
             },
           },
         });
+
+        // Trigger auto-schedule if configured
+        const autoPublish = existingMetadata?.autoPublish as { enabled?: boolean } | undefined;
+        if (autoPublish?.enabled) {
+          try {
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+            await fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
+          } catch (scheduleError) {
+            console.error("Auto-schedule failed:", scheduleError);
+            // Don't fail the generation if scheduling fails
+          }
+        }
       } else {
         await prisma.videoGeneration.update({
           where: { id: generationId },
@@ -193,6 +208,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       enable_prompt_variation = false,
       prompt_variation_types = [],
       max_variations = 10,
+      auto_publish, // Auto-publish configuration
     } = body;
 
     if (!style_categories || style_categories.length === 0) {
@@ -280,7 +296,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Create generations for each variation
     const createdGenerations = await Promise.all(
-      allVariations.map(async ({ presetCombo, promptVariation, promptIndex }) => {
+      allVariations.map(async ({ presetCombo, promptVariation, promptIndex }, variationIndex) => {
         // Build variation label
         const presetLabels = presetCombo.map((p) => `${p.category}:${p.name}`);
         const variationLabel = presetLabels.join(" + ") +
@@ -328,6 +344,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 category: p.category,
               })),
               promptModification: promptIndex > 0 ? `v${promptIndex + 1}` : null,
+              // Auto-publish settings for scheduling on completion
+              autoPublish: auto_publish ? {
+                enabled: true,
+                socialAccountId: auto_publish.social_account_id,
+                intervalMinutes: auto_publish.interval_minutes || 30,
+                caption: auto_publish.caption || "",
+                hashtags: auto_publish.hashtags || [],
+                variationIndex,
+              } : null,
             },
           },
         });

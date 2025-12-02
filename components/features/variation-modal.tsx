@@ -26,7 +26,20 @@ import {
   Wand2,
   AlertCircle,
   Check,
+  Send,
+  Hash,
+  Timer,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { SocialAccount } from "@/lib/publishing-api";
 import { VideoGeneration, StylePreset } from "@/lib/video-api";
 import { useI18n } from "@/lib/i18n";
 
@@ -40,11 +53,20 @@ export interface StyleCategory {
   presets: StylePreset[];
 }
 
+export interface AutoPublishConfig {
+  enabled: boolean;
+  socialAccountId: string | null;
+  intervalMinutes: number;
+  caption: string;
+  hashtags: string[];
+}
+
 export interface VariationConfig {
   styleCategories: string[];
   enablePromptVariation: boolean;
   promptVariationTypes: ("camera" | "expression")[];
   maxVariations: number;
+  autoPublish?: AutoPublishConfig;
 }
 
 interface VariationModalProps {
@@ -54,6 +76,7 @@ interface VariationModalProps {
   presets: StylePreset[];
   onCreateVariations: (config: VariationConfig) => Promise<void>;
   isCreating: boolean;
+  socialAccounts?: SocialAccount[];
 }
 
 // Category configuration
@@ -99,6 +122,7 @@ export function VariationModal({
   presets,
   onCreateVariations,
   isCreating,
+  socialAccounts = [],
 }: VariationModalProps) {
   const { t, language } = useI18n();
 
@@ -111,6 +135,20 @@ export function VariationModal({
 
   // Max variations limit
   const [maxVariations, setMaxVariations] = useState(9);
+
+  // Auto-publish settings
+  const [enableAutoPublish, setEnableAutoPublish] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [publishIntervalMinutes, setPublishIntervalMinutes] = useState(30);
+  const [publishCaption, setPublishCaption] = useState("");
+  const [publishHashtags, setPublishHashtags] = useState("");
+
+  // Filter TikTok accounts with valid tokens
+  const tiktokAccounts = useMemo(() => {
+    return socialAccounts.filter(
+      (account) => account.platform === "TIKTOK" && account.is_token_valid
+    );
+  }, [socialAccounts]);
 
   // Group presets by category
   const presetsByCategory = useMemo(() => {
@@ -163,12 +201,28 @@ export function VariationModal({
   const handleCreate = async () => {
     if (!seedGeneration || selectedCategories.length === 0) return;
 
-    await onCreateVariations({
+    const config: VariationConfig = {
       styleCategories: selectedCategories,
       enablePromptVariation,
       promptVariationTypes,
       maxVariations,
-    });
+    };
+
+    // Add auto-publish config if enabled
+    if (enableAutoPublish && selectedAccountId) {
+      config.autoPublish = {
+        enabled: true,
+        socialAccountId: selectedAccountId,
+        intervalMinutes: publishIntervalMinutes,
+        caption: publishCaption,
+        hashtags: publishHashtags
+          .split(/[,\s]+/)
+          .map((tag) => tag.replace(/^#/, "").trim())
+          .filter(Boolean),
+      };
+    }
+
+    await onCreateVariations(config);
   };
 
   // Reset state when modal opens
@@ -178,6 +232,12 @@ export function VariationModal({
       setEnablePromptVariation(false);
       setPromptVariationTypes([]);
       setMaxVariations(9);
+      // Reset auto-publish settings
+      setEnableAutoPublish(false);
+      setSelectedAccountId("");
+      setPublishIntervalMinutes(30);
+      setPublishCaption("");
+      setPublishHashtags("");
     }
   }, [isOpen]);
 
@@ -365,6 +425,127 @@ export function VariationModal({
                 ? "비용 관리를 위해 최대 생성 수를 제한합니다"
                 : "Limit maximum variations for cost management"}
             </p>
+          </div>
+
+          {/* Auto-Publish Settings */}
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="auto-publish"
+                checked={enableAutoPublish}
+                onCheckedChange={(checked: boolean | "indeterminate") => setEnableAutoPublish(checked === true)}
+              />
+              <Label htmlFor="auto-publish" className="text-sm font-medium cursor-pointer flex items-center gap-2">
+                <Send className="w-4 h-4 text-primary" />
+                {isKorean ? "완료 시 자동 TikTok 게시" : "Auto-publish to TikTok on completion"}
+              </Label>
+            </div>
+
+            {enableAutoPublish && (
+              <div className="pl-6 space-y-4 bg-muted/30 rounded-lg p-4">
+                {tiktokAccounts.length === 0 ? (
+                  <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                    <AlertCircle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-yellow-600 font-medium">
+                        {isKorean ? "연결된 TikTok 계정이 없습니다" : "No TikTok accounts connected"}
+                      </p>
+                      <p className="text-xs text-yellow-600/80 mt-1">
+                        {isKorean
+                          ? "설정 > 계정에서 TikTok 계정을 연결해주세요"
+                          : "Connect a TikTok account in Settings > Accounts"}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Account Selection */}
+                    <div className="space-y-2">
+                      <Label className="text-sm">
+                        {isKorean ? "TikTok 계정" : "TikTok Account"}
+                      </Label>
+                      <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={isKorean ? "계정 선택..." : "Select account..."} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tiktokAccounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              <span className="flex items-center gap-2">
+                                <span>@{account.account_name}</span>
+                                {account.follower_count && (
+                                  <span className="text-muted-foreground text-xs">
+                                    ({account.follower_count.toLocaleString()} followers)
+                                  </span>
+                                )}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Publish Interval */}
+                    <div className="space-y-2">
+                      <Label className="text-sm flex items-center gap-2">
+                        <Timer className="w-4 h-4" />
+                        {isKorean ? "게시 간격 (분)" : "Publish Interval (minutes)"}
+                      </Label>
+                      <div className="flex items-center gap-4">
+                        <Slider
+                          value={[publishIntervalMinutes]}
+                          onValueChange={([value]) => setPublishIntervalMinutes(value)}
+                          min={5}
+                          max={120}
+                          step={5}
+                          className="flex-1"
+                        />
+                        <span className="text-sm font-medium w-16 text-right">
+                          {publishIntervalMinutes}분
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {isKorean
+                          ? `${estimatedVariations}개 영상이 약 ${Math.ceil((estimatedVariations - 1) * publishIntervalMinutes / 60)}시간에 걸쳐 게시됩니다`
+                          : `${estimatedVariations} videos will be published over ~${Math.ceil((estimatedVariations - 1) * publishIntervalMinutes / 60)} hours`}
+                      </p>
+                    </div>
+
+                    {/* Caption */}
+                    <div className="space-y-2">
+                      <Label className="text-sm">
+                        {isKorean ? "캡션 (선택사항)" : "Caption (optional)"}
+                      </Label>
+                      <Textarea
+                        value={publishCaption}
+                        onChange={(e) => setPublishCaption(e.target.value)}
+                        placeholder={isKorean ? "영상과 함께 게시될 캡션..." : "Caption to post with videos..."}
+                        className="min-h-[60px] resize-none"
+                        maxLength={2200}
+                      />
+                    </div>
+
+                    {/* Hashtags */}
+                    <div className="space-y-2">
+                      <Label className="text-sm flex items-center gap-2">
+                        <Hash className="w-4 h-4" />
+                        {isKorean ? "해시태그" : "Hashtags"}
+                      </Label>
+                      <Input
+                        value={publishHashtags}
+                        onChange={(e) => setPublishHashtags(e.target.value)}
+                        placeholder={isKorean ? "#kpop #music #viral" : "#kpop #music #viral"}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {isKorean
+                          ? "쉼표 또는 공백으로 구분하세요"
+                          : "Separate with commas or spaces"}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Estimation Summary */}

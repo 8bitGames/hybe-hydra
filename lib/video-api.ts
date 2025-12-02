@@ -640,12 +640,21 @@ export const captionApi = {
     ),
 };
 
+// Auto-publish configuration for variations
+export interface AutoPublishConfig {
+  social_account_id: string | null;
+  interval_minutes: number;
+  caption?: string;
+  hashtags?: string[];
+}
+
 // Variation Generation Types
 export interface VariationConfigRequest {
   style_categories: string[];
   enable_prompt_variation: boolean;
   prompt_variation_types?: ("camera" | "expression")[];
   max_variations?: number;
+  auto_publish?: AutoPublishConfig;
 }
 
 export interface VariationItem {
@@ -701,6 +710,7 @@ export const variationsApi = {
 export interface ComposeVariationConfigRequest {
   variation_count?: number; // Number of variations to create (default: 4)
   tag_count?: number; // Number of tags to use per variation (default: 2-3)
+  auto_publish?: AutoPublishConfig;
 }
 
 export interface ComposeVariationItem {

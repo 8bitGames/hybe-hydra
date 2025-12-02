@@ -119,6 +119,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const {
       max_variations = 4,
       vibe_variations = ["Exciting", "Emotional", "Pop", "Minimal"], // Different vibe presets
+      auto_publish, // Auto-publish configuration
     } = body;
 
     // Extract base tags from original prompt (2-3 tags)
@@ -171,6 +172,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               vibePreset,
               originalPrompt: seedGeneration.prompt,
               originalComposeData: originalComposeData as Prisma.InputJsonValue | null,
+              // Auto-publish settings for scheduling on completion
+              autoPublish: auto_publish ? {
+                enabled: true,
+                socialAccountId: auto_publish.social_account_id,
+                intervalMinutes: auto_publish.interval_minutes || 30,
+                caption: auto_publish.caption || "",
+                hashtags: auto_publish.hashtags || [],
+                variationIndex: index, // For calculating scheduled time offset
+              } : null,
             } as Prisma.InputJsonValue,
           },
         });

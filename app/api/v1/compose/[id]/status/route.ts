@@ -63,14 +63,41 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
         // Update generation record with latest status
         if (jobStatus.status === 'completed' && jobStatus.output_url) {
+          // Check if this is a new completion (not already marked as completed)
+          const currentGen = await prisma.videoGeneration.findUnique({
+            where: { id: generationId },
+            select: { status: true, qualityMetadata: true }
+          });
+
+          const wasNotCompleted = currentGen?.status !== 'COMPLETED';
+
           await prisma.videoGeneration.update({
             where: { id: generationId },
             data: {
               status: 'COMPLETED',
               progress: 100,
-              composedOutputUrl: jobStatus.output_url
+              composedOutputUrl: jobStatus.output_url,
+              outputUrl: jobStatus.output_url, // Also set outputUrl for auto-schedule
             }
           });
+
+          // Trigger auto-schedule if this is a new completion
+          if (wasNotCompleted) {
+            const metadata = currentGen?.qualityMetadata as Record<string, unknown> | null;
+            const autoPublish = metadata?.autoPublish as { enabled?: boolean } | undefined;
+
+            if (autoPublish?.enabled) {
+              try {
+                const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+                fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                }).catch(err => console.error('Auto-schedule failed:', err));
+              } catch (scheduleError) {
+                console.error('Auto-schedule error:', scheduleError);
+              }
+            }
+          }
         } else if (jobStatus.status === 'failed') {
           await prisma.videoGeneration.update({
             where: { id: generationId },

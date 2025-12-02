@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { campaignsApi, Campaign } from "@/lib/campaigns-api";
 import { pipelineApi, PipelineItem } from "@/lib/pipeline-api";
 import { presetsApi, StylePreset, variationsApi, VariationConfigRequest, videoApi, VideoGeneration, composeVariationsApi } from "@/lib/video-api";
+import { socialAccountsApi, SocialAccount } from "@/lib/publishing-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +81,7 @@ export default function GlobalPipelinePage() {
   const [selectedSeedGeneration, setSelectedSeedGeneration] = useState<VideoGeneration | null>(null);
   const [presets, setPresets] = useState<StylePreset[]>([]);
   const [creatingVariations, setCreatingVariations] = useState(false);
+  const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>([]);
 
   // Fetch campaigns
   useEffect(() => {
@@ -109,6 +111,21 @@ export default function GlobalPipelinePage() {
       }
     };
     fetchPresets();
+  }, []);
+
+  // Fetch social accounts for auto-publish
+  useEffect(() => {
+    const fetchSocialAccounts = async () => {
+      try {
+        const result = await socialAccountsApi.getAll({ platform: "TIKTOK" });
+        if (result.data) {
+          setSocialAccounts(result.data.accounts);
+        }
+      } catch (error) {
+        console.error("Failed to fetch social accounts:", error);
+      }
+    };
+    fetchSocialAccounts();
   }, []);
 
   // Fetch pipelines from all campaigns
@@ -326,11 +343,20 @@ export default function GlobalPipelinePage() {
       // Check if this is a Compose video
       const isComposeVideo = selectedSeedGeneration.id.startsWith("compose-");
 
+      // Prepare auto-publish config for API
+      const autoPublishConfig = config.autoPublish?.enabled ? {
+        social_account_id: config.autoPublish.socialAccountId,
+        interval_minutes: config.autoPublish.intervalMinutes,
+        caption: config.autoPublish.caption,
+        hashtags: config.autoPublish.hashtags,
+      } : undefined;
+
       if (isComposeVideo) {
         // For Compose videos: Re-search images with tags and create new slideshow
         await composeVariationsApi.create(selectedSeedGeneration.id, {
           variation_count: config.maxVariations || 4,
           tag_count: 2, // Use 2-3 tags extracted from original prompt
+          auto_publish: autoPublishConfig,
         });
       } else {
         // For AI videos: Use style presets to create variations via VEO
@@ -339,6 +365,7 @@ export default function GlobalPipelinePage() {
           enable_prompt_variation: config.enablePromptVariation,
           prompt_variation_types: config.promptVariationTypes,
           max_variations: config.maxVariations,
+          auto_publish: autoPublishConfig,
         };
         await variationsApi.create(selectedSeedGeneration.id, requestConfig);
       }
@@ -968,6 +995,7 @@ export default function GlobalPipelinePage() {
         presets={presets}
         onCreateVariations={handleCreateVariations}
         isCreating={creatingVariations}
+        socialAccounts={socialAccounts}
       />
     </div>
   );
