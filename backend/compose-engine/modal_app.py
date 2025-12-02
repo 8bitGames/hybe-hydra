@@ -90,7 +90,11 @@ def render_video(request_data: dict) -> dict:
         Dictionary with status, output_url, and metadata
     """
     import sys
+    import os
     import asyncio
+
+    # Enable GPU encoding (NVENC) - Modal has T4 GPU
+    os.environ["GPU_AVAILABLE"] = "true"
 
     # Add app to path (added via add_local_dir)
     sys.path.insert(0, "/root")

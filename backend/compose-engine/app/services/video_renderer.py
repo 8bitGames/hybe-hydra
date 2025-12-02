@@ -269,46 +269,35 @@ class VideoRenderer:
             temp_audiofile = self.temp.get_path(job_id, f"temp_audio_{job_id}.mp4")
 
             # Run rendering in thread pool to not block
-            # Check platform - skip NVENC on macOS (no NVIDIA GPU support)
+            # Check for GPU availability:
+            # - Modal: Set GPU_AVAILABLE=true in modal_app.py
+            # - Railway: No GPU, skip NVENC
+            # - macOS: No NVIDIA support
             import platform
             is_mac = platform.system() == "Darwin"
+            gpu_available = os.environ.get("GPU_AVAILABLE", "").lower() == "true"
 
-            if not is_mac:
-                # Try GPU encoding first (NVENC), fallback to CPU
-                try:
-                    await asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: video.write_videofile(
-                            output_path,
-                            fps=30,
-                            codec="h264_nvenc",     # NVIDIA GPU encoder (5-10x faster)
-                            audio_codec="aac",
-                            preset="p4",            # NVENC preset: p1(fastest)-p7(best quality)
-                            ffmpeg_params=["-rc", "vbr", "-cq", "23", "-b:v", "0"],  # Quality mode
-                            temp_audiofile=temp_audiofile,  # Unique per job to avoid file lock conflicts
-                            logger=None
-                        )
+            if gpu_available and not is_mac:
+                # GPU available (Modal) - use NVENC
+                logger.info(f"[{job_id}] Using GPU encoding (NVENC)")
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: video.write_videofile(
+                        output_path,
+                        fps=30,
+                        codec="h264_nvenc",     # NVIDIA GPU encoder (5-10x faster)
+                        audio_codec="aac",
+                        preset="p4",            # NVENC preset: p1(fastest)-p7(best quality)
+                        ffmpeg_params=["-rc", "vbr", "-cq", "23", "-b:v", "0"],  # Quality mode
+                        temp_audiofile=temp_audiofile,
+                        logger=None
                     )
-                    logger.info(f"[{job_id}] Rendered with GPU (NVENC)")
-                except Exception as gpu_error:
-                    logger.warning(f"[{job_id}] GPU encoding failed, falling back to CPU: {gpu_error}")
-                    await asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: video.write_videofile(
-                            output_path,
-                            fps=30,
-                            codec="libx264",
-                            audio_codec="aac",
-                            threads=8,
-                            preset="fast",
-                            ffmpeg_params=["-crf", "23"],
-                            temp_audiofile=temp_audiofile,
-                            logger=None
-                        )
-                    )
+                )
+                logger.info(f"[{job_id}] Rendered with GPU (NVENC)")
             else:
-                # macOS - use CPU encoding directly (no NVENC available)
-                logger.info(f"[{job_id}] Using CPU encoding (macOS detected)")
+                # CPU encoding (Railway, macOS, or no GPU)
+                reason = "macOS" if is_mac else "no GPU_AVAILABLE env"
+                logger.info(f"[{job_id}] Using CPU encoding ({reason})")
                 await asyncio.get_event_loop().run_in_executor(
                     None,
                     lambda: video.write_videofile(
@@ -319,7 +308,7 @@ class VideoRenderer:
                         threads=8,
                         preset="fast",
                         ffmpeg_params=["-crf", "23"],
-                        temp_audiofile=temp_audiofile,  # Unique per job to avoid file lock conflicts
+                        temp_audiofile=temp_audiofile,
                         logger=None
                     )
                 )
