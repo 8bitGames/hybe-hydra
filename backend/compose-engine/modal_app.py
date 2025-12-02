@@ -14,8 +14,8 @@ Deploy:
 Setup:
   1. modal token new
   2. modal secret create aws-s3-secret \
-       AWS_ACCESS_KEY_ID=xxx \
-       AWS_SECRET_ACCESS_KEY=xxx \
+       AWS_ACCESS_KEY_ID=AKIASBF5YXJFHLVFVGQR \
+       AWS_SECRET_ACCESS_KEY=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 \
        AWS_REGION=ap-southeast-2 \
        AWS_S3_BUCKET=hydra-assets-hybe
   3. modal deploy modal_app.py
@@ -23,6 +23,14 @@ Setup:
 Endpoints (auto-generated):
   - POST https://modawnai--hydra-compose-engine-submit-render.modal.run
   - GET  https://modawnai--hydra-compose-engine-get-render-status.modal.run
+
+Performance Optimizations:
+  - Parallel image downloads (asyncio.gather)
+  - Parallel image processing (ThreadPoolExecutor)
+  - Container warmup with container_idle_timeout
+  - Fast libx264 encoding with multi-threading
+  - Connection pooling for S3 operations
+  - Retry logic with exponential backoff
 """
 
 import modal
@@ -35,27 +43,27 @@ from pathlib import Path
 # Define the container image with all dependencies
 video_image = (
     modal.Image.debian_slim(python_version="3.11")
-    # System dependencies - FFmpeg with NVENC support
+    # System dependencies
     .apt_install(
         "ffmpeg",
         "libsm6",
         "libxext6",
         "libgl1-mesa-glx",
         "libglib2.0-0",
-        "libsndfile1",  # Audio file support
-        "libmpg123-0",  # MP3 decoding
-        "fonts-noto-cjk",  # Korean/CJK font support
+        "libsndfile1",
+        "libmpg123-0",
+        "fonts-noto-cjk",
         "fonts-dejavu",
     )
     # Python dependencies
     .pip_install(
-        "moviepy==2.1.1",  # Pin exact version - 2.x has different imports than 1.x
+        "moviepy==2.1.1",
         "Pillow>=10.0.0",
         "numpy>=1.26.0",
         "librosa==0.10.1",
         "soundfile==0.12.1",
         "audioread==3.0.1",
-        "scipy>=1.11.0,<1.13.0",  # Pin scipy for librosa compatibility
+        "scipy>=1.11.0,<1.13.0",
         "boto3==1.35.0",
         "botocore==1.35.0",
         "httpx==0.26.0",
@@ -63,6 +71,7 @@ video_image = (
         "pydantic==2.5.3",
         "pydantic-settings==2.1.0",
         "fastapi[standard]",
+        "redis>=5.0.0",
     )
     # Add the entire app source code
     .add_local_dir(
@@ -75,21 +84,26 @@ video_image = (
 # Create the Modal app
 app = modal.App(name="hydra-compose-engine", image=video_image)
 
+# Create a cache volume for faster subsequent renders
+cache_volume = modal.Volume.from_name("hydra-render-cache", create_if_missing=True)
+
 
 # ============================================================================
-# Video Rendering Function (GPU-Accelerated)
+# Video Rendering Function (CPU with libx264)
 # ============================================================================
 
 @app.function(
-    gpu="T4",  # NVIDIA T4 for NVENC hardware encoding (cost-effective)
     timeout=600,  # 10 minutes max per video
     memory=8192,  # 8GB RAM
+    cpu=4.0,  # More CPU cores for parallel image processing
     secrets=[modal.Secret.from_name("aws-s3-secret")],
-    retries=1,
+    retries=2,  # Auto-retry on failure
+    scaledown_window=300,  # Keep container warm for 5 minutes (faster cold starts)
+    volumes={"/cache": cache_volume},  # Persistent cache for audio/image analysis
 )
 def render_video(request_data: dict) -> dict:
     """
-    Render a video using MoviePy with GPU-accelerated encoding.
+    Render a video using MoviePy with CPU encoding (libx264).
 
     Args:
         request_data: Dictionary containing RenderRequest fields
@@ -102,8 +116,8 @@ def render_video(request_data: dict) -> dict:
     import asyncio
     import traceback
 
-    # Enable GPU encoding (NVENC) - Modal has T4 GPU
-    os.environ["GPU_AVAILABLE"] = "true"
+    # Force CPU encoding (libx264)
+    os.environ["USE_NVENC"] = "0"
 
     # Add app to path
     sys.path.insert(0, "/root")
@@ -115,7 +129,7 @@ def render_video(request_data: dict) -> dict:
     request = RenderRequest(**request_data)
     job_id = request.job_id
 
-    print(f"[{job_id}] === Starting GPU-accelerated render on Modal ===")
+    print(f"[{job_id}] === Starting CPU render on Modal (libx264) ===")
     print(f"[{job_id}] Images: {len(request.images)}")
     print(f"[{job_id}] Vibe: {request.settings.vibe.value}")
     print(f"[{job_id}] Aspect Ratio: {request.settings.aspect_ratio.value}")
@@ -166,8 +180,11 @@ def render_video(request_data: dict) -> dict:
 @app.function(
     timeout=600,
     memory=4096,  # 4GB RAM for CPU rendering
+    cpu=4.0,  # More CPU cores for parallel processing
     secrets=[modal.Secret.from_name("aws-s3-secret")],
-    retries=1,
+    retries=2,
+    scaledown_window=300,  # Keep container warm for 5 minutes
+    volumes={"/cache": cache_volume},
 )
 def render_video_cpu(request_data: dict) -> dict:
     """
@@ -183,9 +200,6 @@ def render_video_cpu(request_data: dict) -> dict:
     import os
     import asyncio
     import traceback
-
-    # CPU mode - no GPU_AVAILABLE
-    os.environ["GPU_AVAILABLE"] = "false"
 
     # Add app to path
     sys.path.insert(0, "/root")
@@ -316,7 +330,111 @@ def health():
     return {
         "status": "healthy",
         "service": "Hydra Compose Engine (Modal)",
-        "gpu": "T4",
+        "encoding": "libx264 (CPU)",
+        "optimizations": [
+            "parallel_image_downloads",
+            "parallel_image_processing",
+            "container_warmup",
+            "libx264_fast_preset",
+            "retry_logic",
+        ],
+    }
+
+
+# ============================================================================
+# Batch Processing (For Variations)
+# ============================================================================
+
+@app.function(
+    secrets=[modal.Secret.from_name("aws-s3-secret")],
+)
+@modal.fastapi_endpoint(method="POST")
+def submit_batch_render(batch_data: dict):
+    """
+    Submit multiple render jobs in parallel for batch processing.
+    Ideal for compose variations - spawns all jobs at once.
+
+    POST /submit_batch_render
+    Body: { jobs: [RenderRequest, ...], use_gpu: bool }
+    Returns: { batch_id, call_ids: [{job_id, call_id}, ...], status }
+    """
+    import uuid
+
+    jobs = batch_data.get("jobs", [])
+    use_gpu = batch_data.get("use_gpu", True)
+    batch_id = str(uuid.uuid4())[:8]
+
+    print(f"[Batch {batch_id}] Received {len(jobs)} render jobs (GPU: {use_gpu})")
+
+    call_ids = []
+    for job_data in jobs:
+        job_id = job_data.get("job_id", "unknown")
+
+        # Spawn render function (all jobs start in parallel)
+        if use_gpu:
+            call = render_video.spawn(job_data)
+        else:
+            call = render_video_cpu.spawn(job_data)
+
+        call_ids.append({
+            "job_id": job_id,
+            "call_id": call.object_id,
+        })
+        print(f"[Batch {batch_id}] Spawned {job_id}: {call.object_id}")
+
+    return {
+        "batch_id": batch_id,
+        "total_jobs": len(jobs),
+        "call_ids": call_ids,
+        "status": "queued",
+        "message": f"Batch of {len(jobs)} jobs queued (GPU: {use_gpu})",
+    }
+
+
+@app.function()
+@modal.fastapi_endpoint(method="GET")
+def get_batch_status(call_ids: str):
+    """
+    Poll status for multiple render jobs.
+
+    GET /get_batch_status?call_ids=id1,id2,id3
+    Returns: { results: [{call_id, status, result}, ...] }
+    """
+    import fastapi
+
+    ids = call_ids.split(",")
+    results = []
+
+    for call_id in ids:
+        try:
+            function_call = modal.FunctionCall.from_id(call_id.strip())
+            result = function_call.get(timeout=0)
+            results.append({
+                "call_id": call_id,
+                "status": result.get("status", "completed"),
+                "result": result,
+            })
+        except TimeoutError:
+            results.append({
+                "call_id": call_id,
+                "status": "processing",
+            })
+        except Exception as e:
+            results.append({
+                "call_id": call_id,
+                "status": "error",
+                "error": str(e),
+            })
+
+    # Check if all are complete
+    all_complete = all(r["status"] in ["completed", "failed", "error"] for r in results)
+    processing_count = sum(1 for r in results if r["status"] == "processing")
+
+    return {
+        "total": len(results),
+        "processing": processing_count,
+        "all_complete": all_complete,
+        "results": results,
     }
 
 

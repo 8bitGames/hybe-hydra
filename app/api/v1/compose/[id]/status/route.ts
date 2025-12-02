@@ -61,12 +61,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
     }
 
-    // Get modal call ID from qualityMetadata
+    // Get Modal call ID from qualityMetadata
     const metadata = generation.qualityMetadata as Record<string, unknown> | null;
     const modalCallId = metadata?.modalCallId as string | undefined;
 
     if (!modalCallId) {
-      // No modal call ID - might be an old job or error
+      // No Modal call ID - might be an old job or error
       return NextResponse.json({
         status: generation.status.toLowerCase(),
         progress: generation.progress || 0,
@@ -84,7 +84,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       if (modalStatus.status === 'completed' && modalStatus.result?.output_url) {
         // Update database with completion
-        // Note: generation.status was already checked above, so this is always true here
         const wasNotCompleted = true;
 
         await prisma.videoGeneration.update({
@@ -144,20 +143,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }
 
       // Still processing
-      // Estimate progress based on typical render times (30-60 seconds total)
+      // Estimate progress based on typical render times (45-60 seconds with CPU)
       const createdAt = metadata?.createdAt as string | undefined;
       let estimatedProgress = 50; // Default mid-way
 
       if (createdAt) {
         const elapsed = (Date.now() - new Date(createdAt).getTime()) / 1000;
-        // Assume ~45 seconds total render time with GPU
-        estimatedProgress = Math.min(90, Math.floor((elapsed / 45) * 100));
+        // Assume ~50 seconds total render time with CPU
+        estimatedProgress = Math.min(90, Math.floor((elapsed / 50) * 100));
       }
 
       return NextResponse.json({
         status: 'processing',
         progress: estimatedProgress,
-        currentStep: 'Rendering on Modal (GPU)',
+        currentStep: 'Rendering on Modal (CPU)',
         outputUrl: null,
         error: null
       });

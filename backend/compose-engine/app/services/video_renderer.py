@@ -148,16 +148,26 @@ class VideoRenderer:
                 duration = end - start
                 logger.info(f"[{job_id}]   Image {i+1}: {start:.1f}s - {end:.1f}s ({duration:.1f}s)")
 
-            # Step 5: Process images
+            # Step 5: Process images IN PARALLEL using ThreadPool
             await self._update_progress(progress_callback, job_id, 25, "Processing images")
-            processed_paths = []
-            for i, img_path in enumerate(image_paths):
-                processed = self.image_processor.resize_for_aspect(
+            from concurrent.futures import ThreadPoolExecutor
+
+            def process_single_image(args):
+                idx, img_path = args
+                return self.image_processor.resize_for_aspect(
                     img_path,
                     request.settings.aspect_ratio.value,
-                    self.temp.get_path(job_id, f"processed_{i}.jpg")
+                    self.temp.get_path(job_id, f"processed_{idx}.jpg")
                 )
-                processed_paths.append(processed)
+
+            # Process all images in parallel with ThreadPoolExecutor
+            logger.info(f"[{job_id}] Processing {len(image_paths)} images in parallel...")
+            with ThreadPoolExecutor(max_workers=min(8, len(image_paths))) as executor:
+                processed_paths = list(executor.map(
+                    process_single_image,
+                    enumerate(image_paths)
+                ))
+            logger.info(f"[{job_id}] Processed {len(processed_paths)} images")
 
             # Step 6: Create image clips with effects
             await self._update_progress(progress_callback, job_id, 30, "Creating image clips")
@@ -268,36 +278,43 @@ class VideoRenderer:
             # CRITICAL: Use job-specific temp audio file to avoid conflicts in parallel processing
             temp_audiofile = self.temp.get_path(job_id, f"temp_audio_{job_id}.mp4")
 
-            # Run rendering in thread pool to not block
-            # Check for GPU availability:
-            # - Modal: Set GPU_AVAILABLE=true in modal_app.py
-            # - Railway: No GPU, skip NVENC
-            # - macOS: No NVIDIA support
-            import platform
-            is_mac = platform.system() == "Darwin"
-            gpu_available = os.environ.get("GPU_AVAILABLE", "").lower() == "true"
+            # Check if NVENC (GPU encoding) is available and requested
+            use_nvenc = os.environ.get("USE_NVENC", "0") == "1"
 
-            if gpu_available and not is_mac:
-                # GPU available (Modal) - use NVENC
-                logger.info(f"[{job_id}] Using GPU encoding (NVENC)")
+            if use_nvenc:
+                # NVENC: NVIDIA GPU hardware encoding
+                # Settings from NVIDIA Video Codec SDK documentation:
+                # https://docs.nvidia.com/video-technologies/video-codec-sdk/ffmpeg-with-nvidia-gpu/
+                logger.info(f"[{job_id}] Rendering video with NVENC (GPU)")
                 await asyncio.get_event_loop().run_in_executor(
                     None,
                     lambda: video.write_videofile(
                         output_path,
                         fps=30,
-                        codec="h264_nvenc",     # NVIDIA GPU encoder (5-10x faster)
+                        codec="h264_nvenc",
                         audio_codec="aac",
-                        preset="p4",            # NVENC preset: p1(fastest)-p7(best quality)
-                        ffmpeg_params=["-rc", "vbr", "-cq", "23", "-b:v", "0"],  # Quality mode
+                        threads=4,
+                        ffmpeg_params=[
+                            "-preset", "p4",        # Medium speed/quality balance
+                            "-tune", "hq",          # High quality tuning
+                            "-rc", "vbr",           # Variable bitrate mode
+                            "-cq", "19",            # Constant quality (lower = better)
+                            "-b:v", "8M",           # Target bitrate
+                            "-maxrate", "12M",      # Max bitrate
+                            "-bufsize", "16M",      # Buffer size
+                            "-rc-lookahead", "20",  # Lookahead frames for better quality
+                            "-bf", "3",             # B-frames
+                            "-b_ref_mode", "middle",# B-frame reference mode
+                            "-temporal-aq", "1",    # Temporal adaptive quantization
+                            "-movflags", "+faststart"
+                        ],
                         temp_audiofile=temp_audiofile,
                         logger=None
                     )
                 )
-                logger.info(f"[{job_id}] Rendered with GPU (NVENC)")
             else:
-                # CPU encoding (Railway, macOS, or no GPU)
-                reason = "macOS" if is_mac else "no GPU_AVAILABLE env"
-                logger.info(f"[{job_id}] Using CPU encoding ({reason})")
+                # libx264: CPU encoding (reliable fallback)
+                logger.info(f"[{job_id}] Rendering video with libx264 (CPU)")
                 await asyncio.get_event_loop().run_in_executor(
                     None,
                     lambda: video.write_videofile(
@@ -305,13 +322,14 @@ class VideoRenderer:
                         fps=30,
                         codec="libx264",
                         audio_codec="aac",
-                        threads=8,
                         preset="fast",
-                        ffmpeg_params=["-crf", "23"],
+                        threads=4,
+                        ffmpeg_params=["-crf", "20", "-movflags", "+faststart"],
                         temp_audiofile=temp_audiofile,
                         logger=None
                     )
                 )
+            logger.info(f"[{job_id}] Video rendered successfully")
 
             # Close all clips to release file handles (critical for Windows)
             # Close all tracked audio clips (including intermediate clips from hook processing)
@@ -357,15 +375,28 @@ class VideoRenderer:
         images: List[ImageData],
         job_dir: str
     ) -> List[str]:
-        """Download all images to local storage."""
-        paths = []
+        """Download all images in PARALLEL for faster processing."""
         sorted_images = sorted(images, key=lambda x: x.order)
 
-        for i, image in enumerate(sorted_images):
-            local_path = os.path.join(job_dir, f"image_{i}.jpg")
+        async def download_single(idx: int, image: ImageData) -> tuple[int, str]:
+            local_path = os.path.join(job_dir, f"image_{idx}.jpg")
             await self.s3.download_file(image.url, local_path)
-            paths.append(local_path)
+            return idx, local_path
 
+        # Download ALL images in parallel using asyncio.gather
+        logger.info(f"Downloading {len(sorted_images)} images in parallel...")
+        tasks = [download_single(i, img) for i, img in enumerate(sorted_images)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Sort by index and extract paths, handling any errors
+        paths = []
+        for result in sorted(results, key=lambda x: x[0] if isinstance(x, tuple) else float('inf')):
+            if isinstance(result, Exception):
+                logger.error(f"Image download failed: {result}")
+                raise result
+            paths.append(result[1])
+
+        logger.info(f"Downloaded {len(paths)} images successfully")
         return paths
 
     async def _download_audio(

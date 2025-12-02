@@ -80,7 +80,7 @@ export async function submitRenderToModal(
     },
     body: JSON.stringify({
       ...request,
-      use_gpu: true, // Always use GPU on Modal
+      use_gpu: false, // CPU encoding (libx264) for reliability
     }),
   });
 
@@ -145,4 +145,88 @@ export function modalStatusToDbStatus(
     default:
       return 'PROCESSING';
   }
+}
+
+// ============================================================================
+// Batch Processing (For Variations)
+// ============================================================================
+
+const MODAL_BATCH_SUBMIT_URL = process.env.MODAL_BATCH_SUBMIT_URL ||
+  'https://modawnai--hydra-compose-engine-submit-batch-render.modal.run';
+const MODAL_BATCH_STATUS_URL = process.env.MODAL_BATCH_STATUS_URL ||
+  'https://modawnai--hydra-compose-engine-get-batch-status.modal.run';
+
+export interface BatchSubmitResponse {
+  batch_id: string;
+  total_jobs: number;
+  call_ids: Array<{ job_id: string; call_id: string }>;
+  status: 'queued' | 'error';
+  message?: string;
+}
+
+export interface BatchStatusResponse {
+  total: number;
+  processing: number;
+  all_complete: boolean;
+  results: Array<{
+    call_id: string;
+    status: 'processing' | 'completed' | 'failed' | 'error';
+    result?: {
+      status: string;
+      job_id: string;
+      output_url: string | null;
+      error: string | null;
+    };
+    error?: string;
+  }>;
+}
+
+/**
+ * Submit multiple render jobs in parallel (batch processing)
+ * Ideal for compose variations - all jobs start simultaneously
+ */
+export async function submitBatchRenderToModal(
+  jobs: ModalRenderRequest[]
+): Promise<BatchSubmitResponse> {
+  const response = await fetch(MODAL_BATCH_SUBMIT_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      jobs: jobs.map(job => ({ ...job, use_gpu: false })),
+      use_gpu: false, // CPU encoding (libx264) for reliability
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Modal batch submit failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Poll status for multiple render jobs at once
+ */
+export async function getBatchRenderStatus(
+  callIds: string[]
+): Promise<BatchStatusResponse> {
+  const url = new URL(MODAL_BATCH_STATUS_URL);
+  url.searchParams.set('call_ids', callIds.join(','));
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Modal batch status check failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
 }

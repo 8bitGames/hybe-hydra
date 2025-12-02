@@ -3,6 +3,10 @@ import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { Prisma } from "@prisma/client";
+import { searchImagesMultiQuery, isGoogleSearchConfigured } from "@/lib/google-search";
+import { submitRenderToModal, ModalRenderRequest } from "@/lib/modal/client";
+
+const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -268,51 +272,115 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
     );
 
-    // Trigger compose-engine for each variation (async)
-    const composeEngineUrl = process.env.COMPOSE_ENGINE_URL || "http://localhost:8001";
+    // Check if Google Search is configured for image search
+    if (!isGoogleSearchConfigured()) {
+      console.warn("[Compose Variations] Google Custom Search API not configured");
+      return NextResponse.json(
+        { detail: "Google Custom Search API not configured. Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID." },
+        { status: 500 }
+      );
+    }
 
-    // Start background jobs for each variation
+    // Search for images once (shared across all variations)
+    console.log(`[Compose Variations] Searching images with tags: ${searchTags.join(", ")}`);
+    const imageResults = await searchImagesMultiQuery(searchTags, {
+      maxResultsPerQuery: 5,
+      totalMaxResults: 15,
+      safeSearch: "medium",
+    });
+
+    if (imageResults.length < 3) {
+      console.error(`[Compose Variations] Not enough images found: ${imageResults.length}`);
+      // Mark all generations as failed
+      await Promise.all(
+        createdGenerations.map(({ generation }) =>
+          prisma.videoGeneration.update({
+            where: { id: generation.id },
+            data: {
+              status: "FAILED",
+              errorMessage: `Not enough images found (${imageResults.length}). Need at least 3 images.`,
+            },
+          })
+        )
+      );
+      return NextResponse.json(
+        { detail: `Not enough images found (${imageResults.length}). Need at least 3.` },
+        { status: 400 }
+      );
+    }
+
+    // Convert search results to image array for Modal
+    const images = imageResults.slice(0, 10).map((result, idx) => ({
+      url: result.link,
+      order: idx,
+    }));
+
+    console.log(`[Compose Variations] Found ${images.length} images for rendering`);
+
+    // Start background jobs for each variation (call Modal directly)
     createdGenerations.forEach(async ({ generation, settings }) => {
       try {
-        // Keep status as PENDING - compose-engine will send callbacks to update status:
-        // - "queued" when waiting for render slot
-        // - "processing" when actively rendering
-        // - "completed" or "failed" when done
+        const outputKey = `compose/renders/${generation.id}/output.mp4`;
 
-        // Determine callback URL (works for both local and deployed)
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : "http://localhost:3000";
-        const callbackUrl = `${baseUrl}/api/v1/jobs/callback`;
-
-        // Call compose-engine to search and render with all settings
-        const response = await fetch(`${composeEngineUrl}/api/v1/compose/auto`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            job_id: generation.id,
-            search_query: searchTags.join(" "),
-            search_tags: searchTags,
-            audio_url: seedGeneration.audioAsset?.s3Url,
+        // Prepare render request for Modal
+        const modalRequest: ModalRenderRequest = {
+          job_id: generation.id,
+          images,
+          audio: {
+            url: seedGeneration.audioAsset?.s3Url || "",
+            start_time: 0,
+            duration: null, // Auto-calculate
+          },
+          script: originalScriptLines && originalScriptLines.length > 0
+            ? { lines: originalScriptLines }
+            : null,
+          settings: {
             vibe: settings.vibe,
             effect_preset: settings.effectPreset,
-            color_grade: settings.colorGrade,
-            text_style: settings.textStyle,
             aspect_ratio: seedGeneration.aspectRatio,
-            target_duration: seedGeneration.durationSeconds,
-            campaign_id: seedGeneration.campaignId,
-            callback_url: callbackUrl,
-            // Pass original script lines for subtitles/captions
-            script_lines: originalScriptLines,
-          }),
+            target_duration: seedGeneration.durationSeconds || 0,
+            text_style: settings.textStyle,
+            color_grade: settings.colorGrade,
+          },
+          output: {
+            s3_bucket: S3_BUCKET,
+            s3_key: outputKey,
+          },
+        };
+
+        console.log(`[Compose Variations] Submitting ${generation.id} to Modal:`, {
+          vibe: settings.vibe,
+          effect_preset: settings.effectPreset,
+          images_count: images.length,
         });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Compose engine error: ${response.status} - ${errorText}`);
-        }
+        // Submit to Modal (CPU rendering)
+        const modalResponse = await submitRenderToModal(modalRequest);
 
-        console.log(`[Compose Variations] Started job ${generation.id} with settings:`, settings);
+        console.log(`[Compose Variations] Modal response for ${generation.id}:`, modalResponse);
+
+        // Update generation with modalCallId for status polling
+        await prisma.videoGeneration.update({
+          where: { id: generation.id },
+          data: {
+            status: "PROCESSING",
+            qualityMetadata: {
+              batchId,
+              seedGenerationId,
+              variationType: "compose_variation",
+              modalCallId: modalResponse.call_id,
+              createdAt: new Date().toISOString(),
+              settings: {
+                effectPreset: settings.effectPreset,
+                colorGrade: settings.colorGrade,
+                textStyle: settings.textStyle,
+                vibe: settings.vibe,
+              },
+            } as Prisma.InputJsonValue,
+          },
+        });
+
+        console.log(`[Compose Variations] Started job ${generation.id} with Modal call_id: ${modalResponse.call_id}`);
       } catch (error) {
         console.error(`Failed to start compose variation ${generation.id}:`, error);
         await prisma.videoGeneration.update({
@@ -320,7 +388,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           data: {
             status: "FAILED",
             progress: 100,
-            errorMessage: error instanceof Error ? error.message : "Failed to start compose job",
+            errorMessage: error instanceof Error ? error.message : "Failed to start Modal render job",
           },
         });
       }

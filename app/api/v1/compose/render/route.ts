@@ -3,7 +3,7 @@ import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { submitRenderToModal, ModalRenderRequest } from '@/lib/modal/client';
 
-const S3_BUCKET = process.env.MINIO_BUCKET_NAME || 'hydra-assets';
+const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
 interface RenderRequest {
   generationId: string;
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
       output: {
         s3_bucket: S3_BUCKET,
         s3_key: outputKey
-      }
+      },
     };
 
     console.log('[Compose Render] Submitting to Modal:', JSON.stringify({
@@ -169,12 +169,12 @@ export async function POST(request: NextRequest) {
       target_duration: targetDuration,
     }));
 
-    // Submit directly to Modal (GPU rendering)
+    // Submit to Modal (CPU rendering with libx264)
     const modalResponse = await submitRenderToModal(modalRequest);
 
     console.log('[Compose Render] Modal response:', modalResponse);
 
-    // Store modal_call_id in database for status polling
+    // Store modal call_id in database for status polling
     await prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
@@ -189,9 +189,9 @@ export async function POST(request: NextRequest) {
       jobId: generationId,
       generationId,
       status: 'queued',
-      message: 'Render job queued on Modal (GPU)',
+      message: 'Render job queued on Modal (CPU)',
       modalCallId: modalResponse.call_id,
-      estimatedSeconds: targetDuration > 0 ? targetDuration * 4 : 45, // Faster with GPU
+      estimatedSeconds: targetDuration > 0 ? targetDuration * 5 : 45, // CPU takes longer
       outputKey
     });
   } catch (error) {
