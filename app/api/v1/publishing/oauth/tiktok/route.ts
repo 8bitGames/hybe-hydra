@@ -117,20 +117,31 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     console.log("[TikTok OAuth POST] Processing callback...");
+    console.log("[TikTok OAuth POST] DATABASE_URL configured:", !!process.env.DATABASE_URL);
 
     const body = await request.json();
     const { code, state } = body;
-    console.log("[TikTok OAuth POST] Received state:", state);
+    console.log("[TikTok OAuth POST] Received state:", state?.substring(0, 20) + "...");
+    console.log("[TikTok OAuth POST] Received code:", code?.substring(0, 20) + "...");
 
     if (!code || !state) {
       return NextResponse.json({ detail: "code and state are required" }, { status: 400 });
     }
 
     // Check all existing states in database for debugging using raw SQL
-    const allStates = await prisma.$queryRaw<Array<{ state: string; platform: string; created_at: Date }>>`
-      SELECT state, platform, created_at FROM oauth_states ORDER BY created_at DESC LIMIT 10
-    `;
-    console.log("[TikTok OAuth POST] All states in DB:", allStates.length, allStates.map(s => s.state.substring(0, 10) + "..."));
+    let allStates: Array<{ state: string; platform: string; created_at: Date }> = [];
+    try {
+      allStates = await prisma.$queryRaw<Array<{ state: string; platform: string; created_at: Date }>>`
+        SELECT state, platform, created_at FROM oauth_states ORDER BY created_at DESC LIMIT 10
+      `;
+      console.log("[TikTok OAuth POST] All states in DB:", allStates.length, allStates.map(s => s.state.substring(0, 20) + "..."));
+    } catch (dbError) {
+      console.error("[TikTok OAuth POST] DB query error:", dbError);
+      return NextResponse.json(
+        { detail: "Database connection error. Please try again." },
+        { status: 500 }
+      );
+    }
 
     // Retrieve and validate state from database using raw SQL
     const stateResults = await prisma.$queryRaw<Array<{
@@ -148,6 +159,16 @@ export async function POST(request: NextRequest) {
 
     const stateData = stateResults[0] || null;
     console.log("[TikTok OAuth POST] Found state data:", !!stateData, stateData ? `userId: ${stateData.user_id}` : "");
+
+    // Additional debug: check if state exists with different casing or trimming
+    if (!stateData && allStates.length > 0) {
+      const matchingState = allStates.find(s => s.state === state);
+      const similarState = allStates.find(s => s.state.includes(state.substring(0, 10)));
+      console.log("[TikTok OAuth POST] Exact match in allStates:", !!matchingState);
+      console.log("[TikTok OAuth POST] Similar state found:", !!similarState);
+      console.log("[TikTok OAuth POST] Requested state length:", state.length);
+      console.log("[TikTok OAuth POST] DB states lengths:", allStates.map(s => s.state.length));
+    }
 
     if (!stateData) {
       console.error("[TikTok OAuth POST] State not found in database. Requested:", state);
