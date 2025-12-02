@@ -50,10 +50,50 @@ export type VideoComposeData = {
   campaignId: string;
   userId: string;
   audioAssetId: string;
-  imageAssetIds?: string[];
+  images: Array<{
+    url: string;
+    order: number;
+  }>;
+  script?: {
+    lines: Array<{
+      text: string;
+      timing: number;
+      duration: number;
+    }>;
+  };
+  effectPreset: string;
+  aspectRatio: string;
+  targetDuration: number;
+  vibe: string;
+  textStyle?: string;
+  colorGrade?: string;
+  prompt?: string;
+};
+
+export type Veo3GenerateData = {
+  generationId: string;
+  campaignId: string;
+  userId: string;
+  prompt: string;
+  imageUrl?: string;  // Optional reference image
+  aspectRatio?: "16:9" | "9:16" | "1:1";
+  durationSeconds?: number;
+  style?: string;
+  negativePrompt?: string;
+};
+
+export type VideoGenerateFromImageData = {
+  generationId: string;
+  campaignId: string;
+  userId: string;
+  prompt?: string;
+  imageUrl?: string;
+  imageAssetId?: string;
   options?: {
-    transitionType?: string;
-    applyLogoOverlay?: boolean;
+    aspectRatio?: "16:9" | "9:16" | "1:1";
+    duration?: number;
+    style?: string;
+    negativePrompt?: string;
   };
 };
 

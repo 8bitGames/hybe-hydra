@@ -79,7 +79,9 @@ export async function POST(request: NextRequest) {
             success: true,
           });
         } catch (error) {
-          console.error(`Failed to proxy image ${image.url}:`, error);
+          // Log warning instead of error (404s are common for web-scraped images)
+          const errMsg = error instanceof Error ? error.message : 'Unknown error';
+          console.warn(`[Proxy] Skipped image (${errMsg}): ${image.url.slice(0, 80)}...`);
           results.push({
             originalUrl: image.url,
             minioUrl: '',

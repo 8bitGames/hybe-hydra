@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     default_video_codec: str = "libx264"
     default_audio_codec: str = "aac"
 
+    # Modal serverless settings
+    modal_enabled: bool = False  # Set to True to enable Modal cloud rendering
+    modal_submit_url: str = ""   # Modal submit_render endpoint URL
+    modal_status_url: str = ""   # Modal get_render_status endpoint URL
+    modal_use_gpu: bool = True   # Use GPU acceleration by default
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
