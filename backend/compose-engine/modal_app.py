@@ -127,6 +127,29 @@ cache_volume = modal.Volume.from_name("hydra-render-cache", create_if_missing=Tr
 # Video Rendering Function (GPU with NVENC h264_nvenc)
 # ============================================================================
 
+def send_callback(callback_url: str, callback_secret: str, job_id: str, status: str, output_url: str | None, error: str | None):
+    """Send completion callback to Next.js. Fire-and-forget, never fails the render."""
+    import httpx
+
+    try:
+        payload = {
+            "job_id": job_id,
+            "status": status,
+            "output_url": output_url,
+            "error": error,
+            "secret": callback_secret,
+        }
+        print(f"[{job_id}] Sending callback to {callback_url}")
+
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(callback_url, json=payload)
+            print(f"[{job_id}] Callback response: {response.status_code}")
+            if response.status_code != 200:
+                print(f"[{job_id}] Callback body: {response.text[:200]}")
+    except Exception as e:
+        print(f"[{job_id}] Callback failed (non-fatal): {e}")
+
+
 @app.function(
     gpu="T4",  # NVIDIA T4 GPU for NVENC hardware encoding
     timeout=600,  # 10 minutes max per video
@@ -143,6 +166,8 @@ def render_video(request_data: dict) -> dict:
 
     Args:
         request_data: Dictionary containing RenderRequest fields
+            - callback_url: Optional URL to POST completion status
+            - callback_secret: Secret for callback authentication
 
     Returns:
         Dictionary with status, output_url, and metadata
@@ -151,6 +176,10 @@ def render_video(request_data: dict) -> dict:
     import os
     import asyncio
     import traceback
+
+    # Extract callback info before parsing request
+    callback_url = request_data.pop("callback_url", None)
+    callback_secret = request_data.pop("callback_secret", "")
 
     # Enable GPU encoding (NVENC)
     os.environ["USE_NVENC"] = "1"
@@ -170,6 +199,7 @@ def render_video(request_data: dict) -> dict:
     print(f"[{job_id}] Vibe: {request.settings.vibe.value}")
     print(f"[{job_id}] Aspect Ratio: {request.settings.aspect_ratio.value}")
     print(f"[{job_id}] Target Duration: {request.settings.target_duration}s")
+    print(f"[{job_id}] Callback: {'enabled' if callback_url else 'disabled'}")
 
     try:
         # Create renderer
@@ -192,6 +222,10 @@ def render_video(request_data: dict) -> dict:
         print(f"[{job_id}] === Render complete ===")
         print(f"[{job_id}] Output: {output_url}")
 
+        # Send callback on success
+        if callback_url:
+            send_callback(callback_url, callback_secret, job_id, "completed", output_url, None)
+
         return {
             "status": "completed",
             "job_id": job_id,
@@ -204,6 +238,10 @@ def render_video(request_data: dict) -> dict:
         print(f"[{job_id}] === Render FAILED ===")
         print(f"[{job_id}] Error: {error_msg}")
         print(f"[{job_id}] Traceback:\n{traceback.format_exc()}")
+
+        # Send callback on failure
+        if callback_url:
+            send_callback(callback_url, callback_secret, job_id, "failed", None, error_msg)
 
         return {
             "status": "failed",
@@ -228,6 +266,8 @@ def render_video_cpu(request_data: dict) -> dict:
 
     Args:
         request_data: Dictionary containing RenderRequest fields
+            - callback_url: Optional URL to POST completion status
+            - callback_secret: Secret for callback authentication
 
     Returns:
         Dictionary with status, output_url, and metadata
@@ -236,6 +276,10 @@ def render_video_cpu(request_data: dict) -> dict:
     import os
     import asyncio
     import traceback
+
+    # Extract callback info before parsing request
+    callback_url = request_data.pop("callback_url", None)
+    callback_secret = request_data.pop("callback_secret", "")
 
     # Add app to path
     sys.path.insert(0, "/root")
@@ -248,6 +292,7 @@ def render_video_cpu(request_data: dict) -> dict:
     job_id = request.job_id
 
     print(f"[{job_id}] Starting CPU render on Modal")
+    print(f"[{job_id}] Callback: {'enabled' if callback_url else 'disabled'}")
 
     try:
         renderer = VideoRenderer()
@@ -266,6 +311,10 @@ def render_video_cpu(request_data: dict) -> dict:
 
         print(f"[{job_id}] Render complete: {output_url}")
 
+        # Send callback on success
+        if callback_url:
+            send_callback(callback_url, callback_secret, job_id, "completed", output_url, None)
+
         return {
             "status": "completed",
             "job_id": job_id,
@@ -277,6 +326,10 @@ def render_video_cpu(request_data: dict) -> dict:
         error_msg = str(e)
         print(f"[{job_id}] Render failed: {error_msg}")
         print(f"[{job_id}] Traceback:\n{traceback.format_exc()}")
+
+        # Send callback on failure
+        if callback_url:
+            send_callback(callback_url, callback_secret, job_id, "failed", None, error_msg)
 
         return {
             "status": "failed",

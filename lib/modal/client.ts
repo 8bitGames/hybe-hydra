@@ -14,6 +14,13 @@
 
 const MODAL_SUBMIT_URL = process.env.MODAL_SUBMIT_URL;
 const MODAL_STATUS_URL = process.env.MODAL_STATUS_URL;
+const MODAL_CALLBACK_SECRET = process.env.MODAL_CALLBACK_SECRET || 'hydra-modal-callback-secret';
+
+// Callback URL for Modal to notify us when render completes
+function getCallbackUrl(): string {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  return `${baseUrl}/api/v1/compose/callback`;
+}
 
 export interface ModalRenderRequest {
   job_id: string;
@@ -45,6 +52,9 @@ export interface ModalRenderRequest {
     s3_bucket: string;
     s3_key: string;
   };
+  // Optional callback for auto-updating database on completion
+  callback_url?: string;
+  callback_secret?: string;
 }
 
 export interface ModalSubmitResponse {
@@ -70,6 +80,7 @@ export interface ModalStatusResponse {
 /**
  * Submit a render job to Modal
  * Returns immediately with a call_id for polling
+ * Automatically includes callback URL for database updates on completion
  */
 export async function submitRenderToModal(
   request: ModalRenderRequest
@@ -86,6 +97,9 @@ export async function submitRenderToModal(
     body: JSON.stringify({
       ...request,
       use_gpu: true, // GPU encoding (NVENC h264_nvenc) - 5-10x faster
+      // Add callback for automatic database updates
+      callback_url: getCallbackUrl(),
+      callback_secret: MODAL_CALLBACK_SECRET,
     }),
   });
 
@@ -189,17 +203,26 @@ export interface BatchStatusResponse {
 /**
  * Submit multiple render jobs in parallel (batch processing)
  * Ideal for compose variations - all jobs start simultaneously
+ * Automatically includes callback URL for database updates on completion
  */
 export async function submitBatchRenderToModal(
   jobs: ModalRenderRequest[]
 ): Promise<BatchSubmitResponse> {
+  // Add callback info to each job
+  const callbackUrl = getCallbackUrl();
+  const jobsWithCallback = jobs.map(job => ({
+    ...job,
+    callback_url: callbackUrl,
+    callback_secret: MODAL_CALLBACK_SECRET,
+  }));
+
   const response = await fetch(MODAL_BATCH_SUBMIT_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      jobs,
+      jobs: jobsWithCallback,
       use_gpu: true, // GPU encoding (NVENC h264_nvenc) - 5-10x faster
     }),
   });
