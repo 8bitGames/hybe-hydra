@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
+import { invalidatePattern } from "@/lib/cache";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -135,6 +136,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         status: "CANCELLED",
       },
     });
+
+    // Invalidate publishing accounts cache
+    await invalidatePattern("publishing:accounts:*");
 
     return NextResponse.json({
       success: true,

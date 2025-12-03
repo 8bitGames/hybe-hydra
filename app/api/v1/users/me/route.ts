@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
+import { cached, CacheKeys, CacheTTL, deleteCache } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,38 +15,51 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get full user data
-    const userData = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        labelIds: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    // Cache user profile (called on every page load)
+    const response = await cached(
+      CacheKeys.userProfile(user.id),
+      CacheTTL.USER_PROFILE, // 90 seconds
+      async () => {
+        // Get full user data
+        const userData = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            labelIds: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
 
-    if (!userData) {
+        if (!userData) {
+          return null;
+        }
+
+        return {
+          id: userData.id,
+          email: userData.email,
+          name: userData.name,
+          role: userData.role.toLowerCase(),
+          label_ids: userData.labelIds,
+          is_active: userData.isActive,
+          created_at: userData.createdAt.toISOString(),
+          updated_at: userData.updatedAt.toISOString(),
+        };
+      }
+    );
+
+    if (!response) {
       return NextResponse.json(
         { detail: "User not found" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({
-      id: userData.id,
-      email: userData.email,
-      name: userData.name,
-      role: userData.role.toLowerCase(),
-      label_ids: userData.labelIds,
-      is_active: userData.isActive,
-      created_at: userData.createdAt.toISOString(),
-      updated_at: userData.updatedAt.toISOString(),
-    });
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Get user error:", error);
     return NextResponse.json(
@@ -82,6 +96,9 @@ export async function PATCH(request: NextRequest) {
         role: true,
       },
     });
+
+    // Invalidate user profile cache
+    await deleteCache(CacheKeys.userProfile(user.id));
 
     return NextResponse.json({
       id: updatedUser.id,

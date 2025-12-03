@@ -13,6 +13,7 @@ import {
   Video,
   Send,
   BarChart3,
+  type LucideIcon,
 } from "lucide-react";
 
 interface CampaignTabsProps {
@@ -22,7 +23,7 @@ interface CampaignTabsProps {
 
 interface TabConfig {
   id: CampaignTab;
-  icon: React.ElementType;
+  icon: LucideIcon;
   path: string;
   badge?: string;
 }

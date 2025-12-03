@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@phosphor-icons/react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -121,7 +121,7 @@ export default function LoginPage() {
             href="/"
             className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 transition-colors"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
+            <ArrowLeft size={14} weight="bold" />
             홈으로 돌아가기
           </Link>
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { ReactNode, memo } from "react";
+import React, { ReactNode, memo, createElement } from "react";
 import { useI18n } from "./index";
 import type { Language } from "./translations";
 
@@ -92,7 +92,7 @@ export const T = memo(function T({
     return <>{content}</>;
   }
 
-  return <Tag className={className}>{content}</Tag>;
+  return createElement(Tag, { className }, content);
 });
 
 /**

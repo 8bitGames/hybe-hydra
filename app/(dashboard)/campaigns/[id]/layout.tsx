@@ -28,6 +28,7 @@ import {
   Video,
   Send,
   BarChart3,
+  type LucideIcon,
 } from "lucide-react";
 
 interface CampaignWorkspaceLayoutProps {
@@ -50,7 +51,7 @@ const statusLabels: Record<string, { ko: string; en: string }> = {
 
 interface TabConfig {
   id: CampaignTab;
-  icon: React.ElementType;
+  icon: LucideIcon;
   path: string;
 }
 

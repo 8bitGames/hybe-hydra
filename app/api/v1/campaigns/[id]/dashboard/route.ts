@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
+import { cached, CacheKeys, CacheTTL } from "@/lib/cache";
 
 // GET /api/v1/campaigns/[id]/dashboard - Get comprehensive campaign dashboard data
 export async function GET(
@@ -17,8 +18,30 @@ export async function GET(
 
     const { id: campaignId } = await params;
 
-    // Get campaign with all related data
-    const campaign = await prisma.campaign.findUnique({
+    // First check RBAC access (quick query, not cached)
+    const campaignAccess = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: {
+        id: true,
+        artist: { select: { labelId: true } },
+      },
+    });
+
+    if (!campaignAccess) {
+      return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
+    }
+
+    if (user.role !== "ADMIN" && !user.labelIds.includes(campaignAccess.artist.labelId)) {
+      return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+    }
+
+    // Cache the expensive dashboard aggregation
+    const dashboardData = await cached(
+      CacheKeys.campaignDashboard(campaignId),
+      CacheTTL.CAMPAIGN_DASH, // 2.5 minutes
+      async () => {
+        // Get campaign with all related data
+        const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: {
@@ -87,12 +110,7 @@ export async function GET(
     });
 
     if (!campaign) {
-      return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
-    }
-
-    // RBAC check
-    if (user.role !== "ADMIN" && !user.labelIds.includes(campaign.artist.labelId)) {
-      return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+      return null; // Will be handled outside cached block
     }
 
     // Get scheduled posts for this campaign
@@ -197,8 +215,8 @@ export async function GET(
       },
     };
 
-    // Format response
-    return NextResponse.json({
+    // Return data for caching
+    return {
       campaign: {
         id: campaign.id,
         name: campaign.name,
@@ -290,7 +308,16 @@ export async function GET(
         },
         created_at: p.createdAt.toISOString(),
       })),
-    });
+    };
+      }
+    );
+
+    // Handle case where campaign was not found inside cached block
+    if (!dashboardData) {
+      return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(dashboardData);
   } catch (error) {
     console.error("Get campaign dashboard error:", error);
     return NextResponse.json({ detail: "Internal server error" }, { status: 500 });

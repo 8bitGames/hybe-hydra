@@ -1,6 +1,6 @@
 "use client";
 
-import React, { ReactNode, memo } from "react";
+import React, { ReactNode, memo, createElement } from "react";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -56,17 +56,19 @@ export const BilingualLabel = memo(function BilingualLabel({
   const secondary = interpolate(language === "ko" ? en : ko);
 
   if (showBoth) {
-    return (
-      <Tag className={cn(className)}>
-        {primary}
-        <span className={cn("text-muted-foreground ml-1", secondaryClassName)}>
-          ({secondary})
-        </span>
-      </Tag>
+    return createElement(
+      Tag,
+      { className: cn(className) },
+      primary,
+      createElement(
+        "span",
+        { className: cn("text-muted-foreground ml-1", secondaryClassName) },
+        `(${secondary})`
+      )
     );
   }
 
-  return <Tag className={cn(className)}>{primary}</Tag>;
+  return createElement(Tag, { className: cn(className) }, primary);
 });
 
 /**

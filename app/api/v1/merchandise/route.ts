@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { validateFile, generateS3Key, uploadToS3 } from "@/lib/storage";
 import { MerchandiseType } from "@prisma/client";
+import { cached, CacheKeys, CacheTTL, createCacheHash, invalidatePattern } from "@/lib/cache";
 
 // GET /api/v1/merchandise - List merchandise items
 export async function GET(request: NextRequest) {
@@ -22,86 +23,107 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search");
     const activeOnly = searchParams.get("active_only") !== "false";
 
-    // Build where clause
-    const where: Record<string, unknown> = {};
-
-    if (activeOnly) {
-      where.isActive = true;
-    }
-
-    if (artistId) {
-      where.artistId = artistId;
-    }
-
-    if (type) {
-      where.type = type.toUpperCase() as MerchandiseType;
-    }
-
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { nameKo: { contains: search, mode: "insensitive" } },
-        { description: { contains: search, mode: "insensitive" } },
-      ];
-    }
-
-    // Apply RBAC filter - only show merchandise for accessible artists
-    if (user.role !== "ADMIN") {
-      where.artist = {
-        labelId: { in: user.labelIds },
-      };
-    }
-
-    const total = await prisma.merchandiseItem.count({ where });
-
-    const items = await prisma.merchandiseItem.findMany({
-      where,
-      orderBy: [{ createdAt: "desc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: {
-        artist: {
-          select: {
-            id: true,
-            name: true,
-            stageName: true,
-            groupName: true,
-          },
-        },
-      },
-    });
-
-    const pages = Math.ceil(total / pageSize) || 1;
-
-    const responseItems = items.map((item) => ({
-      id: item.id,
-      name: item.name,
-      name_ko: item.nameKo,
-      artist_id: item.artistId,
-      artist: item.artist ? {
-        id: item.artist.id,
-        name: item.artist.name,
-        stage_name: item.artist.stageName,
-        group_name: item.artist.groupName,
-      } : null,
-      type: item.type.toLowerCase(),
-      description: item.description,
-      s3_url: item.s3Url,
-      thumbnail_url: item.thumbnailUrl,
-      file_size: item.fileSize,
-      release_date: item.releaseDate?.toISOString(),
-      metadata: item.metadata,
-      is_active: item.isActive,
-      created_at: item.createdAt.toISOString(),
-    }));
-
-    return NextResponse.json({
-      items: responseItems,
-      total,
+    // Create cache key based on filters
+    const cacheHash = createCacheHash({
+      isAdmin: user.role === "ADMIN",
+      labelIds: user.role === "ADMIN" ? [] : user.labelIds.sort(),
       page,
-      page_size: pageSize,
-      pages,
+      pageSize,
+      artistId: artistId || "",
+      type: type || "",
+      search: search || "",
+      activeOnly,
     });
+
+    // Cache merchandise list (5 minutes)
+    const response = await cached(
+      CacheKeys.merchandiseList(cacheHash),
+      CacheTTL.MEDIUM_STATIC, // 5 minutes
+      async () => {
+        // Build where clause
+        const where: Record<string, unknown> = {};
+
+        if (activeOnly) {
+          where.isActive = true;
+        }
+
+        if (artistId) {
+          where.artistId = artistId;
+        }
+
+        if (type) {
+          where.type = type.toUpperCase() as MerchandiseType;
+        }
+
+        if (search) {
+          where.OR = [
+            { name: { contains: search, mode: "insensitive" } },
+            { nameKo: { contains: search, mode: "insensitive" } },
+            { description: { contains: search, mode: "insensitive" } },
+          ];
+        }
+
+        // Apply RBAC filter - only show merchandise for accessible artists
+        if (user.role !== "ADMIN") {
+          where.artist = {
+            labelId: { in: user.labelIds },
+          };
+        }
+
+        const total = await prisma.merchandiseItem.count({ where });
+
+        const items = await prisma.merchandiseItem.findMany({
+          where,
+          orderBy: [{ createdAt: "desc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: {
+            artist: {
+              select: {
+                id: true,
+                name: true,
+                stageName: true,
+                groupName: true,
+              },
+            },
+          },
+        });
+
+        const pages = Math.ceil(total / pageSize) || 1;
+
+        const responseItems = items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          name_ko: item.nameKo,
+          artist_id: item.artistId,
+          artist: item.artist ? {
+            id: item.artist.id,
+            name: item.artist.name,
+            stage_name: item.artist.stageName,
+            group_name: item.artist.groupName,
+          } : null,
+          type: item.type.toLowerCase(),
+          description: item.description,
+          s3_url: item.s3Url,
+          thumbnail_url: item.thumbnailUrl,
+          file_size: item.fileSize,
+          release_date: item.releaseDate?.toISOString(),
+          metadata: item.metadata,
+          is_active: item.isActive,
+          created_at: item.createdAt.toISOString(),
+        }));
+
+        return {
+          items: responseItems,
+          total,
+          page,
+          page_size: pageSize,
+          pages,
+        };
+      }
+    );
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Get merchandise error:", error);
     return NextResponse.json({ detail: "Internal server error" }, { status: 500 });
@@ -221,6 +243,9 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    // Invalidate merchandise list cache
+    await invalidatePattern("merchandise:list:*");
 
     return NextResponse.json(
       {

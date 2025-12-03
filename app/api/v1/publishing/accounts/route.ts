@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { PublishPlatform } from "@prisma/client";
+import { cached, CacheKeys, CacheTTL, invalidatePattern } from "@/lib/cache";
 
 // GET /api/v1/publishing/accounts - List connected social accounts
 export async function GET(request: NextRequest) {
@@ -17,69 +18,85 @@ export async function GET(request: NextRequest) {
     const platform = searchParams.get("platform") as PublishPlatform | null;
     const labelId = searchParams.get("label_id");
 
-    // Build where clause based on user's accessible labels
-    const whereClause: Record<string, unknown> = {
-      isActive: true,
-    };
+    // Determine which labels to query
+    const effectiveLabelIds = user.role !== "ADMIN"
+      ? user.labelIds
+      : labelId
+        ? [labelId]
+        : null; // null means all labels for admin
 
-    // Non-admin users can only see accounts from their labels
-    if (user.role !== "ADMIN") {
-      whereClause.labelId = { in: user.labelIds };
-    } else if (labelId) {
-      whereClause.labelId = labelId;
-    }
+    // Create cache key based on user access and filters
+    const cacheKey = `publishing:accounts:${user.role === "ADMIN" ? "admin" : user.labelIds.sort().join(",")}:${platform || "all"}:${labelId || "all"}`;
 
-    if (platform) {
-      whereClause.platform = platform;
-    }
+    const response = await cached(
+      cacheKey,
+      CacheTTL.MEDIUM, // 5 minutes - accounts don't change often
+      async () => {
+        // Build where clause based on user's accessible labels
+        const whereClause: Record<string, unknown> = {
+          isActive: true,
+        };
 
-    const accounts = await prisma.socialAccount.findMany({
-      where: whereClause,
-      orderBy: [
-        { platform: "asc" },
-        { accountName: "asc" },
-      ],
-      select: {
-        id: true,
-        platform: true,
-        accountName: true,
-        accountId: true,
-        profileUrl: true,
-        followerCount: true,
-        isActive: true,
-        labelId: true,
-        tokenExpiresAt: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: {
+        // Non-admin users can only see accounts from their labels
+        if (user.role !== "ADMIN") {
+          whereClause.labelId = { in: user.labelIds };
+        } else if (labelId) {
+          whereClause.labelId = labelId;
+        }
+
+        if (platform) {
+          whereClause.platform = platform;
+        }
+
+        const accounts = await prisma.socialAccount.findMany({
+          where: whereClause,
+          orderBy: [
+            { platform: "asc" },
+            { accountName: "asc" },
+          ],
           select: {
-            scheduledPosts: true,
+            id: true,
+            platform: true,
+            accountName: true,
+            accountId: true,
+            profileUrl: true,
+            followerCount: true,
+            isActive: true,
+            labelId: true,
+            tokenExpiresAt: true,
+            createdAt: true,
+            updatedAt: true,
+            _count: {
+              select: {
+                scheduledPosts: true,
+              },
+            },
           },
-        },
-      },
-    });
+        });
 
-    // Transform response
-    const response = accounts.map((account) => ({
-      id: account.id,
-      platform: account.platform,
-      account_name: account.accountName,
-      account_id: account.accountId,
-      profile_url: account.profileUrl,
-      follower_count: account.followerCount,
-      is_active: account.isActive,
-      label_id: account.labelId,
-      token_expires_at: account.tokenExpiresAt?.toISOString() || null,
-      scheduled_posts_count: account._count.scheduledPosts,
-      is_token_valid: account.tokenExpiresAt ? account.tokenExpiresAt > new Date() : false,
-      created_at: account.createdAt.toISOString(),
-      updated_at: account.updatedAt.toISOString(),
-    }));
+        // Transform response
+        return {
+          accounts: accounts.map((account) => ({
+            id: account.id,
+            platform: account.platform,
+            account_name: account.accountName,
+            account_id: account.accountId,
+            profile_url: account.profileUrl,
+            follower_count: account.followerCount,
+            is_active: account.isActive,
+            label_id: account.labelId,
+            token_expires_at: account.tokenExpiresAt?.toISOString() || null,
+            scheduled_posts_count: account._count.scheduledPosts,
+            is_token_valid: account.tokenExpiresAt ? account.tokenExpiresAt > new Date() : false,
+            created_at: account.createdAt.toISOString(),
+            updated_at: account.updatedAt.toISOString(),
+          })),
+          total: accounts.length,
+        };
+      }
+    );
 
-    return NextResponse.json({
-      accounts: response,
-      total: response.length,
-    });
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Get social accounts error:", error);
     return NextResponse.json(
@@ -171,6 +188,9 @@ export async function POST(request: NextRequest) {
         createdBy: user.id,
       },
     });
+
+    // Invalidate publishing accounts cache
+    await invalidatePattern("publishing:accounts:*");
 
     return NextResponse.json({
       id: account.id,

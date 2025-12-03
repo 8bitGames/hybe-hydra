@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@phosphor-icons/react";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -27,12 +27,12 @@ export default function RegisterPage() {
     setError("");
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setError("비밀번호가 일치하지 않습니다");
       return;
     }
 
     if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+      setError("비밀번호는 최소 6자 이상이어야 합니다");
       return;
     }
 
@@ -41,7 +41,7 @@ export default function RegisterPage() {
     if (result.success) {
       router.push("/dashboard");
     } else {
-      setError(result.error || "Registration failed");
+      setError(result.error || "회원가입에 실패했습니다");
     }
   };
 
@@ -50,25 +50,25 @@ export default function RegisterPage() {
       <div className="max-w-md w-full">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
+          <Link href="/" className="inline-block">
             <Image
               src="/logo.png"
-              alt="HYDRA"
-              width={200}
-              height={60}
-              className="h-12 w-auto object-contain"
+              alt="Hydra"
+              width={160}
+              height={48}
+              className="h-10 w-auto object-contain mx-auto"
               priority
             />
-          </div>
-          <p className="text-muted-foreground">Create your account</p>
+          </Link>
+          <p className="text-muted-foreground mt-3">새로운 계정을 만들어보세요</p>
         </div>
 
         {/* Register Form */}
-        <Card>
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-xl">Get started</CardTitle>
+        <Card className="border-border shadow-sm">
+          <CardHeader className="space-y-1 pb-4">
+            <CardTitle className="text-xl">회원가입</CardTitle>
             <CardDescription>
-              Enter your details to create a new account
+              아래 정보를 입력하여 계정을 생성하세요
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -80,62 +80,70 @@ export default function RegisterPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
+                <Label htmlFor="name">이름</Label>
                 <Input
                   id="name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
-                  placeholder="Your name"
+                  placeholder="이름을 입력하세요"
+                  className="h-11"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">이메일</Label>
                 <Input
                   id="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  placeholder="you@example.com"
+                  placeholder="example@email.com"
+                  className="h-11"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">비밀번호</Label>
                 <Input
                   id="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  placeholder="Create a password"
+                  placeholder="비밀번호를 입력하세요"
+                  className="h-11"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Label htmlFor="confirmPassword">비밀번호 확인</Label>
                 <Input
                   id="confirmPassword"
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
-                  placeholder="Confirm your password"
+                  placeholder="비밀번호를 다시 입력하세요"
+                  className="h-11"
                 />
               </div>
 
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? <Spinner className="h-4 w-4" /> : "Create Account"}
+              <Button
+                type="submit"
+                className="w-full h-11 bg-foreground text-background hover:bg-foreground/90"
+                disabled={isLoading}
+              >
+                {isLoading ? <Spinner className="h-4 w-4" /> : "계정 만들기"}
               </Button>
             </form>
 
             <div className="mt-6 text-center text-sm">
-              <span className="text-muted-foreground">Already have an account? </span>
-              <Link href="/login" className="font-medium hover:underline">
-                Sign in
+              <span className="text-muted-foreground">이미 계정이 있으신가요? </span>
+              <Link href="/login" className="font-medium text-foreground hover:underline">
+                로그인
               </Link>
             </div>
           </CardContent>
@@ -147,8 +155,8 @@ export default function RegisterPage() {
             href="/"
             className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 transition-colors"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to home
+            <ArrowLeft size={14} weight="bold" />
+            홈으로 돌아가기
           </Link>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
+import { cached, CacheKeys, CacheTTL, invalidatePattern } from "@/lib/cache";
 
 // GET /api/v1/presets - List all style presets
 export async function GET(request: NextRequest) {
@@ -13,39 +14,48 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const category = searchParams.get("category");
+    const category = searchParams.get("category") || undefined;
     const activeOnly = searchParams.get("active_only") !== "false";
 
-    const where: Record<string, unknown> = {};
+    // Use cached presets (presets rarely change)
+    const response = await cached(
+      CacheKeys.stylePresets(category, activeOnly),
+      CacheTTL.STATIC, // 1 hour cache
+      async () => {
+        const where: Record<string, unknown> = {};
 
-    if (activeOnly) {
-      where.isActive = true;
-    }
+        if (activeOnly) {
+          where.isActive = true;
+        }
 
-    if (category) {
-      where.category = category;
-    }
+        if (category) {
+          where.category = category;
+        }
 
-    const presets = await prisma.stylePreset.findMany({
-      where,
-      orderBy: { sortOrder: "asc" },
-    });
+        const presets = await prisma.stylePreset.findMany({
+          where,
+          orderBy: { sortOrder: "asc" },
+        });
 
-    return NextResponse.json({
-      presets: presets.map((preset) => ({
-        id: preset.id,
-        name: preset.name,
-        name_ko: preset.nameKo,
-        category: preset.category,
-        description: preset.description,
-        parameters: preset.parameters,
-        is_active: preset.isActive,
-        sort_order: preset.sortOrder,
-        created_at: preset.createdAt.toISOString(),
-        updated_at: preset.updatedAt.toISOString(),
-      })),
-      total: presets.length,
-    });
+        return {
+          presets: presets.map((preset) => ({
+            id: preset.id,
+            name: preset.name,
+            name_ko: preset.nameKo,
+            category: preset.category,
+            description: preset.description,
+            parameters: preset.parameters,
+            is_active: preset.isActive,
+            sort_order: preset.sortOrder,
+            created_at: preset.createdAt.toISOString(),
+            updated_at: preset.updatedAt.toISOString(),
+          })),
+          total: presets.length,
+        };
+      }
+    );
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error("List presets error:", error);
     return NextResponse.json(
@@ -90,6 +100,9 @@ export async function POST(request: NextRequest) {
         sortOrder: sort_order ?? 0,
       },
     });
+
+    // Invalidate presets cache
+    await invalidatePattern("presets:styles:*");
 
     return NextResponse.json({
       id: preset.id,

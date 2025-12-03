@@ -34,6 +34,9 @@ export const CacheKeys = {
   // Single campaign detail
   campaignDetail: (id: string) => `campaigns:detail:${id}`,
 
+  // Campaign dashboard (expensive aggregation) - per campaign
+  campaignDashboard: (campaignId: string) => `campaigns:dashboard:${campaignId}`,
+
   // Trends by platform
   trendsPlatform: (platform: string, region: string) =>
     `trends:platform:${platform}:${region}`,
@@ -41,14 +44,28 @@ export const CacheKeys = {
   // Trend analysis (expensive operations)
   trendAnalysis: (hash: string) => `trends:analysis:${hash}`,
 
-  // Artists list (rarely changes)
-  artistsList: () => `artists:list`,
+  // User profile - per user ID
+  userProfile: (userId: string) => `users:profile:${userId}`,
 
-  // Style presets (static)
-  stylePresets: () => `presets:styles`,
+  // Artists list - per user role (admin sees all, others see by label)
+  artistsList: (isAdmin: boolean, labelIds?: string[]) =>
+    isAdmin ? `artists:list:admin` : `artists:list:${labelIds?.sort().join(',') || 'none'}`,
+
+  // Labels list (rarely changes)
+  labelsList: () => `labels:list`,
+
+  // Style presets (static) - by category and active filter
+  stylePresets: (category?: string, activeOnly?: boolean) =>
+    `presets:styles:${category || 'all'}:${activeOnly ? 'active' : 'all'}`,
 
   // Generation status (for polling)
   generationStatus: (id: string) => `generation:status:${id}`,
+
+  // Publishing accounts per label
+  publishingAccounts: (labelId: string) => `publishing:accounts:${labelId}`,
+
+  // Merchandise list - with filters
+  merchandiseList: (hash: string) => `merchandise:list:${hash}`,
 } as const;
 
 /**
@@ -58,8 +75,11 @@ export const CacheTTL = {
   SHORT: 30,           // 30 seconds - for lists that update frequently
   MEDIUM: 60,          // 1 minute - for dashboard stats
   LONG: 120,           // 2 minutes - for detail pages
+  USER_PROFILE: 90,    // 90 seconds - for user profile (called on every page)
+  CAMPAIGN_DASH: 150,  // 2.5 minutes - for campaign dashboard (expensive query)
+  MEDIUM_STATIC: 300,  // 5 minutes - for merchandise, publishing accounts
   TRENDS: 15 * 60,     // 15 minutes - for trend data
-  STATIC: 60 * 60,     // 1 hour - for rarely changing data
+  STATIC: 60 * 60,     // 1 hour - for rarely changing data (artists, labels, presets)
   ANALYSIS: 24 * 60 * 60,  // 24 hours - for expensive analysis results
 } as const;
 

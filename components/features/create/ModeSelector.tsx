@@ -10,13 +10,14 @@ import {
   Bot,
   Images,
   Layers,
+  type LucideIcon,
 } from "lucide-react";
 
 interface ModeSelectorProps {
   className?: string;
 }
 
-const modeIcons: Record<CreateMode, React.ElementType> = {
+const modeIcons: Record<CreateMode, LucideIcon> = {
   quick: Zap,
   generate: Bot,
   compose: Images,
