@@ -1,12 +1,13 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import {
   MusicNotes,
   ShoppingBag,
   Buildings
 } from "@phosphor-icons/react";
 import { type Language, getTranslation } from "@/lib/i18n/landing";
+import { GlareCard } from "@/components/ui/glare-card";
 
 interface UseCasesSectionProps {
   lang: Language;
@@ -18,7 +19,7 @@ export function UseCasesSection({ lang }: UseCasesSectionProps) {
   const t = getTranslation(lang);
 
   return (
-    <section id="use-cases" className="bg-white py-24 lg:py-32">
+    <section id="use-cases" className="bg-black py-24 lg:py-32">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-16">
@@ -27,7 +28,7 @@ export function UseCasesSection({ lang }: UseCasesSectionProps) {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
-            className="inline-block px-3 py-1 bg-zinc-100 text-zinc-600 text-xs font-medium rounded-full mb-4"
+            className="inline-block px-4 py-1.5 bg-zinc-800 text-zinc-400 text-xs font-medium rounded-full mb-4"
           >
             {t.useCases.label}
           </motion.span>
@@ -36,14 +37,14 @@ export function UseCasesSection({ lang }: UseCasesSectionProps) {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="text-3xl sm:text-4xl lg:text-5xl font-bold text-zinc-900"
+            className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white"
           >
             {t.useCases.title}
           </motion.h2>
         </div>
 
-        {/* Use Case Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+        {/* Use Case Cards with GlareCard */}
+        <div className="flex flex-wrap justify-center gap-8 lg:gap-12">
           {t.useCases.cases.map((useCase, index) => {
             const Icon = caseIcons[index];
             return (
@@ -52,35 +53,39 @@ export function UseCasesSection({ lang }: UseCasesSectionProps) {
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
-                className="group relative p-8 bg-zinc-50 rounded-2xl hover:bg-zinc-900 transition-all duration-500 cursor-default"
+                transition={{ duration: 0.5, delay: index * 0.15 }}
               >
-                {/* Icon */}
-                <div className="w-14 h-14 bg-zinc-900 group-hover:bg-white rounded-xl flex items-center justify-center mb-6 transition-colors duration-500">
-                  <Icon
-                    size={28}
-                    className="text-white group-hover:text-zinc-900 transition-colors duration-500"
-                    weight="bold"
-                  />
-                </div>
+                <GlareCard className="flex flex-col p-8 bg-zinc-900">
+                  {/* Icon */}
+                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-6">
+                    <Icon size={32} className="text-black" weight="bold" />
+                  </div>
 
-                {/* Title */}
-                <h3 className="text-xl font-bold text-zinc-900 group-hover:text-white mb-2 transition-colors duration-500">
-                  {useCase.title}
-                </h3>
+                  {/* Title */}
+                  <h3 className="text-2xl font-bold text-white mb-2">
+                    {useCase.title}
+                  </h3>
 
-                {/* Tagline */}
-                <p className="text-zinc-500 group-hover:text-zinc-400 text-sm mb-4 transition-colors duration-500">
-                  {useCase.tagline}
-                </p>
+                  {/* Tagline */}
+                  <p className="text-zinc-400 text-sm mb-4">
+                    {useCase.tagline}
+                  </p>
 
-                {/* Description */}
-                <p className="text-zinc-600 group-hover:text-zinc-300 text-sm leading-relaxed transition-colors duration-500">
-                  {useCase.description}
-                </p>
+                  {/* Description */}
+                  <p className="text-zinc-500 text-sm leading-relaxed flex-1">
+                    {useCase.description}
+                  </p>
 
-                {/* Decorative corner */}
-                <div className="absolute top-4 right-4 w-8 h-8 border-t-2 border-r-2 border-zinc-200 group-hover:border-zinc-700 rounded-tr-lg opacity-50 transition-colors duration-500" />
+                  {/* Decorative element */}
+                  <div className="mt-6 pt-6 border-t border-zinc-800">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-white rounded-full" />
+                      <span className="text-xs text-zinc-500">
+                        {lang === "ko" ? "도입 가능" : "Available"}
+                      </span>
+                    </div>
+                  </div>
+                </GlareCard>
               </motion.div>
             );
           })}

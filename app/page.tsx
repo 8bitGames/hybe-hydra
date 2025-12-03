@@ -16,7 +16,7 @@ export default function Home() {
   const [lang, setLang] = useState<Language>("ko");
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen bg-black">
       <Navigation lang={lang} onLanguageChange={setLang} />
       <HeroSection lang={lang} />
       <ProblemSection lang={lang} />

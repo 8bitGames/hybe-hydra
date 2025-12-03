@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import Image from "next/image";
 import {
   MagnifyingGlass,
@@ -12,6 +12,8 @@ import {
   Check
 } from "@phosphor-icons/react";
 import { type Language, getTranslation } from "@/lib/i18n/landing";
+import { BentoGrid, BentoGridItem } from "@/components/ui/bento-grid";
+import { cn } from "@/lib/utils";
 
 interface FeaturesSectionProps {
   lang: Language;
@@ -22,128 +24,123 @@ const featureConfig = [
     key: "trendIntelligence" as const,
     icon: MagnifyingGlass,
     image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
-    imageAlt: "Analytics dashboard showing trend data"
+    className: "md:col-span-2",
   },
   {
     key: "brandIP" as const,
     icon: Fingerprint,
     image: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80",
-    imageAlt: "Brand assets and product photography"
+    className: "md:col-span-1",
   },
   {
     key: "massGeneration" as const,
     icon: Stack,
     image: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80",
-    imageAlt: "Grid of video content variations"
+    className: "md:col-span-1",
   },
   {
     key: "oneClickPublish" as const,
     icon: RocketLaunch,
     image: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&q=80",
-    imageAlt: "Social media platform icons"
+    className: "md:col-span-2",
   },
   {
     key: "hyperpersonalization" as const,
     icon: Globe,
     image: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80",
-    imageAlt: "Global network visualization"
+    className: "md:col-span-1",
   },
   {
     key: "aeoGeo" as const,
     icon: ChartLineUp,
     image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80",
-    imageAlt: "Growth analytics and viral metrics"
+    className: "md:col-span-2",
   },
 ];
+
+function FeatureHeader({ image, label }: { image: string; label: string }) {
+  return (
+    <div className="relative w-full h-32 rounded-xl overflow-hidden bg-zinc-800">
+      <Image
+        src={image}
+        alt={label}
+        fill
+        unoptimized
+        className="object-cover grayscale group-hover/bento:grayscale-0 transition-all duration-500"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+    </div>
+  );
+}
 
 export function FeaturesSection({ lang }: FeaturesSectionProps) {
   const t = getTranslation(lang);
 
   return (
-    <section id="features" className="py-24 lg:py-32">
-      {featureConfig.map((feature, index) => {
-        const Icon = feature.icon;
-        const featureData = t.features[feature.key];
-        const isReversed = index % 2 === 1;
+    <section id="features" className="bg-black py-24 lg:py-32">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Section Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+          className="text-center mb-16"
+        >
+          <span className="inline-block px-4 py-1.5 bg-zinc-800 text-zinc-400 text-xs font-medium rounded-full mb-4">
+            {lang === "ko" ? "핵심 기능" : "Core Features"}
+          </span>
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white">
+            {lang === "ko" ? "AI 기반 엔터프라이즈 솔루션" : "AI-Powered Enterprise Solution"}
+          </h2>
+        </motion.div>
 
-        return (
-          <div
-            key={feature.key}
-            className={index % 2 === 0 ? "bg-white" : "bg-zinc-50"}
-          >
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
-              <div
-                className={`grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center ${
-                  isReversed ? "lg:flex-row-reverse" : ""
-                }`}
-              >
-                {/* Content */}
-                <motion.div
-                  initial={{ opacity: 0, x: isReversed ? 30 : -30 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, margin: "-100px" }}
-                  transition={{ duration: 0.6 }}
-                  className={isReversed ? "lg:order-2" : ""}
-                >
-                  {/* Label */}
-                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-zinc-900 text-white text-xs font-medium rounded-full mb-6">
-                    <Icon size={14} weight="bold" />
-                    {featureData.label}
+        {/* Bento Grid */}
+        <BentoGrid className="md:auto-rows-[20rem] gap-4">
+          {featureConfig.map((feature) => {
+            const Icon = feature.icon;
+            const featureData = t.features[feature.key];
+
+            return (
+              <BentoGridItem
+                key={feature.key}
+                title={
+                  <div className="flex items-center gap-2">
+                    <span className="text-white font-semibold">{featureData.title}</span>
                   </div>
-
-                  {/* Title */}
-                  <h3 className="text-3xl lg:text-4xl font-bold text-zinc-900 mb-4">
-                    {featureData.title}
-                  </h3>
-
-                  {/* Subtitle */}
-                  <p className="text-xl text-zinc-500 mb-6">
-                    {featureData.subtitle}
-                  </p>
-
-                  {/* Description */}
-                  <p className="text-zinc-600 leading-relaxed mb-8">
-                    {featureData.description}
-                  </p>
-
-                  {/* Bullets */}
-                  <ul className="space-y-3">
-                    {featureData.bullets.map((bullet, i) => (
-                      <li key={i} className="flex items-start gap-3">
-                        <div className="flex-shrink-0 w-5 h-5 bg-zinc-900 rounded-full flex items-center justify-center mt-0.5">
-                          <Check size={12} className="text-white" weight="bold" />
-                        </div>
-                        <span className="text-zinc-700">{bullet}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </motion.div>
-
-                {/* Image */}
-                <motion.div
-                  initial={{ opacity: 0, x: isReversed ? -30 : 30 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, margin: "-100px" }}
-                  transition={{ duration: 0.6, delay: 0.2 }}
-                  className={isReversed ? "lg:order-1" : ""}
-                >
-                  <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-zinc-200">
-                    <Image
-                      src={feature.image}
-                      alt={feature.imageAlt}
-                      fill
-                      unoptimized
-                      className="object-cover grayscale hover:grayscale-0 transition-all duration-500"
-                    />
-                    {/* Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                }
+                description={
+                  <div className="space-y-3">
+                    <p className="text-zinc-400 text-sm">{featureData.subtitle}</p>
+                    <ul className="space-y-1.5">
+                      {featureData.bullets.slice(0, 2).map((bullet, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-zinc-500">
+                          <Check size={12} className="text-white mt-0.5 flex-shrink-0" weight="bold" />
+                          <span>{bullet}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                </motion.div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
+                }
+                header={<FeatureHeader image={feature.image} label={featureData.label} />}
+                icon={
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 bg-[#F7F91D] rounded-lg flex items-center justify-center">
+                      <Icon size={16} className="text-black" weight="bold" />
+                    </div>
+                    <span className="text-xs text-zinc-500 font-medium">{featureData.label}</span>
+                  </div>
+                }
+                className={cn(
+                  feature.className,
+                  "bg-zinc-900 border-zinc-800 hover:border-zinc-700",
+                  "group/bento"
+                )}
+              />
+            );
+          })}
+        </BentoGrid>
+      </div>
     </section>
   );
 }

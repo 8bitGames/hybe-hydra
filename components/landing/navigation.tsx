@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence, useScroll, useMotionValueEvent } from "motion/react";
 import { List, X } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { type Language, getTranslation } from "@/lib/i18n/landing";
@@ -16,6 +16,23 @@ interface NavigationProps {
 export function Navigation({ lang, onLanguageChange }: NavigationProps) {
   const t = getTranslation(lang);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [visible, setVisible] = useState(true);
+  const { scrollYProgress } = useScroll();
+
+  useMotionValueEvent(scrollYProgress, "change", (current) => {
+    if (typeof current === "number") {
+      const direction = current - scrollYProgress.getPrevious()!;
+      if (scrollYProgress.get() < 0.05) {
+        setVisible(true);
+      } else {
+        if (direction < 0) {
+          setVisible(true);
+        } else {
+          setVisible(false);
+        }
+      }
+    }
+  });
 
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
@@ -25,188 +42,195 @@ export function Navigation({ lang, onLanguageChange }: NavigationProps) {
     setMobileMenuOpen(false);
   };
 
+  const navItems = [
+    { name: t.nav.features, id: "features" },
+    { name: t.nav.howItWorks, id: "how-it-works" },
+    { name: t.nav.useCases, id: "use-cases" },
+  ];
+
   return (
-    <motion.nav
-      initial={{ y: -100 }}
-      animate={{ y: 0 }}
-      transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
-      className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-border shadow-sm"
-    >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 lg:h-18">
+    <>
+      {/* Desktop Floating Nav */}
+      <AnimatePresence mode="wait">
+        <motion.nav
+          initial={{ opacity: 1, y: 0 }}
+          animate={{ y: visible ? 0 : -100, opacity: visible ? 1 : 0 }}
+          transition={{ duration: 0.2 }}
+          className={cn(
+            "fixed top-4 inset-x-0 mx-auto z-[5000]",
+            "hidden lg:flex max-w-fit items-center justify-center",
+            "px-8 py-3 rounded-full",
+            "border border-white/10 bg-black/80 backdrop-blur-md",
+            "shadow-[0px_2px_3px_-1px_rgba(0,0,0,0.1),0px_1px_0px_0px_rgba(25,28,33,0.02),0px_0px_0px_1px_rgba(25,28,33,0.08)]"
+          )}
+        >
           {/* Logo */}
-          <Link href="/" className="flex items-center group">
-            <span className="text-2xl lg:text-3xl font-bold tracking-tight transition-all duration-200 group-hover:scale-105 text-foreground">
+          <Link href="/" className="mr-8">
+            <span className="text-xl font-bold text-white tracking-tight">
               Hydra
             </span>
           </Link>
 
-          {/* Desktop Navigation - Center */}
-          <div className="hidden lg:flex items-center justify-center gap-8 absolute left-1/2 -translate-x-1/2">
+          {/* Nav Items */}
+          <div className="flex items-center gap-6 mr-8">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => scrollToSection(item.id)}
+                className="text-sm text-zinc-400 hover:text-white transition-colors"
+              >
+                {item.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Language Toggle */}
+          <div className="flex items-center gap-1 mr-4">
             <button
-              onClick={() => scrollToSection("features")}
-              className="text-sm font-medium transition-all duration-200 relative group text-foreground hover:text-foreground/80"
+              onClick={() => onLanguageChange("ko")}
+              className={cn(
+                "px-2.5 py-1 text-xs font-medium rounded-full transition-all",
+                lang === "ko"
+                  ? "bg-white text-black"
+                  : "text-zinc-400 hover:text-white"
+              )}
             >
-              {t.nav.features}
-              <span className="absolute -bottom-1 left-0 w-0 h-0.5 transition-all duration-200 group-hover:w-full bg-foreground" />
+              KR
             </button>
             <button
-              onClick={() => scrollToSection("how-it-works")}
-              className="text-sm font-medium transition-all duration-200 relative group text-foreground hover:text-foreground/80"
+              onClick={() => onLanguageChange("en")}
+              className={cn(
+                "px-2.5 py-1 text-xs font-medium rounded-full transition-all",
+                lang === "en"
+                  ? "bg-white text-black"
+                  : "text-zinc-400 hover:text-white"
+              )}
             >
-              {t.nav.howItWorks}
-              <span className="absolute -bottom-1 left-0 w-0 h-0.5 transition-all duration-200 group-hover:w-full bg-foreground" />
-            </button>
-            <button
-              onClick={() => scrollToSection("use-cases")}
-              className="text-sm font-medium transition-all duration-200 relative group text-foreground hover:text-foreground/80"
-            >
-              {t.nav.useCases}
-              <span className="absolute -bottom-1 left-0 w-0 h-0.5 transition-all duration-200 group-hover:w-full bg-foreground" />
+              EN
             </button>
           </div>
 
-          {/* Desktop - Right Side */}
-          <div className="hidden lg:flex items-center gap-3">
-            {/* Language Toggle */}
-            <div className="flex items-center gap-1 mr-2">
-              <button
-                onClick={() => onLanguageChange("ko")}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-medium transition-all duration-200 rounded-full",
-                  lang === "ko"
-                    ? "bg-foreground text-background"
-                    : "text-foreground border border-foreground/30 hover:bg-muted"
-                )}
-              >
-                KR
-              </button>
-              <button
-                onClick={() => onLanguageChange("en")}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-medium transition-all duration-200 rounded-full",
-                  lang === "en"
-                    ? "bg-foreground text-background"
-                    : "text-foreground border border-foreground/30 hover:bg-muted"
-                )}
-              >
-                EN
-              </button>
-            </div>
-
-            {/* Login */}
+          {/* Auth Buttons */}
+          <div className="flex items-center gap-2">
             <Link
               href="/login"
-              className="text-sm font-medium px-4 py-2 transition-all duration-200 rounded-full text-foreground border border-foreground/30 hover:bg-muted"
+              className="text-sm text-zinc-400 hover:text-white px-3 py-1.5 transition-colors"
             >
               {lang === "ko" ? "로그인" : "Login"}
             </Link>
-
-            {/* Sign Up */}
             <Button
               asChild
               size="sm"
-              className="rounded-full px-5 font-medium transition-all duration-200 hover:scale-105 bg-foreground text-background hover:bg-foreground/90"
+              className="rounded-full bg-white text-black hover:bg-zinc-200 px-4 text-sm font-medium"
             >
               <Link href="/register">
                 {lang === "ko" ? "시작하기" : "Get Started"}
               </Link>
             </Button>
           </div>
+        </motion.nav>
+      </AnimatePresence>
 
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2 rounded-lg transition-all duration-200 hover:scale-110 hover:bg-muted/50"
-          >
-            {mobileMenuOpen ? (
-              <X size={24} weight="bold" className="text-foreground" />
-            ) : (
-              <List size={24} weight="bold" className="text-foreground" />
-            )}
-          </button>
-        </div>
-      </div>
+      {/* Mobile Nav */}
+      <nav
+        className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-md border-b border-white/10"
+      >
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex items-center justify-between h-16">
+            {/* Logo */}
+            <Link href="/" className="flex items-center">
+              <span className="text-xl font-bold text-white tracking-tight">
+                Hydra
+              </span>
+            </Link>
 
-      {/* Mobile Menu */}
-      {mobileMenuOpen && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className="lg:hidden bg-background border-b border-border"
-        >
-          <div className="px-4 py-6 space-y-4">
+            {/* Mobile Menu Button */}
             <button
-              onClick={() => scrollToSection("features")}
-              className="block w-full text-left text-foreground hover:text-muted-foreground py-2 font-medium"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
             >
-              {t.nav.features}
+              {mobileMenuOpen ? (
+                <X size={24} weight="bold" />
+              ) : (
+                <List size={24} weight="bold" />
+              )}
             </button>
-            <button
-              onClick={() => scrollToSection("how-it-works")}
-              className="block w-full text-left text-foreground hover:text-muted-foreground py-2 font-medium"
-            >
-              {t.nav.howItWorks}
-            </button>
-            <button
-              onClick={() => scrollToSection("use-cases")}
-              className="block w-full text-left text-foreground hover:text-muted-foreground py-2 font-medium"
-            >
-              {t.nav.useCases}
-            </button>
-
-            <div className="pt-4 border-t border-border space-y-3">
-              {/* Language */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => onLanguageChange("ko")}
-                  className={cn(
-                    "px-4 py-2 rounded-full text-sm font-medium transition-colors",
-                    lang === "ko"
-                      ? "bg-foreground text-background"
-                      : "text-muted-foreground border border-border"
-                  )}
-                >
-                  KR
-                </button>
-                <button
-                  onClick={() => onLanguageChange("en")}
-                  className={cn(
-                    "px-4 py-2 rounded-full text-sm font-medium transition-colors",
-                    lang === "en"
-                      ? "bg-foreground text-background"
-                      : "text-muted-foreground border border-border"
-                  )}
-                >
-                  EN
-                </button>
-              </div>
-
-              {/* Auth Buttons */}
-              <div className="flex gap-3 pt-2">
-                <Button
-                  asChild
-                  variant="outline"
-                  className="flex-1 rounded-full"
-                >
-                  <Link href="/login">
-                    {lang === "ko" ? "로그인" : "Login"}
-                  </Link>
-                </Button>
-                <Button
-                  asChild
-                  className="flex-1 rounded-full bg-foreground text-background hover:bg-foreground/90"
-                >
-                  <Link href="/register">
-                    {lang === "ko" ? "시작하기" : "Get Started"}
-                  </Link>
-                </Button>
-              </div>
-            </div>
           </div>
-        </motion.div>
-      )}
-    </motion.nav>
+        </div>
+
+        {/* Mobile Menu */}
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="bg-black border-t border-white/10"
+            >
+              <div className="px-4 py-6 space-y-4">
+                {navItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => scrollToSection(item.id)}
+                    className="block w-full text-left text-white hover:text-zinc-400 py-2 font-medium"
+                  >
+                    {item.name}
+                  </button>
+                ))}
+
+                <div className="pt-4 border-t border-white/10 space-y-3">
+                  {/* Language */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onLanguageChange("ko")}
+                      className={cn(
+                        "px-4 py-2 rounded-full text-sm font-medium transition-colors",
+                        lang === "ko"
+                          ? "bg-white text-black"
+                          : "text-zinc-400 border border-white/20"
+                      )}
+                    >
+                      KR
+                    </button>
+                    <button
+                      onClick={() => onLanguageChange("en")}
+                      className={cn(
+                        "px-4 py-2 rounded-full text-sm font-medium transition-colors",
+                        lang === "en"
+                          ? "bg-white text-black"
+                          : "text-zinc-400 border border-white/20"
+                      )}
+                    >
+                      EN
+                    </button>
+                  </div>
+
+                  {/* Auth Buttons */}
+                  <div className="flex gap-3 pt-2">
+                    <Button
+                      asChild
+                      variant="outline"
+                      className="flex-1 rounded-full border-white/20 text-white hover:bg-white/10"
+                    >
+                      <Link href="/login">
+                        {lang === "ko" ? "로그인" : "Login"}
+                      </Link>
+                    </Button>
+                    <Button
+                      asChild
+                      className="flex-1 rounded-full bg-white text-black hover:bg-zinc-200"
+                    >
+                      <Link href="/register">
+                        {lang === "ko" ? "시작하기" : "Get Started"}
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </nav>
+    </>
   );
 }
