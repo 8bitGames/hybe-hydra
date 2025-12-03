@@ -18,7 +18,7 @@ const MODAL_CALLBACK_SECRET = process.env.MODAL_CALLBACK_SECRET || 'hydra-modal-
 
 // Callback URL for Modal to notify us when render completes
 function getCallbackUrl(): string {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://hydra-sand-theta.vercel.app';
   return `${baseUrl}/api/v1/compose/callback`;
 }
 
