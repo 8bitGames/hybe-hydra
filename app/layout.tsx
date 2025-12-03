@@ -62,9 +62,9 @@ export const metadata: Metadata = {
   ],
 
   // 작성자 및 퍼블리셔
-  authors: [{ name: "Hydra", url: siteUrl }],
-  creator: "Hydra",
-  publisher: "Hydra",
+  authors: [{ name: "HYDRA", url: siteUrl }],
+  creator: "HYDRA",
+  publisher: "HYDRA",
 
   // 로봇 설정
   robots: {
@@ -147,7 +147,7 @@ export const metadata: Metadata = {
     // 모바일 앱 배너 (향후 앱 출시 시)
     "apple-mobile-web-app-capable": "yes",
     "apple-mobile-web-app-status-bar-style": "black-translucent",
-    "apple-mobile-web-app-title": "Hydra",
+    "apple-mobile-web-app-title": "HYDRA",
     // 포맷 감지 비활성화
     "format-detection": "telephone=no",
     // 추가 SEO
@@ -170,7 +170,7 @@ const jsonLd = {
     {
       "@type": "Organization",
       "@id": `${siteUrl}/#organization`,
-      name: "Hydra",
+      name: "HYDRA",
       url: siteUrl,
       logo: {
         "@type": "ImageObject",
@@ -194,7 +194,7 @@ const jsonLd = {
       "@type": "WebSite",
       "@id": `${siteUrl}/#website`,
       url: siteUrl,
-      name: "Hydra",
+      name: "HYDRA",
       description: "AI 영상 자동화 플랫폼",
       publisher: {
         "@id": `${siteUrl}/#organization`,
@@ -210,7 +210,7 @@ const jsonLd = {
     {
       "@type": "SoftwareApplication",
       "@id": `${siteUrl}/#software`,
-      name: "Hydra",
+      name: "HYDRA",
       applicationCategory: "BusinessApplication",
       operatingSystem: "Web",
       description:
@@ -229,20 +229,13 @@ const jsonLd = {
         "실시간 성과 분석",
       ],
       screenshot: `${siteUrl}/og-image.png`,
-      aggregateRating: {
-        "@type": "AggregateRating",
-        ratingValue: "4.8",
-        ratingCount: "150",
-        bestRating: "5",
-        worstRating: "1",
-      },
     },
     // WebPage (Landing Page)
     {
       "@type": "WebPage",
       "@id": `${siteUrl}/#webpage`,
       url: siteUrl,
-      name: "Hydra - AI 영상 자동화 플랫폼",
+      name: "HYDRA - AI 영상 자동화 플랫폼",
       isPartOf: {
         "@id": `${siteUrl}/#website`,
       },
@@ -275,10 +268,10 @@ const jsonLd = {
       mainEntity: [
         {
           "@type": "Question",
-          name: "Hydra는 어떤 플랫폼인가요?",
+          name: "HYDRA는 어떤 플랫폼인가요?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Hydra는 기업과 브랜드를 위한 AI 영상 오케스트레이션 플랫폼입니다. 트렌드 인텔리전스를 기반으로 브랜드 IP를 활용한 숏폼 콘텐츠를 몇 분 만에 수천 개 생성하고, TikTok, Instagram, YouTube Shorts에 자동으로 배포할 수 있습니다.",
+            text: "HYDRA는 기업과 브랜드를 위한 AI 영상 오케스트레이션 플랫폼입니다. 트렌드 인텔리전스를 기반으로 브랜드 IP를 활용한 숏폼 콘텐츠를 몇 분 만에 수천 개 생성하고, TikTok, Instagram, YouTube Shorts에 자동으로 배포할 수 있습니다.",
           },
         },
         {
@@ -286,7 +279,7 @@ const jsonLd = {
           name: "AI 영상 생성은 어떻게 작동하나요?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Hydra는 실시간 트렌드 분석을 통해 최적의 콘텐츠 전략을 제안하고, 브랜드 에셋(이미지, 영상, 음악)을 AI가 자동으로 조합하여 트렌드에 맞는 숏폼 영상을 생성합니다. 생성된 영상은 자동으로 최적화되어 각 플랫폼에 배포됩니다.",
+            text: "HYDRA는 실시간 트렌드 분석을 통해 최적의 콘텐츠 전략을 제안하고, 브랜드 에셋(이미지, 영상, 음악)을 AI가 자동으로 조합하여 트렌드에 맞는 숏폼 영상을 생성합니다. 생성된 영상은 자동으로 최적화되어 각 플랫폼에 배포됩니다.",
           },
         },
         {
@@ -302,7 +295,7 @@ const jsonLd = {
           name: "무료로 사용할 수 있나요?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "네, Hydra는 무료 체험을 제공합니다. 회원가입 후 바로 AI 영상 생성 기능을 체험해보실 수 있습니다.",
+            text: "네, HYDRA는 무료 체험을 제공합니다. 회원가입 후 바로 AI 영상 생성 기능을 체험해보실 수 있습니다.",
           },
         },
         {
@@ -318,7 +311,7 @@ const jsonLd = {
           name: "트렌드 분석은 어떻게 하나요?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Hydra는 TikTok, Instagram, YouTube의 실시간 트렌드를 AI로 분석합니다. 바이럴 가능성이 높은 포맷, 음악, 해시태그를 자동으로 추천하여 콘텐츠 성과를 극대화합니다.",
+            text: "HYDRA는 TikTok, Instagram, YouTube의 실시간 트렌드를 AI로 분석합니다. 바이럴 가능성이 높은 포맷, 음악, 해시태그를 자동으로 추천하여 콘텐츠 성과를 극대화합니다.",
           },
         },
         {
@@ -334,7 +327,7 @@ const jsonLd = {
           name: "한국어와 영어 모두 지원하나요?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "네, Hydra는 한국어와 영어를 모두 지원합니다. 글로벌 브랜드의 경우 각 시장에 맞는 현지화된 콘텐츠를 생성할 수 있습니다.",
+            text: "네, HYDRA는 한국어와 영어를 모두 지원합니다. 글로벌 브랜드의 경우 각 시장에 맞는 현지화된 콘텐츠를 생성할 수 있습니다.",
           },
         },
       ],
@@ -343,9 +336,9 @@ const jsonLd = {
     {
       "@type": "HowTo",
       "@id": `${siteUrl}/#howto`,
-      name: "Hydra로 AI 숏폼 영상 만드는 방법",
+      name: "HYDRA로 AI 숏폼 영상 만드는 방법",
       description:
-        "Hydra 플랫폼을 사용하여 브랜드 숏폼 영상을 대량으로 생성하고 배포하는 단계별 가이드입니다.",
+        "HYDRA 플랫폼을 사용하여 브랜드 숏폼 영상을 대량으로 생성하고 배포하는 단계별 가이드입니다.",
       image: `${siteUrl}/og-image.png`,
       totalTime: "PT10M",
       estimatedCost: {
@@ -358,7 +351,7 @@ const jsonLd = {
           "@type": "HowToStep",
           position: 1,
           name: "회원가입",
-          text: "Hydra 웹사이트에서 무료 계정을 생성합니다. 이메일 인증 후 바로 시작할 수 있습니다.",
+          text: "HYDRA 웹사이트에서 무료 계정을 생성합니다. 이메일 인증 후 바로 시작할 수 있습니다.",
           url: `${siteUrl}/register`,
         },
         {
@@ -405,7 +398,7 @@ const jsonLd = {
     {
       "@type": "Service",
       "@id": `${siteUrl}/#service`,
-      name: "Hydra AI 영상 자동화 서비스",
+      name: "HYDRA AI 영상 자동화 서비스",
       serviceType: "AI Video Generation Platform",
       provider: {
         "@id": `${siteUrl}/#organization`,
@@ -418,7 +411,7 @@ const jsonLd = {
       },
       hasOfferCatalog: {
         "@type": "OfferCatalog",
-        name: "Hydra 요금제",
+        name: "HYDRA 요금제",
         itemListElement: [
           {
             "@type": "Offer",
@@ -443,7 +436,7 @@ const jsonLd = {
     {
       "@type": "ItemList",
       "@id": `${siteUrl}/#features-list`,
-      name: "Hydra 주요 기능",
+      name: "HYDRA 주요 기능",
       description: "AI 영상 자동화 플랫폼의 핵심 기능 목록",
       itemListElement: [
         {
