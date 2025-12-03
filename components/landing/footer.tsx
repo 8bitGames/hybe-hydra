@@ -45,7 +45,7 @@ export function Footer({ lang, onLanguageChange }: FooterProps) {
           >
             <Link href="/" className="inline-block mb-6 group">
               <span className="text-3xl font-bold text-white tracking-tight group-hover:text-zinc-300 transition-colors">
-                Hydra
+                HYDRA
               </span>
             </Link>
             <p className="text-sm text-zinc-500 max-w-md leading-relaxed mb-6">

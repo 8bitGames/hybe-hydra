@@ -19,8 +19,8 @@ export const translations = {
       },
     },
     problem: {
-      headline1: '매일 수백 개의 숏폼 콘텐츠가 필요하신가요?',
-      headline2: '하지만 제작 리소스는 늘 부족합니다.',
+      headline1: '매일 수백 개의 숏폼 콘텐츠가 필요한데,',
+      headline2: '제작 리소스는 항상 부족하죠.',
       painPoints: [
         {
           title: '따라잡기 힘든 트렌드',

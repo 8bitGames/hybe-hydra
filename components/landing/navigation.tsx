@@ -67,7 +67,7 @@ export function Navigation({ lang, onLanguageChange }: NavigationProps) {
           {/* Logo */}
           <Link href="/" className="mr-8">
             <span className="text-xl font-bold text-white tracking-tight">
-              Hydra
+              HYDRA
             </span>
           </Link>
 
@@ -140,7 +140,7 @@ export function Navigation({ lang, onLanguageChange }: NavigationProps) {
             {/* Logo */}
             <Link href="/" className="flex items-center">
               <span className="text-xl font-bold text-white tracking-tight">
-                Hydra
+                HYDRA
               </span>
             </Link>
 
