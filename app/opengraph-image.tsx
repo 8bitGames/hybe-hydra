@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
 
-export const alt = "Hydra - AI Video Automation Platform";
+export const alt = "HYDRA - AI Video Automation Platform";
 export const size = {
   width: 1200,
   height: 630,
@@ -21,57 +21,19 @@ export default async function Image() {
           alignItems: "center",
           justifyContent: "center",
           position: "relative",
-          background: "#000000",
+          background: "linear-gradient(135deg, #F7F91D 0%, #E5E71A 100%)",
         }}
       >
-        {/* Grid pattern background - Aceternity style */}
+        {/* Subtle grid pattern */}
         <div
           style={{
             position: "absolute",
             inset: 0,
             backgroundImage: `
-              linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)
+              linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px)
             `,
-            backgroundSize: "60px 60px",
-          }}
-        />
-
-        {/* Radial gradient glow in center */}
-        <div
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            width: 800,
-            height: 800,
-            background: "radial-gradient(circle, rgba(247,249,29,0.08) 0%, transparent 60%)",
-            borderRadius: "50%",
-          }}
-        />
-
-        {/* Top fade */}
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 200,
-            background: "linear-gradient(to bottom, #000000, transparent)",
-          }}
-        />
-
-        {/* Bottom fade */}
-        <div
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 200,
-            background: "linear-gradient(to top, #000000, transparent)",
+            backgroundSize: "40px 40px",
           }}
         />
 
@@ -85,40 +47,16 @@ export default async function Image() {
             zIndex: 10,
           }}
         >
-          {/* Logo */}
+          {/* HYDRA Logo */}
           <div
             style={{
-              fontSize: 140,
-              fontWeight: 800,
-              color: "white",
-              letterSpacing: "-0.03em",
-              marginBottom: 20,
+              fontSize: 180,
+              fontWeight: 900,
+              color: "#000000",
+              letterSpacing: "-0.02em",
             }}
           >
-            Hydra
-          </div>
-
-          {/* Yellow accent line */}
-          <div
-            style={{
-              width: 80,
-              height: 4,
-              background: "#F7F91D",
-              marginBottom: 28,
-              borderRadius: 2,
-            }}
-          />
-
-          {/* Tagline */}
-          <div
-            style={{
-              fontSize: 32,
-              color: "rgba(255,255,255,0.8)",
-              textAlign: "center",
-              letterSpacing: "0.05em",
-            }}
-          >
-            AI Video Automation Platform
+            HYDRA
           </div>
         </div>
       </div>
