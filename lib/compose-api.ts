@@ -116,6 +116,15 @@ export interface AudioMatch {
   matchScore: number;
 }
 
+export interface AudioAnalysisResponse {
+  assetId: string;
+  duration: number;
+  bpm: number | null;
+  suggestedStartTime: number;
+  suggestedEndTime: number;
+  analyzed: boolean;  // true if Modal analyzed, false if fallback heuristics used
+}
+
 export interface MusicMatchRequest {
   campaignId: string;
   vibe: string;
@@ -145,6 +154,8 @@ export interface RenderRequest {
   vibe: string;
   textStyle?: string;
   colorGrade?: string;
+  // Audio timing control
+  audioStartTime?: number;  // Start time in seconds for audio (default: 0)
   // Additional compose data for variations
   prompt?: string;  // User's original video concept prompt
   searchKeywords?: string[];
@@ -302,6 +313,19 @@ export const composeApi = {
     duration: number;
   }> => {
     const response = await api.post<{ bpm: number; energy: number; suggestedVibe: string; duration: number }>('/api/v1/compose/music/analyze', { assetId });
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Analyze audio to find best segment (highest energy section)
+   * Used for automatic audio start time detection
+   */
+  analyzeAudioBestSegment: async (assetId: string, targetDuration: number = 15): Promise<AudioAnalysisResponse> => {
+    const response = await api.post<AudioAnalysisResponse>('/api/v1/compose/audio/analyze', {
+      assetId,
+      targetDuration
+    });
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },

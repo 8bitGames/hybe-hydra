@@ -11,6 +11,7 @@ import {
   ImageCandidate,
   AudioMatch,
   RenderStatus,
+  AudioAnalysisResponse,
   EFFECT_PRESETS,
   ASPECT_RATIOS,
 } from "@/lib/compose-api";
@@ -101,6 +102,10 @@ export default function ComposePage() {
   const [matchingMusic, setMatchingMusic] = useState(false);
   const [audioMatches, setAudioMatches] = useState<AudioMatch[]>([]);
   const [selectedAudio, setSelectedAudio] = useState<AudioMatch | null>(null);
+  // Audio timing state
+  const [audioStartTime, setAudioStartTime] = useState<number>(0);
+  const [audioAnalysis, setAudioAnalysis] = useState<AudioAnalysisResponse | null>(null);
+  const [analyzingAudio, setAnalyzingAudio] = useState(false);
 
   // Step 4: Render state
   const [effectPreset, setEffectPreset] = useState("zoom_beat");
@@ -111,6 +116,8 @@ export default function ComposePage() {
   // Keyword editing state
   const [editableKeywords, setEditableKeywords] = useState<string[]>([]);
   const [newKeyword, setNewKeyword] = useState("");
+  // Track which keywords are selected for search (only these will be searched)
+  const [selectedSearchKeywords, setSelectedSearchKeywords] = useState<Set<string>>(new Set());
 
   // Load campaign data
   const loadData = useCallback(async () => {
@@ -184,6 +191,8 @@ export default function ComposePage() {
       }
       if (bridgeData.selectedTrends && bridgeData.selectedTrends.length > 0) {
         setEditableKeywords(bridgeData.selectedTrends);
+        // User-specified keywords are selected for search by default
+        setSelectedSearchKeywords(new Set(bridgeData.selectedTrends));
       }
       clearBridgePrompt();
     }
@@ -231,20 +240,28 @@ export default function ComposePage() {
 
       setScriptData(result);
 
-      const mergedKeywords = [
-        ...editableKeywords,
-        ...(result.searchKeywords || []).filter(
-          (kw) => !editableKeywords.some(
-            (existing) => existing.toLowerCase() === kw.toLowerCase()
-          )
-        ),
-      ];
+      // Keep user's keywords separate from AI-suggested keywords
+      const userKeywords = [...editableKeywords];
+      const aiKeywords = (result.searchKeywords || []).filter(
+        (kw) => !editableKeywords.some(
+          (existing) => existing.toLowerCase() === kw.toLowerCase()
+        )
+      );
+      const mergedKeywords = [...userKeywords, ...aiKeywords];
       setEditableKeywords(mergedKeywords);
+
+      // Only user-specified keywords are selected for search by default
+      // AI keywords are shown but NOT selected - user must explicitly select them
+      setSelectedSearchKeywords(new Set(userKeywords));
 
       const newGenerationId = `compose-${Date.now()}`;
       setGenerationId(newGenerationId);
       setCurrentStep(2);
-      await handleSearchImages(mergedKeywords, newGenerationId);
+
+      // Only search with user's selected keywords (not AI keywords)
+      if (userKeywords.length > 0) {
+        await handleSearchImages(userKeywords, newGenerationId);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t.errors.general);
     } finally {
@@ -310,12 +327,34 @@ export default function ComposePage() {
 
       setAudioMatches(result.matches);
       if (result.matches.length > 0) {
-        setSelectedAudio(result.matches[0]);
+        handleSelectAudio(result.matches[0]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t.errors.general);
     } finally {
       setMatchingMusic(false);
+    }
+  };
+
+  // Handle audio selection and analyze for best segment
+  const handleSelectAudio = async (audio: AudioMatch) => {
+    setSelectedAudio(audio);
+    setAudioAnalysis(null);
+    setAudioStartTime(0);
+    setAnalyzingAudio(true);
+
+    try {
+      const targetDuration = scriptData?.script?.totalDuration || 15;
+      const analysis = await composeApi.analyzeAudioBestSegment(audio.id, targetDuration);
+      setAudioAnalysis(analysis);
+      // Auto-set to the suggested best segment start time
+      setAudioStartTime(analysis.suggestedStartTime);
+    } catch (err) {
+      console.warn("Audio analysis failed, using start from 0:", err);
+      // Fallback: use 0 as start time
+      setAudioStartTime(0);
+    } finally {
+      setAnalyzingAudio(false);
     }
   };
 
@@ -384,6 +423,8 @@ export default function ComposePage() {
         aspectRatio,
         targetDuration: 0,
         vibe: scriptData.vibe,
+        // Audio timing control
+        audioStartTime,  // Start time from best segment analysis or manual adjustment
         // Pass compose data for variations to use
         prompt,  // User's original video concept prompt
         searchKeywords: editableKeywords,  // User's keywords (includes AI-suggested merged)
@@ -589,11 +630,24 @@ export default function ComposePage() {
                       <Badge
                         key={idx}
                         variant="secondary"
-                        className="px-3 py-1 text-xs flex items-center gap-1.5 bg-background"
+                        className={`px-3 py-1 text-xs flex items-center gap-1.5 ${
+                          selectedSearchKeywords.has(kw)
+                            ? "bg-primary/10 border-primary/30"
+                            : "bg-background"
+                        }`}
                       >
+                        {selectedSearchKeywords.has(kw) && <Check className="w-3 h-3 text-primary" />}
                         {kw}
                         <button
-                          onClick={() => setEditableKeywords((prev) => prev.filter((_, i) => i !== idx))}
+                          onClick={() => {
+                            setEditableKeywords((prev) => prev.filter((_, i) => i !== idx));
+                            // Also remove from selected keywords
+                            setSelectedSearchKeywords((prev) => {
+                              const newSet = new Set(prev);
+                              newSet.delete(kw);
+                              return newSet;
+                            });
+                          }}
                           className="hover:text-destructive transition-colors"
                         >
                           <X className="w-3 h-3" />
@@ -615,7 +669,10 @@ export default function ComposePage() {
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && newKeyword.trim()) {
                           e.preventDefault();
-                          setEditableKeywords((prev) => [...prev, newKeyword.trim()]);
+                          const kw = newKeyword.trim();
+                          setEditableKeywords((prev) => [...prev, kw]);
+                          // Auto-select user-added keywords for search
+                          setSelectedSearchKeywords((prev) => new Set([...prev, kw]));
                           setNewKeyword("");
                         }
                       }}
@@ -627,7 +684,10 @@ export default function ComposePage() {
                       className="h-9"
                       onClick={() => {
                         if (newKeyword.trim()) {
-                          setEditableKeywords((prev) => [...prev, newKeyword.trim()]);
+                          const kw = newKeyword.trim();
+                          setEditableKeywords((prev) => [...prev, kw]);
+                          // Auto-select user-added keywords for search
+                          setSelectedSearchKeywords((prev) => new Set([...prev, kw]));
                           setNewKeyword("");
                         }
                       }}
@@ -782,28 +842,72 @@ export default function ComposePage() {
 
                 {/* Keyword Search - Only show when search is relevant */}
                 {imageSourceMode !== "assets_only" && (
-                  <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
-                    <div className="flex-1 flex flex-wrap gap-1.5">
-                      {editableKeywords.slice(0, 5).map((kw, idx) => (
-                        <Badge key={idx} variant="secondary" className="text-xs">
-                          {kw}
-                        </Badge>
-                      ))}
-                      {editableKeywords.length > 5 && (
+                  <div className="p-4 bg-muted/30 rounded-lg space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm font-medium">
+                          {language === "ko" ? "검색 키워드 선택" : "Select Search Keywords"}
+                        </Label>
                         <Badge variant="outline" className="text-xs">
-                          +{editableKeywords.length - 5}
+                          {selectedSearchKeywords.size}/{editableKeywords.length} {language === "ko" ? "선택됨" : "selected"}
                         </Badge>
-                      )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const selectedArray = Array.from(selectedSearchKeywords);
+                          if (selectedArray.length > 0) {
+                            handleSearchImages(selectedArray);
+                          }
+                        }}
+                        disabled={searchingImages || selectedSearchKeywords.size === 0}
+                      >
+                        <Search className="w-4 h-4 mr-2" />
+                        {language === "ko" ? "다시 검색" : "Search Again"}
+                      </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleSearchImages(editableKeywords)}
-                      disabled={searchingImages}
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      {language === "ko" ? "다시 검색" : "Search Again"}
-                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      {language === "ko"
+                        ? "클릭하여 검색에 포함할 키워드를 선택하세요. 선택된 키워드만 이미지 검색에 사용됩니다."
+                        : "Click to select keywords for search. Only selected keywords will be used for image search."}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {editableKeywords.map((kw, idx) => {
+                        const isSelected = selectedSearchKeywords.has(kw);
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              setSelectedSearchKeywords((prev) => {
+                                const newSet = new Set(prev);
+                                if (newSet.has(kw)) {
+                                  newSet.delete(kw);
+                                } else {
+                                  newSet.add(kw);
+                                }
+                                return newSet;
+                              });
+                            }}
+                            className={`px-3 py-1.5 text-xs rounded-full border transition-all ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-background text-muted-foreground border-border hover:border-muted-foreground"
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 inline mr-1" />}
+                            {kw}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {selectedSearchKeywords.size === 0 && (
+                      <p className="text-xs text-amber-500">
+                        {language === "ko"
+                          ? "⚠️ 검색할 키워드를 최소 1개 선택하세요"
+                          : "⚠️ Select at least 1 keyword to search"}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -970,7 +1074,7 @@ export default function ComposePage() {
                       return (
                         <button
                           key={audio.id}
-                          onClick={() => setSelectedAudio(audio)}
+                          onClick={() => handleSelectAudio(audio)}
                           className={`w-full p-4 rounded-lg border-2 flex items-center gap-4 transition-all ${
                             isSelected
                               ? "border-primary bg-primary/5"
@@ -1013,6 +1117,86 @@ export default function ComposePage() {
                         </button>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* Audio Start Time Control */}
+                {selectedAudio && (
+                  <div className="p-4 bg-muted/30 rounded-lg space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">
+                        {language === "ko" ? "음원 시작 위치" : "Audio Start Position"}
+                      </Label>
+                      {analyzingAudio ? (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Spinner className="w-3 h-3" />
+                          {language === "ko" ? "최적 구간 분석 중..." : "Analyzing best segment..."}
+                        </div>
+                      ) : audioAnalysis?.analyzed ? (
+                        <Badge variant="secondary" className="text-xs">
+                          {language === "ko" ? "AI 분석 완료" : "AI Analyzed"}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs">
+                          {language === "ko" ? "기본값" : "Default"}
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="range"
+                          min={0}
+                          max={Math.max(0, selectedAudio.duration - (scriptData?.script?.totalDuration || 15))}
+                          step={0.5}
+                          value={audioStartTime}
+                          onChange={(e) => setAudioStartTime(parseFloat(e.target.value))}
+                          className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                          disabled={analyzingAudio}
+                        />
+                        <div className="w-20 text-right">
+                          <span className="text-sm font-mono font-medium">
+                            {audioStartTime.toFixed(1)}s
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>0s</span>
+                        <span>{selectedAudio.duration.toFixed(0)}s</span>
+                      </div>
+                    </div>
+
+                    {audioAnalysis && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => setAudioStartTime(audioAnalysis.suggestedStartTime)}
+                          disabled={audioStartTime === audioAnalysis.suggestedStartTime}
+                        >
+                          <Wand2 className="w-3 h-3 mr-1" />
+                          {language === "ko" ? "AI 추천 위치로" : "Use AI Suggestion"} ({audioAnalysis.suggestedStartTime.toFixed(1)}s)
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => setAudioStartTime(0)}
+                          disabled={audioStartTime === 0}
+                        >
+                          <RotateCcw className="w-3 h-3 mr-1" />
+                          {language === "ko" ? "처음부터" : "From Start"}
+                        </Button>
+                      </div>
+                    )}
+
+                    <p className="text-xs text-muted-foreground">
+                      {language === "ko"
+                        ? `영상에서 음원이 ${audioStartTime.toFixed(1)}초 지점부터 재생됩니다. AI가 가장 에너지 넘치는 구간을 자동으로 추천합니다.`
+                        : `Audio will play from ${audioStartTime.toFixed(1)}s in the video. AI automatically recommends the highest energy section.`}
+                    </p>
                   </div>
                 )}
 
@@ -1254,12 +1438,12 @@ export default function ComposePage() {
                 setPrompt((prev) => prev ? `${prev}\n\n${suggestedPrompt}` : suggestedPrompt);
               }}
               onApplyHashtags={(hashtags) => {
-                setEditableKeywords((prev) => {
-                  const newKeywords = hashtags.filter(
-                    (tag) => !prev.some((existing) => existing.toLowerCase() === tag.toLowerCase())
-                  );
-                  return [...prev, ...newKeywords];
-                });
+                const newKeywords = hashtags.filter(
+                  (tag) => !editableKeywords.some((existing) => existing.toLowerCase() === tag.toLowerCase())
+                );
+                setEditableKeywords((prev) => [...prev, ...newKeywords]);
+                // Auto-select new hashtags for search
+                setSelectedSearchKeywords((prev) => new Set([...prev, ...newKeywords]));
               }}
             />
           )}

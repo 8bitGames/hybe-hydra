@@ -26,6 +26,8 @@ interface RenderRequest {
   vibe: string;
   textStyle?: string;
   colorGrade?: string;
+  // Audio timing control
+  audioStartTime?: number;  // Start time in seconds for audio (default: 0)
   prompt?: string;
   // Additional compose data for variations
   searchKeywords?: string[];
@@ -70,6 +72,7 @@ export async function POST(request: NextRequest) {
       vibe,
       textStyle = 'bold_pop',
       colorGrade = 'vibrant',
+      audioStartTime = 0,  // Default to 0 if not provided
       prompt = 'Compose video generation',
       searchKeywords = [],
       tiktokSEO,
@@ -97,6 +100,7 @@ export async function POST(request: NextRequest) {
       textStyle,
       colorGrade,
       aspectRatio,
+      audioStartTime,  // Store audio start time for variations
       originalPrompt: prompt,
       tiktokSEO,
       imageCount: images.length,
@@ -140,7 +144,7 @@ export async function POST(request: NextRequest) {
       })),
       audio: {
         url: audioAsset.s3Url,
-        start_time: 0,
+        start_time: audioStartTime,  // Use analyzed best segment or manual adjustment
         duration: null  // Let backend auto-calculate based on vibe/images
       },
       script: script && script.lines && script.lines.length > 0
@@ -167,6 +171,7 @@ export async function POST(request: NextRequest) {
       script_lines_count: script?.lines?.length || 0,
       vibe,
       target_duration: targetDuration,
+      audio_start_time: audioStartTime,
     }));
 
     // Submit to Modal (CPU rendering with libx264)
