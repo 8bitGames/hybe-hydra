@@ -9,7 +9,7 @@ const notoSansKR = Noto_Sans_KR({
   weight: ["300", "400", "500", "600", "700"],
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://hydra.ai";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://hydra.ai.kr";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -92,20 +92,26 @@ export const metadata: Metadata = {
   },
 
   // Open Graph (Facebook, LinkedIn, KakaoTalk 등)
-  // Note: OG 이미지는 app/opengraph-image.tsx에서 동적으로 생성됨
   openGraph: {
     type: "website",
     locale: "ko_KR",
     alternateLocale: "en_US",
-    url: siteUrl,
+    url: "https://hydra.ai.kr",
     siteName: "HYDRA",
     title: "HYDRA - AI 영상 자동화 플랫폼 | 브랜드 숏폼 대량 제작",
     description:
       "AI 기반 트렌드 분석으로 브랜드 숏폼 콘텐츠를 몇 분 만에 수천 개 생성하세요. TikTok, Instagram, YouTube Shorts 자동 배포까지 한 번에.",
+    images: [
+      {
+        url: "https://hydra.ai.kr/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "HYDRA - AI Video Automation Platform",
+      },
+    ],
   },
 
   // Twitter Card
-  // Note: 이미지는 app/opengraph-image.tsx에서 동적으로 생성됨
   twitter: {
     card: "summary_large_image",
     title: "HYDRA - AI 영상 자동화 플랫폼",
@@ -113,6 +119,7 @@ export const metadata: Metadata = {
       "트렌드 기반 AI로 브랜드 숏폼 콘텐츠를 대량 생성하고 자동 배포하세요.",
     creator: "@hydra_ai",
     site: "@hydra_ai",
+    images: ["https://hydra.ai.kr/opengraph-image"],
   },
 
   // 아이콘
