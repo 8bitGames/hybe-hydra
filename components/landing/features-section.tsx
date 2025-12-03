@@ -132,6 +132,7 @@ export function FeaturesSection({ lang }: FeaturesSectionProps) {
                       src={feature.image}
                       alt={feature.imageAlt}
                       fill
+                      unoptimized
                       className="object-cover grayscale hover:grayscale-0 transition-all duration-500"
                     />
                     {/* Overlay */}
