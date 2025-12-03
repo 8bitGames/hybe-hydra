@@ -1,32 +1,66 @@
-"""AWS S3 client for file operations with retry logic."""
+"""AWS S3 client for file operations with optimized parallel downloads.
+
+Last update: 2025-12-03 12:55 - Added image validation for hotlink protection.
+"""
 
 import boto3
 from botocore.config import Config
 import aiofiles
 import httpx
-import os
 import asyncio
-import logging
-from typing import Optional
+import os
+from typing import Optional, List, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from PIL import Image
+import io
 
 from ..config import get_settings
 
-logger = logging.getLogger(__name__)
 
-# Retry configuration
-MAX_RETRIES = 3
-RETRY_DELAY = 1.0  # seconds, exponential backoff
+def is_valid_image(data: bytes) -> bool:
+    """Check if data is a valid image file."""
+    try:
+        # Try to open as image
+        img = Image.open(io.BytesIO(data))
+        img.verify()  # Verify it's a valid image
+        return True
+    except Exception:
+        return False
+
+
+def is_html_response(data: bytes) -> bool:
+    """Check if response is HTML (common for hotlink protection blocks)."""
+    try:
+        text = data[:1000].decode('utf-8', errors='ignore').lower()
+        return '<html' in text or '<!doctype' in text or '<head' in text
+    except Exception:
+        return False
+
+# Shared thread pool for S3 operations (connection pooling)
+_s3_executor: Optional[ThreadPoolExecutor] = None
+
+
+def get_s3_executor() -> ThreadPoolExecutor:
+    """Get or create shared thread pool for S3 operations."""
+    global _s3_executor
+    if _s3_executor is None:
+        _s3_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="s3_pool")
+    return _s3_executor
 
 
 class S3Client:
-    """AWS S3 client for uploading and downloading files with retry logic."""
+    """AWS S3 client with optimized parallel operations."""
 
     def __init__(self):
         settings = get_settings()
         self.bucket = settings.aws_s3_bucket
         self.region = settings.aws_region
 
-        # Create S3 client with connection pooling and retries
+        # Debug: Log settings
+        print(f"[S3Client] Initializing with bucket={self.bucket}, region={self.region}")
+        print(f"[S3Client] Access key (first 4 chars): {settings.aws_access_key_id[:4] if settings.aws_access_key_id else 'EMPTY'}")
+
+        # Create S3 client with connection pooling
         self.client = boto3.client(
             "s3",
             aws_access_key_id=settings.aws_access_key_id,
@@ -34,10 +68,23 @@ class S3Client:
             region_name=settings.aws_region,
             config=Config(
                 signature_version="s3v4",
-                max_pool_connections=50,  # Increase connection pool for parallel downloads
-                retries={'max_attempts': 3, 'mode': 'adaptive'}
+                max_pool_connections=20,  # Connection pooling
+                retries={"max_attempts": 3, "mode": "adaptive"}
             )
         )
+
+        # Shared HTTP client for external URLs
+        self._http_client: Optional[httpx.AsyncClient] = None
+
+    async def _get_http_client(self) -> httpx.AsyncClient:
+        """Get or create shared HTTP client."""
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=60.0,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10)
+            )
+        return self._http_client
 
     def get_public_url(self, s3_key: str) -> str:
         """Generate public URL for AWS S3."""
@@ -45,49 +92,82 @@ class S3Client:
 
     async def download_file(self, url: str, local_path: str) -> str:
         """
-        Download a file from URL to local path with retry logic.
+        Download a file from URL to local path.
         Supports both S3 URLs and external URLs.
         """
-        last_error = None
+        # Check if it's an S3 URL from our bucket (AWS S3 format)
+        s3_url_prefix = f"https://{self.bucket}.s3.{self.region}.amazonaws.com/"
 
-        for attempt in range(MAX_RETRIES):
-            try:
-                # Check if it's an S3 URL from our bucket (AWS S3 format)
-                s3_url_prefix = f"https://{self.bucket}.s3.{self.region}.amazonaws.com/"
-                if url.startswith(s3_url_prefix):
-                    # Extract key from URL
-                    key = url[len(s3_url_prefix):]
-                    self.client.download_file(self.bucket, key, local_path)
-                elif f".s3.{self.region}.amazonaws.com" in url or f".s3.amazonaws.com" in url:
-                    # Alternative S3 URL format
-                    key = url.split(f"{self.bucket}/")[-1]
-                    self.client.download_file(self.bucket, key, local_path)
-                else:
-                    # External URL - download via HTTP with browser-like headers
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                        "Accept-Language": "en-US,en;q=0.9",
-                        "Referer": url.split('/')[0] + '//' + url.split('/')[2] + '/',
-                    }
-                    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-                        response = await client.get(url, headers=headers)
-                        response.raise_for_status()
-                        async with aiofiles.open(local_path, "wb") as f:
-                            await f.write(response.content)
+        # Debug: Log URL matching
+        print(f"[S3Client] download_file: url={url[:80]}...")
+        print(f"[S3Client] s3_url_prefix={s3_url_prefix}")
+        print(f"[S3Client] startswith={url.startswith(s3_url_prefix)}")
 
-                return local_path
+        if url.startswith(s3_url_prefix):
+            # Extract key from URL
+            key = url[len(s3_url_prefix):]
+            print(f"[S3Client] Using S3 SDK download: bucket={self.bucket}, key={key}")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                get_s3_executor(),
+                lambda k=key: self.client.download_file(self.bucket, k, local_path)
+            )
+        elif f".s3.{self.region}.amazonaws.com" in url or f".s3.amazonaws.com" in url:
+            # Alternative S3 URL format - fallback to HTTP download since key extraction is complex
+            print(f"[S3Client] Alternative S3 URL format - using HTTP download")
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            }
+            client = await self._get_http_client()
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            async with aiofiles.open(local_path, "wb") as f:
+                await f.write(response.content)
+        else:
+            # External URL - download via HTTP with browser-like headers
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": url.split('/')[0] + '//' + url.split('/')[2] + '/',
+            }
+            client = await self._get_http_client()
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
 
-            except Exception as e:
-                last_error = e
-                if attempt < MAX_RETRIES - 1:
-                    delay = RETRY_DELAY * (2 ** attempt)  # Exponential backoff
-                    logger.warning(f"Download failed (attempt {attempt + 1}/{MAX_RETRIES}): {url[:80]}... Retrying in {delay}s")
-                    await asyncio.sleep(delay)
-                else:
-                    logger.error(f"Download failed after {MAX_RETRIES} attempts: {url[:80]}...")
+            # Validate it's an actual image, not an HTML error page
+            content = response.content
+            if is_html_response(content):
+                raise ValueError(f"Image URL returned HTML (likely hotlink protected): {url[:60]}...")
+            if not is_valid_image(content):
+                # Try to detect what we got
+                content_type = response.headers.get('content-type', 'unknown')
+                size = len(content)
+                raise ValueError(f"Invalid image from {url[:60]}... (type={content_type}, size={size})")
 
-        raise last_error or Exception(f"Failed to download: {url}")
+            async with aiofiles.open(local_path, "wb") as f:
+                await f.write(content)
+
+        return local_path
+
+    async def download_files_parallel(
+        self,
+        downloads: List[Tuple[str, str]]
+    ) -> List[str]:
+        """
+        Download multiple files in parallel.
+
+        Args:
+            downloads: List of (url, local_path) tuples
+
+        Returns:
+            List of local paths (in same order as input)
+        """
+        tasks = [
+            self.download_file(url, local_path)
+            for url, local_path in downloads
+        ]
+        return await asyncio.gather(*tasks)
 
     async def upload_file(
         self,
@@ -103,11 +183,15 @@ class S3Client:
         if content_type:
             extra_args["ContentType"] = content_type
 
-        self.client.upload_file(
-            local_path,
-            self.bucket,
-            s3_key,
-            ExtraArgs=extra_args
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            get_s3_executor(),
+            lambda: self.client.upload_file(
+                local_path,
+                self.bucket,
+                s3_key,
+                ExtraArgs=extra_args
+            )
         )
 
         # Return the public URL (AWS S3 format)
@@ -128,3 +212,8 @@ class S3Client:
     def delete_file(self, s3_key: str) -> None:
         """Delete a file from S3."""
         self.client.delete_object(Bucket=self.bucket, Key=s3_key)
+
+    async def close(self) -> None:
+        """Close HTTP client."""
+        if self._http_client and not self._http_client.is_closed:
+            await self._http_client.aclose()

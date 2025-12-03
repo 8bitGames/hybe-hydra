@@ -1,9 +1,21 @@
-"""Main video rendering service using MoviePy."""
+"""Main video rendering service using MoviePy - Optimized for GPU and parallel processing."""
 
 import os
+import platform
+
+# CRITICAL: Set FFmpeg path BEFORE importing moviepy/imageio
+# This tells imageio_ffmpeg to use jellyfin-ffmpeg with NVENC support
+if platform.system() != "Darwin":  # Not macOS
+    JELLYFIN_FFMPEG = "/usr/lib/jellyfin-ffmpeg/ffmpeg"
+    if os.path.exists(JELLYFIN_FFMPEG):
+        os.environ["IMAGEIO_FFMPEG_EXE"] = JELLYFIN_FFMPEG
+        print(f"[FFmpeg] Using jellyfin-ffmpeg: {JELLYFIN_FFMPEG}")
+
 import asyncio
 import logging
-from typing import Callable, Optional, List
+import hashlib
+from typing import Callable, Optional, List, Tuple
+from concurrent.futures import ThreadPoolExecutor
 from moviepy import (
     ImageClip,
     AudioFileClip,
@@ -13,6 +25,7 @@ from moviepy import (
 from moviepy.audio.fx import AudioFadeIn, AudioFadeOut
 
 from .audio_analyzer import AudioAnalyzer
+from ..models.responses import AudioAnalysis
 from .beat_sync import BeatSyncEngine, MIN_IMAGE_DURATION
 from .image_processor import ImageProcessor
 from ..effects import transitions, filters, text_overlay, motion
@@ -38,9 +51,24 @@ AUDIO_FADE_OUT = 2.0  # Smooth fade out at end
 HOOK_DURATION = 2.0  # First 2 seconds for hook (calm before beat drop)
 HOOK_CALM_FACTOR = 0.7  # Reduce audio volume in hook section
 
+# Audio analysis cache (for compose variations using same audio)
+_audio_cache: dict = {}
+_audio_cache_lock = asyncio.Lock()
+
+# Shared thread pool for CPU-bound tasks
+_cpu_executor: Optional[ThreadPoolExecutor] = None
+
+
+def get_cpu_executor() -> ThreadPoolExecutor:
+    """Get or create shared thread pool for CPU-bound tasks."""
+    global _cpu_executor
+    if _cpu_executor is None:
+        _cpu_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cpu_pool")
+    return _cpu_executor
+
 
 class VideoRenderer:
-    """Main service for rendering composed videos."""
+    """Main service for rendering composed videos - Optimized for GPU and parallel processing."""
 
     def __init__(self):
         self.s3 = S3Client()
@@ -55,383 +83,419 @@ class VideoRenderer:
         progress_callback: Optional[Callable] = None
     ) -> str:
         """
-        Main rendering pipeline.
+        Optimized rendering pipeline with parallel processing.
         Returns S3 URL of rendered video.
         """
         job_id = request.job_id
         job_dir = self.temp.get_job_dir(job_id)
 
         try:
-            # Log render request details
-            logger.info(f"[{job_id}] Starting render with {len(request.images)} images")
-            logger.info(f"[{job_id}] Vibe: {request.settings.vibe.value}, Target duration: {request.settings.target_duration}")
-            if request.script and request.script.lines:
-                logger.info(f"[{job_id}] Script lines: {len(request.script.lines)}")
-                for i, line in enumerate(request.script.lines):
-                    logger.info(f"[{job_id}]   Line {i}: '{line.text}' at {line.timing}s for {line.duration}s")
-            else:
-                logger.info(f"[{job_id}] No script lines provided")
+            logger.info(f"[{job_id}] Starting optimized render with {len(request.images)} images")
+            logger.info(f"[{job_id}] Vibe: {request.settings.vibe.value}, Target: {request.settings.target_duration}s")
 
-            # Step 1: Download images
-            await self._update_progress(progress_callback, job_id, 0, "Downloading images")
-            image_paths = await self._download_images(request.images, job_dir)
+            # ============================================================
+            # STEP 1: PARALLEL DOWNLOADS (images + audio simultaneously)
+            # ============================================================
+            await self._update_progress(progress_callback, job_id, 0, "Downloading assets")
 
-            # Step 2: Download audio
-            await self._update_progress(progress_callback, job_id, 10, "Downloading audio")
-            audio_path = await self._download_audio(request.audio, job_dir)
+            image_paths, audio_path = await self._download_all_assets(
+                request.images, request.audio, job_dir
+            )
+            logger.info(f"[{job_id}] Downloaded {len(image_paths)} images + audio in parallel")
 
-            # Step 3: Analyze audio
-            await self._update_progress(progress_callback, job_id, 15, "Analyzing audio beats")
-            audio_analysis = self.audio_analyzer.analyze(audio_path)
+            # ============================================================
+            # STEP 2: AUDIO ANALYSIS (with caching for variations)
+            # ============================================================
+            await self._update_progress(progress_callback, job_id, 15, "Analyzing audio")
+
+            audio_analysis = await self._get_audio_analysis(audio_path, request.audio.url)
             beat_times = audio_analysis.beat_times
 
-            # Step 4: Get preset and calculate cut timings
-            await self._update_progress(progress_callback, job_id, 20, "Calculating cut timings")
+            # ============================================================
+            # STEP 3: CALCULATE TIMINGS
+            # ============================================================
+            await self._update_progress(progress_callback, job_id, 20, "Calculating timings")
+
             preset = get_preset(request.settings.vibe.value)
-
-            # Auto-calculate target duration based on TikTok optimization
-            # Each preset has duration_range (min, max) optimized for TikTok (10-30 seconds)
-            num_images = len(image_paths)
-            audio_duration = audio_analysis.duration
-
-            # Get preset's recommended duration range
-            min_duration, max_duration = preset.duration_range
-
-            # Calculate minimum duration required for all images
-            min_duration_for_images = num_images * MIN_IMAGE_DURATION
-
-            # PRIORITY: Show ALL images within TikTok-optimal duration
-            # CRITICAL: Respect preset's max_duration (TikTok: 15-30 seconds)
-
-            if request.settings.target_duration and request.settings.target_duration > 0:
-                # User specified duration - use it but ensure all images fit
-                target_duration = max(min_duration_for_images, request.settings.target_duration)
-                target_duration = min(target_duration, audio_duration, max_duration)
-                logger.info(f"[{job_id}] Using user-specified duration: {target_duration}s")
-            else:
-                # Auto-calculate: TikTok-optimal duration
-                # Target: All images shown with ideal per-image duration (3s each)
-                IDEAL_PER_IMAGE = 3.0  # 3 seconds per image is optimal for TikTok
-                ideal_duration = num_images * IDEAL_PER_IMAGE
-
-                # Clamp to preset's range (CRITICAL: respect max_duration!)
-                target_duration = max(min_duration, min_duration_for_images, ideal_duration)
-                target_duration = min(target_duration, max_duration, audio_duration)
-
-                # Log why we chose this duration
-                if target_duration == max_duration:
-                    logger.info(f"[{job_id}] Capped to preset max_duration: {max_duration}s")
-                elif target_duration == audio_duration:
-                    logger.info(f"[{job_id}] Limited by audio duration: {audio_duration}s")
-
-            # Final check: ensure all images can fit
-            if target_duration < min_duration_for_images:
-                target_duration = min(min_duration_for_images, audio_duration)
-                logger.warning(f"[{job_id}] Forcing min duration for {num_images} images: {target_duration}s")
-
-            logger.info(f"[{job_id}] Min duration for {num_images} images: {min_duration_for_images}s")
-            logger.info(f"[{job_id}] Ideal per image: {target_duration/num_images:.1f}s")
-
-            logger.info(f"[{job_id}] Calculated target duration: {target_duration}s (range: {min_duration}-{max_duration}s)")
-            logger.info(f"[{job_id}] Audio duration: {audio_duration}s, Images: {num_images}")
+            target_duration = self._calculate_target_duration(
+                request, preset, len(image_paths), audio_analysis.duration, job_id
+            )
 
             cut_times = self.beat_sync.calculate_cuts(
                 beat_times=beat_times,
-                num_images=num_images,
+                num_images=len(image_paths),
                 target_duration=target_duration,
                 cut_style=preset.cut_style
             )
 
-            # Log cut times for each image (debugging)
-            logger.info(f"[{job_id}] Cut times for {len(cut_times)} images:")
-            for i, (start, end) in enumerate(cut_times):
-                duration = end - start
-                logger.info(f"[{job_id}]   Image {i+1}: {start:.1f}s - {end:.1f}s ({duration:.1f}s)")
-
-            # Step 5: Process images IN PARALLEL using ThreadPool
+            # ============================================================
+            # STEP 4: PARALLEL IMAGE PROCESSING
+            # ============================================================
             await self._update_progress(progress_callback, job_id, 25, "Processing images")
-            from concurrent.futures import ThreadPoolExecutor
 
-            def process_single_image(args):
-                idx, img_path = args
-                return self.image_processor.resize_for_aspect(
-                    img_path,
-                    request.settings.aspect_ratio.value,
-                    self.temp.get_path(job_id, f"processed_{idx}.jpg")
-                )
+            processed_paths = await self._process_images_parallel(
+                image_paths,
+                request.settings.aspect_ratio.value,
+                job_id
+            )
+            logger.info(f"[{job_id}] Processed {len(processed_paths)} images in parallel")
 
-            # Process all images in parallel with ThreadPoolExecutor
-            logger.info(f"[{job_id}] Processing {len(image_paths)} images in parallel...")
-            with ThreadPoolExecutor(max_workers=min(8, len(image_paths))) as executor:
-                processed_paths = list(executor.map(
-                    process_single_image,
-                    enumerate(image_paths)
-                ))
-            logger.info(f"[{job_id}] Processed {len(processed_paths)} images")
+            # ============================================================
+            # STEP 5: CREATE CLIPS (can be parallelized for large batches)
+            # ============================================================
+            await self._update_progress(progress_callback, job_id, 35, "Creating video clips")
 
-            # Step 6: Create image clips with effects
-            await self._update_progress(progress_callback, job_id, 30, "Creating image clips")
-            clips = []
-            for i, (img_path, (start, end)) in enumerate(zip(processed_paths, cut_times)):
-                clip = self._create_image_clip(
-                    img_path=img_path,
-                    start=start,
-                    end=end,
-                    preset=preset,
-                    aspect_ratio=request.settings.aspect_ratio.value,
-                    beat_times=beat_times
-                )
-                clips.append(clip)
+            clips = await self._create_clips_parallel(
+                processed_paths, cut_times, preset,
+                request.settings.aspect_ratio.value, beat_times, job_id
+            )
 
-                progress = 30 + int(25 * (i + 1) / len(processed_paths))
-                await self._update_progress(
-                    progress_callback, job_id, progress,
-                    f"Processing image {i + 1}/{len(processed_paths)}"
-                )
-
-            # Step 7: Apply transitions
-            # Use effect_preset from request if specified, otherwise use preset's default
+            # ============================================================
+            # STEP 6: APPLY TRANSITIONS
+            # ============================================================
             await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
+
             effect_preset = request.settings.effect_preset.value if request.settings.effect_preset else preset.transition_type
-            logger.info(f"[{job_id}] Using transition/effect: {effect_preset}")
             transition_func = transitions.get_transition(effect_preset)
             video = transition_func(clips, duration=preset.transition_duration)
 
-            # Step 8: Add text overlays
+            # ============================================================
+            # STEP 7: ADD TEXT OVERLAYS
+            # ============================================================
             await self._update_progress(progress_callback, job_id, 65, "Adding text overlays")
-            video_duration = video.duration
-            logger.info(f"[{job_id}] Video duration before text: {video_duration}s")
 
+            video_duration = video.duration
             if request.script and request.script.lines:
-                # Recalculate script timings to fit within video duration
-                adjusted_script = self._adjust_script_timings(
-                    request.script,
-                    video_duration,
-                    job_id
-                )
-                logger.info(f"[{job_id}] Adding {len(adjusted_script.lines)} text overlays")
+                adjusted_script = self._adjust_script_timings(request.script, video_duration, job_id)
                 video = self._add_text_overlays(
-                    video,
-                    adjusted_script,
+                    video, adjusted_script,
                     request.settings.text_style.value,
                     request.settings.aspect_ratio.value
                 )
-            else:
-                logger.info(f"[{job_id}] Skipping text overlays (no script data)")
 
-            # Step 9: Add audio with fade in/out
-            await self._update_progress(progress_callback, job_id, 75, "Adding audio track")
-            audio_clip = AudioFileClip(audio_path)
+            # ============================================================
+            # STEP 8: ADD AUDIO WITH TIKTOK HOOK
+            # ============================================================
+            await self._update_progress(progress_callback, job_id, 75, "Adding audio")
 
-            # Track ALL audio clips for proper cleanup (critical for Windows file locks)
-            audio_clips_to_close = [audio_clip]
+            video, audio_clips_to_close = self._add_audio_with_effects(
+                video, audio_path, request.audio, video.duration
+            )
 
-            # Update video_duration after potential text overlay changes
-            video_duration = video.duration
-            logger.info(f"[{job_id}] Final video duration: {video_duration}s")
-
-            # Trim audio to match video duration
-            if request.audio.start_time or request.audio.duration:
-                start = request.audio.start_time or 0
-                duration = request.audio.duration or video_duration
-                trimmed = audio_clip.subclipped(start, start + min(duration, audio_clip.duration - start))
-                audio_clips_to_close.append(trimmed)
-                audio_clip = trimmed
-
-            # Ensure audio matches video duration
-            if audio_clip.duration > video_duration:
-                trimmed = audio_clip.subclipped(0, video_duration)
-                audio_clips_to_close.append(trimmed)
-                audio_clip = trimmed
-
-            # TikTok Hook Strategy: Calm start (70% volume) then beat drop (100% volume)
-            # Split audio at hook point and apply different volumes
-            if audio_clip.duration > HOOK_DURATION:
-                from moviepy import concatenate_audioclips
-                # Split into hook section and main section
-                hook_section = audio_clip.subclipped(0, HOOK_DURATION).with_volume_scaled(HOOK_CALM_FACTOR)
-                main_section = audio_clip.subclipped(HOOK_DURATION, audio_clip.duration)
-                audio_clips_to_close.extend([hook_section, main_section])
-                audio_clip = concatenate_audioclips([hook_section, main_section])
-                audio_clips_to_close.append(audio_clip)
-            logger.info(f"[{job_id}] Applied TikTok hook audio effect (calm {HOOK_DURATION}s → beat drop)")
-
-            # Apply audio fade effects for smooth start and end
-            # Fade in at start (1 second gentle rise)
-            # Fade out at end (2 seconds smooth fade)
-            faded_clip = audio_clip.with_effects([
-                AudioFadeIn(AUDIO_FADE_IN),
-                AudioFadeOut(AUDIO_FADE_OUT)
-            ])
-            audio_clips_to_close.append(faded_clip)
-            audio_clip = faded_clip
-
-            video = video.with_audio(audio_clip)
-
-            # Step 10: Apply color grading
-            await self._update_progress(progress_callback, job_id, 80, "Applying color grading")
+            # ============================================================
+            # STEP 9: COLOR GRADING
+            # ============================================================
+            await self._update_progress(progress_callback, job_id, 80, "Color grading")
             video = filters.apply_color_grade(video, request.settings.color_grade.value)
 
-            # Step 11: Render to file
-            await self._update_progress(progress_callback, job_id, 85, "Rendering final video")
+            # ============================================================
+            # STEP 10: GPU RENDER WITH OPTIMIZED NVENC
+            # ============================================================
+            await self._update_progress(progress_callback, job_id, 85, "Rendering video")
+
             output_path = self.temp.get_path(job_id, "output.mp4")
-            # CRITICAL: Use job-specific temp audio file to avoid conflicts in parallel processing
             temp_audiofile = self.temp.get_path(job_id, f"temp_audio_{job_id}.mp4")
 
-            # Check if NVENC (GPU encoding) is available and requested
-            use_nvenc = os.environ.get("USE_NVENC", "0") == "1"
+            await self._render_with_nvenc(video, output_path, temp_audiofile, job_id)
 
-            if use_nvenc:
-                # NVENC: NVIDIA GPU hardware encoding
-                # Settings from NVIDIA Video Codec SDK documentation:
-                # https://docs.nvidia.com/video-technologies/video-codec-sdk/ffmpeg-with-nvidia-gpu/
-                logger.info(f"[{job_id}] Rendering video with NVENC (GPU)")
-                await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: video.write_videofile(
-                        output_path,
-                        fps=30,
-                        codec="h264_nvenc",
-                        audio_codec="aac",
-                        threads=4,
-                        ffmpeg_params=[
-                            "-preset", "p4",        # Medium speed/quality balance
-                            "-tune", "hq",          # High quality tuning
-                            "-rc", "vbr",           # Variable bitrate mode
-                            "-cq", "19",            # Constant quality (lower = better)
-                            "-b:v", "8M",           # Target bitrate
-                            "-maxrate", "12M",      # Max bitrate
-                            "-bufsize", "16M",      # Buffer size
-                            "-rc-lookahead", "20",  # Lookahead frames for better quality
-                            "-bf", "3",             # B-frames
-                            "-b_ref_mode", "middle",# B-frame reference mode
-                            "-temporal-aq", "1",    # Temporal adaptive quantization
-                            "-movflags", "+faststart"
-                        ],
-                        temp_audiofile=temp_audiofile,
-                        logger=None
-                    )
-                )
-            else:
-                # libx264: CPU encoding (reliable fallback)
-                logger.info(f"[{job_id}] Rendering video with libx264 (CPU)")
-                await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: video.write_videofile(
-                        output_path,
-                        fps=30,
-                        codec="libx264",
-                        audio_codec="aac",
-                        preset="fast",
-                        threads=4,
-                        ffmpeg_params=["-crf", "20", "-movflags", "+faststart"],
-                        temp_audiofile=temp_audiofile,
-                        logger=None
-                    )
-                )
-            logger.info(f"[{job_id}] Video rendered successfully")
+            # ============================================================
+            # STEP 11: CLEANUP AND UPLOAD
+            # ============================================================
+            self._cleanup_clips(video, clips, audio_clips_to_close)
 
-            # Close all clips to release file handles (critical for Windows)
-            # Close all tracked audio clips (including intermediate clips from hook processing)
-            for aclip in audio_clips_to_close:
-                try:
-                    aclip.close()
-                except Exception:
-                    pass
-            try:
-                video.close()
-            except Exception:
-                pass
-            for clip in clips:
-                try:
-                    clip.close()
-                except Exception:
-                    pass
-
-            # Force garbage collection to release file handles immediately
-            import gc
-            gc.collect()
-
-            # Step 12: Upload to S3
-            await self._update_progress(progress_callback, job_id, 95, "Uploading to storage")
+            await self._update_progress(progress_callback, job_id, 95, "Uploading")
             s3_url = await self.s3.upload_file(
                 output_path,
                 request.output.s3_key,
                 content_type="video/mp4"
             )
 
-            # Cleanup
             self.temp.cleanup(job_id)
-
             await self._update_progress(progress_callback, job_id, 100, "Completed")
+
+            logger.info(f"[{job_id}] Render complete: {s3_url}")
             return s3_url
 
         except Exception as e:
             self.temp.cleanup(job_id)
             raise e
 
-    async def _download_images(
+    async def _download_all_assets(
         self,
         images: List[ImageData],
-        job_dir: str
-    ) -> List[str]:
-        """Download all images in PARALLEL for faster processing."""
-        sorted_images = sorted(images, key=lambda x: x.order)
-
-        async def download_single(idx: int, image: ImageData) -> tuple[int, str]:
-            local_path = os.path.join(job_dir, f"image_{idx}.jpg")
-            await self.s3.download_file(image.url, local_path)
-            return idx, local_path
-
-        # Download ALL images in parallel using asyncio.gather
-        logger.info(f"Downloading {len(sorted_images)} images in parallel...")
-        tasks = [download_single(i, img) for i, img in enumerate(sorted_images)]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Sort by index and extract paths, handling any errors
-        paths = []
-        for result in sorted(results, key=lambda x: x[0] if isinstance(x, tuple) else float('inf')):
-            if isinstance(result, Exception):
-                logger.error(f"Image download failed: {result}")
-                raise result
-            paths.append(result[1])
-
-        logger.info(f"Downloaded {len(paths)} images successfully")
-        return paths
-
-    async def _download_audio(
-        self,
         audio: AudioData,
         job_dir: str
-    ) -> str:
-        """Download audio to local storage."""
-        local_path = os.path.join(job_dir, "audio.mp3")
-        await self.s3.download_file(audio.url, local_path)
-        return local_path
+    ) -> Tuple[List[str], str]:
+        """Download images and audio in parallel, handling failures gracefully."""
+        sorted_images = sorted(images, key=lambda x: x.order)
 
-    def _create_image_clip(
-        self,
-        img_path: str,
-        start: float,
-        end: float,
-        preset,
-        aspect_ratio: str,
-        beat_times: List[float]
-    ) -> ImageClip:
-        """Create a single image clip with motion effects."""
-        duration = end - start
+        # Download audio first (critical - must succeed)
+        audio_path = os.path.join(job_dir, "audio.mp3")
+        await self.s3.download_file(audio.url, audio_path)
+        logger.info(f"Audio downloaded: {audio_path}")
 
-        # Create clip
-        clip = ImageClip(img_path).with_duration(duration)
+        # Download images with error handling (some may fail due to hotlink protection)
+        image_paths = []
+        for i, img in enumerate(sorted_images):
+            local_path = os.path.join(job_dir, f"image_{i}.jpg")
+            try:
+                await self.s3.download_file(img.url, local_path)
+                image_paths.append(local_path)
+            except Exception as e:
+                logger.warning(f"Failed to download image {i}: {str(e)[:80]}...")
+                # Continue - try other images
 
-        # Apply Ken Burns effect
-        clip = motion.apply_ken_burns(
-            clip,
-            style=preset.motion_style,
-            beat_times=[t - start for t in beat_times if start <= t < end]
+        # Ensure we have at least 3 images
+        if len(image_paths) < 3:
+            raise ValueError(f"Not enough valid images. Got {len(image_paths)}, need at least 3.")
+
+        logger.info(f"Downloaded {len(image_paths)}/{len(sorted_images)} images successfully")
+        return image_paths, audio_path
+
+    async def _get_audio_analysis(self, audio_path: str, audio_url: str) -> AudioAnalysis:
+        """Get audio analysis with caching (for compose variations using same audio)."""
+        # Create cache key from audio URL
+        cache_key = hashlib.md5(audio_url.encode()).hexdigest()
+
+        async with _audio_cache_lock:
+            if cache_key in _audio_cache:
+                logger.info(f"Using cached audio analysis for {cache_key[:8]}...")
+                return _audio_cache[cache_key]
+
+        # Analyze audio (CPU-bound, run in thread pool)
+        loop = asyncio.get_event_loop()
+        analysis = await loop.run_in_executor(
+            get_cpu_executor(),
+            lambda: self.audio_analyzer.analyze(audio_path)
         )
 
-        return clip.with_start(start)
+        # Cache the result
+        async with _audio_cache_lock:
+            _audio_cache[cache_key] = analysis
+            # Keep cache size reasonable
+            if len(_audio_cache) > 50:
+                oldest = next(iter(_audio_cache))
+                del _audio_cache[oldest]
+
+        return analysis
+
+    async def _process_images_parallel(
+        self,
+        image_paths: List[str],
+        aspect_ratio: str,
+        job_id: str
+    ) -> List[str]:
+        """Process images in parallel using thread pool."""
+        loop = asyncio.get_event_loop()
+
+        async def process_one(i: int, img_path: str) -> str:
+            output_path = self.temp.get_path(job_id, f"processed_{i}.jpg")
+            return await loop.run_in_executor(
+                get_cpu_executor(),
+                lambda: self.image_processor.resize_for_aspect(img_path, aspect_ratio, output_path)
+            )
+
+        tasks = [
+            process_one(i, img_path)
+            for i, img_path in enumerate(image_paths)
+        ]
+
+        return await asyncio.gather(*tasks)
+
+    async def _create_clips_parallel(
+        self,
+        processed_paths: List[str],
+        cut_times: List[Tuple[float, float]],
+        preset,
+        aspect_ratio: str,
+        beat_times: List[float],
+        job_id: str
+    ) -> List[ImageClip]:
+        """Create image clips (parallelized for large batches)."""
+        loop = asyncio.get_event_loop()
+
+        def create_one(img_path: str, start: float, end: float) -> ImageClip:
+            duration = end - start
+            clip = ImageClip(img_path).with_duration(duration)
+            clip = motion.apply_ken_burns(
+                clip,
+                style=preset.motion_style,
+                beat_times=[t - start for t in beat_times if start <= t < end]
+            )
+            return clip.with_start(start)
+
+        # For small batches, just create sequentially (overhead of parallelization not worth it)
+        if len(processed_paths) <= 4:
+            return [
+                create_one(img_path, start, end)
+                for img_path, (start, end) in zip(processed_paths, cut_times)
+            ]
+
+        # For larger batches, use parallel processing
+        tasks = [
+            loop.run_in_executor(
+                get_cpu_executor(),
+                lambda p=img_path, s=start, e=end: create_one(p, s, e)
+            )
+            for img_path, (start, end) in zip(processed_paths, cut_times)
+        ]
+
+        return await asyncio.gather(*tasks)
+
+    def _calculate_target_duration(
+        self,
+        request: RenderRequest,
+        preset,
+        num_images: int,
+        audio_duration: float,
+        job_id: str
+    ) -> float:
+        """Calculate optimal target duration for TikTok."""
+        min_duration, max_duration = preset.duration_range
+        min_duration_for_images = num_images * MIN_IMAGE_DURATION
+
+        if request.settings.target_duration and request.settings.target_duration > 0:
+            target = max(min_duration_for_images, request.settings.target_duration)
+            target = min(target, audio_duration, max_duration)
+        else:
+            IDEAL_PER_IMAGE = 3.0
+            ideal = num_images * IDEAL_PER_IMAGE
+            target = max(min_duration, min_duration_for_images, ideal)
+            target = min(target, max_duration, audio_duration)
+
+        if target < min_duration_for_images:
+            target = min(min_duration_for_images, audio_duration)
+
+        logger.info(f"[{job_id}] Target duration: {target:.1f}s ({num_images} images)")
+        return target
+
+    def _add_audio_with_effects(
+        self,
+        video: CompositeVideoClip,
+        audio_path: str,
+        audio_data: AudioData,
+        video_duration: float
+    ) -> Tuple[CompositeVideoClip, List]:
+        """Add audio with TikTok hook effect and fades."""
+        audio_clip = AudioFileClip(audio_path)
+        audio_clips_to_close = [audio_clip]
+
+        # Trim audio
+        if audio_data.start_time or audio_data.duration:
+            start = audio_data.start_time or 0
+            duration = audio_data.duration or video_duration
+            trimmed = audio_clip.subclipped(start, start + min(duration, audio_clip.duration - start))
+            audio_clips_to_close.append(trimmed)
+            audio_clip = trimmed
+
+        if audio_clip.duration > video_duration:
+            trimmed = audio_clip.subclipped(0, video_duration)
+            audio_clips_to_close.append(trimmed)
+            audio_clip = trimmed
+
+        # TikTok Hook: Calm start then beat drop
+        if audio_clip.duration > HOOK_DURATION:
+            from moviepy import concatenate_audioclips
+            hook_section = audio_clip.subclipped(0, HOOK_DURATION).with_volume_scaled(HOOK_CALM_FACTOR)
+            main_section = audio_clip.subclipped(HOOK_DURATION, audio_clip.duration)
+            audio_clips_to_close.extend([hook_section, main_section])
+            audio_clip = concatenate_audioclips([hook_section, main_section])
+            audio_clips_to_close.append(audio_clip)
+
+        # Fade effects
+        faded = audio_clip.with_effects([
+            AudioFadeIn(AUDIO_FADE_IN),
+            AudioFadeOut(AUDIO_FADE_OUT)
+        ])
+        audio_clips_to_close.append(faded)
+
+        return video.with_audio(faded), audio_clips_to_close
+
+    async def _render_with_nvenc(
+        self,
+        video: CompositeVideoClip,
+        output_path: str,
+        temp_audiofile: str,
+        job_id: str
+    ) -> None:
+        """Render video with optimized NVENC settings for TikTok."""
+        is_mac = platform.system() == "Darwin"
+        loop = asyncio.get_event_loop()
+
+        if not is_mac:
+            # GPU encoding with optimized NVENC parameters for TikTok
+            # - preset p4 (balanced speed/quality)
+            # - cq 23 (constant quality, good for social media)
+            # - b:v 8M (target bitrate for TikTok HD)
+            await loop.run_in_executor(
+                None,
+                lambda: video.write_videofile(
+                    output_path,
+                    fps=30,
+                    codec="h264_nvenc",
+                    audio_codec="aac",
+                    audio_bitrate="192k",
+                    temp_audiofile=temp_audiofile,
+                    ffmpeg_params=[
+                        "-preset", "p4",       # Fast encoding (p1=fastest, p7=slowest)
+                        "-tune", "hq",         # High quality tuning
+                        "-rc", "vbr",          # Variable bitrate
+                        "-cq", "23",           # Constant quality (18-28, lower=better)
+                        "-b:v", "8M",          # Target bitrate
+                        "-maxrate", "12M",     # Max bitrate spike
+                        "-bufsize", "16M",     # Buffer size
+                        "-profile:v", "high",  # H.264 High profile (auto level)
+                    ],
+                    logger=None
+                )
+            )
+            logger.info(f"[{job_id}] Rendered with GPU (NVENC h264_nvenc, preset=p4)")
+        else:
+            # macOS: CPU encoding
+            await loop.run_in_executor(
+                None,
+                lambda: video.write_videofile(
+                    output_path,
+                    fps=30,
+                    codec="libx264",
+                    audio_codec="aac",
+                    audio_bitrate="192k",
+                    threads=8,
+                    preset="fast",
+                    ffmpeg_params=["-crf", "23"],
+                    temp_audiofile=temp_audiofile,
+                    logger=None
+                )
+            )
+            logger.info(f"[{job_id}] Rendered with CPU (libx264)")
+
+    def _cleanup_clips(
+        self,
+        video: CompositeVideoClip,
+        clips: List[ImageClip],
+        audio_clips: List
+    ) -> None:
+        """Clean up all clips and force garbage collection."""
+        import gc
+
+        for aclip in audio_clips:
+            try:
+                aclip.close()
+            except Exception:
+                pass
+
+        try:
+            video.close()
+        except Exception:
+            pass
+
+        for clip in clips:
+            try:
+                clip.close()
+            except Exception:
+                pass
+
+        gc.collect()
 
     def _adjust_script_timings(
         self,
@@ -439,27 +503,20 @@ class VideoRenderer:
         video_duration: float,
         job_id: str
     ) -> ScriptData:
-        """
-        Adjust script timings to fit within the actual video duration.
-        CRITICAL: Ensures NO OVERLAP between subtitles with explicit gap.
-        """
+        """Adjust script timings to fit within video duration."""
         from ..models.render_job import ScriptLine
 
         if not script.lines:
             return script
 
         num_lines = len(script.lines)
-        logger.info(f"[{job_id}] Adjusting {num_lines} script lines for {video_duration}s video")
-
-        # Gap between subtitles (prevents overlap)
-        SUBTITLE_GAP = 0.5  # 0.5 second gap between subtitles
-        MIN_SUBTITLE_DURATION = 1.5  # Minimum display time
-        MAX_SUBTITLE_DURATION = 4.0  # Maximum display time
+        SUBTITLE_GAP = 0.5
+        MIN_SUBTITLE_DURATION = 1.5
+        MAX_SUBTITLE_DURATION = 4.0
 
         adjusted_lines = []
 
         if num_lines == 1:
-            # Single line: show in middle portion of video
             line = script.lines[0]
             adjusted_lines.append(ScriptLine(
                 text=line.text,
@@ -467,33 +524,26 @@ class VideoRenderer:
                 duration=min(video_duration - 1.0, MAX_SUBTITLE_DURATION)
             ))
         else:
-            # Calculate total available time for subtitles
-            total_available = video_duration - 0.5  # Leave margin at end
+            total_available = video_duration - 0.5
             total_gaps = (num_lines - 1) * SUBTITLE_GAP
             total_subtitle_time = total_available - total_gaps
 
-            # Duration per subtitle (evenly distributed)
-            duration_per_subtitle = total_subtitle_time / num_lines
-            duration_per_subtitle = max(MIN_SUBTITLE_DURATION, min(MAX_SUBTITLE_DURATION, duration_per_subtitle))
+            duration_per = total_subtitle_time / num_lines
+            duration_per = max(MIN_SUBTITLE_DURATION, min(MAX_SUBTITLE_DURATION, duration_per))
 
-            # If not enough time, reduce gap
-            if duration_per_subtitle * num_lines + total_gaps > total_available:
-                # Recalculate with minimum duration
-                duration_per_subtitle = MIN_SUBTITLE_DURATION
-                SUBTITLE_GAP = max(0.2, (total_available - duration_per_subtitle * num_lines) / max(1, num_lines - 1))
+            if duration_per * num_lines + total_gaps > total_available:
+                duration_per = MIN_SUBTITLE_DURATION
+                SUBTITLE_GAP = max(0.2, (total_available - duration_per * num_lines) / max(1, num_lines - 1))
 
-            current_time = 0.3  # Start slightly after video begins
+            current_time = 0.3
 
             for i, line in enumerate(script.lines):
-                # Calculate timing ensuring NO OVERLAP
                 timing = current_time
-                duration = duration_per_subtitle
+                duration = duration_per
 
-                # Ensure we don't exceed video duration
                 if timing + duration > video_duration - 0.3:
                     duration = video_duration - timing - 0.3
                     if duration < 1.0:
-                        logger.warning(f"[{job_id}] Skipping subtitle {i}: not enough time")
                         continue
 
                 adjusted_lines.append(ScriptLine(
@@ -502,19 +552,7 @@ class VideoRenderer:
                     duration=duration
                 ))
 
-                # Move to next position (end of current + gap)
                 current_time = timing + duration + SUBTITLE_GAP
-
-        # Log adjusted timings and verify no overlap
-        for i, line in enumerate(adjusted_lines):
-            end_time = line.timing + line.duration
-            logger.info(f"[{job_id}]   Subtitle {i}: '{line.text[:20]}...' [{line.timing:.1f}s - {end_time:.1f}s]")
-
-            # Verify no overlap with next subtitle
-            if i < len(adjusted_lines) - 1:
-                next_start = adjusted_lines[i + 1].timing
-                if end_time > next_start:
-                    logger.error(f"[{job_id}]   OVERLAP DETECTED: {end_time:.1f} > {next_start:.1f}")
 
         return ScriptData(lines=adjusted_lines)
 
@@ -526,7 +564,6 @@ class VideoRenderer:
         aspect_ratio: str
     ) -> CompositeVideoClip:
         """Add script text as overlays."""
-        # Get video size
         sizes = {
             "9:16": (1080, 1920),
             "16:9": (1920, 1080),
@@ -545,7 +582,6 @@ class VideoRenderer:
                     video_size=video_size
                 )
                 text_clips.append(txt_clip)
-                logger.info(f"Created text clip: '{line.text[:20]}...' at {line.timing}s")
             except Exception as e:
                 logger.error(f"Failed to create text clip: {e}")
                 continue

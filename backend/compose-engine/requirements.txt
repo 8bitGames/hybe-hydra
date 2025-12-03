@@ -4,15 +4,13 @@ uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 
 # Video processing
-moviepy==2.1.1
-Pillow>=10.0.0
-numpy>=1.26.0
+moviepy==1.0.3
+Pillow==10.2.0
+numpy==1.26.3
 
 # Audio processing
 librosa==0.10.1
 soundfile==0.12.1
-audioread==3.0.1
-scipy>=1.11.0,<1.13.0  # Pin scipy for librosa compatibility
 
 # AWS/MinIO
 boto3==1.35.0

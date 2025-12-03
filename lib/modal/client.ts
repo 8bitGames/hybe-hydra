@@ -4,7 +4,12 @@
  * This client calls Modal serverless GPU functions directly,
  * bypassing Railway for simpler architecture.
  *
- * Flow: Next.js → Modal (GPU) → S3
+ * Flow: Next.js → Modal (GPU T4 + NVENC) → S3
+ *
+ * GPU Stack:
+ *   - Base: nvidia/cuda:12.4.0-devel-ubuntu22.04
+ *   - FFmpeg: jellyfin-ffmpeg6 (has h264_nvenc baked in)
+ *   - Encoder: h264_nvenc (5-10x faster than CPU)
  */
 
 const MODAL_SUBMIT_URL = process.env.MODAL_SUBMIT_URL;
@@ -80,7 +85,7 @@ export async function submitRenderToModal(
     },
     body: JSON.stringify({
       ...request,
-      use_gpu: false, // CPU encoding (libx264) for reliability
+      use_gpu: true, // GPU encoding (NVENC h264_nvenc) - 5-10x faster
     }),
   });
 
@@ -194,8 +199,8 @@ export async function submitBatchRenderToModal(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      jobs: jobs.map(job => ({ ...job, use_gpu: false })),
-      use_gpu: false, // CPU encoding (libx264) for reliability
+      jobs,
+      use_gpu: true, // GPU encoding (NVENC h264_nvenc) - 5-10x faster
     }),
   });
 

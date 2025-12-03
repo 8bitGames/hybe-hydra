@@ -1,11 +1,16 @@
 """
-Modal App for Video Rendering with GPU Acceleration.
+Modal App for Video Rendering with GPU Acceleration (NVENC).
 
 This is the ONLY backend needed for video composition.
 Next.js calls Modal directly - no Railway needed.
 
 Architecture:
-  Next.js (Vercel) → Modal (GPU) → S3
+  Next.js (Vercel) → Modal (GPU T4 + NVENC) → S3
+
+GPU Stack:
+  - Base: nvidia/cuda:12.4.0-devel-ubuntu22.04
+  - FFmpeg: jellyfin-ffmpeg6 (has h264_nvenc/hevc_nvenc baked in)
+  - Encoder: h264_nvenc (NVIDIA GPU encoder, 5-10x faster than CPU)
 
 Deploy:
   cd backend/compose-engine
@@ -25,10 +30,10 @@ Endpoints (auto-generated):
   - GET  https://modawnai--hydra-compose-engine-get-render-status.modal.run
 
 Performance Optimizations:
+  - NVENC GPU encoding (h264_nvenc) - 5-10x faster than CPU
   - Parallel image downloads (asyncio.gather)
   - Parallel image processing (ThreadPoolExecutor)
-  - Container warmup with container_idle_timeout
-  - Fast libx264 encoding with multi-threading
+  - Container warmup with scaledown_window
   - Connection pooling for S3 operations
   - Retry logic with exponential backoff
 """
@@ -40,12 +45,17 @@ from pathlib import Path
 # Modal App Configuration
 # ============================================================================
 
-# Define the container image with all dependencies
+# Define the container image with NVIDIA CUDA + Jellyfin FFmpeg (NVENC support)
 video_image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.from_registry(
+        "nvidia/cuda:12.4.0-devel-ubuntu22.04",
+        add_python="3.11"
+    )
+    .entrypoint([])  # Remove chatty NVIDIA prints on container start
     # System dependencies
     .apt_install(
-        "ffmpeg",
+        "wget",
+        "gnupg",
         "libsm6",
         "libxext6",
         "libgl1-mesa-glx",
@@ -55,6 +65,31 @@ video_image = (
         "fonts-noto-cjk",
         "fonts-dejavu",
     )
+    # Install Jellyfin FFmpeg (has NVENC h264_nvenc/hevc_nvenc baked in)
+    .run_commands(
+        # Step 1: Add Jellyfin repo
+        "echo '=== STEP 1: Adding Jellyfin GPG key ===' && wget -O - https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /usr/share/keyrings/jellyfin.gpg && echo 'GPG key added successfully'",
+        "echo '=== STEP 2: Adding Jellyfin apt repo ===' && echo 'deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/ubuntu jammy main' > /etc/apt/sources.list.d/jellyfin.list && cat /etc/apt/sources.list.d/jellyfin.list",
+        # Step 2: Install jellyfin-ffmpeg6
+        "echo '=== STEP 3: Installing jellyfin-ffmpeg6 ===' && apt-get update && apt-get install -y jellyfin-ffmpeg6 && echo 'jellyfin-ffmpeg6 installed'",
+        # Step 3: Check what was installed
+        "echo '=== STEP 4: Checking installed files ===' && ls -la /usr/lib/jellyfin-ffmpeg/ || echo 'ERROR: /usr/lib/jellyfin-ffmpeg/ not found'",
+        # Step 4: Create symlinks
+        "echo '=== STEP 5: Creating symlinks ===' && ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg && ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe && ls -la /usr/local/bin/ffmpeg /usr/local/bin/ffprobe",
+        # Step 5: Verify ffmpeg
+        "echo '=== STEP 6: Verifying ffmpeg ===' && which ffmpeg && ffmpeg -version 2>&1 | head -10",
+        # Step 6: Check for NVENC encoders
+        "echo '=== STEP 7: Checking NVENC encoders ===' && ffmpeg -encoders 2>&1 | grep -i nvenc || echo 'WARNING: No NVENC encoders found in ffmpeg'",
+        # Step 7: Check NVIDIA driver
+        "echo '=== STEP 8: Checking NVIDIA ===' && nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>&1 || echo 'nvidia-smi not available during build (expected - GPU only at runtime)'",
+    )
+    # Set environment for jellyfin-ffmpeg with NVENC
+    .env({
+        # CRITICAL: Tell imageio/MoviePy to use jellyfin-ffmpeg instead of bundled ffmpeg
+        "IMAGEIO_FFMPEG_EXE": "/usr/lib/jellyfin-ffmpeg/ffmpeg",
+        # Library path for NVENC runtime libs
+        "LD_LIBRARY_PATH": "/usr/lib/jellyfin-ffmpeg/lib:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}",
+    })
     # Python dependencies
     .pip_install(
         "moviepy==2.1.1",
@@ -89,10 +124,11 @@ cache_volume = modal.Volume.from_name("hydra-render-cache", create_if_missing=Tr
 
 
 # ============================================================================
-# Video Rendering Function (CPU with libx264)
+# Video Rendering Function (GPU with NVENC h264_nvenc)
 # ============================================================================
 
 @app.function(
+    gpu="T4",  # NVIDIA T4 GPU for NVENC hardware encoding
     timeout=600,  # 10 minutes max per video
     memory=8192,  # 8GB RAM
     cpu=4.0,  # More CPU cores for parallel image processing
@@ -103,7 +139,7 @@ cache_volume = modal.Volume.from_name("hydra-render-cache", create_if_missing=Tr
 )
 def render_video(request_data: dict) -> dict:
     """
-    Render a video using MoviePy with CPU encoding (libx264).
+    Render a video using MoviePy with GPU encoding (NVENC h264_nvenc).
 
     Args:
         request_data: Dictionary containing RenderRequest fields
@@ -116,8 +152,8 @@ def render_video(request_data: dict) -> dict:
     import asyncio
     import traceback
 
-    # Force CPU encoding (libx264)
-    os.environ["USE_NVENC"] = "0"
+    # Enable GPU encoding (NVENC)
+    os.environ["USE_NVENC"] = "1"
 
     # Add app to path
     sys.path.insert(0, "/root")
@@ -129,7 +165,7 @@ def render_video(request_data: dict) -> dict:
     request = RenderRequest(**request_data)
     job_id = request.job_id
 
-    print(f"[{job_id}] === Starting CPU render on Modal (libx264) ===")
+    print(f"[{job_id}] === Starting GPU render on Modal (NVENC h264_nvenc) ===")
     print(f"[{job_id}] Images: {len(request.images)}")
     print(f"[{job_id}] Vibe: {request.settings.vibe.value}")
     print(f"[{job_id}] Aspect Ratio: {request.settings.aspect_ratio.value}")
@@ -330,12 +366,14 @@ def health():
     return {
         "status": "healthy",
         "service": "Hydra Compose Engine (Modal)",
-        "encoding": "libx264 (CPU)",
+        "encoding": "h264_nvenc (GPU NVENC)",
+        "gpu": "T4",
+        "ffmpeg": "jellyfin-ffmpeg6",
         "optimizations": [
             "parallel_image_downloads",
             "parallel_image_processing",
             "container_warmup",
-            "libx264_fast_preset",
+            "nvenc_gpu_encoding",
             "retry_logic",
         ],
     }
