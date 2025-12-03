@@ -24,8 +24,8 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   // 기본 메타데이터
   title: {
-    default: "Hydra - AI 영상 자동화 플랫폼 | 브랜드 숏폼 대량 제작",
-    template: "%s | Hydra",
+    default: "HYDRA - AI 영상 자동화 플랫폼 | 브랜드 숏폼 대량 제작",
+    template: "%s | HYDRA",
   },
   description:
     "Hydra는 기업과 브랜드를 위한 AI 영상 오케스트레이션 플랫폼입니다. 트렌드 인텔리전스 기반으로 브랜드 IP를 활용한 숏폼 콘텐츠를 몇 분 만에 수천 개 생성하고, TikTok·Instagram·YouTube Shorts에 자동 배포하세요. 콘텐츠 마케팅의 새로운 패러다임을 경험하세요.",
@@ -98,8 +98,8 @@ export const metadata: Metadata = {
     locale: "ko_KR",
     alternateLocale: "en_US",
     url: siteUrl,
-    siteName: "Hydra",
-    title: "Hydra - AI 영상 자동화 플랫폼 | 브랜드 숏폼 대량 제작",
+    siteName: "HYDRA",
+    title: "HYDRA - AI 영상 자동화 플랫폼 | 브랜드 숏폼 대량 제작",
     description:
       "AI 기반 트렌드 분석으로 브랜드 숏폼 콘텐츠를 몇 분 만에 수천 개 생성하세요. TikTok, Instagram, YouTube Shorts 자동 배포까지 한 번에.",
   },
@@ -108,7 +108,7 @@ export const metadata: Metadata = {
   // Note: 이미지는 app/opengraph-image.tsx에서 동적으로 생성됨
   twitter: {
     card: "summary_large_image",
-    title: "Hydra - AI 영상 자동화 플랫폼",
+    title: "HYDRA - AI 영상 자동화 플랫폼",
     description:
       "트렌드 기반 AI로 브랜드 숏폼 콘텐츠를 대량 생성하고 자동 배포하세요.",
     creator: "@hydra_ai",
