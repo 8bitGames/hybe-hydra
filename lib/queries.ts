@@ -13,6 +13,8 @@ import {
   AssetStats,
 } from "./campaigns-api";
 import { videoApi, VideoGeneration, VideoGenerationList, VideoGenerationStatus, VideoGenerationType } from "./video-api";
+import { pipelineApi, PipelineItem, PipelineListResponse } from "./pipeline-api";
+import { composeApi, ComposedVideo, ComposedVideosResponse } from "./compose-api";
 
 // Query Keys
 export const queryKeys = {
@@ -39,6 +41,20 @@ export const queryKeys = {
   videosList: (campaignId: string, params?: { page?: number; status?: string; generation_type?: string }) =>
     ["videos", campaignId, "list", params] as const,
   video: (id: string) => ["videos", "detail", id] as const,
+
+  // Pipelines
+  pipelines: ["pipelines"] as const,
+  pipelinesList: (type?: "ai" | "compose" | "all") => ["pipelines", "list", type] as const,
+
+  // Compose Gallery
+  composeVideos: ["compose", "videos"] as const,
+  composeVideosList: (params?: { page?: number; page_size?: number; campaign_id?: string }) =>
+    ["compose", "videos", "list", params] as const,
+
+  // Trends
+  trends: ["trends"] as const,
+  trendsList: ["trends", "list"] as const,
+  savedTrends: ["trends", "saved"] as const,
 };
 
 // Dashboard Stats
@@ -383,6 +399,188 @@ export function usePerformanceStats() {
   };
 }
 
+// Pipelines - fetches all pipelines across campaigns
+export function usePipelines(
+  campaigns: Array<{ id: string; name: string }>,
+  options?: { type?: "ai" | "compose" | "all"; refetchInterval?: number }
+) {
+  const campaignIds = campaigns.map((c) => c.id);
+  const campaignNames = campaigns.reduce((acc, c) => {
+    acc[c.id] = c.name;
+    return acc;
+  }, {} as Record<string, string>);
+
+  return useQuery({
+    queryKey: queryKeys.pipelinesList(options?.type),
+    queryFn: async (): Promise<PipelineListResponse> => {
+      if (campaignIds.length === 0) {
+        return { items: [], total: 0 };
+      }
+      return pipelineApi.listAll(campaignIds, campaignNames, options?.type === "all" ? undefined : options?.type);
+    },
+    enabled: campaigns.length > 0,
+    staleTime: 30 * 1000, // 30 seconds - pipelines change frequently
+    refetchInterval: options?.refetchInterval, // For auto-refresh during processing
+  });
+}
+
+// Seed Candidates - completed AI videos for creating variations
+export function useSeedCandidates(campaigns: Array<{ id: string; name: string }>) {
+  return useQuery({
+    queryKey: ["seeds", "ai"],
+    queryFn: async () => {
+      if (campaigns.length === 0) return [];
+
+      const campaignNames = campaigns.reduce((acc, c) => {
+        acc[c.id] = c.name;
+        return acc;
+      }, {} as Record<string, string>);
+
+      const results = await Promise.all(
+        campaigns.map(async (campaign) => {
+          try {
+            const response = await videoApi.getAll(campaign.id, {
+              status: "completed",
+              page_size: 50,
+            });
+            if (response.data) {
+              return response.data.items
+                .filter((video) => !video.id.startsWith("compose-"))
+                .map((video) => ({
+                  ...video,
+                  campaign_name: campaignNames[campaign.id],
+                  video_type: "ai" as const,
+                }));
+            }
+            return [];
+          } catch {
+            return [];
+          }
+        })
+      );
+
+      return results.flat().sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    },
+    enabled: campaigns.length > 0,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+}
+
+// Compose Candidates - completed compose videos for creating variations
+export function useComposeCandidates(campaigns: Array<{ id: string; name: string }>) {
+  return useQuery({
+    queryKey: ["seeds", "compose"],
+    queryFn: async () => {
+      if (campaigns.length === 0) return [];
+
+      const campaignNames = campaigns.reduce((acc, c) => {
+        acc[c.id] = c.name;
+        return acc;
+      }, {} as Record<string, string>);
+
+      const results = await Promise.all(
+        campaigns.map(async (campaign) => {
+          try {
+            const response = await videoApi.getAll(campaign.id, {
+              status: "completed",
+              page_size: 50,
+            });
+            if (response.data) {
+              return response.data.items
+                .filter((video) => video.id.startsWith("compose-"))
+                .map((video) => ({
+                  ...video,
+                  campaign_name: campaignNames[campaign.id],
+                  video_type: "compose" as const,
+                }));
+            }
+            return [];
+          } catch {
+            return [];
+          }
+        })
+      );
+
+      return results.flat().sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    },
+    enabled: campaigns.length > 0,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+}
+
+// Compose Gallery - all composed videos
+export function useComposeVideos(params?: {
+  page?: number;
+  page_size?: number;
+  campaign_id?: string;
+}) {
+  return useQuery({
+    queryKey: queryKeys.composeVideosList(params),
+    queryFn: async () => {
+      return composeApi.getComposedVideos(params);
+    },
+    staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+// Trends - saved trend videos from database
+export interface SavedTrendVideo {
+  id: string;
+  searchQuery: string;
+  searchType: string;
+  playCount: number | null;
+}
+
+export interface TrendGroup {
+  query: string;
+  type: string;
+  videos: SavedTrendVideo[];
+  totalPlayCount: number;
+}
+
+export function useSavedTrends() {
+  return useQuery({
+    queryKey: queryKeys.savedTrends,
+    queryFn: async (): Promise<TrendGroup[]> => {
+      const response = await api.get<{
+        success: boolean;
+        videos: SavedTrendVideo[];
+        total: number;
+      }>("/api/v1/trends/videos?limit=100");
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const videos = response.data?.videos || [];
+
+      // Group videos by search query
+      const groupMap = new Map<string, SavedTrendVideo[]>();
+      videos.forEach((video) => {
+        const existing = groupMap.get(video.searchQuery) || [];
+        existing.push(video);
+        groupMap.set(video.searchQuery, existing);
+      });
+
+      // Convert to TrendGroup array and sort
+      const groups: TrendGroup[] = Array.from(groupMap.entries()).map(([query, vids]) => ({
+        query,
+        type: vids[0]?.searchType || "keyword",
+        videos: vids.sort((a, b) => (b.playCount || 0) - (a.playCount || 0)),
+        totalPlayCount: vids.reduce((sum, v) => sum + (v.playCount || 0), 0),
+      }));
+
+      groups.sort((a, b) => b.totalPlayCount - a.totalPlayCount);
+      return groups;
+    },
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+}
+
 // Invalidation helpers
 export function useInvalidateQueries() {
   const queryClient = useQueryClient();
@@ -398,6 +596,12 @@ export function useInvalidateQueries() {
       queryClient.invalidateQueries({ queryKey: queryKeys.assets(campaignId) }),
     invalidateVideos: (campaignId: string) =>
       queryClient.invalidateQueries({ queryKey: queryKeys.videos(campaignId) }),
+    invalidatePipelines: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines }),
+    invalidateComposeVideos: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.composeVideos }),
+    invalidateTrends: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.trends }),
     invalidateAll: () => queryClient.invalidateQueries(),
   };
 }

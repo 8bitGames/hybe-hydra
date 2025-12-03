@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { type Campaign } from "@/lib/campaigns-api";
-import { useCampaigns } from "@/lib/queries";
+import { useCampaigns, usePipelines, useSeedCandidates, useComposeCandidates, useInvalidateQueries } from "@/lib/queries";
 import { pipelineApi, PipelineItem, cleanupApi, CleanupResponse } from "@/lib/pipeline-api";
 import { presetsApi, StylePreset, variationsApi, VariationConfigRequest, videoApi, VideoGeneration, composeVariationsApi } from "@/lib/video-api";
 import { socialAccountsApi, SocialAccount } from "@/lib/publishing-api";
@@ -112,16 +112,49 @@ export default function GlobalPipelinePage() {
 
   // Use TanStack Query for campaigns with caching
   const { data: campaignsData, isLoading: campaignsLoading } = useCampaigns({ page_size: 50 });
-  const campaigns = campaignsData?.items || [];
+  const campaigns = useMemo(() => campaignsData?.items || [], [campaignsData]);
 
-  const [pipelines, setPipelines] = useState<PipelineItem[]>([]);
-  const [seedCandidates, setSeedCandidates] = useState<SeedCandidate[]>([]);
-  const [composeCandidates, setComposeCandidates] = useState<SeedCandidate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingSeeds, setLoadingSeeds] = useState(false);
-  const [loadingCompose, setLoadingCompose] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  // Invalidation helpers
+  const { invalidatePipelines } = useInvalidateQueries();
+
   const [activeTab, setActiveTab] = useState("pipelines");
+
+  // Determine if pipelines are processing for auto-refresh
+  const [hasProcessing, setHasProcessing] = useState(false);
+
+  // Use TanStack Query for pipelines with caching and auto-refresh
+  const {
+    data: pipelinesData,
+    isLoading: pipelinesLoading,
+    refetch: refetchPipelines,
+  } = usePipelines(campaigns, {
+    type: "all",
+    refetchInterval: hasProcessing ? 5000 : undefined, // Auto-refresh every 5s if processing
+  });
+  const pipelines = pipelinesData?.items || [];
+
+  // Update hasProcessing when pipelines change
+  useEffect(() => {
+    const processing = pipelines.some((p) => p.status === "processing");
+    setHasProcessing(processing);
+  }, [pipelines]);
+
+  // Use TanStack Query for seed candidates (AI videos)
+  const {
+    data: seedCandidates = [],
+    isLoading: loadingSeeds,
+    refetch: refetchSeeds,
+  } = useSeedCandidates(campaigns);
+
+  // Use TanStack Query for compose candidates
+  const {
+    data: composeCandidates = [],
+    isLoading: loadingCompose,
+    refetch: refetchCompose,
+  } = useComposeCandidates(campaigns);
+
+  const loading = campaignsLoading || pipelinesLoading;
+  const [refreshing, setRefreshing] = useState(false);
 
   // View mode
   const [pipelineViewMode, setPipelineViewMode] = useState<ViewMode>("table");
@@ -191,157 +224,21 @@ export default function GlobalPipelinePage() {
     fetchSocialAccounts();
   }, []);
 
-  // Fetch pipelines from all campaigns
-  const fetchPipelines = useCallback(async () => {
-    if (campaigns.length === 0) return;
-
-    try {
-      const campaignNames: Record<string, string> = {};
-      campaigns.forEach((c) => {
-        campaignNames[c.id] = c.name;
-      });
-
-      const response = await pipelineApi.listAll(
-        campaigns.map((c) => c.id),
-        campaignNames
-      );
-      setPipelines(response.items);
-    } catch (error) {
-      console.error("Failed to fetch pipelines:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [campaigns]);
-
-  // Fetch seed candidates (completed AI videos - exclude compose videos)
-  const fetchSeedCandidates = useCallback(async () => {
-    if (campaigns.length === 0) return;
-
-    setLoadingSeeds(true);
-    try {
-      const campaignNames: Record<string, string> = {};
-      campaigns.forEach((c) => {
-        campaignNames[c.id] = c.name;
-      });
-
-      const results = await Promise.all(
-        campaigns.map(async (campaign) => {
-          try {
-            const response = await videoApi.getAll(campaign.id, {
-              status: "completed",
-              page_size: 50,
-            });
-            if (response.data) {
-              return response.data.items
-                .filter((video: VideoGeneration) => !video.id.startsWith("compose-"))
-                .map((video: VideoGeneration) => ({
-                  ...video,
-                  campaign_name: campaignNames[campaign.id],
-                  video_type: "ai" as VideoType,
-                }));
-            }
-            return [] as SeedCandidate[];
-          } catch {
-            return [] as SeedCandidate[];
-          }
-        })
-      );
-
-      const allSeeds = results.flat().sort(
-        (a: SeedCandidate, b: SeedCandidate) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      setSeedCandidates(allSeeds);
-    } catch (error) {
-      console.error("Failed to fetch seed candidates:", error);
-    } finally {
-      setLoadingSeeds(false);
-    }
-  }, [campaigns]);
-
-  // Fetch compose candidates (completed compose videos only)
-  const fetchComposeCandidates = useCallback(async () => {
-    if (campaigns.length === 0) return;
-
-    setLoadingCompose(true);
-    try {
-      const campaignNames: Record<string, string> = {};
-      campaigns.forEach((c) => {
-        campaignNames[c.id] = c.name;
-      });
-
-      const results = await Promise.all(
-        campaigns.map(async (campaign) => {
-          try {
-            const response = await videoApi.getAll(campaign.id, {
-              status: "completed",
-              page_size: 50,
-            });
-            if (response.data) {
-              return response.data.items
-                .filter((video: VideoGeneration) => video.id.startsWith("compose-"))
-                .map((video: VideoGeneration) => ({
-                  ...video,
-                  campaign_name: campaignNames[campaign.id],
-                  video_type: "compose" as VideoType,
-                }));
-            }
-            return [] as SeedCandidate[];
-          } catch {
-            return [] as SeedCandidate[];
-          }
-        })
-      );
-
-      const allCompose = results.flat().sort(
-        (a: SeedCandidate, b: SeedCandidate) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      setComposeCandidates(allCompose);
-    } catch (error) {
-      console.error("Failed to fetch compose candidates:", error);
-    } finally {
-      setLoadingCompose(false);
-    }
-  }, [campaigns]);
-
-  useEffect(() => {
-    if (campaigns.length > 0) {
-      fetchPipelines();
-    }
-  }, [campaigns, fetchPipelines]);
-
-  useEffect(() => {
-    if (activeTab === "create" && campaigns.length > 0 && seedCandidates.length === 0) {
-      fetchSeedCandidates();
-    }
-  }, [activeTab, campaigns, seedCandidates.length, fetchSeedCandidates]);
-
-  useEffect(() => {
-    if (activeTab === "compose" && campaigns.length > 0 && composeCandidates.length === 0) {
-      fetchComposeCandidates();
-    }
-  }, [activeTab, campaigns, composeCandidates.length, fetchComposeCandidates]);
-
-  useEffect(() => {
-    const hasProcessing = pipelines.some((p) => p.status === "processing");
-    if (hasProcessing) {
-      const interval = setInterval(fetchPipelines, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [pipelines, fetchPipelines]);
-
-  const handleRefresh = () => {
+  // Handle refresh using TanStack Query refetch
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    if (activeTab === "pipelines") {
-      fetchPipelines();
-    } else if (activeTab === "create") {
-      fetchSeedCandidates();
-      setRefreshing(false);
-    } else if (activeTab === "compose") {
-      fetchComposeCandidates();
+    try {
+      if (activeTab === "pipelines") {
+        await refetchPipelines();
+      } else if (activeTab === "create") {
+        await refetchSeeds();
+      } else if (activeTab === "compose") {
+        await refetchCompose();
+      }
+    } finally {
       setRefreshing(false);
     }
-  };
+  }, [activeTab, refetchPipelines, refetchSeeds, refetchCompose]);
 
   const handleAutoCreateVariations = async (video: VideoGeneration) => {
     setCreatingAutoPipeline(true);
@@ -364,7 +261,7 @@ export default function GlobalPipelinePage() {
       }
 
       setActiveTab("pipelines");
-      fetchPipelines();
+      refetchPipelines();
     } catch (error) {
       console.error("Failed to create auto variations:", error);
     } finally {
@@ -408,8 +305,8 @@ export default function GlobalPipelinePage() {
       const result = await pipelineApi.deleteBatch(pipeline.campaign_id, pipeline.batch_id, true);
       console.log(`Deleted ${result.deleted} generations, ${result.failed} failed`);
 
-      // Remove from local state
-      setPipelines((prev) => prev.filter((p) => p.batch_id !== pipeline.batch_id));
+      // Refetch pipelines using TanStack Query
+      await refetchPipelines();
     } catch (error) {
       console.error("Failed to delete pipeline:", error);
     } finally {
@@ -444,7 +341,7 @@ export default function GlobalPipelinePage() {
       setCleanupData(data);
 
       // Refresh pipelines
-      fetchPipelines();
+      refetchPipelines();
     } catch (error) {
       console.error("Failed to mark stuck as failed:", error);
     } finally {
@@ -465,7 +362,7 @@ export default function GlobalPipelinePage() {
       setCleanupData(data);
 
       // Refresh pipelines
-      fetchPipelines();
+      refetchPipelines();
     } catch (error) {
       console.error("Failed to delete orphaned:", error);
     } finally {
@@ -486,7 +383,7 @@ export default function GlobalPipelinePage() {
       setCleanupData(data);
 
       // Refresh pipelines
-      fetchPipelines();
+      refetchPipelines();
     } catch (error) {
       console.error("Failed to delete failed generations:", error);
     } finally {
@@ -511,7 +408,7 @@ export default function GlobalPipelinePage() {
       setCleanupData(data);
 
       // Refresh pipelines
-      fetchPipelines();
+      refetchPipelines();
     } catch (error) {
       console.error("Failed to run full cleanup:", error);
     } finally {
@@ -575,8 +472,8 @@ export default function GlobalPipelinePage() {
 
     console.log(`Deleted ${deleted} pipelines, ${failed} failed`);
 
-    // Remove deleted pipelines from state
-    setPipelines(prev => prev.filter(p => !selectedPipelines.has(p.batch_id)));
+    // Refetch pipelines using TanStack Query
+    await refetchPipelines();
     setSelectedPipelines(new Set());
     setSelectionMode(false);
     setDeletingSelected(false);
@@ -605,7 +502,7 @@ export default function GlobalPipelinePage() {
 
       setAIVariationModalOpen(false);
       setActiveTab("pipelines");
-      fetchPipelines();
+      refetchPipelines();
     } catch (error) {
       console.error("Failed to create AI variations:", error);
     } finally {
@@ -637,7 +534,7 @@ export default function GlobalPipelinePage() {
 
       setComposeVariationModalOpen(false);
       setActiveTab("pipelines");
-      fetchPipelines();
+      refetchPipelines();
     } catch (error) {
       console.error("Failed to create Compose variations:", error);
     } finally {

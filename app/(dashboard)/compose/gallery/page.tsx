@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  composeApi,
-  ComposedVideo,
-} from "@/lib/compose-api";
+import { ComposedVideo } from "@/lib/compose-api";
+import { useComposeVideos } from "@/lib/queries";
 import {
   Card,
   CardContent,
@@ -46,13 +44,19 @@ import { useI18n } from "@/lib/i18n";
 export default function ComposeGalleryPage() {
   const router = useRouter();
   const { language } = useI18n();
-  const [videos, setVideos] = useState<ComposedVideo[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // Use TanStack Query for compose videos with caching
+  const { data: videosData, isLoading: loading } = useComposeVideos({
+    page,
+    page_size: 12,
+  });
+
+  const videos = videosData?.items || [];
+  const totalPages = videosData?.pages || 1;
+  const total = videosData?.total || 0;
 
   // Video preview modal
   const [selectedVideo, setSelectedVideo] = useState<ComposedVideo | null>(null);
@@ -87,34 +91,13 @@ export default function ComposeGalleryPage() {
     createSimilar: language === "ko" ? "유사하게 만들기" : "Create Similar",
   };
 
-  const loadVideos = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result = await composeApi.getComposedVideos({
-        page,
-        page_size: 12,
-      });
-
-      setVideos(result.items);
-      setTotalPages(result.pages);
-      setTotal(result.total);
-    } catch (error) {
-      console.error("Failed to load composed videos:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [page]);
-
-  useEffect(() => {
-    loadVideos();
-  }, [loadVideos]);
-
-  const filteredVideos = videos.filter(
+  // Filter videos client-side based on search query
+  const filteredVideos = useMemo(() => videos.filter(
     (video) =>
       video.campaign_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       video.artist_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       video.prompt.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ), [videos, searchQuery]);
 
   const handleVideoClick = (video: ComposedVideo) => {
     setSelectedVideo(video);

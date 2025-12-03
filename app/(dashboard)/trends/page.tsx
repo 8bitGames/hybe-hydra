@@ -7,7 +7,7 @@ import { saveBridgePrompt } from "@/lib/bridge-storage";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api";
 import { promptApi, PromptTransformResponse } from "@/lib/video-api";
-import { useCampaigns } from "@/lib/queries";
+import { useCampaigns, useSavedTrends, useInvalidateQueries } from "@/lib/queries";
 import { trendsApi, type TextTrendAnalysisResponse, type VideoTrendAnalysisResponse, type TrendReportResponse } from "@/lib/trends-api";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -119,13 +119,16 @@ export default function TrendsPage() {
   // Main tab state
   const [mainTab, setMainTab] = useState<"bridge" | "analyze">("bridge");
 
-  // Data state
-  const [trendGroups, setTrendGroups] = useState<TrendGroup[]>([]);
-  const [loading, setLoading] = useState({ trends: true, collect: false });
-
   // Use TanStack Query for campaigns with caching
   const { data: campaignsData, isLoading: campaignsLoading } = useCampaigns({ page_size: 20, status: "active" });
   const campaigns = campaignsData?.items || [];
+
+  // Use TanStack Query for saved trends with caching
+  const { data: trendGroups = [], isLoading: trendsLoading, refetch: refetchTrends } = useSavedTrends();
+  const { invalidateTrends } = useInvalidateQueries();
+
+  // Loading state for collect operations (not cached)
+  const [collectLoading, setCollectLoading] = useState(false);
 
   // Bridge form state
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
@@ -271,52 +274,6 @@ export default function TrendsPage() {
     return num.toLocaleString();
   };
 
-  // Load saved trends
-  const loadSavedTrends = useCallback(async () => {
-    if (!accessToken) return;
-
-    setLoading((prev) => ({ ...prev, trends: true }));
-    try {
-      api.setAccessToken(accessToken);
-      const response = await api.get<{
-        success: boolean;
-        videos: SavedTrendVideo[];
-        total: number;
-      }>("/api/v1/trends/videos?limit=100");
-
-      if (response.data?.videos) {
-        const groupMap = new Map<string, SavedTrendVideo[]>();
-        response.data.videos.forEach((video) => {
-          const existing = groupMap.get(video.searchQuery) || [];
-          existing.push(video);
-          groupMap.set(video.searchQuery, existing);
-        });
-
-        const groups: TrendGroup[] = Array.from(groupMap.entries()).map(([query, videos]) => ({
-          query,
-          type: videos[0]?.searchType || "keyword",
-          videos: videos.sort((a, b) => (b.playCount || 0) - (a.playCount || 0)),
-          totalPlayCount: videos.reduce((sum, v) => sum + (v.playCount || 0), 0),
-        }));
-
-        groups.sort((a, b) => b.totalPlayCount - a.totalPlayCount);
-        setTrendGroups(groups);
-      }
-    } catch (error) {
-      console.error("Failed to load saved trends:", error);
-    } finally {
-      setLoading((prev) => ({ ...prev, trends: false }));
-    }
-  }, [accessToken]);
-
-  // Load saved trends on mount
-  React.useEffect(() => {
-    if (accessToken) {
-      api.setAccessToken(accessToken);
-      loadSavedTrends();
-    }
-  }, [accessToken, loadSavedTrends]);
-
   // Auto-select first campaign when campaigns are loaded
   React.useEffect(() => {
     if (campaigns.length > 0 && !selectedCampaignId) {
@@ -380,7 +337,7 @@ export default function TrendsPage() {
 
       toast.success(t.savedTrend, t.trendSaved);
       setSaveResult({ success: true, message: t.trendSaved });
-      loadSavedTrends();
+      refetchTrends(); // Refresh cached trends
     } catch (error) {
       console.error("Save failed:", error);
       setSaveResult({ success: false, message: t.searchFailed });
@@ -462,7 +419,7 @@ export default function TrendsPage() {
   const handleCollect = async () => {
     if (!isAuthenticated || !accessToken) return;
 
-    setLoading((prev) => ({ ...prev, collect: true }));
+    setCollectLoading(true);
     setCollectResult(null);
 
     try {
@@ -480,7 +437,7 @@ export default function TrendsPage() {
     } catch (err) {
       console.error("Collection failed:", err);
     } finally {
-      setLoading((prev) => ({ ...prev, collect: false }));
+      setCollectLoading(false);
     }
   };
 
@@ -828,7 +785,7 @@ export default function TrendsPage() {
 
                     {/* Saved Trends Tab */}
                     <TabsContent value="saved" className="mt-0 flex-1">
-                      {loading.trends ? (
+                      {trendsLoading ? (
                         <div className="flex items-center justify-center py-12">
                           <Spinner className="h-6 w-6" />
                         </div>
@@ -1060,8 +1017,8 @@ export default function TrendsPage() {
                     <Label htmlFor="explore" className="text-sm font-normal">{t.includeDiscover}</Label>
                   </div>
 
-                  <Button onClick={handleCollect} disabled={loading.collect} size="sm">
-                    {loading.collect ? (
+                  <Button onClick={handleCollect} disabled={collectLoading} size="sm">
+                    {collectLoading ? (
                       <>
                         <Spinner className="h-4 w-4 mr-2" />
                         {t.collecting}
