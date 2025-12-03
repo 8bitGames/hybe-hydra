@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { campaignsApi, assetsApi, Campaign, Asset } from "@/lib/campaigns-api";
+import { assetsApi, type Asset } from "@/lib/campaigns-api";
 import {
   videoApi,
   scoringApi,
@@ -20,6 +20,8 @@ import {
   ComposeOptions,
   ComposeInfoResponse,
 } from "@/lib/video-api";
+import { useCampaign, useVideos, useAssets } from "@/lib/queries";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -98,8 +100,8 @@ export default function CurationDashboardPage() {
     delete: language === "ko" ? "삭제" : "Delete",
     download: language === "ko" ? "다운로드" : "Download",
     close: language === "ko" ? "닫기" : "Close",
-    imageAudioCompose: language === "ko" ? "이미지+오디오 조합" : "Image+Audio Compose",
-    aiGenerated: language === "ko" ? "AI 생성" : "AI Generated",
+    imageAudioCompose: language === "ko" ? "컴포즈 영상" : "Compose Video",
+    aiGenerated: language === "ko" ? "AI 영상" : "AI Video",
     negative: language === "ko" ? "네거티브" : "Negative",
     noScore: language === "ko" ? "점수 없음" : "No score",
     on: language === "ko" ? "켜짐" : "On",
@@ -108,14 +110,29 @@ export default function CurationDashboardPage() {
     start: language === "ko" ? "시작" : "Start",
     // Type filter
     typeAll: language === "ko" ? "전체 타입" : "All Types",
-    typeAI: language === "ko" ? "AI 생성" : "AI Generated",
-    typeCompose: language === "ko" ? "컴포즈" : "Compose",
+    typeAI: language === "ko" ? "AI 영상" : "AI Video",
+    typeCompose: language === "ko" ? "컴포즈 영상" : "Compose Video",
   };
 
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
+  // Use TanStack Query for data fetching with caching
+  const queryClient = useQueryClient();
+  const { data: campaign, isLoading: campaignLoading, error: campaignError } = useCampaign(campaignId);
+  const { data: videosData, isLoading: videosLoading, refetch: refetchVideos } = useVideos(campaignId, { page_size: 100 });
+  const { data: audioAssetsData, isLoading: audioLoading } = useAssets(campaignId, { type: "audio", page_size: 50 });
+
+  // Local state for optimistic updates - initialized from query data
   const [generations, setGenerations] = useState<VideoGeneration[]>([]);
+  const audioAssets = audioAssetsData?.items || [];
+  const loading = campaignLoading || videosLoading || audioLoading;
+
+  // Sync query data to local state
+  useEffect(() => {
+    if (videosData?.items) {
+      setGenerations(videosData.items);
+    }
+  }, [videosData?.items]);
+
   const [stats, setStats] = useState<VideoGenerationStats | null>(null);
-  const [loading, setLoading] = useState(true);
   const [scoringAll, setScoringAll] = useState(false);
 
   // View state
@@ -141,7 +158,6 @@ export default function CurationDashboardPage() {
   const [copiedCaption, setCopiedCaption] = useState<string | null>(null);
 
   // Audio composition state
-  const [audioAssets, setAudioAssets] = useState<Asset[]>([]);
   const [selectedAudioId, setSelectedAudioId] = useState<string>("");
   const [audioVolume, setAudioVolume] = useState(1.0);
   const [audioStartTime, setAudioStartTime] = useState(0);
@@ -155,34 +171,10 @@ export default function CurationDashboardPage() {
   // Video playback refs
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
-  const loadData = useCallback(async () => {
-    try {
-      const [campaignResult, generationsResult, statsResult, assetsResult] = await Promise.all([
-        campaignsApi.getById(campaignId),
-        videoApi.getAll(campaignId, { page_size: 100 }),
-        videoApi.getStats(campaignId),
-        assetsApi.getByCampaign(campaignId, { type: "audio", page_size: 50 }),
-      ]);
-
-      if (campaignResult.error) {
-        router.push("/campaigns");
-        return;
-      }
-
-      if (campaignResult.data) setCampaign(campaignResult.data);
-      if (generationsResult.data) setGenerations(generationsResult.data.items);
-      if (statsResult.data) setStats(statsResult.data);
-      if (assetsResult.data) setAudioAssets(assetsResult.data.items);
-    } catch (err) {
-      console.error("Failed to load data:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [campaignId, router]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // Redirect if campaign not found
+  if (campaignError) {
+    router.push("/campaigns");
+  }
 
   // Sort and filter generations
   const sortedGenerations = [...generations]
@@ -218,15 +210,15 @@ export default function CurationDashboardPage() {
   const getGradeColor = (grade: string | null) => {
     switch (grade) {
       case "S":
-        return "bg-gradient-to-r from-yellow-400 to-amber-500 text-black";
+        return "bg-black text-white";
       case "A":
-        return "bg-green-500 text-white";
+        return "bg-zinc-800 text-white";
       case "B":
-        return "bg-blue-500 text-white";
+        return "bg-zinc-600 text-white";
       case "C":
-        return "bg-orange-500 text-white";
+        return "bg-zinc-400 text-zinc-900";
       case "D":
-        return "bg-red-500 text-white";
+        return "bg-zinc-300 text-zinc-900";
       default:
         return "bg-muted text-muted-foreground";
     }
@@ -566,8 +558,8 @@ export default function CurationDashboardPage() {
                       </div>
                     )}
                     {getVideoSourceType(gen) === "compose" && (
-                      <Badge className="absolute top-2 left-2 bg-purple-500 text-white">
-                        Compose
+                      <Badge className="absolute top-2 left-2 bg-zinc-800 text-white">
+                        {t.typeCompose}
                       </Badge>
                     )}
                   </div>
@@ -640,8 +632,8 @@ export default function CurationDashboardPage() {
                 {/* Video Source Type Badge */}
                 {getVideoSourceType(gen) === "compose" && (
                   <div className="absolute top-2 left-2">
-                    <Badge className="bg-purple-500 text-white text-[10px] px-1.5 py-0.5">
-                      Compose
+                    <Badge className="bg-zinc-800 text-white text-[10px] px-1.5 py-0.5">
+                      {t.typeCompose}
                     </Badge>
                   </div>
                 )}
@@ -721,8 +713,8 @@ export default function CurationDashboardPage() {
                         </div>
                       )}
                       {getVideoSourceType(gen) === "compose" && (
-                        <Badge className="absolute bottom-1 left-1 bg-purple-500 text-white text-[8px] px-1 py-0">
-                          Compose
+                        <Badge className="absolute bottom-1 left-1 bg-zinc-800 text-white text-[8px] px-1 py-0">
+                          {t.typeCompose}
                         </Badge>
                       )}
                     </div>
@@ -795,8 +787,8 @@ export default function CurationDashboardPage() {
                       </div>
                     )}
                     {getVideoSourceType(selectedGeneration) === "compose" && (
-                      <Badge className="absolute top-3 left-3 bg-purple-500 text-white">
-                        Compose Video
+                      <Badge className="absolute top-3 left-3 bg-zinc-800 text-white">
+                        {t.typeCompose}
                       </Badge>
                     )}
                   </div>
@@ -837,12 +829,12 @@ export default function CurationDashboardPage() {
                         {/* Score Bar */}
                         <div className="h-3 bg-background rounded-full overflow-hidden">
                           <div
-                            className={`h-full bg-gradient-to-r ${
-                              selectedGeneration.quality_score >= 90 ? "from-yellow-400 to-amber-500" :
-                              selectedGeneration.quality_score >= 80 ? "from-green-400 to-green-500" :
-                              selectedGeneration.quality_score >= 70 ? "from-blue-400 to-blue-500" :
-                              selectedGeneration.quality_score >= 60 ? "from-orange-400 to-orange-500" :
-                              "from-red-400 to-red-500"
+                            className={`h-full ${
+                              selectedGeneration.quality_score >= 90 ? "bg-black" :
+                              selectedGeneration.quality_score >= 80 ? "bg-zinc-800" :
+                              selectedGeneration.quality_score >= 70 ? "bg-zinc-600" :
+                              selectedGeneration.quality_score >= 60 ? "bg-zinc-400" :
+                              "bg-zinc-300"
                             }`}
                             style={{ width: `${selectedGeneration.quality_score}%` }}
                           />

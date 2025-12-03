@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useAuthStore } from "@/lib/auth-store";
 import { ToastProvider } from "@/components/ui/toast";
 import { I18nProvider, LanguageSwitcher, useI18n } from "@/lib/i18n";
+import { QueryProvider } from "@/lib/query-provider";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -123,10 +124,6 @@ function DashboardContent({
                   <Settings className="mr-2 h-4 w-4" />
                   {language === "ko" ? "설정" : "Settings"}
                 </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <User className="mr-2 h-4 w-4" />
-                  {language === "ko" ? "프로필" : "Profile"}
-                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" />
@@ -187,12 +184,14 @@ export default function DashboardLayout({
   }
 
   return (
-    <I18nProvider>
-      <ToastProvider>
-        <DashboardContent user={user} handleLogout={handleLogout}>
-          {children}
-        </DashboardContent>
-      </ToastProvider>
-    </I18nProvider>
+    <QueryProvider>
+      <I18nProvider>
+        <ToastProvider>
+          <DashboardContent user={user} handleLogout={handleLogout}>
+            {children}
+          </DashboardContent>
+        </ToastProvider>
+      </I18nProvider>
+    </QueryProvider>
   );
 }

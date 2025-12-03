@@ -90,7 +90,7 @@ export function GenerateMode({ className }: GenerateModeProps) {
         <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="text-xl">
-              {language === "ko" ? "AI 생성 방식" : "How AI Generation Works"}
+              {language === "ko" ? "AI 영상 생성 방식" : "How AI Video Works"}
             </CardTitle>
             <CardDescription>
               {language === "ko"
@@ -174,7 +174,7 @@ export function GenerateMode({ className }: GenerateModeProps) {
                 </div>
                 <div>
                   <h3 className="font-semibold text-lg mb-2">
-                    {language === "ko" ? "AI 생성을 사용하는 경우" : "When to use AI Generate"}
+                    {language === "ko" ? "AI 영상을 사용하는 경우" : "When to use AI Video"}
                   </h3>
                   <ul className="text-muted-foreground space-y-2">
                     <li className="flex items-start gap-2">

@@ -2,23 +2,31 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Sparkles, Video } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { LazyVideo } from "@/components/ui/lazy-video";
 import { PipelineItem } from "../types";
 import { PipelineStatusBadge } from "../shared/pipeline-status-badge";
 import { PipelineActionsMenu } from "../shared/pipeline-actions-menu";
+import { cn } from "@/lib/utils";
 
 interface AIPipelineTableRowProps {
   pipeline: PipelineItem;
   onCreateVariations?: (pipeline: PipelineItem) => void;
   onDelete?: (pipeline: PipelineItem) => void;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 export function AIPipelineTableRow({
   pipeline,
   onCreateVariations,
   onDelete,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: AIPipelineTableRowProps) {
   const { language } = useI18n();
   const isKorean = language === "ko";
@@ -31,8 +39,30 @@ export function AIPipelineTableRow({
     onDelete?.(pipeline);
   };
 
+  const handleRowClick = () => {
+    if (selectionMode && onToggleSelect) {
+      onToggleSelect();
+    }
+  };
+
   return (
-    <tr className="hover:bg-muted/30 transition-colors group">
+    <tr
+      className={cn(
+        "hover:bg-muted/30 transition-colors group",
+        selectionMode && "cursor-pointer",
+        isSelected && "bg-primary/10 hover:bg-primary/15"
+      )}
+      onClick={handleRowClick}
+    >
+      {/* Selection Checkbox */}
+      {selectionMode && (
+        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={onToggleSelect}
+          />
+        </td>
+      )}
       {/* Preview */}
       <td className="px-4 py-3">
         <div className="relative w-16 h-10 bg-muted rounded overflow-hidden flex-shrink-0">
@@ -55,7 +85,7 @@ export function AIPipelineTableRow({
 
       {/* Type */}
       <td className="px-4 py-3 text-center">
-        <Badge className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-0.5">
+        <Badge variant="secondary" className="text-xs px-2 py-0.5">
           <Sparkles className="w-3 h-3 mr-1" />
           AI
         </Badge>
@@ -76,7 +106,7 @@ export function AIPipelineTableRow({
       {/* Variations */}
       <td className="px-4 py-3 text-center">
         <span className="inline-flex items-center gap-1 whitespace-nowrap">
-          <span className="text-green-600 font-medium">{pipeline.completed}</span>
+          <span className="font-medium">{pipeline.completed}</span>
           <span className="text-muted-foreground">/</span>
           <span>{pipeline.total}</span>
         </span>

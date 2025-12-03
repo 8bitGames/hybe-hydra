@@ -2,18 +2,23 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Film, Image, Music, Wand2 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { LazyVideo } from "@/components/ui/lazy-video";
 import { PipelineItem, ComposePipelineMetadata } from "../types";
 import { PipelineStatusBadge } from "../shared/pipeline-status-badge";
 import { PipelineActionsMenu } from "../shared/pipeline-actions-menu";
+import { cn } from "@/lib/utils";
 
 interface ComposePipelineTableRowProps {
   pipeline: PipelineItem;
   metadata?: ComposePipelineMetadata;
   onCreateVariations?: (pipeline: PipelineItem) => void;
   onDelete?: (pipeline: PipelineItem) => void;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 export function ComposePipelineTableRow({
@@ -21,6 +26,9 @@ export function ComposePipelineTableRow({
   metadata,
   onCreateVariations,
   onDelete,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: ComposePipelineTableRowProps) {
   const { language } = useI18n();
   const isKorean = language === "ko";
@@ -33,15 +41,37 @@ export function ComposePipelineTableRow({
     onDelete?.(pipeline);
   };
 
+  const handleRowClick = () => {
+    if (selectionMode && onToggleSelect) {
+      onToggleSelect();
+    }
+  };
+
   const videoUrl =
     pipeline.seed_generation.composed_output_url ||
     pipeline.seed_generation.output_url;
 
   return (
-    <tr className="hover:bg-purple-500/5 transition-colors group">
+    <tr
+      className={cn(
+        "hover:bg-muted/30 transition-colors group",
+        selectionMode && "cursor-pointer",
+        isSelected && "bg-primary/10 hover:bg-primary/15"
+      )}
+      onClick={handleRowClick}
+    >
+      {/* Selection Checkbox */}
+      {selectionMode && (
+        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={onToggleSelect}
+          />
+        </td>
+      )}
       {/* Preview */}
       <td className="px-4 py-3">
-        <div className="relative w-16 h-10 bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded overflow-hidden flex-shrink-0">
+        <div className="relative w-16 h-10 bg-muted rounded overflow-hidden flex-shrink-0">
           {videoUrl ? (
             <LazyVideo
               src={videoUrl}
@@ -53,7 +83,7 @@ export function ComposePipelineTableRow({
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <Film className="w-4 h-4 text-purple-400" />
+              <Film className="w-4 h-4 text-muted-foreground" />
             </div>
           )}
         </div>
@@ -61,7 +91,7 @@ export function ComposePipelineTableRow({
 
       {/* Type */}
       <td className="px-4 py-3 text-center">
-        <Badge className="bg-purple-500 hover:bg-purple-600 text-white text-xs px-2 py-0.5">
+        <Badge variant="secondary" className="text-xs px-2 py-0.5">
           <Wand2 className="w-3 h-3 mr-1" />
           Compose
         </Badge>
@@ -69,10 +99,7 @@ export function ComposePipelineTableRow({
 
       {/* Campaign */}
       <td className="px-4 py-3">
-        <Badge
-          variant="outline"
-          className="font-normal whitespace-nowrap border-purple-500/30"
-        >
+        <Badge variant="outline" className="font-normal whitespace-nowrap">
           {pipeline.campaign_name || "Unknown"}
         </Badge>
       </td>
@@ -85,7 +112,7 @@ export function ComposePipelineTableRow({
       {/* Variations */}
       <td className="px-4 py-3 text-center">
         <span className="inline-flex items-center gap-1 whitespace-nowrap">
-          <span className="text-green-600 font-medium">{pipeline.completed}</span>
+          <span className="font-medium">{pipeline.completed}</span>
           <span className="text-muted-foreground">/</span>
           <span>{pipeline.total}</span>
         </span>
@@ -105,13 +132,13 @@ export function ComposePipelineTableRow({
       <td className="px-4 py-3">
         <div className="flex flex-nowrap gap-2">
           {metadata?.imageCount && (
-            <span className="flex items-center gap-1 text-xs text-purple-500">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Image className="w-3 h-3" />
               {metadata.imageCount}
             </span>
           )}
           {metadata?.audioTrack && (
-            <span className="flex items-center gap-1 text-xs text-pink-500">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Music className="w-3 h-3" />
               {metadata.audioTrack.name}
             </span>
@@ -122,7 +149,7 @@ export function ComposePipelineTableRow({
                 <Badge
                   key={kw}
                   variant="secondary"
-                  className="text-xs py-0 whitespace-nowrap bg-purple-500/10 text-purple-600"
+                  className="text-xs py-0 whitespace-nowrap"
                 >
                   #{kw}
                 </Badge>

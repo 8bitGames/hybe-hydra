@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import React, { useState, useCallback, useMemo } from "react";
 import { useAuthStore } from "@/lib/auth-store";
-import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { campaignsApi, Campaign } from "@/lib/campaigns-api";
-import { videoApi, VideoGeneration } from "@/lib/video-api";
+import { useDashboardStats, usePerformanceStats, useInvalidateQueries } from "@/lib/queries";
 import {
   Card,
   CardContent,
@@ -48,230 +46,79 @@ import {
   ArrowRight,
   MessageCircle,
   Share2,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { trackHome, trackTrends, trackQuickCreate } from "@/lib/analytics";
 
-// Types
-interface DashboardStats {
-  summary: {
-    campaigns: {
-      total: number;
-      by_status: Record<string, number>;
-    };
-    generations: {
-      total: number;
-      by_status: Record<string, number>;
-      scored: number;
-      avg_quality_score: number | null;
-      high_quality_count: number;
-    };
-    publishing: {
-      total: number;
-      by_status: Record<string, number>;
-      by_platform: Record<string, number>;
-    };
-  };
-  sns_performance: {
-    total_published: number;
-    total_views: number;
-    total_likes: number;
-    total_comments: number;
-    total_shares: number;
-    total_saves: number;
-    avg_engagement_rate: number | null;
-    by_platform: Record<string, { posts: number; views: number; likes: number }>;
-  };
-  campaigns_overview: Array<{
-    id: string;
-    name: string;
-    status: string;
-    artist_name: string;
-    artist_group: string | null;
-    asset_count: number;
-    generation_count: number;
-    completed_generations: number;
-    processing_generations: number;
-    published_count: number;
-    scheduled_count: number;
-    total_views: number;
-    updated_at: string;
-  }>;
-  recent_activity: {
-    generations: Array<{
-      id: string;
-      campaign_id: string;
-      campaign_name: string;
-      prompt: string;
-      output_url: string | null;
-      quality_score: number | null;
-      created_at: string;
-    }>;
-    published: Array<{
-      id: string;
-      campaign_id: string;
-      campaign_name: string;
-      platform: string;
-      account_name: string;
-      published_url: string | null;
-      view_count: number | null;
-      like_count: number | null;
-      published_at: string | null;
-    }>;
-  };
-}
-
-interface PerformanceStats {
-  totalVideos: number;
-  completedVideos: number;
-  failedVideos: number;
-  processingVideos: number;
-  avgQualityScore: number;
-  successRate: number;
-}
-
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, accessToken, isAuthenticated } = useAuthStore();
+  const { user } = useAuthStore();
   const { language } = useI18n();
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [performanceStats, setPerformanceStats] = useState<PerformanceStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [tiktokUrl, setTiktokUrl] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
-  useEffect(() => {
-    if (accessToken) {
-      api.setAccessToken(accessToken);
-    }
-  }, [accessToken]);
+  // Use TanStack Query for data fetching with caching
+  const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useDashboardStats();
+  const { data: performanceStats, isLoading: perfLoading } = usePerformanceStats();
+  const { invalidateDashboard } = useInvalidateQueries();
 
-  const calculatePerformanceStats = async (): Promise<PerformanceStats> => {
-    try {
-      const campaignsResult = await campaignsApi.getAll({ page_size: 50 });
-      if (!campaignsResult.data) {
-        return {
-          totalVideos: 0,
-          completedVideos: 0,
-          failedVideos: 0,
-          processingVideos: 0,
-          avgQualityScore: 0,
-          successRate: 0,
-        };
-      }
+  const loading = statsLoading || perfLoading;
+  const error = statsError?.message || null;
 
-      const campaignsList = campaignsResult.data.items;
-      const allVideos: VideoGeneration[] = [];
+  // Memoized callback functions to prevent re-renders
+  const loadDashboard = useCallback(() => {
+    refetchStats();
+  }, [refetchStats]);
 
-      await Promise.all(
-        campaignsList.map(async (campaign) => {
-          try {
-            const videosResult = await videoApi.getAll(campaign.id, { page_size: 100 });
-            if (videosResult.data) {
-              allVideos.push(...videosResult.data.items);
-            }
-          } catch (error) {
-            console.error(`Failed to fetch videos for campaign ${campaign.id}:`, error);
-          }
-        })
-      );
-
-      const completed = allVideos.filter((v) => v.status === "completed");
-      const failed = allVideos.filter((v) => v.status === "failed");
-      const processing = allVideos.filter(
-        (v) => v.status === "processing" || v.status === "pending"
-      );
-
-      const qualityScores = completed
-        .map((v) => v.quality_score)
-        .filter((s): s is number => s !== null && s !== undefined);
-
-      return {
-        totalVideos: allVideos.length,
-        completedVideos: completed.length,
-        failedVideos: failed.length,
-        processingVideos: processing.length,
-        avgQualityScore:
-          qualityScores.length > 0
-            ? qualityScores.reduce((a, b) => a + b, 0) / qualityScores.length
-            : 0,
-        successRate:
-          completed.length + failed.length > 0
-            ? (completed.length / (completed.length + failed.length)) * 100
-            : 0,
-      };
-    } catch (error) {
-      console.error("Failed to calculate performance stats:", error);
-      return {
-        totalVideos: 0,
-        completedVideos: 0,
-        failedVideos: 0,
-        processingVideos: 0,
-        avgQualityScore: 0,
-        successRate: 0,
-      };
-    }
-  };
-
-  const loadDashboard = useCallback(async () => {
-    if (!isAuthenticated || !accessToken) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const [dashboardResponse, perfStats] = await Promise.all([
-        api.get<DashboardStats>("/api/v1/dashboard/stats"),
-        calculatePerformanceStats(),
-      ]);
-
-      if (dashboardResponse.error) {
-        setError(dashboardResponse.error.message);
-        return;
-      }
-
-      if (dashboardResponse.data) {
-        setStats(dashboardResponse.data);
-        setPerformanceStats(perfStats);
-      }
-    } catch (err) {
-      console.error("Failed to load dashboard:", err);
-      setError("Failed to load dashboard data");
-    } finally {
-      setLoading(false);
-    }
-  }, [isAuthenticated, accessToken]);
-
-  useEffect(() => {
-    if (isAuthenticated && accessToken) {
-      loadDashboard();
-    }
-  }, [loadDashboard, isAuthenticated, accessToken]);
-
-  const formatNumber = (num: number | null | undefined): string => {
+  // Memoized formatNumber function
+  const formatNumber = useCallback((num: number | null | undefined): string => {
     if (num === null || num === undefined) return "-";
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
     if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
     return num.toLocaleString();
-  };
+  }, []);
 
-  const handleAnalyzeVideo = () => {
+  const handleAnalyzeVideo = useCallback(() => {
     if (tiktokUrl.trim()) {
       router.push(`/bridge?url=${encodeURIComponent(tiktokUrl)}`);
     }
-  };
+  }, [tiktokUrl, router]);
 
-  const handleSearchTrends = () => {
+  const handleSearchTrends = useCallback(() => {
     if (searchKeyword.trim()) {
       router.push(`/trends?keyword=${encodeURIComponent(searchKeyword)}`);
     }
-  };
+  }, [searchKeyword, router]);
 
-  const popularHashtags = [
+  const handleSoundToggle = useCallback(() => {
+    setSoundEnabled(prev => !prev);
+  }, []);
+
+  // Memoized video hover handlers
+  const handleVideoMouseOver = useCallback((e: React.MouseEvent<HTMLVideoElement>) => {
+    const videoEl = e.currentTarget;
+    if (soundEnabled) {
+      videoEl.muted = false;
+      videoEl.volume = 0.1; // 10% volume
+    }
+    videoEl.play();
+  }, [soundEnabled]);
+
+  const handleVideoMouseOut = useCallback((e: React.MouseEvent<HTMLVideoElement>) => {
+    const videoEl = e.currentTarget;
+    videoEl.pause();
+    videoEl.currentTime = 0;
+    videoEl.muted = true;
+  }, []);
+
+  // Memoized static data
+  const popularHashtags = useMemo(() => [
     { tag: "#countrymusic", count: "2.5M" },
     { tag: "#newmusic", count: "1.8M" },
     { tag: "#nashville", count: "1.2M" },
-  ];
+  ], []);
 
   if (loading) {
     return (
@@ -360,7 +207,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-lg mb-1">
-                    {language === "ko" ? "AI 영상 생성" : "AI Generate"}
+                    {language === "ko" ? "AI 영상" : "AI Video"}
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     {language === "ko"
@@ -373,27 +220,26 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Analyze Video Card */}
+          {/* Compose Video Card */}
           <Card
             className="cursor-pointer hover:border-primary/50 transition-colors group"
             onClick={() => {
-              trackTrends.explore();
-              router.push("/bridge");
+              router.push("/create?mode=compose");
             }}
           >
             <CardContent className="pt-6">
               <div className="flex items-start gap-4">
                 <div className="p-3 rounded-lg bg-orange-500/10">
-                  <Zap className="h-5 w-5 text-orange-500" />
+                  <Wand2 className="h-5 w-5 text-orange-500" />
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-lg mb-1">
-                    {language === "ko" ? "영상 분석" : "Analyze Video"}
+                    {language === "ko" ? "컴포즈 영상" : "Compose Video"}
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     {language === "ko"
-                      ? "TikTok 영상 스타일 분석 및 재현"
-                      : "Analyze & recreate TikTok video styles"}
+                      ? "이미지와 음악으로 영상 제작"
+                      : "Create videos with images & music"}
                   </p>
                 </div>
                 <ArrowRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -901,17 +747,27 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Activity */}
         <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              {language === "ko" ? "최근 활동" : "Recent Activity"}
-            </CardTitle>
-            <CardDescription>
-              {language === "ko" ? "최근 생성 및 발행" : "Latest generations and publishes"}
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                {language === "ko" ? "최근 활동" : "Recent Activity"}
+              </CardTitle>
+              <CardDescription>
+                {language === "ko" ? "최근 생성 및 발행" : "Latest generations and publishes"}
+              </CardDescription>
+            </div>
+            <Button
+              variant={soundEnabled ? "default" : "outline"}
+              size="icon"
+              onClick={handleSoundToggle}
+              title={language === "ko" ? (soundEnabled ? "소리 끄기" : "소리 켜기") : (soundEnabled ? "Mute" : "Unmute")}
+            >
+              {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+            </Button>
           </CardHeader>
           <CardContent className="min-h-[400px]">
-            <div className="space-y-4">
+            <div className="space-y-3">
               {recent_activity.generations.length === 0 &&
               recent_activity.published.length === 0 ? (
                 <div className="text-center py-16 text-muted-foreground">
@@ -919,36 +775,43 @@ export default function DashboardPage() {
                   <p>{language === "ko" ? "최근 활동이 없습니다" : "No recent activity"}</p>
                 </div>
               ) : (
-                <>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                   {recent_activity.generations.slice(0, 8).map((gen) => (
                     <Link
                       key={gen.id}
                       href={`/campaigns/${gen.campaign_id}/analytics`}
-                      className="flex items-center gap-3 p-3 rounded-lg hover:bg-accent/50 transition-colors"
+                      className="group block p-4 rounded-xl border hover:border-primary/50 hover:shadow-md transition-all"
                     >
-                      <div className="w-12 h-12 bg-muted rounded-lg overflow-hidden flex-shrink-0">
+                      <div className="w-full aspect-video bg-muted rounded-lg overflow-hidden mb-3">
                         {gen.output_url ? (
-                          <video src={gen.output_url} className="w-full h-full object-cover" />
+                          <video
+                            src={gen.output_url}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            muted
+                            onMouseOver={handleVideoMouseOver}
+                            onMouseOut={handleVideoMouseOut}
+                          />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
-                            <Play className="h-5 w-5 text-muted-foreground" />
+                            <Play className="h-8 w-8 text-muted-foreground" />
                           </div>
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{gen.prompt}</p>
-                        <p className="text-xs text-muted-foreground">{gen.campaign_name}</p>
-                        {gen.quality_score && (
-                          <Badge variant="outline" className="text-[10px] mt-1">
-                            <Star className="h-3 w-3 mr-1" />
-                            {gen.quality_score.toFixed(0)}%
-                          </Badge>
-                        )}
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium line-clamp-2 leading-snug">{gen.prompt}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-muted-foreground truncate">{gen.campaign_name}</p>
+                          {gen.quality_score && (
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              <Star className="h-3 w-3 mr-1" />
+                              {gen.quality_score.toFixed(0)}%
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     </Link>
                   ))}
-                </>
+                </div>
               )}
             </div>
           </CardContent>

@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { assetsApi } from "@/lib/campaigns-api";
 import {
-  campaignsApi,
-  assetsApi,
-  Campaign,
-  Asset,
-  AssetStats,
-} from "@/lib/campaigns-api";
+  useCampaign,
+  useAssets,
+  useAssetsStats,
+  useUpdateCampaign,
+  useDeleteAsset,
+  useInvalidateQueries,
+} from "@/lib/queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -70,15 +72,10 @@ export default function CampaignDetailPage() {
   const campaignId = params.id as string;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [stats, setStats] = useState<AssetStats | null>(null);
-  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState({ name: "", description: "", status: "" });
 
@@ -88,54 +85,39 @@ export default function CampaignDetailPage() {
   const [uploadAsGoods, setUploadAsGoods] = useState(false);
   const [selectedMerchType, setSelectedMerchType] = useState<MerchandiseType>("album");
 
-  const loadAssets = useCallback(async () => {
-    const [assetsResult, statsResult] = await Promise.all([
-      assetsApi.getByCampaign(campaignId, {
-        page,
-        page_size: 20,
-        type: assetFilter === "all" ? undefined : assetFilter,
-      }),
-      assetsApi.getStats(campaignId),
-    ]);
+  // Use TanStack Query for data fetching with caching
+  const { data: campaign, isLoading: campaignLoading, error: campaignError } = useCampaign(campaignId);
+  const { data: assetsData, isLoading: assetsLoading, refetch: refetchAssets } = useAssets(campaignId, {
+    page,
+    page_size: 20,
+    type: assetFilter === "all" ? undefined : assetFilter,
+  });
+  const { data: stats } = useAssetsStats(campaignId);
+  const updateCampaignMutation = useUpdateCampaign();
+  const deleteAssetMutation = useDeleteAsset();
+  const { invalidateAssets } = useInvalidateQueries();
 
-    if (assetsResult.data) {
-      setAssets(assetsResult.data.items);
-      setTotalPages(assetsResult.data.pages);
-    }
-    if (statsResult.data) {
-      setStats(statsResult.data as AssetStats);
-    }
-  }, [campaignId, page, assetFilter]);
+  const assets = assetsData?.items || [];
+  const totalPages = assetsData?.pages || 1;
+  const loading = campaignLoading || assetsLoading;
 
-  // Initial data load
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
+  // Initialize edit data when campaign loads
+  if (campaign && editData.name === "" && editData.status === "") {
+    setEditData({
+      name: campaign.name,
+      description: campaign.description || "",
+      status: campaign.status,
+    });
+  }
 
-      // Load campaign
-      const campaignResult = await campaignsApi.getById(campaignId);
-      if (campaignResult.error) {
-        router.push("/campaigns");
-        setLoading(false);
-        return;
-      }
+  // Redirect if campaign not found
+  if (campaignError) {
+    router.push("/campaigns");
+  }
 
-      if (campaignResult.data) {
-        setCampaign(campaignResult.data);
-        setEditData({
-          name: campaignResult.data.name,
-          description: campaignResult.data.description || "",
-          status: campaignResult.data.status,
-        });
-      }
-
-      // Load assets
-      await loadAssets();
-      setLoading(false);
-    };
-    loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignId, router, loadAssets]);
+  const loadAssets = () => {
+    refetchAssets();
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -227,26 +209,26 @@ export default function CampaignDetailPage() {
   const handleDeleteAsset = async (assetId: string, filename: string) => {
     if (!confirm(`Delete "${filename}"?`)) return;
 
-    const result = await assetsApi.delete(assetId);
-    if (!result.error) {
-      setAssets(assets.filter((a) => a.id !== assetId));
-      await loadAssets();
-    }
+    deleteAssetMutation.mutate(
+      { id: assetId, campaignId },
+      { onSuccess: () => loadAssets() }
+    );
   };
 
   const handleUpdateCampaign = async () => {
     if (!campaign) return;
 
-    const result = await campaignsApi.update(campaign.id, {
-      name: editData.name,
-      description: editData.description || undefined,
-      status: editData.status,
-    });
-
-    if (result.data) {
-      setCampaign(result.data);
-      setEditMode(false);
-    }
+    updateCampaignMutation.mutate(
+      {
+        id: campaign.id,
+        data: {
+          name: editData.name,
+          description: editData.description || undefined,
+          status: editData.status,
+        },
+      },
+      { onSuccess: () => setEditMode(false) }
+    );
   };
 
   const statusVariants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {

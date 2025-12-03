@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Settings, Users, Bell, Shield } from "lucide-react";
+import { Settings, Users } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
 const settingsNavItems = [
@@ -13,18 +13,6 @@ const settingsNavItems = [
     href: "/settings/accounts",
     icon: Users,
     description: { ko: "연결된 소셜 계정 관리", en: "Manage connected social accounts" },
-  },
-  {
-    name: { ko: "알림", en: "Notifications" },
-    href: "/settings/notifications",
-    icon: Bell,
-    description: { ko: "알림 설정 구성", en: "Configure notification preferences" },
-  },
-  {
-    name: { ko: "보안", en: "Security" },
-    href: "/settings/security",
-    icon: Shield,
-    description: { ko: "보안 및 접근 설정", en: "Security and access settings" },
   },
 ];
 

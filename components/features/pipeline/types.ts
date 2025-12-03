@@ -17,29 +17,29 @@ export interface StatusConfig {
   animate?: boolean;
 }
 
-// Status configurations map
+// Status configurations map (Monochrome with clear contrast)
 export const STATUS_CONFIGS: Record<PipelineStatus, StatusConfig> = {
   completed: {
     label: "Completed",
     labelKo: "완료",
-    variant: "default",
-    colorClass: "text-green-500",
-    bgColorClass: "bg-green-500/10",
+    variant: "secondary",
+    colorClass: "text-foreground",
+    bgColorClass: "bg-zinc-100 dark:bg-zinc-800",
   },
   processing: {
     label: "Processing",
     labelKo: "처리중",
     variant: "secondary",
-    colorClass: "text-blue-500",
-    bgColorClass: "bg-blue-500/10",
+    colorClass: "text-foreground",
+    bgColorClass: "bg-zinc-100 dark:bg-zinc-800",
     animate: true,
   },
   partial_failure: {
     label: "Partial Failure",
     labelKo: "일부 실패",
-    variant: "destructive",
-    colorClass: "text-yellow-500",
-    bgColorClass: "bg-yellow-500/10",
+    variant: "outline",
+    colorClass: "text-foreground",
+    bgColorClass: "bg-zinc-100 dark:bg-zinc-800",
   },
   pending: {
     label: "Pending",

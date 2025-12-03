@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { campaignsApi, assetsApi, Campaign, Asset } from "@/lib/campaigns-api";
+import { assetsApi, type Campaign, type Asset } from "@/lib/campaigns-api";
+import { useCampaign, useAssets, useVideos } from "@/lib/queries";
 import { loadBridgePrompt, clearBridgePrompt } from "@/lib/bridge-storage";
 import {
   videoApi,
@@ -751,10 +752,32 @@ export default function VideoGeneratePage() {
     likeThisImage: language === "ko" ? "이 이미지가 마음에 드시면 아래 버튼으로 영상을 생성하세요." : "If you like this image, click the button below to generate the video.",
   };
 
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [images, setImages] = useState<Asset[]>([]);
-  const [audioTracks, setAudioTracks] = useState<Asset[]>([]);  // Audio assets
+  // Use TanStack Query for data fetching with caching
+  const { data: campaign, isLoading: campaignLoading, error: campaignError } = useCampaign(campaignId);
+  const { data: imageAssetsData, isLoading: imageLoading } = useAssets(campaignId, { type: "image", page_size: 50 });
+  const { data: audioAssetsData, isLoading: audioLoading } = useAssets(campaignId, { type: "audio", page_size: 50 });
+  const { data: videosData, isLoading: videosLoading } = useVideos(campaignId, { page_size: 50, generation_type: "AI" });
+
+  const images = imageAssetsData?.items || [];
+  // Local state for audio tracks (allows adding new uploads)
+  const [audioTracks, setAudioTracks] = useState<Asset[]>([]);
+  // Local state for generations (allows optimistic updates)
   const [generations, setGenerations] = useState<VideoGeneration[]>([]);
+
+  // Sync query data to local state
+  React.useEffect(() => {
+    if (audioAssetsData?.items) {
+      setAudioTracks(audioAssetsData.items);
+    }
+  }, [audioAssetsData?.items]);
+
+  React.useEffect(() => {
+    if (videosData?.items) {
+      // Filter to only show AI generations (client-side safety filter)
+      setGenerations(videosData.items.filter(g => g.generation_type === "AI"));
+    }
+  }, [videosData?.items]);
+
   const [stats, setStats] = useState<VideoGenerationStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -844,53 +867,46 @@ export default function VideoGeneratePage() {
     }
   }, [campaignId]);
 
-  const loadData = useCallback(async () => {
+  // Load extra data that isn't covered by query hooks (stats, presets, trends)
+  const loadExtraData = useCallback(async () => {
     try {
-      const [campaignResult, imageAssetsResult, audioAssetsResult, generationsResult, statsResult, presetsResult] =
-        await Promise.all([
-          campaignsApi.getById(campaignId),
-          assetsApi.getByCampaign(campaignId, { type: "image", page_size: 50 }),
-          assetsApi.getByCampaign(campaignId, { type: "audio", page_size: 50 }),  // Load audio assets
-          videoApi.getAll(campaignId, { page_size: 50, generation_type: "AI" }),
-          videoApi.getStats(campaignId),
-          presetsApi.getAll({ active_only: true }),
-        ]);
+      const [statsResult, presetsResult] = await Promise.all([
+        videoApi.getStats(campaignId),
+        presetsApi.getAll({ active_only: true }),
+      ]);
 
-      if (campaignResult.error) {
-        router.push("/campaigns");
-        return;
-      }
-
-      if (campaignResult.data) {
-        setCampaign(campaignResult.data);
-        // Load trend suggestions with artist context
-        const trendsResult = await trendsApi.getSuggestions({
-          artist_id: campaignResult.data.artist_id,
-          limit: 15,
-        });
-        if (trendsResult.data) {
-          setTrendSuggestions(trendsResult.data.suggestions);
-        }
-      }
-      if (imageAssetsResult.data) setImages(imageAssetsResult.data.items);
-      if (audioAssetsResult.data) setAudioTracks(audioAssetsResult.data.items);  // Set audio tracks
-      // Filter to only show AI generations (client-side safety filter)
-      if (generationsResult.data) {
-        const aiGenerations = generationsResult.data.items.filter(g => g.generation_type === "AI");
-        setGenerations(aiGenerations);
-      }
       if (statsResult.data) setStats(statsResult.data);
       if (presetsResult.data) setPresets(presetsResult.data.presets);
     } catch (err) {
-      console.error("Failed to load data:", err);
+      console.error("Failed to load extra data:", err);
     } finally {
       setLoading(false);
     }
-  }, [campaignId, router]);
+  }, [campaignId]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // Load trend suggestions when campaign data is available
+  React.useEffect(() => {
+    if (campaign?.artist_id) {
+      trendsApi.getSuggestions({
+        artist_id: campaign.artist_id,
+        limit: 15,
+      }).then((result) => {
+        if (result.data) {
+          setTrendSuggestions(result.data.suggestions);
+        }
+      });
+    }
+  }, [campaign?.artist_id]);
+
+  // Load extra data on mount
+  React.useEffect(() => {
+    loadExtraData();
+  }, [loadExtraData]);
+
+  // Redirect if campaign not found
+  if (campaignError) {
+    router.push("/campaigns");
+  }
 
   // Poll for generation updates
   useEffect(() => {

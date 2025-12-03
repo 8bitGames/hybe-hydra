@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { campaignsApi, Campaign } from "@/lib/campaigns-api";
-import { videoApi, VideoGeneration } from "@/lib/video-api";
+import type { VideoGeneration } from "@/lib/video-api";
+import { useCampaign, useVideos } from "@/lib/queries";
 import {
   socialAccountsApi,
   scheduledPostsApi,
@@ -20,12 +20,12 @@ import {
   formatScheduledTime,
   getTimeUntilPublish,
 } from "@/lib/publishing-api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Calendar, X, Play, Trash2, ExternalLink, Clock, Check, ChevronLeft, CheckCircle } from "lucide-react";
+import { Plus, Calendar, X, Play, Trash2, ExternalLink, Clock, Check, CheckCircle } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import type { Translations } from "@/lib/i18n/translations";
 
@@ -37,11 +37,16 @@ export default function PublishingPage() {
   const { t } = useI18n();
   const campaignId = params.id as string;
 
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [generations, setGenerations] = useState<VideoGeneration[]>([]);
+  // Use TanStack Query for data fetching with caching
+  const { data: campaign, isLoading: campaignLoading, error: campaignError } = useCampaign(campaignId);
+  const { data: videosData, isLoading: videosLoading } = useVideos(campaignId, { status: "completed", page_size: 100 });
+
+  const generations = videosData?.items || [];
+
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const loading = campaignLoading || videosLoading || accountsLoading;
 
   // View state
   const [activeTab, setActiveTab] = useState<ViewTab>("queue");
@@ -58,34 +63,32 @@ export default function PublishingPage() {
   const [scheduleTime, setScheduleTime] = useState("");
   const [scheduling, setScheduling] = useState(false);
 
-  const loadData = useCallback(async () => {
+  // Load accounts and scheduled posts on mount (these APIs don't have query hooks yet)
+  const loadExtraData = useCallback(async () => {
     try {
-      const [campaignResult, generationsResult, accountsResult, postsResult] = await Promise.all([
-        campaignsApi.getById(campaignId),
-        videoApi.getAll(campaignId, { status: "completed", page_size: 100 }),
+      const [accountsResult, postsResult] = await Promise.all([
         socialAccountsApi.getAll(),
         scheduledPostsApi.getAll({ campaign_id: campaignId, page_size: 100 }),
       ]);
 
-      if (campaignResult.error) {
-        router.push("/campaigns");
-        return;
-      }
-
-      if (campaignResult.data) setCampaign(campaignResult.data);
-      if (generationsResult.data) setGenerations(generationsResult.data.items);
       if (accountsResult.data) setAccounts(accountsResult.data.accounts);
       if (postsResult.data) setScheduledPosts(postsResult.data.items);
     } catch (err) {
       console.error("Failed to load data:", err);
     } finally {
-      setLoading(false);
+      setAccountsLoading(false);
     }
-  }, [campaignId, router]);
+  }, [campaignId]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // Load extra data on mount
+  React.useEffect(() => {
+    loadExtraData();
+  }, [loadExtraData]);
+
+  // Redirect if campaign not found
+  if (campaignError) {
+    router.push("/campaigns");
+  }
 
   // Filter posts
   const filteredPosts = scheduledPosts.filter((post) => {
@@ -499,13 +502,14 @@ export default function PublishingPage() {
         </Card>
       )}
 
-      {/* Schedule Modal */}
+      {/* Schedule Modal - Full Screen */}
       {showScheduleModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <Card className="max-w-2xl w-full max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex">
+          {/* Left Side - Form */}
+          <div className="w-[480px] bg-background border-r border-border flex flex-col h-full">
             {/* Modal Header */}
-            <CardHeader className="flex flex-row items-center justify-between border-b">
-              <CardTitle>{t.publish.schedulePost}</CardTitle>
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-xl font-semibold text-foreground">{t.publish.schedulePost}</h2>
               <Button
                 variant="ghost"
                 size="icon"
@@ -514,71 +518,77 @@ export default function PublishingPage() {
                   resetScheduleForm();
                 }}
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               </Button>
-            </CardHeader>
+            </div>
 
-            {/* Modal Content */}
-            <CardContent className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-              {/* Select Video */}
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-2">
-                  {t.publish.selectVideo}
-                </label>
-                <div className="grid grid-cols-3 gap-3 max-h-48 overflow-y-auto">
-                  {generations.map((gen) => (
-                    <button
-                      key={gen.id}
-                      onClick={() => setSelectedGeneration(gen)}
-                      className={`relative aspect-video bg-muted rounded-lg overflow-hidden border-2 transition-all ${
-                        selectedGeneration?.id === gen.id
-                          ? "border-green-500 ring-2 ring-green-500/50"
-                          : "border-transparent hover:border-muted-foreground"
-                      }`}
-                    >
-                      {gen.output_url ? (
-                        <video src={gen.output_url} className="w-full h-full object-cover" />
+            {/* Form Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Selected Video Preview */}
+              {selectedGeneration && (
+                <div className="bg-muted/50 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-28 bg-muted rounded-lg overflow-hidden flex-shrink-0">
+                      {selectedGeneration.output_url ? (
+                        <video src={selectedGeneration.output_url} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                          <Play className="w-8 h-8" />
+                          <Play className="w-6 h-6" />
                         </div>
                       )}
-                      {selectedGeneration?.id === gen.id && (
-                        <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
-                          <Check className="w-8 h-8 text-green-500" />
-                        </div>
-                      )}
-                    </button>
-                  ))}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {selectedGeneration.prompt?.slice(0, 50) || "Video"}...
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Selected
+                      </p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="mt-2 h-7 text-xs"
+                        onClick={() => setSelectedGeneration(null)}
+                      >
+  Change
+                      </Button>
+                    </div>
+                    <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Select Account */}
               <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-2">
+                <label className="block text-sm font-medium text-foreground mb-3">
                   {t.publish.publishTo}
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
                   {accounts.map((account) => (
                     <button
                       key={account.id}
                       onClick={() => setSelectedAccount(account.id)}
-                      className={`p-3 rounded-lg border transition-all text-left ${
+                      className={`w-full p-3 rounded-lg border transition-all text-left ${
                         selectedAccount === account.id
                           ? "border-green-500 bg-green-500/10"
                           : "border-border hover:border-muted-foreground bg-card"
                       }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <span style={{ color: getPlatformColor(account.platform) }}>
+                      <div className="flex items-center gap-3">
+                        <span style={{ color: getPlatformColor(account.platform) }} className="text-lg">
                           {getPlatformIcon(account.platform)}
                         </span>
-                        <span className="text-foreground font-medium">{account.account_name}</span>
+                        <div className="flex-1">
+                          <span className="text-foreground font-medium">{account.account_name}</span>
+                          <p className="text-muted-foreground text-xs">
+                            {getPlatformDisplayName(account.platform)}
+                            {account.follower_count && ` • ${(account.follower_count / 1000).toFixed(1)}K followers`}
+                          </p>
+                        </div>
+                        {selectedAccount === account.id && (
+                          <CheckCircle className="w-5 h-5 text-green-500" />
+                        )}
                       </div>
-                      <p className="text-muted-foreground text-xs mt-1">
-                        {getPlatformDisplayName(account.platform)}
-                        {account.follower_count && ` • ${(account.follower_count / 1000).toFixed(1)}K followers`}
-                      </p>
                     </button>
                   ))}
                 </div>
@@ -586,13 +596,13 @@ export default function PublishingPage() {
 
               {/* Caption */}
               <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-2">
+                <label className="block text-sm font-medium text-foreground mb-3">
                   {t.publish.caption}
                 </label>
                 <textarea
                   value={scheduleCaption}
                   onChange={(e) => setScheduleCaption(e.target.value)}
-                  rows={3}
+                  rows={4}
                   className="w-full px-4 py-3 bg-background border border-input rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
                   placeholder={t.publish.writeCaption}
                 />
@@ -600,7 +610,7 @@ export default function PublishingPage() {
 
               {/* Schedule Time */}
               <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-2">
+                <label className="block text-sm font-medium text-foreground mb-3">
                   {t.publish.scheduleTime}
                 </label>
                 <div className="grid grid-cols-2 gap-3">
@@ -622,10 +632,10 @@ export default function PublishingPage() {
                   {t.publish.leaveEmptyForDraft}
                 </p>
               </div>
-            </CardContent>
+            </div>
 
             {/* Modal Footer */}
-            <div className="flex items-center justify-end gap-3 p-4 border-t bg-muted/50">
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-border bg-muted/30">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -638,6 +648,7 @@ export default function PublishingPage() {
               <Button
                 onClick={handleSchedule}
                 disabled={!selectedGeneration || !selectedAccount || scheduling}
+                className="min-w-[140px]"
               >
                 {scheduling ? (
                   <>
@@ -657,7 +668,70 @@ export default function PublishingPage() {
                 )}
               </Button>
             </div>
-          </Card>
+          </div>
+
+          {/* Right Side - Video Selection */}
+          <div className="flex-1 flex flex-col h-full">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-border/50">
+              <div>
+                <h3 className="text-lg font-medium text-white">{t.publish.selectVideo}</h3>
+                <p className="text-sm text-white/60 mt-1">
+                  {generations.length} videos available
+                </p>
+              </div>
+            </div>
+
+            {/* Video Grid */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+                {generations.map((gen) => (
+                  <button
+                    key={gen.id}
+                    onClick={() => setSelectedGeneration(gen)}
+                    className={`relative aspect-[9/16] bg-black/50 rounded-xl overflow-hidden border-2 transition-all hover:scale-[1.02] ${
+                      selectedGeneration?.id === gen.id
+                        ? "border-green-500 ring-2 ring-green-500/50"
+                        : "border-white/10 hover:border-white/30"
+                    }`}
+                  >
+                    {gen.output_url ? (
+                      <video
+                        src={gen.output_url}
+                        className="w-full h-full object-cover"
+                        onMouseEnter={(e) => e.currentTarget.play()}
+                        onMouseLeave={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-white/40">
+                        <Play className="w-10 h-10" />
+                      </div>
+                    )}
+
+                    {/* Selection Overlay */}
+                    {selectedGeneration?.id === gen.id && (
+                      <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+                        <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center">
+                          <Check className="w-6 h-6 text-white" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Hover Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity">
+                      <div className="absolute bottom-3 left-3 right-3">
+                        <p className="text-white text-xs line-clamp-2">
+                          {gen.prompt?.slice(0, 60) || "Video"}...
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

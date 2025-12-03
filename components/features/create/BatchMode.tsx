@@ -36,8 +36,8 @@ const batchFeatures: BilingualItem[] = [
     icon: Bot,
   },
   {
-    ko: "합성 영상 변형|슬라이드쇼 영상에서 변형 생성",
-    en: "Compose Variations|Create variations from composed slideshow videos",
+    ko: "컴포즈 영상 변형|컴포즈 영상에서 변형 생성",
+    en: "Compose Video Variations|Create variations from Compose videos",
     icon: Wand2,
   },
   {

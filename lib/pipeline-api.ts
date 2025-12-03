@@ -265,7 +265,7 @@ export const pipelineApi = {
   },
 
   // Delete all variations in a pipeline batch
-  deleteBatch: async (campaignId: string, batchId: string): Promise<{ deleted: number; failed: number }> => {
+  deleteBatch: async (campaignId: string, batchId: string, force = false): Promise<{ deleted: number; failed: number }> => {
     // Fetch all generations for this campaign
     const response = await api.get<VideoGenerationList>(
       `/api/v1/campaigns/${campaignId}/generations?page_size=100`
@@ -288,7 +288,8 @@ export const pipelineApi = {
     await Promise.all(
       batchGenerations.map(async (gen: VideoGeneration) => {
         try {
-          await api.delete(`/api/v1/generations/${gen.id}`);
+          const forceParam = force ? "?force=true" : "";
+          await api.delete(`/api/v1/generations/${gen.id}${forceParam}`);
           deleted++;
         } catch (error) {
           console.error(`Failed to delete generation ${gen.id}:`, error);
@@ -298,5 +299,149 @@ export const pipelineApi = {
     );
 
     return { deleted, failed };
+  },
+
+  // Force delete a single generation (bypasses status check)
+  forceDelete: async (generationId: string): Promise<boolean> => {
+    try {
+      await api.delete(`/api/v1/generations/${generationId}?force=true`);
+      return true;
+    } catch (error) {
+      console.error(`Failed to force delete generation ${generationId}:`, error);
+      return false;
+    }
+  },
+};
+
+// Cleanup API Types
+export interface CleanupCandidate {
+  id: string;
+  campaign_id: string | null;
+  prompt: string;
+  status: string;
+  progress?: number;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+  stuck_duration_minutes?: number;
+}
+
+export interface CleanupResponse {
+  stuck_processing: CleanupCandidate[];
+  orphaned_completed: CleanupCandidate[];
+  failed_generations: CleanupCandidate[];
+  summary: {
+    stuck_processing_count: number;
+    orphaned_completed_count: number;
+    failed_count: number;
+    total_cleanup_candidates: number;
+  };
+}
+
+export interface CleanupResult {
+  success: boolean;
+  results: {
+    marked_as_failed: number;
+    deleted_orphaned: number;
+    deleted_failed: number;
+    errors: string[];
+  };
+  message: string;
+}
+
+// Cleanup API
+export const cleanupApi = {
+  // Get orphaned/stuck generations that need cleanup
+  getCleanupCandidates: async (campaignId?: string, includeAll = false): Promise<CleanupResponse> => {
+    const params = new URLSearchParams();
+    if (campaignId) params.append("campaign_id", campaignId);
+    if (includeAll) params.append("include_all", "true");
+
+    const response = await api.get<CleanupResponse>(
+      `/api/v1/generations/cleanup?${params.toString()}`
+    );
+
+    if (!response.data) {
+      return {
+        stuck_processing: [],
+        orphaned_completed: [],
+        failed_generations: [],
+        summary: {
+          stuck_processing_count: 0,
+          orphaned_completed_count: 0,
+          failed_count: 0,
+          total_cleanup_candidates: 0,
+        },
+      };
+    }
+
+    return response.data;
+  },
+
+  // Mark stuck PROCESSING generations as FAILED
+  markStuckAsFailed: async (campaignId?: string, generationIds?: string[]): Promise<CleanupResult> => {
+    const response = await api.post<CleanupResult>("/api/v1/generations/cleanup", {
+      mark_stuck_as_failed: true,
+      delete_orphaned: false,
+      delete_failed: false,
+      ...(campaignId && { campaign_id: campaignId }),
+      ...(generationIds && { generation_ids: generationIds }),
+    });
+
+    if (!response.data) {
+      throw new Error("Failed to mark stuck generations as failed");
+    }
+
+    return response.data;
+  },
+
+  // Delete orphaned COMPLETED generations (no output URL)
+  deleteOrphaned: async (campaignId?: string, generationIds?: string[]): Promise<CleanupResult> => {
+    const response = await api.post<CleanupResult>("/api/v1/generations/cleanup", {
+      mark_stuck_as_failed: false,
+      delete_orphaned: true,
+      delete_failed: false,
+      ...(campaignId && { campaign_id: campaignId }),
+      ...(generationIds && { generation_ids: generationIds }),
+    });
+
+    if (!response.data) {
+      throw new Error("Failed to delete orphaned generations");
+    }
+
+    return response.data;
+  },
+
+  // Delete FAILED generations
+  deleteFailed: async (campaignId?: string, generationIds?: string[]): Promise<CleanupResult> => {
+    const response = await api.post<CleanupResult>("/api/v1/generations/cleanup", {
+      mark_stuck_as_failed: false,
+      delete_orphaned: false,
+      delete_failed: true,
+      ...(campaignId && { campaign_id: campaignId }),
+      ...(generationIds && { generation_ids: generationIds }),
+    });
+
+    if (!response.data) {
+      throw new Error("Failed to delete failed generations");
+    }
+
+    return response.data;
+  },
+
+  // Full cleanup: mark stuck as failed, then delete orphaned and failed
+  fullCleanup: async (campaignId?: string): Promise<CleanupResult> => {
+    const response = await api.post<CleanupResult>("/api/v1/generations/cleanup", {
+      mark_stuck_as_failed: true,
+      delete_orphaned: true,
+      delete_failed: true,
+      ...(campaignId && { campaign_id: campaignId }),
+    });
+
+    if (!response.data) {
+      throw new Error("Failed to perform full cleanup");
+    }
+
+    return response.data;
   },
 };

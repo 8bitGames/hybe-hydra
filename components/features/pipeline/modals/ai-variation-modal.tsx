@@ -255,7 +255,7 @@ export function AIVariationModal({
           </DialogTitle>
           <DialogDescription>
             {isKorean
-              ? "AI 생성 영상을 기반으로 다양한 스타일의 영상을 자동 생성합니다"
+              ? "AI 영상을 기반으로 다양한 스타일의 영상을 자동 생성합니다"
               : "Automatically generate AI videos with various styles based on your seed video"}
           </DialogDescription>
         </DialogHeader>

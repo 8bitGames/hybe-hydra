@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { campaignsApi, assetsApi, Campaign, AssetStats } from "@/lib/campaigns-api";
+import { useCampaign, useAssetsStats, useUpdateCampaign } from "@/lib/queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,11 +55,7 @@ export default function CampaignInfoPage() {
   const { language, t } = useI18n();
   const campaignId = params.id as string;
 
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [stats, setStats] = useState<AssetStats | null>(null);
-  const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [editData, setEditData] = useState({
     name: "",
     description: "",
@@ -68,64 +64,45 @@ export default function CampaignInfoPage() {
     end_date: "",
   });
 
-  const loadData = useCallback(async () => {
-    try {
-      const [campaignResult, statsResult] = await Promise.all([
-        campaignsApi.getById(campaignId),
-        assetsApi.getStats(campaignId),
-      ]);
+  // Use TanStack Query for data fetching with caching
+  const { data: campaign, isLoading: loading, error: campaignError } = useCampaign(campaignId);
+  const { data: stats } = useAssetsStats(campaignId);
+  const updateCampaignMutation = useUpdateCampaign();
 
-      if (campaignResult.error) {
-        router.push("/campaigns");
-        return;
-      }
+  const saving = updateCampaignMutation.isPending;
 
-      if (campaignResult.data) {
-        setCampaign(campaignResult.data);
-        setEditData({
-          name: campaignResult.data.name,
-          description: campaignResult.data.description || "",
-          status: campaignResult.data.status,
-          start_date: campaignResult.data.start_date || "",
-          end_date: campaignResult.data.end_date || "",
-        });
-      }
+  // Initialize edit data when campaign loads
+  if (campaign && editData.name === "" && editData.status === "") {
+    setEditData({
+      name: campaign.name,
+      description: campaign.description || "",
+      status: campaign.status,
+      start_date: campaign.start_date || "",
+      end_date: campaign.end_date || "",
+    });
+  }
 
-      if (statsResult.data) {
-        setStats(statsResult.data as AssetStats);
-      }
-    } catch (err) {
-      console.error("Failed to load campaign:", err);
-      router.push("/campaigns");
-    } finally {
-      setLoading(false);
-    }
-  }, [campaignId, router]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // Redirect if campaign not found
+  if (campaignError) {
+    router.push("/campaigns");
+  }
 
   const handleSave = async () => {
     if (!campaign) return;
-    setSaving(true);
 
-    try {
-      const result = await campaignsApi.update(campaign.id, {
-        name: editData.name,
-        description: editData.description || undefined,
-        status: editData.status,
-        start_date: editData.start_date || undefined,
-        end_date: editData.end_date || undefined,
-      });
-
-      if (result.data) {
-        setCampaign(result.data);
-        setEditMode(false);
-      }
-    } finally {
-      setSaving(false);
-    }
+    updateCampaignMutation.mutate(
+      {
+        id: campaign.id,
+        data: {
+          name: editData.name,
+          description: editData.description || undefined,
+          status: editData.status,
+          start_date: editData.start_date || undefined,
+          end_date: editData.end_date || undefined,
+        },
+      },
+      { onSuccess: () => setEditMode(false) }
+    );
   };
 
   const handleCancel = () => {

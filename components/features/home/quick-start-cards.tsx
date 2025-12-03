@@ -23,7 +23,7 @@ interface QuickStartCard {
 const quickStartCards: QuickStartCard[] = [
   {
     id: "ai-generate",
-    title: { ko: "AI 생성", en: "AI Generate" },
+    title: { ko: "AI 영상", en: "AI Video" },
     description: { ko: "프롬프트로 생성", en: "Create from prompt" },
     longDescription: { ko: "Veo를 사용하여 텍스트 설명에서 AI가 영상을 생성합니다", en: "AI creates video from your text description using Veo" },
     icon: Bot,
@@ -33,7 +33,7 @@ const quickStartCards: QuickStartCard[] = [
   },
   {
     id: "image-compose",
-    title: { ko: "이미지 컴포즈", en: "Image Compose" },
+    title: { ko: "컴포즈 영상", en: "Compose Video" },
     description: { ko: "에셋으로 제작", en: "Build from assets" },
     longDescription: { ko: "이미지와 오디오를 결합하여 매력적인 영상 콘텐츠 제작", en: "Combine images + audio into engaging video content" },
     icon: Wand2,

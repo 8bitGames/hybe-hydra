@@ -64,7 +64,7 @@ interface ComposeModeProps {
 
 /**
  * Compose Mode - Image + Audio slideshow creation
- * 합성 모드 - 이미지 + 오디오 슬라이드쇼 생성
+ * 컴포즈 모드 - 이미지 + 오디오 슬라이드쇼 생성
  */
 export function ComposeMode({ className }: ComposeModeProps) {
   const router = useRouter();
@@ -93,12 +93,12 @@ export function ComposeMode({ className }: ComposeModeProps) {
         <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="text-xl">
-              {pick("이미지 합성 방식", "How Compose Works")}
+              {pick("컴포즈 영상 생성 방식", "How Compose Video Works")}
             </CardTitle>
             <CardDescription>
               {pick(
-                "4단계로 이미지와 음악을 합성한 영상을 만드세요",
-                "Create videos by combining images with music in 4 simple steps"
+                "4단계로 컴포즈 영상을 만드세요",
+                "Create Compose videos in 4 simple steps"
               )}
             </CardDescription>
           </CardHeader>
@@ -136,8 +136,8 @@ export function ComposeMode({ className }: ComposeModeProps) {
               </CardTitle>
               <CardDescription>
                 {pick(
-                  "캠페인을 선택하여 에셋에 접근하고 합성 영상을 저장하세요",
-                  "Choose a campaign to access your assets and save the composed video"
+                  "캠페인을 선택하여 에셋에 접근하고 컴포즈 영상을 저장하세요",
+                  "Choose a campaign to access your assets and save the Compose video"
                 )}
               </CardDescription>
             </CardHeader>
@@ -158,7 +158,7 @@ export function ComposeMode({ className }: ComposeModeProps) {
                 >
                   <Wand2 className="h-5 w-5 mr-2" />
                   {selectedCampaign
-                    ? pick("합성 시작", "Start Composing")
+                    ? pick("컴포즈 시작", "Start Compose")
                     : pick("캠페인을 선택하세요", "Select Campaign to Continue")}
                   <ArrowRight className="h-5 w-5 ml-2" />
                 </Button>
@@ -175,7 +175,7 @@ export function ComposeMode({ className }: ComposeModeProps) {
                 </div>
                 <div>
                   <h3 className="font-semibold text-lg mb-2">
-                    {pick("이미지 합성을 사용하는 경우", "When to use Compose")}
+                    {pick("컴포즈 영상을 사용하는 경우", "When to use Compose Video")}
                   </h3>
                   <ul className="text-muted-foreground space-y-2">
                     <li className="flex items-start gap-2">

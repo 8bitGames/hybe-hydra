@@ -2,6 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
   TooltipContent,
@@ -30,6 +31,9 @@ interface ComposePipelineCardProps {
   onCreateVariations?: (pipeline: PipelineItem) => void;
   onDelete?: (pipeline: PipelineItem) => void;
   className?: string;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 export function ComposePipelineCard({
@@ -38,6 +42,9 @@ export function ComposePipelineCard({
   onCreateVariations,
   onDelete,
   className,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: ComposePipelineCardProps) {
   const { language } = useI18n();
   const isKorean = language === "ko";
@@ -50,6 +57,12 @@ export function ComposePipelineCard({
     onDelete?.(pipeline);
   };
 
+  const handleCardClick = () => {
+    if (selectionMode && onToggleSelect) {
+      onToggleSelect();
+    }
+  };
+
   // Get video URL from compose output
   const videoUrl =
     pipeline.seed_generation.composed_output_url ||
@@ -59,14 +72,25 @@ export function ComposePipelineCard({
     <Card
       className={cn(
         "overflow-hidden hover:shadow-md transition-shadow group",
-        "border-purple-500/20",
+        selectionMode && "cursor-pointer",
+        isSelected && "ring-2 ring-primary bg-primary/5",
         className
       )}
+      onClick={handleCardClick}
     >
       <CardContent className="p-0">
         <div className="flex gap-4 p-4">
+          {/* Selection Checkbox */}
+          {selectionMode && (
+            <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={onToggleSelect}
+              />
+            </div>
+          )}
           {/* Thumbnail */}
-          <div className="relative w-28 h-20 bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded-lg overflow-hidden shrink-0">
+          <div className="relative w-28 h-20 bg-muted rounded-lg overflow-hidden shrink-0">
             {videoUrl ? (
               <LazyVideo
                 src={videoUrl}
@@ -78,7 +102,7 @@ export function ComposePipelineCard({
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <Film className="w-6 h-6 text-purple-400" />
+                <Film className="w-6 h-6 text-muted-foreground" />
               </div>
             )}
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -86,7 +110,7 @@ export function ComposePipelineCard({
             </div>
             {/* Compose Type Badge */}
             <div className="absolute top-1 left-1">
-              <Badge className="bg-purple-500/90 text-white text-[10px] px-1 py-0">
+              <Badge variant="secondary" className="text-[10px] px-1 py-0">
                 <Wand2 className="w-2.5 h-2.5 mr-0.5" />
                 Compose
               </Badge>
@@ -98,7 +122,7 @@ export function ComposePipelineCard({
             <div className="flex items-start justify-between gap-2 mb-1">
               <div className="min-w-0 flex-1">
                 {pipeline.campaign_name && (
-                  <p className="text-xs text-purple-500 font-medium truncate">
+                  <p className="text-xs text-muted-foreground font-medium truncate">
                     {pipeline.campaign_name}
                   </p>
                 )}
@@ -121,22 +145,22 @@ export function ComposePipelineCard({
             <div className="flex items-center gap-3 text-xs text-muted-foreground mt-auto">
               <span className="flex items-center gap-1">
                 <Layers className="w-3 h-3" />
-                <span className="text-green-600 font-medium">{pipeline.completed}</span>
+                <span className="font-medium">{pipeline.completed}</span>
                 /{pipeline.total}
               </span>
               {metadata?.imageCount && (
-                <span className="flex items-center gap-1 text-purple-500">
+                <span className="flex items-center gap-1">
                   <Image className="w-3 h-3" />
                   {metadata.imageCount}
                 </span>
               )}
               {metadata?.audioTrack && (
-                <span className="flex items-center gap-1 text-pink-500">
+                <span className="flex items-center gap-1">
                   <Music className="w-3 h-3" />
                 </span>
               )}
               {pipeline.failed > 0 && (
-                <span className="flex items-center gap-1 text-red-500">
+                <span className="flex items-center gap-1">
                   <XCircle className="w-3 h-3" />
                   {pipeline.failed}
                 </span>
@@ -166,13 +190,13 @@ export function ComposePipelineCard({
         </div>
 
         {/* Keywords/Tags */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-purple-500/5 to-pink-500/5 border-t border-purple-500/10">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t">
           <div className="flex items-center gap-1.5">
             {metadata?.keywords?.slice(0, 3).map((keyword) => (
               <Badge
                 key={keyword}
                 variant="outline"
-                className="text-xs py-0 bg-background border-purple-500/30 text-purple-600"
+                className="text-xs py-0 bg-background"
               >
                 #{keyword}
               </Badge>
@@ -180,7 +204,7 @@ export function ComposePipelineCard({
             {(metadata?.keywords?.length || 0) > 3 && (
               <Badge
                 variant="outline"
-                className="text-xs py-0 bg-background border-purple-500/30"
+                className="text-xs py-0 bg-background"
               >
                 +{(metadata?.keywords?.length || 0) - 3}
               </Badge>

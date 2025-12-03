@@ -81,41 +81,41 @@ const getPlatformInfo = (platform: string) => {
       return {
         icon: Music,
         name: "TikTok",
-        color: "bg-pink-500/10 text-pink-500",
-        bgColor: "bg-pink-500/10",
-        textColor: "text-pink-500"
+        color: "bg-zinc-100 dark:bg-zinc-800 text-foreground",
+        bgColor: "bg-zinc-100 dark:bg-zinc-800",
+        textColor: "text-foreground"
       };
     case "YOUTUBE":
       return {
         icon: Youtube,
         name: "YouTube",
-        color: "bg-red-500/10 text-red-500",
-        bgColor: "bg-red-500/10",
-        textColor: "text-red-500"
+        color: "bg-zinc-100 dark:bg-zinc-800 text-foreground",
+        bgColor: "bg-zinc-100 dark:bg-zinc-800",
+        textColor: "text-foreground"
       };
     case "INSTAGRAM":
       return {
         icon: Instagram,
         name: "Instagram",
-        color: "bg-purple-500/10 text-purple-500",
-        bgColor: "bg-purple-500/10",
-        textColor: "text-purple-500"
+        color: "bg-zinc-100 dark:bg-zinc-800 text-foreground",
+        bgColor: "bg-zinc-100 dark:bg-zinc-800",
+        textColor: "text-foreground"
       };
     case "TWITTER":
       return {
         icon: Twitter,
         name: "Twitter/X",
-        color: "bg-blue-500/10 text-blue-500",
-        bgColor: "bg-blue-500/10",
-        textColor: "text-blue-500"
+        color: "bg-zinc-100 dark:bg-zinc-800 text-foreground",
+        bgColor: "bg-zinc-100 dark:bg-zinc-800",
+        textColor: "text-foreground"
       };
     default:
       return {
         icon: Smartphone,
         name: platform,
-        color: "bg-gray-500/10 text-gray-500",
-        bgColor: "bg-gray-500/10",
-        textColor: "text-gray-500"
+        color: "bg-zinc-100 dark:bg-zinc-800 text-muted-foreground",
+        bgColor: "bg-zinc-100 dark:bg-zinc-800",
+        textColor: "text-muted-foreground"
       };
   }
 };
@@ -282,8 +282,8 @@ export default function AccountsSettingsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-pink-500/10 rounded-lg">
-                <Music className="h-6 w-6 text-pink-500" />
+              <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
+                <Music className="h-6 w-6" />
               </div>
               <div>
                 <CardTitle>{isKorean ? "TikTok 계정" : "TikTok Accounts"}</CardTitle>
@@ -375,17 +375,17 @@ export default function AccountsSettingsPage() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
-              { platform: "YOUTUBE", name: "YouTube Shorts", Icon: Youtube, bgColor: "bg-red-500/10", textColor: "text-red-500", status: isKorean ? "곧 제공" : "Coming Soon" },
-              { platform: "INSTAGRAM", name: "Instagram Reels", Icon: Instagram, bgColor: "bg-purple-500/10", textColor: "text-purple-500", status: isKorean ? "곧 제공" : "Coming Soon" },
-              { platform: "TWITTER", name: "Twitter/X", Icon: Twitter, bgColor: "bg-blue-500/10", textColor: "text-blue-500", status: isKorean ? "곧 제공" : "Coming Soon" },
+              { platform: "YOUTUBE", name: "YouTube Shorts", Icon: Youtube, status: isKorean ? "곧 제공" : "Coming Soon" },
+              { platform: "INSTAGRAM", name: "Instagram Reels", Icon: Instagram, status: isKorean ? "곧 제공" : "Coming Soon" },
+              { platform: "TWITTER", name: "Twitter/X", Icon: Twitter, status: isKorean ? "곧 제공" : "Coming Soon" },
             ].map((item) => (
               <div
                 key={item.platform}
                 className="p-4 border rounded-lg opacity-60"
               >
                 <div className="flex items-center gap-3">
-                  <div className={cn("p-2 rounded-lg", item.bgColor)}>
-                    <item.Icon className={cn("h-5 w-5", item.textColor)} />
+                  <div className="p-2 rounded-lg bg-zinc-100 dark:bg-zinc-800">
+                    <item.Icon className="h-5 w-5" />
                   </div>
                   <div>
                     <p className="font-medium">{item.name}</p>
@@ -407,7 +407,7 @@ export default function AccountsSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-bold">
               1
             </div>
             <div>
@@ -422,7 +422,7 @@ export default function AccountsSettingsPage() {
             </div>
           </div>
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-bold">
               2
             </div>
             <div>
@@ -437,7 +437,7 @@ export default function AccountsSettingsPage() {
             </div>
           </div>
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-bold">
               3
             </div>
             <div>
@@ -452,7 +452,7 @@ export default function AccountsSettingsPage() {
             </div>
           </div>
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-bold">
               4
             </div>
             <div>
@@ -495,12 +495,12 @@ function AccountCard({
         <div className="flex items-center gap-2">
           <span className="font-medium truncate">{account.account_name}</span>
           {account.is_token_valid ? (
-            <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+            <Badge variant="secondary">
               <CheckCircle className="h-3 w-3 mr-1" />
               {isKorean ? "연결됨" : "Connected"}
             </Badge>
           ) : (
-            <Badge variant="destructive">
+            <Badge variant="outline">
               <AlertCircle className="h-3 w-3 mr-1" />
               {isKorean ? "토큰 만료" : "Token Expired"}
             </Badge>

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { campaignsApi, assetsApi, Campaign, Asset } from "@/lib/campaigns-api";
+import { assetsApi, type Campaign, type Asset } from "@/lib/campaigns-api";
+import { useCampaign, useAssets } from "@/lib/queries";
 import { loadBridgePrompt, clearBridgePrompt } from "@/lib/bridge-storage";
 import {
   composeApi,
@@ -77,9 +78,13 @@ export default function ComposePage() {
   const { t, language } = useI18n();
   const campaignId = params.id as string;
 
+  // Use TanStack Query for data fetching with caching
+  const { data: campaign, isLoading: campaignLoading, error: campaignError } = useCampaign(campaignId);
+  const { data: imageAssetsData, isLoading: imageAssetsLoading } = useAssets(campaignId, { type: "image", page_size: 100 });
+
+  const loading = campaignLoading;
+
   // Core state
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [loading, setLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState<WizardStep>(1);
   const [error, setError] = useState("");
 
@@ -95,8 +100,6 @@ export default function ComposePage() {
   const [selectedImages, setSelectedImages] = useState<ImageCandidate[]>([]);
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [imageSourceMode, setImageSourceMode] = useState<ImageSourceMode>("mixed");
-  const [assetImages, setAssetImages] = useState<ImageCandidate[]>([]);
-  const [loadingAssets, setLoadingAssets] = useState(false);
 
   // Step 3: Music state
   const [matchingMusic, setMatchingMusic] = useState(false);
@@ -119,62 +122,33 @@ export default function ComposePage() {
   // Track which keywords are selected for search (only these will be searched)
   const [selectedSearchKeywords, setSelectedSearchKeywords] = useState<Set<string>>(new Set());
 
-  // Load campaign data
-  const loadData = useCallback(async () => {
-    try {
-      const campaignResult = await campaignsApi.getById(campaignId);
+  // Redirect if campaign not found
+  if (campaignError) {
+    router.push("/campaigns");
+  }
 
-      if (campaignResult.error) {
-        router.push("/campaigns");
-        return;
-      }
+  // Convert image assets to ImageCandidate format for use in the wizard
+  const assetImages: ImageCandidate[] = React.useMemo(() => {
+    const items = imageAssetsData?.items || [];
+    return items.map((asset, idx) => ({
+      id: `asset-${asset.id}`,
+      sourceUrl: asset.s3_url,
+      thumbnailUrl: asset.thumbnail_url || asset.s3_url,
+      sourceTitle: asset.original_filename,
+      sourceDomain: "Campaign Asset",
+      width: (asset.metadata?.width as number) || 1080,
+      height: (asset.metadata?.height as number) || 1920,
+      isSelected: false,
+      sortOrder: idx,
+      qualityScore: 0.9, // Assets are pre-vetted, so give them high quality score
+    }));
+  }, [imageAssetsData]);
 
-      if (campaignResult.data) {
-        setCampaign(campaignResult.data);
-      }
-    } catch (err) {
-      console.error("Failed to load data:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [campaignId, router]);
+  const loadingAssets = imageAssetsLoading;
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  // Load asset images for the campaign
+  // Placeholder for loadAssetImages (no longer needed, but may be called elsewhere)
   const loadAssetImages = useCallback(async () => {
-    setLoadingAssets(true);
-    try {
-      const result = await assetsApi.getByCampaign(campaignId, {
-        type: "image",
-        page_size: 100,
-      });
-
-      if (result.data) {
-        // Convert Asset to ImageCandidate format
-        const assetImageCandidates: ImageCandidate[] = result.data.items.map(
-          (asset, idx) => ({
-            id: `asset-${asset.id}`,
-            sourceUrl: asset.s3_url,
-            thumbnailUrl: asset.thumbnail_url || asset.s3_url,
-            sourceTitle: asset.original_filename,
-            sourceDomain: "Campaign Asset",
-            width: (asset.metadata?.width as number) || 1080,
-            height: (asset.metadata?.height as number) || 1920,
-            isSelected: false,
-            sortOrder: idx,
-            qualityScore: 0.9, // Assets are pre-vetted, so give them high quality score
-          })
-        );
-        setAssetImages(assetImageCandidates);
-      }
-    } catch (err) {
-      console.error("Failed to load asset images:", err);
-    } finally {
-      setLoadingAssets(false);
-    }
+    // No-op: assets are now loaded via TanStack Query
   }, [campaignId]);
 
   useEffect(() => {

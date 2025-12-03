@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/auth-store";
 import { saveBridgePrompt } from "@/lib/bridge-storage";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api";
 import { promptApi, PromptTransformResponse } from "@/lib/video-api";
-import { campaignsApi, Campaign } from "@/lib/campaigns-api";
+import { useCampaigns } from "@/lib/queries";
 import { trendsApi, type TextTrendAnalysisResponse, type VideoTrendAnalysisResponse, type TrendReportResponse } from "@/lib/trends-api";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -121,8 +121,11 @@ export default function TrendsPage() {
 
   // Data state
   const [trendGroups, setTrendGroups] = useState<TrendGroup[]>([]);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState({ trends: true, campaigns: true, collect: false });
+  const [loading, setLoading] = useState({ trends: true, collect: false });
+
+  // Use TanStack Query for campaigns with caching
+  const { data: campaignsData, isLoading: campaignsLoading } = useCampaigns({ page_size: 20, status: "active" });
+  const campaigns = campaignsData?.items || [];
 
   // Bridge form state
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
@@ -178,8 +181,8 @@ export default function TrendsPage() {
     celebrityDetected: language === "ko" ? "유명인 감지됨" : "Celebrity detected",
     aspect: language === "ko" ? "화면비" : "Aspect",
     duration: language === "ko" ? "길이" : "Duration",
-    generateVideo: language === "ko" ? "AI 영상 생성" : "Generate Video",
-    compose: language === "ko" ? "이미지 합성" : "Compose",
+    generateVideo: language === "ko" ? "AI 영상 생성" : "Create AI Video",
+    compose: language === "ko" ? "컴포즈 영상" : "Compose Video",
     trends: language === "ko" ? "트렌드" : "Trends",
     clickToApply: language === "ko" ? "클릭하여 적용 (최대 3개)" : "Click to apply (max 3)",
     saved: language === "ko" ? "저장됨" : "Saved",
@@ -306,32 +309,20 @@ export default function TrendsPage() {
     }
   }, [accessToken]);
 
-  // Load data on mount
-  useEffect(() => {
+  // Load saved trends on mount
+  React.useEffect(() => {
     if (accessToken) {
       api.setAccessToken(accessToken);
+      loadSavedTrends();
     }
-
-    const loadData = async () => {
-      await loadSavedTrends();
-
-      try {
-        const campaignsResult = await campaignsApi.getAll({ page_size: 20, status: "active" });
-        if (campaignsResult.data) {
-          setCampaigns(campaignsResult.data.items);
-          if (campaignsResult.data.items.length > 0 && !selectedCampaignId) {
-            setSelectedCampaignId(campaignsResult.data.items[0].id);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load campaigns:", error);
-      } finally {
-        setLoading((prev) => ({ ...prev, campaigns: false }));
-      }
-    };
-
-    loadData();
   }, [accessToken, loadSavedTrends]);
+
+  // Auto-select first campaign when campaigns are loaded
+  React.useEffect(() => {
+    if (campaigns.length > 0 && !selectedCampaignId) {
+      setSelectedCampaignId(campaigns[0].id);
+    }
+  }, [campaigns, selectedCampaignId]);
 
   // Handle trend search (for bridge panel)
   const handleTrendSearch = async () => {
@@ -561,12 +552,12 @@ export default function TrendsPage() {
 
       {/* Main Tabs */}
       <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as "bridge" | "analyze")} className="w-full">
-        <TabsList className="mb-6">
-          <TabsTrigger value="bridge" className="flex items-center gap-2">
+        <TabsList className="mb-6 w-full max-w-md h-12 p-1">
+          <TabsTrigger value="bridge" className="flex-1 flex items-center justify-center gap-2 h-10 text-sm font-medium">
             <Wand2 className="h-4 w-4" />
             {t.promptBridge}
           </TabsTrigger>
-          <TabsTrigger value="analyze" className="flex items-center gap-2">
+          <TabsTrigger value="analyze" className="flex-1 flex items-center justify-center gap-2 h-10 text-sm font-medium">
             <Brain className="h-4 w-4" />
             {t.trendAnalysis}
           </TabsTrigger>
@@ -590,7 +581,7 @@ export default function TrendsPage() {
                     </div>
                   </div>
 
-                  {loading.campaigns ? (
+                  {campaignsLoading ? (
                     <div className="flex items-center justify-center py-8">
                       <Spinner className="h-6 w-6" />
                     </div>
@@ -809,9 +800,9 @@ export default function TrendsPage() {
             </div>
 
             {/* Right Column - Trends (2/5) */}
-            <div className="lg:col-span-2">
-              <Card className="h-fit lg:sticky lg:top-6">
-                <CardContent className="pt-6">
+            <div className="lg:col-span-2 flex flex-col">
+              <Card className="flex-1 flex flex-col">
+                <CardContent className="pt-6 flex-1 flex flex-col">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-2 rounded-xl bg-primary/10">
                       <TrendingUp className="h-5 w-5 text-primary" />
@@ -823,7 +814,7 @@ export default function TrendsPage() {
                   </div>
 
                   {/* Tabs: Saved / Search */}
-                  <Tabs value={trendTab} onValueChange={(v) => setTrendTab(v as "saved" | "search")} className="w-full">
+                  <Tabs value={trendTab} onValueChange={(v) => setTrendTab(v as "saved" | "search")} className="w-full flex-1 flex flex-col">
                     <TabsList className="w-full mb-4">
                       <TabsTrigger value="saved" className="flex-1">
                         <Bookmark className="h-3.5 w-3.5 mr-1.5" />
@@ -836,7 +827,7 @@ export default function TrendsPage() {
                     </TabsList>
 
                     {/* Saved Trends Tab */}
-                    <TabsContent value="saved" className="mt-0">
+                    <TabsContent value="saved" className="mt-0 flex-1">
                       {loading.trends ? (
                         <div className="flex items-center justify-center py-12">
                           <Spinner className="h-6 w-6" />
@@ -851,7 +842,7 @@ export default function TrendsPage() {
                           </Button>
                         </div>
                       ) : (
-                        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                        <div className="space-y-2 overflow-y-auto flex-1">
                           {trendGroups.slice(0, 10).map((group) => {
                             const isSelected = selectedTrends.includes(group.query);
                             return (
@@ -887,7 +878,7 @@ export default function TrendsPage() {
                     </TabsContent>
 
                     {/* Search Trends Tab */}
-                    <TabsContent value="search" className="mt-0 space-y-4">
+                    <TabsContent value="search" className="mt-0 space-y-4 flex-1">
                       {/* Search Input */}
                       <div className="flex gap-2">
                         <Input
@@ -1012,7 +1003,7 @@ export default function TrendsPage() {
                   </Tabs>
 
                   {/* Quick tip */}
-                  <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                  <div className="mt-auto pt-4 p-3 bg-muted/50 rounded-lg">
                     <p className="text-xs text-muted-foreground">
                       <span className="font-medium text-foreground">{t.tip}</span> {t.tipContent}
                     </p>
@@ -1221,16 +1212,16 @@ export default function TrendsPage() {
                 <CardContent className="space-y-4">
                   {/* Hashtag Info */}
                   {searchResult.info && (
-                    <div className="p-3 rounded-lg bg-muted/50">
-                      <p className="font-medium mb-2">#{searchResult.info.title}</p>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Eye className="h-4 w-4 text-muted-foreground" />
-                          <span>{formatNumber(searchResult.info.viewCount)} {t.views}</span>
+                    <div className="p-4 rounded-xl bg-muted/50 border border-border/50">
+                      <p className="font-semibold text-lg mb-3">#{searchResult.info.title}</p>
+                      <div className="grid grid-cols-2 gap-6 text-base">
+                        <div className="flex items-center gap-3">
+                          <Eye className="h-5 w-5 text-muted-foreground" />
+                          <span className="font-medium">{formatNumber(searchResult.info.viewCount)} {t.views}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Video className="h-4 w-4 text-muted-foreground" />
-                          <span>{formatNumber(searchResult.info.videoCount)} {t.videos}</span>
+                        <div className="flex items-center gap-3">
+                          <Video className="h-5 w-5 text-muted-foreground" />
+                          <span className="font-medium">{formatNumber(searchResult.info.videoCount)} {t.videos}</span>
                         </div>
                       </div>
                     </div>
@@ -1239,13 +1230,13 @@ export default function TrendsPage() {
                   {/* Related Hashtags */}
                   {searchResult.relatedHashtags && searchResult.relatedHashtags.length > 0 && (
                     <div>
-                      <p className="text-sm font-medium mb-2">{t.relatedHashtags}:</p>
-                      <div className="flex flex-wrap gap-1">
+                      <p className="text-base font-semibold mb-3">{t.relatedHashtags}:</p>
+                      <div className="flex flex-wrap gap-2">
                         {searchResult.relatedHashtags.slice(0, 30).map((tag, i) => (
                           <Badge
                             key={i}
                             variant="outline"
-                            className="cursor-pointer hover:bg-muted text-xs"
+                            className="cursor-pointer hover:bg-muted text-sm px-3 py-1.5"
                             onClick={() => {
                               setSearchQuery(tag.startsWith("#") ? tag : `#${tag}`);
                               handleTrendSearch();
@@ -1261,10 +1252,10 @@ export default function TrendsPage() {
                   {/* Videos */}
                   {searchResult.videos && searchResult.videos.length > 0 && (
                     <div>
-                      <p className="text-sm font-medium mb-2">
+                      <p className="text-base font-semibold mb-3">
                         {t.videos} ({searchResult.videos.length}):
                       </p>
-                      <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                      <div className="space-y-3 max-h-[500px] overflow-y-auto">
                         {searchResult.videos.map((video) => {
                           const videoUrl = video.videoUrl ||
                             (video.author.uniqueId
@@ -1277,37 +1268,37 @@ export default function TrendsPage() {
                               href={videoUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="block p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors group"
+                              className="block p-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors group border border-border/50"
                             >
-                              <div className="flex items-start justify-between gap-2">
-                                <p className="text-sm line-clamp-2 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="text-base leading-relaxed line-clamp-2 flex-1">
                                   {video.description || t.noDescription}
                                 </p>
-                                <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                                <ExternalLink className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                               </div>
-                              <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
-                                <span>@{video.author.uniqueId}</span>
+                              <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground flex-wrap">
+                                <span className="font-medium">@{video.author.uniqueId}</span>
                                 {(video.stats.playCount ?? 0) > 0 && (
-                                  <span className="flex items-center gap-1">
-                                    <Eye className="h-3 w-3" />
+                                  <span className="flex items-center gap-1.5">
+                                    <Eye className="h-4 w-4" />
                                     {formatNumber(video.stats.playCount)}
                                   </span>
                                 )}
                                 {(video.stats.likeCount ?? 0) > 0 && (
-                                  <span className="flex items-center gap-1">
-                                    <Heart className="h-3 w-3" />
+                                  <span className="flex items-center gap-1.5">
+                                    <Heart className="h-4 w-4" />
                                     {formatNumber(video.stats.likeCount)}
                                   </span>
                                 )}
                                 {(video.stats.commentCount ?? 0) > 0 && (
-                                  <span className="flex items-center gap-1">
-                                    <MessageCircle className="h-3 w-3" />
+                                  <span className="flex items-center gap-1.5">
+                                    <MessageCircle className="h-4 w-4" />
                                     {formatNumber(video.stats.commentCount)}
                                   </span>
                                 )}
                                 {(video.stats.shareCount ?? 0) > 0 && (
-                                  <span className="flex items-center gap-1">
-                                    <Share2 className="h-3 w-3" />
+                                  <span className="flex items-center gap-1.5">
+                                    <Share2 className="h-4 w-4" />
                                     {formatNumber(video.stats.shareCount)}
                                   </span>
                                 )}

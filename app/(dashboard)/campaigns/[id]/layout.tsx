@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { campaignsApi, Campaign } from "@/lib/campaigns-api";
+import { useCampaign, useUpdateCampaign } from "@/lib/queries";
 import { useI18n } from "@/lib/i18n";
 import { useUIStore, type CampaignTab } from "@/lib/stores/ui-store";
 import { Spinner } from "@/components/ui/spinner";
@@ -77,36 +77,22 @@ export default function CampaignWorkspaceLayout({
   const { setActiveTab } = useUIStore();
   const campaignId = params.id as string;
 
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState({ name: "", status: "" });
-  const [saving, setSaving] = useState(false);
 
-  const loadCampaign = useCallback(async () => {
-    try {
-      const result = await campaignsApi.getById(campaignId);
-      if (result.error) {
-        setError(result.error.message);
-        router.push("/campaigns");
-        return;
-      }
-      if (result.data) {
-        setCampaign(result.data);
-        setEditData({ name: result.data.name, status: result.data.status });
-      }
-    } catch (err) {
-      setError("Failed to load campaign");
-      router.push("/campaigns");
-    } finally {
-      setLoading(false);
-    }
-  }, [campaignId, router]);
+  // Use TanStack Query for data fetching with caching
+  const { data: campaign, isLoading: loading, error: campaignError } = useCampaign(campaignId);
+  const updateCampaignMutation = useUpdateCampaign();
 
-  useEffect(() => {
-    loadCampaign();
-  }, [loadCampaign]);
+  // Initialize edit data when campaign loads
+  if (campaign && editData.name === "" && editData.status === "") {
+    setEditData({ name: campaign.name, status: campaign.status });
+  }
+
+  // Redirect if campaign not found
+  if (campaignError) {
+    router.push("/campaigns");
+  }
 
   // Check if we're on a standalone page (should not show workspace tabs)
   // Includes: pipeline detail pages and info page
@@ -138,20 +124,19 @@ export default function CampaignWorkspaceLayout({
 
   const handleSave = async () => {
     if (!campaign) return;
-    setSaving(true);
-    try {
-      const result = await campaignsApi.update(campaign.id, {
-        name: editData.name,
-        status: editData.status,
-      });
-      if (result.data) {
-        setCampaign(result.data);
-        setEditMode(false);
-      }
-    } finally {
-      setSaving(false);
-    }
+    updateCampaignMutation.mutate(
+      {
+        id: campaign.id,
+        data: {
+          name: editData.name,
+          status: editData.status,
+        },
+      },
+      { onSuccess: () => setEditMode(false) }
+    );
   };
+
+  const saving = updateCampaignMutation.isPending;
 
   const handleCancelEdit = () => {
     if (campaign) {
@@ -168,7 +153,7 @@ export default function CampaignWorkspaceLayout({
     );
   }
 
-  if (error || !campaign) {
+  if (campaignError || !campaign) {
     return null;
   }
 

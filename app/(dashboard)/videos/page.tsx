@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/lib/auth-store";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { useDashboardStats } from "@/lib/queries";
 import {
   Card,
   CardContent,
@@ -58,6 +58,8 @@ import {
   FileText,
   Settings,
   Layers,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -84,54 +86,33 @@ interface VideoListItem {
 
 export default function AllVideosPage() {
   const router = useRouter();
-  const { accessToken, isAuthenticated } = useAuthStore();
   const { language } = useI18n();
 
-  const [videos, setVideos] = useState<VideoListItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [campaignFilter, setCampaignFilter] = useState<string>("all");
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
   // Detail modal state
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<FullVideoGeneration | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  useEffect(() => {
-    if (accessToken) {
-      api.setAccessToken(accessToken);
-    }
-  }, [accessToken]);
+  // Use TanStack Query for data fetching with caching
+  const { data: dashboardStats, isLoading: loading } = useDashboardStats();
 
-  const loadVideos = useCallback(async () => {
-    if (!isAuthenticated || !accessToken) return;
-
-    setLoading(true);
-    try {
-      // This would be a new API endpoint that returns all videos across campaigns
-      const response = await api.get<{ items: any[]; recent_activity?: { generations?: any[] } }>("/api/v1/dashboard/stats");
-      if (response.data) {
-        // Transform the data - in a real implementation this would come from a dedicated API
-        const allVideos: VideoListItem[] = response.data.recent_activity?.generations?.map((gen: any) => ({
-          id: gen.id,
-          campaignId: gen.campaign_id,
-          campaignName: gen.campaign_name,
-          prompt: gen.prompt,
-          status: "COMPLETED",
-          outputUrl: gen.output_url,
-          composedOutputUrl: gen.composed_output_url,
-          qualityScore: gen.quality_score,
-          createdAt: gen.created_at,
-        })) || [];
-        setVideos(allVideos);
-      }
-    } catch (err) {
-      console.error("Failed to load videos:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [isAuthenticated, accessToken]);
+  // Transform the data from dashboard stats
+  const videos: VideoListItem[] = dashboardStats?.recent_activity?.generations?.map((gen: any) => ({
+    id: gen.id,
+    campaignId: gen.campaign_id,
+    campaignName: gen.campaign_name,
+    prompt: gen.prompt,
+    status: "COMPLETED",
+    outputUrl: gen.output_url,
+    composedOutputUrl: gen.composed_output_url,
+    qualityScore: gen.quality_score,
+    createdAt: gen.created_at,
+  })) || [];
 
   const fetchVideoDetail = useCallback(async (videoId: string) => {
     setLoadingDetail(true);
@@ -147,10 +128,6 @@ export default function AllVideosPage() {
       setLoadingDetail(false);
     }
   }, []);
-
-  useEffect(() => {
-    loadVideos();
-  }, [loadVideos]);
 
   const getVideoUrl = (video: VideoListItem) => {
     return video.composedOutputUrl || video.outputUrl;
@@ -195,19 +172,21 @@ export default function AllVideosPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "COMPLETED":
-        return <Badge variant="default" className="bg-green-500">
+        return <Badge variant="outline" className="border-zinc-400 bg-zinc-100 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
           <CheckCircle className="h-3 w-3 mr-1" />
           {language === "ko" ? "완료" : "Completed"}
         </Badge>;
       case "PROCESSING":
-        return <Badge variant="secondary">
+        return <Badge variant="outline" className="border-zinc-300 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
           <Clock className="h-3 w-3 mr-1" />
           {language === "ko" ? "처리중" : "Processing"}
         </Badge>;
       case "FAILED":
-        return <Badge variant="destructive">{language === "ko" ? "실패" : "Failed"}</Badge>;
+        return <Badge variant="outline" className="border-zinc-500 bg-zinc-200 text-zinc-800 dark:border-zinc-500 dark:bg-zinc-700 dark:text-zinc-200">
+          {language === "ko" ? "실패" : "Failed"}
+        </Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return <Badge variant="outline" className="border-zinc-300 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400">{status}</Badge>;
     }
   };
 
@@ -269,6 +248,14 @@ export default function AllVideosPage() {
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              variant={soundEnabled ? "default" : "outline"}
+              size="icon"
+              onClick={() => setSoundEnabled(!soundEnabled)}
+              title={language === "ko" ? (soundEnabled ? "소리 끄기" : "소리 켜기") : (soundEnabled ? "Mute" : "Unmute")}
+            >
+              {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -305,17 +292,12 @@ export default function AllVideosPage() {
                   src={getVideoUrl(video)}
                   className="w-full h-full"
                   playOnHover={true}
+                  soundOnHover={soundEnabled}
                 />
                 {video.qualityScore && (
                   <Badge
-                    className={cn(
-                      "absolute top-2 right-2",
-                      video.qualityScore >= 80
-                        ? "bg-green-500"
-                        : video.qualityScore >= 60
-                        ? "bg-yellow-500"
-                        : "bg-red-500"
-                    )}
+                    variant="outline"
+                    className="absolute top-2 right-2 border-zinc-400 bg-white/90 text-zinc-900 dark:border-zinc-500 dark:bg-zinc-900/90 dark:text-zinc-100"
                   >
                     <Star className="h-3 w-3 mr-1" />
                     {video.qualityScore.toFixed(0)}%
@@ -328,7 +310,7 @@ export default function AllVideosPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{video.prompt}</p>
                     <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="outline" className="text-xs">
+                      <Badge variant="outline" className="text-xs border-zinc-300 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400">
                         <FolderOpen className="h-3 w-3 mr-1" />
                         {video.campaignName}
                       </Badge>
@@ -480,16 +462,16 @@ export default function AllVideosPage() {
                     <Wand2 className="h-4 w-4" />
                     {language === "ko" ? "생성 타입" : "Generation Type"}
                   </h3>
-                  <Badge variant={isComposeVideo(selectedVideo) ? "secondary" : "default"}>
+                  <Badge variant="outline" className="border-zinc-400 bg-zinc-100 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
                     {isComposeVideo(selectedVideo) ? (
                       <>
                         <Layers className="h-3 w-3 mr-1" />
-                        Compose
+                        {language === "ko" ? "컴포즈 영상" : "Compose Video"}
                       </>
                     ) : (
                       <>
                         <Sparkles className="h-3 w-3 mr-1" />
-                        AI (Veo)
+                        {language === "ko" ? "AI 영상" : "AI Video"}
                       </>
                     )}
                   </Badge>
@@ -549,7 +531,7 @@ export default function AllVideosPage() {
                         <Sparkles className="h-4 w-4" />
                         {language === "ko" ? "이펙트 프리셋" : "Effect Preset"}
                       </h3>
-                      <Badge variant="outline">{selectedVideo.effect_preset}</Badge>
+                      <Badge variant="outline" className="border-zinc-300 text-zinc-700 dark:border-zinc-600 dark:text-zinc-300">{selectedVideo.effect_preset}</Badge>
                     </div>
                   </>
                 )}
@@ -587,7 +569,7 @@ export default function AllVideosPage() {
                             <span className="text-sm text-muted-foreground">{language === "ko" ? "검색 태그: " : "Search Tags: "}</span>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {(selectedVideo.quality_metadata.searchTags as string[]).map((tag, i) => (
-                                <Badge key={i} variant="outline" className="text-xs">
+                                <Badge key={i} variant="outline" className="text-xs border-zinc-300 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400">
                                   #{tag}
                                 </Badge>
                               ))}
@@ -599,7 +581,7 @@ export default function AllVideosPage() {
                             <span className="text-sm text-muted-foreground">{language === "ko" ? "설정: " : "Settings: "}</span>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {Object.entries(selectedVideo.quality_metadata.settings as Record<string, unknown>).map(([key, value]) => (
-                                <Badge key={key} variant="secondary" className="text-xs">
+                                <Badge key={key} variant="outline" className="text-xs border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                                   {key}: {String(value)}
                                 </Badge>
                               ))}
@@ -611,7 +593,7 @@ export default function AllVideosPage() {
                             <span className="text-sm text-muted-foreground">{language === "ko" ? "적용된 프리셋: " : "Applied Presets: "}</span>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {(selectedVideo.quality_metadata.appliedPresets as Array<{name: string; category: string}>).map((preset, i) => (
-                                <Badge key={i} variant="secondary" className="text-xs">
+                                <Badge key={i} variant="outline" className="text-xs border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                                   {preset.category}: {preset.name}
                                 </Badge>
                               ))}
@@ -634,7 +616,7 @@ export default function AllVideosPage() {
                       </h3>
                       <div className="flex flex-wrap gap-1">
                         {selectedVideo.tags.map((tag, i) => (
-                          <Badge key={i} variant="outline">
+                          <Badge key={i} variant="outline" className="border-zinc-300 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400">
                             {tag}
                           </Badge>
                         ))}

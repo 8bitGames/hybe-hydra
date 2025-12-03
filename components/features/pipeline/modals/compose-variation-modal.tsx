@@ -297,12 +297,12 @@ export function ComposeVariationModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wand2 className="w-5 h-5 text-purple-500" />
-            {isKorean ? "Compose 변형 생성" : "Create Compose Variations"}
+            {isKorean ? "컴포즈 영상 변형 생성" : "Create Compose Video Variations"}
           </DialogTitle>
           <DialogDescription>
             {isKorean
-              ? "이미지+오디오 합성 영상의 효과와 스타일을 다양하게 변형합니다"
-              : "Create variations with different effects and styles for your composed video"}
+              ? "컴포즈 영상의 효과와 스타일을 다양하게 변형합니다"
+              : "Create variations with different effects and styles for your Compose video"}
           </DialogDescription>
         </DialogHeader>
 
@@ -311,7 +311,7 @@ export function ComposeVariationModal({
           <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Check className="w-4 h-4 text-purple-500" />
-              {isKorean ? "고정 설정 (Seed Compose)" : "Fixed Settings (Seed Compose)"}
+              {isKorean ? "고정 설정 (Seed 컴포즈 영상)" : "Fixed Settings (Seed Compose Video)"}
             </div>
 
             <div className="space-y-2">
@@ -497,8 +497,8 @@ export function ComposeVariationModal({
             />
             <p className="text-xs text-muted-foreground">
               {isKorean
-                ? "Compose 렌더링은 AI 생성보다 빠릅니다"
-                : "Compose rendering is faster than AI generation"}
+                ? "컴포즈 영상 렌더링은 AI 영상 생성보다 빠릅니다"
+                : "Compose Video rendering is faster than AI Video generation"}
             </p>
           </div>
 
@@ -714,8 +714,8 @@ export function ComposeVariationModal({
               <>
                 <Wand2 className="w-4 h-4 mr-2" />
                 {isKorean
-                  ? `${estimatedVariations}개 Compose 변형 생성`
-                  : `Generate ${estimatedVariations} Compose Variations`}
+                  ? `${estimatedVariations}개 컴포즈 영상 변형 생성`
+                  : `Generate ${estimatedVariations} Compose Video Variations`}
               </>
             )}
           </Button>

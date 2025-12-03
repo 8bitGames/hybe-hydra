@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { pipelineApi, PipelineDetail, PipelineVariation } from "@/lib/pipeline-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,47 +34,36 @@ export default function PipelineDetailPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const campaignId = params.id as string;
   const batchId = params.batchId as string;
   const seedGenerationId = searchParams.get("seed") || "";
   const { language } = useI18n();
   const isKorean = language === "ko";
 
-  const [pipeline, setPipeline] = useState<PipelineDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch pipeline detail
-  const fetchPipeline = useCallback(async () => {
-    if (!seedGenerationId) return;
-    try {
+  // Use TanStack Query for pipeline detail with caching
+  const { data: pipeline, isLoading: loading, refetch } = useQuery({
+    queryKey: ["pipeline", seedGenerationId, batchId],
+    queryFn: async () => {
       const data = await pipelineApi.getDetail(seedGenerationId, batchId);
-      setPipeline(data);
-    } catch (error) {
-      console.error("Failed to fetch pipeline:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [batchId, seedGenerationId]);
-
-  useEffect(() => {
-    fetchPipeline();
-  }, [fetchPipeline]);
-
-  // Auto-refresh for processing pipeline
-  useEffect(() => {
-    if (pipeline?.batch_status === "processing") {
-      const interval = setInterval(fetchPipeline, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [pipeline, fetchPipeline]);
+      return data;
+    },
+    enabled: !!seedGenerationId && !!batchId,
+    staleTime: 30 * 1000, // 30 seconds for pipeline data
+    refetchInterval: (query) => {
+      // Auto-refetch every 5 seconds if processing
+      const data = query.state.data as PipelineDetail | undefined;
+      return data?.batch_status === "processing" ? 5000 : false;
+    },
+  });
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchPipeline();
+    refetch().finally(() => setRefreshing(false));
   };
 
   const toggleSelection = (id: string) => {

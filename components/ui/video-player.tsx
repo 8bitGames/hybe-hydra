@@ -13,6 +13,7 @@ interface VideoPlayerProps {
   loop?: boolean;
   controls?: boolean;
   playOnHover?: boolean;
+  soundOnHover?: boolean;
   onError?: (error: string) => void;
 }
 
@@ -25,6 +26,7 @@ export function VideoPlayer({
   loop = false,
   controls = false,
   playOnHover = true,
+  soundOnHover = true,
   onError,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -32,6 +34,11 @@ export function VideoPlayer({
 
   const handleMouseEnter = () => {
     if (playOnHover && videoRef.current) {
+      // Unmute when hovering if soundOnHover is enabled
+      if (soundOnHover) {
+        videoRef.current.muted = false;
+        videoRef.current.volume = 0.1; // 10% volume
+      }
       videoRef.current.play().catch(() => {});
     }
   };
@@ -40,6 +47,10 @@ export function VideoPlayer({
     if (playOnHover && videoRef.current) {
       videoRef.current.pause();
       videoRef.current.currentTime = 0;
+      // Mute again when not hovering
+      if (soundOnHover) {
+        videoRef.current.muted = true;
+      }
     }
   };
 

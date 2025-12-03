@@ -38,6 +38,8 @@ import {
   ChevronRight,
   X,
   ExternalLink,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
@@ -50,6 +52,7 @@ export default function ComposeGalleryPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
   // Video preview modal
   const [selectedVideo, setSelectedVideo] = useState<ComposedVideo | null>(null);
@@ -57,8 +60,8 @@ export default function ComposeGalleryPage() {
 
   // Translations
   const t = {
-    title: language === "ko" ? "슬라이드쇼 영상" : "Composed Videos",
-    subtitle: language === "ko" ? "Compose로 만든 슬라이드쇼 영상을 확인하고 다운로드하세요" : "View and download your slideshow videos created with Compose",
+    title: language === "ko" ? "컴포즈 영상" : "Compose Videos",
+    subtitle: language === "ko" ? "컴포즈로 만든 영상을 확인하고 다운로드하세요" : "View and download your Compose videos",
     createNew: language === "ko" ? "새로 만들기" : "Create New",
     totalVideos: language === "ko" ? "전체 영상" : "Total Videos",
     readyToPlay: language === "ko" ? "재생 가능" : "Ready to Play",
@@ -66,7 +69,7 @@ export default function ComposeGalleryPage() {
     searchPlaceholder: language === "ko" ? "캠페인, 아티스트, 프롬프트로 검색..." : "Search by campaign, artist, or prompt...",
     noVideos: language === "ko" ? "영상을 찾을 수 없습니다" : "No videos found",
     tryDifferent: language === "ko" ? "다른 검색어로 시도해보세요" : "Try a different search term",
-    createFirst: language === "ko" ? "Compose로 첫 번째 슬라이드쇼 영상을 만들어보세요" : "Create your first slideshow video with Compose",
+    createFirst: language === "ko" ? "컴포즈로 첫 번째 영상을 만들어보세요" : "Create your first Compose video",
     createVideo: language === "ko" ? "영상 만들기" : "Create Video",
     page: language === "ko" ? "페이지" : "Page",
     of: language === "ko" ? "/" : "of",
@@ -196,14 +199,24 @@ export default function ComposeGalleryPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder={t.searchPlaceholder}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9"
-        />
+      <div className="flex items-center gap-4">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder={t.searchPlaceholder}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Button
+          variant={soundEnabled ? "default" : "outline"}
+          size="icon"
+          onClick={() => setSoundEnabled(!soundEnabled)}
+          title={language === "ko" ? (soundEnabled ? "소리 끄기" : "소리 켜기") : (soundEnabled ? "Mute" : "Unmute")}
+        >
+          {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+        </Button>
       </div>
 
       {/* Video Grid */}
@@ -248,11 +261,19 @@ export default function ComposeGalleryPage() {
                       className="w-full h-full object-cover"
                       muted
                       preload="metadata"
-                      onMouseOver={(e) => (e.currentTarget as HTMLVideoElement).play()}
+                      onMouseOver={(e) => {
+                        const videoEl = e.currentTarget as HTMLVideoElement;
+                        if (soundEnabled) {
+                          videoEl.muted = false;
+                          videoEl.volume = 0.1; // 10% volume
+                        }
+                        videoEl.play();
+                      }}
                       onMouseOut={(e) => {
                         const videoEl = e.currentTarget as HTMLVideoElement;
                         videoEl.pause();
                         videoEl.currentTime = 0;
+                        videoEl.muted = true;
                       }}
                     />
                   ) : (

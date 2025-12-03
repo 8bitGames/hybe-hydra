@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/lib/auth-store";
-import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { campaignsApi, Campaign } from "@/lib/campaigns-api";
+import { useCampaigns } from "@/lib/queries";
+import type { Campaign } from "@/lib/campaigns-api";
 import {
   Card,
   CardContent,
@@ -56,63 +55,34 @@ interface Asset {
 
 export default function AssetsPage() {
   const router = useRouter();
-  const { accessToken, isAuthenticated } = useAuthStore();
   const { language } = useI18n();
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedCampaign, setSelectedCampaign] = useState<string>("all");
   const [fileTypeFilter, setFileTypeFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
-  useEffect(() => {
-    if (accessToken) {
-      api.setAccessToken(accessToken);
-    }
-  }, [accessToken]);
+  // Use TanStack Query for data fetching with caching
+  const { data: campaignsData, isLoading: loading, refetch } = useCampaigns({ page_size: 100 });
+  const loadData = () => refetch();
 
-  const loadData = useCallback(async () => {
-    if (!isAuthenticated || !accessToken) return;
+  const campaigns = campaignsData?.items || [];
 
-    setLoading(true);
-    try {
-      // Load campaigns first
-      const campaignsResult = await campaignsApi.getAll({ page_size: 100 });
-      if (campaignsResult.data) {
-        setCampaigns(campaignsResult.data.items);
-
-        // For now, create mock assets since the API might not be fully implemented
-        // TODO: Replace with actual API call when available
-        const mockAssets: Asset[] = campaignsResult.data.items.flatMap((campaign) => {
-          // Generate mock assets for each campaign
-          const assetCount = Math.floor(Math.random() * 10) + 1;
-          return Array.from({ length: assetCount }, (_, i) => ({
-            id: `${campaign.id}-asset-${i}`,
-            campaign_id: campaign.id,
-            campaign_name: campaign.name,
-            filename: `asset-${i + 1}.${["jpg", "png", "mp3", "mp4"][Math.floor(Math.random() * 4)]}`,
-            file_type: ["image/jpeg", "image/png", "audio/mp3", "video/mp4"][Math.floor(Math.random() * 4)],
-            file_size: Math.floor(Math.random() * 10000000) + 100000,
-            url: `https://via.placeholder.com/400x300?text=Asset+${i + 1}`,
-            thumbnail_url: `https://via.placeholder.com/150x150?text=${i + 1}`,
-            uploaded_at: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
-          }));
-        });
-        setAssets(mockAssets);
-      }
-    } catch (err) {
-      console.error("Failed to load assets:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [isAuthenticated, accessToken]);
-
-  useEffect(() => {
-    if (isAuthenticated && accessToken) {
-      loadData();
-    }
-  }, [loadData, isAuthenticated, accessToken]);
+  // Generate mock assets from campaigns (TODO: Replace with actual API when available)
+  const assets: Asset[] = campaigns.flatMap((campaign) => {
+    // Use campaign id hash to generate consistent mock data
+    const seed = campaign.id.charCodeAt(0) % 10 + 1;
+    return Array.from({ length: seed }, (_, i) => ({
+      id: `${campaign.id}-asset-${i}`,
+      campaign_id: campaign.id,
+      campaign_name: campaign.name,
+      filename: `asset-${i + 1}.${["jpg", "png", "mp3", "mp4"][i % 4]}`,
+      file_type: ["image/jpeg", "image/png", "audio/mp3", "video/mp4"][i % 4],
+      file_size: (i + 1) * 500000,
+      url: `https://via.placeholder.com/400x300?text=Asset+${i + 1}`,
+      thumbnail_url: `https://via.placeholder.com/150x150?text=${i + 1}`,
+      uploaded_at: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
+    }));
+  });
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;

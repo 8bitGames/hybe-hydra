@@ -230,6 +230,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
+    // Check for force delete query param
+    const url = new URL(request.url);
+    const force = url.searchParams.get("force") === "true";
+
     const generation = await prisma.videoGeneration.findUnique({
       where: { id },
       include: {
@@ -242,6 +246,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!generation) {
+      // If not found and force=true, return success (idempotent delete)
+      if (force) {
+        return new NextResponse(null, { status: 204 });
+      }
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
     }
 
@@ -257,12 +265,29 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Can only delete pending or failed generations
-    if (!["PENDING", "FAILED", "CANCELLED"].includes(generation.status)) {
-      return NextResponse.json(
-        { detail: "Cannot delete generation in current status" },
-        { status: 400 }
-      );
+    // With force=true, allow deletion of any status
+    // Without force, can only delete pending, failed, or cancelled generations
+    const allowedStatuses = ["PENDING", "FAILED", "CANCELLED"];
+
+    if (!force && !allowedStatuses.includes(generation.status)) {
+      // Check if it's a stuck PROCESSING (older than 1 hour)
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const isStuck = generation.status === "PROCESSING" && generation.updatedAt < oneHourAgo;
+
+      // Check if it's an orphaned COMPLETED (no output)
+      const isOrphaned = generation.status === "COMPLETED" &&
+        !generation.outputUrl && !generation.composedOutputUrl;
+
+      if (!isStuck && !isOrphaned) {
+        return NextResponse.json(
+          {
+            detail: "Cannot delete generation in current status. Use ?force=true to force delete.",
+            status: generation.status,
+            hint: "For stuck processing jobs, use the cleanup API or add ?force=true"
+          },
+          { status: 400 }
+        );
+      }
     }
 
     await prisma.videoGeneration.delete({ where: { id } });

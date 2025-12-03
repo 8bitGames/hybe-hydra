@@ -62,7 +62,7 @@ const workflowSteps: WorkflowStep[] = [
   },
   {
     id: "generate",
-    name: "Generate",
+    name: "AI Video",
     description: "AI creates video from prompt",
     icon: Sparkles,
     href: (id) => `/campaigns/${id}/generate`,
@@ -70,7 +70,7 @@ const workflowSteps: WorkflowStep[] = [
   },
   {
     id: "compose",
-    name: "Compose",
+    name: "Compose Video",
     description: "Build video from images + audio",
     icon: Wand2,
     href: (id) => `/campaigns/${id}/compose`,

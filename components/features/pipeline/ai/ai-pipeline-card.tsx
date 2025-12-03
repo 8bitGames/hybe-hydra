@@ -2,6 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
   TooltipContent,
@@ -26,6 +27,9 @@ interface AIPipelineCardProps {
   onCreateVariations?: (pipeline: PipelineItem) => void;
   onDelete?: (pipeline: PipelineItem) => void;
   className?: string;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 export function AIPipelineCard({
@@ -33,6 +37,9 @@ export function AIPipelineCard({
   onCreateVariations,
   onDelete,
   className,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: AIPipelineCardProps) {
   const { language } = useI18n();
   const isKorean = language === "ko";
@@ -45,15 +52,33 @@ export function AIPipelineCard({
     onDelete?.(pipeline);
   };
 
+  const handleCardClick = () => {
+    if (selectionMode && onToggleSelect) {
+      onToggleSelect();
+    }
+  };
+
   return (
     <Card
       className={cn(
         "overflow-hidden hover:shadow-md transition-shadow group",
+        selectionMode && "cursor-pointer",
+        isSelected && "ring-2 ring-primary bg-primary/5",
         className
       )}
+      onClick={handleCardClick}
     >
       <CardContent className="p-0">
         <div className="flex gap-4 p-4">
+          {/* Selection Checkbox */}
+          {selectionMode && (
+            <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={onToggleSelect}
+              />
+            </div>
+          )}
           {/* Thumbnail */}
           <div className="relative w-28 h-20 bg-muted rounded-lg overflow-hidden shrink-0">
             {pipeline.seed_generation.output_url ? (
@@ -75,7 +100,7 @@ export function AIPipelineCard({
             </div>
             {/* AI Type Badge */}
             <div className="absolute top-1 left-1">
-              <Badge className="bg-blue-500/90 text-white text-[10px] px-1 py-0">
+              <Badge variant="secondary" className="text-[10px] px-1 py-0">
                 AI
               </Badge>
             </div>
@@ -86,7 +111,7 @@ export function AIPipelineCard({
             <div className="flex items-start justify-between gap-2 mb-1">
               <div className="min-w-0 flex-1">
                 {pipeline.campaign_name && (
-                  <p className="text-xs text-blue-500 font-medium truncate">
+                  <p className="text-xs text-muted-foreground font-medium truncate">
                     {pipeline.campaign_name}
                   </p>
                 )}
@@ -109,11 +134,11 @@ export function AIPipelineCard({
             <div className="flex items-center gap-3 text-xs text-muted-foreground mt-auto">
               <span className="flex items-center gap-1">
                 <Layers className="w-3 h-3" />
-                <span className="text-green-600 font-medium">{pipeline.completed}</span>
+                <span className="font-medium">{pipeline.completed}</span>
                 /{pipeline.total}
               </span>
               {pipeline.failed > 0 && (
-                <span className="flex items-center gap-1 text-red-500">
+                <span className="flex items-center gap-1">
                   <XCircle className="w-3 h-3" />
                   {pipeline.failed}
                 </span>

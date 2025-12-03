@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { campaignsApi, Campaign } from "@/lib/campaigns-api";
+import { type Campaign } from "@/lib/campaigns-api";
+import { useCampaign } from "@/lib/queries";
 import { pipelineApi, PipelineItem } from "@/lib/pipeline-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,9 @@ export default function PipelineManagementPage() {
   const { t, language } = useI18n();
   const isKorean = language === "ko";
 
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
+  // Use TanStack Query for campaign data with caching
+  const { data: campaign, isLoading: campaignLoading } = useCampaign(campaignId);
+
   const [pipelines, setPipelines] = useState<PipelineItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,21 +47,6 @@ export default function PipelineManagementPage() {
   // Filters
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
-
-  // Fetch campaign data
-  useEffect(() => {
-    const fetchCampaign = async () => {
-      try {
-        const response = await campaignsApi.getById(campaignId);
-        if (response.data) {
-          setCampaign(response.data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch campaign:", error);
-      }
-    };
-    fetchCampaign();
-  }, [campaignId]);
 
   // Fetch pipelines
   const fetchPipelines = useCallback(async () => {

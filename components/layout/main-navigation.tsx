@@ -66,13 +66,13 @@ const navigationItems: NavItem[] = [
         description: { ko: "1클릭 빠른 영상 생성", en: "One-click fast video creation" },
       },
       {
-        name: { ko: "AI 생성", en: "AI Generate" },
+        name: { ko: "AI 영상", en: "AI Video" },
         href: "/create?mode=generate",
         icon: Bot,
         description: { ko: "텍스트로 AI 영상 생성", en: "Generate AI videos from text" },
       },
       {
-        name: { ko: "이미지 합성", en: "Image Compose" },
+        name: { ko: "컴포즈 영상", en: "Compose Video" },
         href: "/create?mode=compose",
         icon: Wand2,
         description: { ko: "이미지와 음악으로 제작", en: "Create with images & music" },
@@ -90,10 +90,10 @@ const navigationItems: NavItem[] = [
         description: { ko: "생성된 모든 영상 보기", en: "View all generated videos" },
       },
       {
-        name: { ko: "합성 갤러리", en: "Compose Gallery" },
+        name: { ko: "컴포즈 영상", en: "Compose Videos" },
         href: "/compose/gallery",
         icon: Film,
-        description: { ko: "합성된 슬라이드쇼 영상", en: "Composed slideshow videos" },
+        description: { ko: "컴포즈로 만든 영상", en: "Videos created with Compose" },
       },
       {
         name: { ko: "에셋 관리", en: "Assets" },

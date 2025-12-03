@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { campaignsApi, artistsApi, Campaign, Artist } from "@/lib/campaigns-api";
+import { useCampaigns, useArtists, useDeleteCampaign } from "@/lib/queries";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,43 +35,23 @@ import {
 
 export default function CampaignsPage() {
   const { language } = useI18n();
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [artists, setArtists] = useState<Artist[]>([]);
-  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [artistFilter, setArtistFilter] = useState<string>("");
 
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const [campaignsResult, artistsResult] = await Promise.all([
-          campaignsApi.getAll({
-            page,
-            page_size: 10,
-            status: statusFilter || undefined,
-            artist_id: artistFilter || undefined,
-          }),
-          artistsApi.getAll(),
-        ]);
+  // Use TanStack Query for data fetching with caching
+  const { data: campaignsData, isLoading: campaignsLoading } = useCampaigns({
+    page,
+    page_size: 10,
+    status: statusFilter || undefined,
+    artist_id: artistFilter || undefined,
+  });
+  const { data: artists = [] } = useArtists();
+  const deleteCampaignMutation = useDeleteCampaign();
 
-        if (campaignsResult.data) {
-          setCampaigns(campaignsResult.data.items);
-          setTotalPages(campaignsResult.data.pages);
-        }
-        if (artistsResult.data) {
-          setArtists(artistsResult.data);
-        }
-      } catch (error) {
-        console.error("Failed to load campaigns:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, [page, statusFilter, artistFilter]);
+  const campaigns = campaignsData?.items || [];
+  const totalPages = campaignsData?.pages || 1;
+  const loading = campaignsLoading;
 
   const statusVariants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
     draft: "secondary",
@@ -86,10 +66,7 @@ export default function CampaignsPage() {
       : `Are you sure you want to delete "${name}"?`;
     if (!confirm(confirmMessage)) return;
 
-    const result = await campaignsApi.delete(id);
-    if (!result.error) {
-      setCampaigns(campaigns.filter((c) => c.id !== id));
-    }
+    deleteCampaignMutation.mutate(id);
   };
 
   const clearFilters = () => {

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { campaignsApi, artistsApi, Artist } from "@/lib/campaigns-api";
+import { useArtists, useCreateCampaign } from "@/lib/queries";
+import type { Artist } from "@/lib/campaigns-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,8 +34,6 @@ const COUNTRIES = [
 export default function NewCampaignPage() {
   const router = useRouter();
   const { language } = useI18n();
-  const [artists, setArtists] = useState<Artist[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
@@ -45,6 +44,12 @@ export default function NewCampaignPage() {
     start_date: "",
     end_date: "",
   });
+
+  // Use TanStack Query for data fetching with caching
+  const { data: artists = [] } = useArtists();
+  const createCampaignMutation = useCreateCampaign();
+
+  const loading = createCampaignMutation.isPending;
 
   // Translations
   const t = {
@@ -69,51 +74,38 @@ export default function NewCampaignPage() {
     solo: language === "ko" ? "솔로" : "Solo",
   };
 
-  useEffect(() => {
-    const loadArtists = async () => {
-      const result = await artistsApi.getAll();
-      if (result.data) {
-        setArtists(result.data);
-      }
-    };
-    loadArtists();
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
     if (!formData.name.trim()) {
       setError(t.campaignNameError);
-      setLoading(false);
       return;
     }
 
     if (!formData.artist_id) {
       setError(t.artistError);
-      setLoading(false);
       return;
     }
 
-    const result = await campaignsApi.create({
-      name: formData.name.trim(),
-      artist_id: formData.artist_id,
-      description: formData.description.trim() || undefined,
-      target_countries: formData.target_countries.length > 0 ? formData.target_countries : undefined,
-      start_date: formData.start_date || undefined,
-      end_date: formData.end_date || undefined,
-    });
-
-    if (result.error) {
-      setError(result.error.message);
-      setLoading(false);
-      return;
-    }
-
-    if (result.data) {
-      router.push(`/campaigns/${result.data.id}`);
-    }
+    createCampaignMutation.mutate(
+      {
+        name: formData.name.trim(),
+        artist_id: formData.artist_id,
+        description: formData.description.trim() || undefined,
+        target_countries: formData.target_countries.length > 0 ? formData.target_countries : undefined,
+        start_date: formData.start_date || undefined,
+        end_date: formData.end_date || undefined,
+      },
+      {
+        onSuccess: (data) => {
+          router.push(`/campaigns/${data.id}`);
+        },
+        onError: (err) => {
+          setError(err.message);
+        },
+      }
+    );
   };
 
   const toggleCountry = (code: string) => {

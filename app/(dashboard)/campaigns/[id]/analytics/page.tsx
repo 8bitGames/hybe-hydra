@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { useAuthStore } from "@/lib/auth-store";
+import { useQuery } from "@tanstack/react-query";
 import { saveBridgePrompt, BridgePromptData } from "@/lib/bridge-storage";
 import { useI18n } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -235,54 +235,30 @@ const getGrade = (score: number | null) => {
 export default function CampaignWorkspacePage() {
   const params = useParams();
   const router = useRouter();
-  const { accessToken } = useAuthStore();
   const { t } = useI18n();
   const campaignId = params.id as string;
 
-  const [data, setData] = useState<WorkspaceData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("timeline");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedVideo, setSelectedVideo] = useState<WorkspaceData["generations"][0] | null>(null);
 
-  useEffect(() => {
-    if (accessToken) {
-      api.setAccessToken(accessToken);
-    }
-  }, [accessToken]);
-
-  const loadWorkspace = useCallback(async () => {
-    if (!accessToken) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
+  // Use TanStack Query for workspace data with caching
+  const { data, isLoading: loading, error: queryError, refetch } = useQuery({
+    queryKey: ["workspace", campaignId],
+    queryFn: async () => {
       const response = await api.get<WorkspaceData>(`/api/v1/campaigns/${campaignId}/workspace`);
-
       if (response.error) {
-        setError(response.error.message);
-        return;
+        throw new Error(response.error.message);
       }
+      return response.data!;
+    },
+    enabled: !!campaignId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
 
-      if (response.data) {
-        setData(response.data);
-      }
-    } catch (err) {
-      console.error("Failed to load workspace:", err);
-      setError("Failed to load workspace data");
-    } finally {
-      setLoading(false);
-    }
-  }, [campaignId, accessToken]);
-
-  useEffect(() => {
-    if (accessToken) {
-      loadWorkspace();
-    }
-  }, [loadWorkspace, accessToken]);
+  const error = queryError?.message || null;
+  const loadWorkspace = () => refetch();
 
   // Navigate to Bridge with prompt context
   const handleReusePrompt = (prompt: WorkspaceData["prompts"][0]) => {
