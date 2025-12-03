@@ -92,6 +92,7 @@ export const metadata: Metadata = {
   },
 
   // Open Graph (Facebook, LinkedIn, KakaoTalk 등)
+  // Note: OG 이미지는 app/opengraph-image.tsx에서 동적으로 생성됨
   openGraph: {
     type: "website",
     locale: "ko_KR",
@@ -101,31 +102,15 @@ export const metadata: Metadata = {
     title: "Hydra - AI 영상 자동화 플랫폼 | 브랜드 숏폼 대량 제작",
     description:
       "AI 기반 트렌드 분석으로 브랜드 숏폼 콘텐츠를 몇 분 만에 수천 개 생성하세요. TikTok, Instagram, YouTube Shorts 자동 배포까지 한 번에.",
-    images: [
-      {
-        url: "/og-image.png",
-        width: 1200,
-        height: 630,
-        alt: "Hydra - AI 영상 자동화 플랫폼",
-        type: "image/png",
-      },
-      {
-        url: "/og-image-square.png",
-        width: 600,
-        height: 600,
-        alt: "Hydra 로고",
-        type: "image/png",
-      },
-    ],
   },
 
   // Twitter Card
+  // Note: 이미지는 app/opengraph-image.tsx에서 동적으로 생성됨
   twitter: {
     card: "summary_large_image",
     title: "Hydra - AI 영상 자동화 플랫폼",
     description:
       "트렌드 기반 AI로 브랜드 숏폼 콘텐츠를 대량 생성하고 자동 배포하세요.",
-    images: ["/og-image.png"],
     creator: "@hydra_ai",
     site: "@hydra_ai",
   },
