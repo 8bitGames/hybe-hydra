@@ -12,7 +12,7 @@ import { CapabilitiesGrid } from "@/components/landing/capabilities-grid";
 import { CTASection } from "@/components/landing/cta-section";
 import { Footer } from "@/components/landing/footer";
 
-export default function Home() {
+export default function EnterpriseLandingPage() {
   const [lang, setLang] = useState<Language>("ko");
 
   return (

@@ -1,0 +1,138 @@
+# Hydra - AI 영상 자동화 플랫폼
+# https://hydra.ai
+
+# ===========================================
+# AI 크롤러 및 생성형 검색 엔진 (AEO/GEO)
+# ===========================================
+
+# OpenAI GPTBot (ChatGPT)
+User-agent: GPTBot
+Allow: /
+Allow: /llms.txt
+Disallow: /api/
+Disallow: /dashboard/
+
+# Google Bard / Gemini
+User-agent: Google-Extended
+Allow: /
+Allow: /llms.txt
+Disallow: /api/
+Disallow: /dashboard/
+
+# Anthropic Claude
+User-agent: anthropic-ai
+Allow: /
+Allow: /llms.txt
+Disallow: /api/
+Disallow: /dashboard/
+
+# Perplexity AI
+User-agent: PerplexityBot
+Allow: /
+Allow: /llms.txt
+Disallow: /api/
+Disallow: /dashboard/
+
+# Cohere
+User-agent: cohere-ai
+Allow: /
+Allow: /llms.txt
+Disallow: /api/
+Disallow: /dashboard/
+
+# Common Crawl (많은 AI 모델 학습에 사용)
+User-agent: CCBot
+Allow: /
+Allow: /llms.txt
+Disallow: /api/
+Disallow: /dashboard/
+
+# ===========================================
+# 일반 검색 엔진
+# ===========================================
+
+# 모든 검색 엔진 허용
+User-agent: *
+Allow: /
+
+# 관리자/내부 페이지 차단
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /campaigns/
+Disallow: /assets/
+Disallow: /settings/
+Disallow: /compose/
+Disallow: /create/
+Disallow: /pipeline/
+Disallow: /publishing/
+Disallow: /insights/
+Disallow: /trends/
+Disallow: /videos/
+Disallow: /home/
+
+# 인증 페이지는 크롤링 허용 (회원가입 유도)
+Allow: /login
+Allow: /register
+
+# 랜딩 페이지 허용
+Allow: /
+Allow: /enterprise
+Allow: /terms
+Allow: /privacy
+
+# 사이트맵 위치
+Sitemap: https://hydra.ai/sitemap.xml
+
+# 크롤링 속도 제한 (서버 부하 방지)
+Crawl-delay: 1
+
+# Google 봇 특별 설정
+User-agent: Googlebot
+Allow: /
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /campaigns/
+Disallow: /assets/
+Disallow: /settings/
+Disallow: /compose/
+Disallow: /create/
+Disallow: /pipeline/
+Disallow: /publishing/
+Disallow: /insights/
+Disallow: /trends/
+Disallow: /videos/
+Disallow: /home/
+
+# 네이버 봇 설정
+User-agent: Yeti
+Allow: /
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /campaigns/
+Disallow: /assets/
+Disallow: /settings/
+Disallow: /compose/
+Disallow: /create/
+Disallow: /pipeline/
+Disallow: /publishing/
+Disallow: /insights/
+Disallow: /trends/
+Disallow: /videos/
+Disallow: /home/
+
+# 다음 봇 설정
+User-agent: Daumoa
+Allow: /
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /campaigns/
+Disallow: /assets/
+Disallow: /settings/
+Disallow: /compose/
+Disallow: /create/
+Disallow: /pipeline/
+Disallow: /publishing/
+Disallow: /insights/
+Disallow: /trends/
+Disallow: /videos/
+Disallow: /home/

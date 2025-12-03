@@ -1,0 +1,51 @@
+{
+  "name": "Hydra - AI 영상 자동화 플랫폼",
+  "short_name": "Hydra",
+  "description": "기업과 브랜드를 위한 AI 영상 오케스트레이션 플랫폼. 트렌드 기반 숏폼 콘텐츠 대량 생성 및 자동 배포.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "ko-KR",
+  "dir": "ltr",
+  "categories": ["business", "productivity", "marketing"],
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/og-image.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Hydra 대시보드"
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}

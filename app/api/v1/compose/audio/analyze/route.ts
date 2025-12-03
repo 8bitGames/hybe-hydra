@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
           const segmentData = await segmentResponse.json();
 
           // Also get full analysis for BPM
-          let bpm = metadata.bpm || metadata.audioBpm || null;
+          let bpm: number | null = typeof metadata.bpm === 'number' ? metadata.bpm :
+                                   typeof metadata.audioBpm === 'number' ? metadata.audioBpm : null;
           try {
             const analyzeResponse = await fetch(`${modalUrl}/audio/analyze`, {
               method: 'POST',
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
             });
             if (analyzeResponse.ok) {
               const analyzeData = await analyzeResponse.json();
-              bpm = analyzeData.bpm || bpm;
+              bpm = typeof analyzeData.bpm === 'number' ? analyzeData.bpm : bpm;
             }
           } catch {
             // BPM analysis failed, use metadata
