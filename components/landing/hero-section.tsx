@@ -24,65 +24,65 @@ interface HeroSectionProps {
 // Arc data - videos spreading from Korea to the world
 const globeArcs = [
   // Korea (Seoul) to USA (New York)
-  { order: 1, startLat: 37.5665, startLng: 126.9780, endLat: 40.7128, endLng: -74.0060, arcAlt: 0.35, color: "#ffffff" },
+  { order: 1, startLat: 37.5665, startLng: 126.9780, endLat: 40.7128, endLng: -74.0060, arcAlt: 0.35, color: "#F7F91D" },
   // Korea to USA (Los Angeles)
-  { order: 2, startLat: 37.5665, startLng: 126.9780, endLat: 34.0522, endLng: -118.2437, arcAlt: 0.4, color: "#ffffff" },
+  { order: 2, startLat: 37.5665, startLng: 126.9780, endLat: 34.0522, endLng: -118.2437, arcAlt: 0.4, color: "#F7F91D" },
   // Korea to Japan (Tokyo)
-  { order: 3, startLat: 37.5665, startLng: 126.9780, endLat: 35.6762, endLng: 139.6503, arcAlt: 0.1, color: "#ffffff" },
+  { order: 3, startLat: 37.5665, startLng: 126.9780, endLat: 35.6762, endLng: 139.6503, arcAlt: 0.1, color: "#F7F91D" },
   // Korea to UK (London)
-  { order: 4, startLat: 37.5665, startLng: 126.9780, endLat: 51.5074, endLng: -0.1278, arcAlt: 0.45, color: "#ffffff" },
+  { order: 4, startLat: 37.5665, startLng: 126.9780, endLat: 51.5074, endLng: -0.1278, arcAlt: 0.45, color: "#F7F91D" },
   // Korea to Brazil (Sao Paulo)
-  { order: 5, startLat: 37.5665, startLng: 126.9780, endLat: -23.5505, endLng: -46.6333, arcAlt: 0.5, color: "#ffffff" },
+  { order: 5, startLat: 37.5665, startLng: 126.9780, endLat: -23.5505, endLng: -46.6333, arcAlt: 0.5, color: "#F7F91D" },
   // Korea to Australia (Sydney)
-  { order: 6, startLat: 37.5665, startLng: 126.9780, endLat: -33.8688, endLng: 151.2093, arcAlt: 0.25, color: "#ffffff" },
+  { order: 6, startLat: 37.5665, startLng: 126.9780, endLat: -33.8688, endLng: 151.2093, arcAlt: 0.25, color: "#F7F91D" },
   // Korea to Germany (Berlin)
-  { order: 7, startLat: 37.5665, startLng: 126.9780, endLat: 52.5200, endLng: 13.4050, arcAlt: 0.4, color: "#ffffff" },
+  { order: 7, startLat: 37.5665, startLng: 126.9780, endLat: 52.5200, endLng: 13.4050, arcAlt: 0.4, color: "#F7F91D" },
   // Korea to France (Paris)
-  { order: 8, startLat: 37.5665, startLng: 126.9780, endLat: 48.8566, endLng: 2.3522, arcAlt: 0.42, color: "#ffffff" },
+  { order: 8, startLat: 37.5665, startLng: 126.9780, endLat: 48.8566, endLng: 2.3522, arcAlt: 0.42, color: "#F7F91D" },
   // Korea to Thailand (Bangkok)
-  { order: 9, startLat: 37.5665, startLng: 126.9780, endLat: 13.7563, endLng: 100.5018, arcAlt: 0.15, color: "#ffffff" },
+  { order: 9, startLat: 37.5665, startLng: 126.9780, endLat: 13.7563, endLng: 100.5018, arcAlt: 0.15, color: "#F7F91D" },
   // Korea to Indonesia (Jakarta)
-  { order: 10, startLat: 37.5665, startLng: 126.9780, endLat: -6.2088, endLng: 106.8456, arcAlt: 0.2, color: "#ffffff" },
+  { order: 10, startLat: 37.5665, startLng: 126.9780, endLat: -6.2088, endLng: 106.8456, arcAlt: 0.2, color: "#F7F91D" },
   // Korea to Philippines (Manila)
-  { order: 11, startLat: 37.5665, startLng: 126.9780, endLat: 14.5995, endLng: 120.9842, arcAlt: 0.12, color: "#ffffff" },
+  { order: 11, startLat: 37.5665, startLng: 126.9780, endLat: 14.5995, endLng: 120.9842, arcAlt: 0.12, color: "#F7F91D" },
   // Korea to India (Mumbai)
-  { order: 12, startLat: 37.5665, startLng: 126.9780, endLat: 19.0760, endLng: 72.8777, arcAlt: 0.3, color: "#ffffff" },
+  { order: 12, startLat: 37.5665, startLng: 126.9780, endLat: 19.0760, endLng: 72.8777, arcAlt: 0.3, color: "#F7F91D" },
   // Korea to Mexico (Mexico City)
-  { order: 13, startLat: 37.5665, startLng: 126.9780, endLat: 19.4326, endLng: -99.1332, arcAlt: 0.45, color: "#ffffff" },
+  { order: 13, startLat: 37.5665, startLng: 126.9780, endLat: 19.4326, endLng: -99.1332, arcAlt: 0.45, color: "#F7F91D" },
   // Korea to Canada (Toronto)
-  { order: 14, startLat: 37.5665, startLng: 126.9780, endLat: 43.6532, endLng: -79.3832, arcAlt: 0.38, color: "#ffffff" },
+  { order: 14, startLat: 37.5665, startLng: 126.9780, endLat: 43.6532, endLng: -79.3832, arcAlt: 0.38, color: "#F7F91D" },
   // Korea to Singapore
-  { order: 15, startLat: 37.5665, startLng: 126.9780, endLat: 1.3521, endLng: 103.8198, arcAlt: 0.18, color: "#ffffff" },
+  { order: 15, startLat: 37.5665, startLng: 126.9780, endLat: 1.3521, endLng: 103.8198, arcAlt: 0.18, color: "#F7F91D" },
   // Korea to South Africa (Johannesburg)
-  { order: 16, startLat: 37.5665, startLng: 126.9780, endLat: -26.2041, endLng: 28.0473, arcAlt: 0.48, color: "#ffffff" },
+  { order: 16, startLat: 37.5665, startLng: 126.9780, endLat: -26.2041, endLng: 28.0473, arcAlt: 0.48, color: "#F7F91D" },
   // Korea to UAE (Dubai)
-  { order: 17, startLat: 37.5665, startLng: 126.9780, endLat: 25.2048, endLng: 55.2708, arcAlt: 0.32, color: "#ffffff" },
+  { order: 17, startLat: 37.5665, startLng: 126.9780, endLat: 25.2048, endLng: 55.2708, arcAlt: 0.32, color: "#F7F91D" },
   // Korea to Russia (Moscow)
-  { order: 18, startLat: 37.5665, startLng: 126.9780, endLat: 55.7558, endLng: 37.6173, arcAlt: 0.35, color: "#ffffff" },
+  { order: 18, startLat: 37.5665, startLng: 126.9780, endLat: 55.7558, endLng: 37.6173, arcAlt: 0.35, color: "#F7F91D" },
   // Korea to Spain (Madrid)
-  { order: 19, startLat: 37.5665, startLng: 126.9780, endLat: 40.4168, endLng: -3.7038, arcAlt: 0.46, color: "#ffffff" },
+  { order: 19, startLat: 37.5665, startLng: 126.9780, endLat: 40.4168, endLng: -3.7038, arcAlt: 0.46, color: "#F7F91D" },
   // Korea to Italy (Rome)
-  { order: 20, startLat: 37.5665, startLng: 126.9780, endLat: 41.9028, endLng: 12.4964, arcAlt: 0.43, color: "#ffffff" },
+  { order: 20, startLat: 37.5665, startLng: 126.9780, endLat: 41.9028, endLng: 12.4964, arcAlt: 0.43, color: "#F7F91D" },
   // Korea to Vietnam (Ho Chi Minh)
-  { order: 21, startLat: 37.5665, startLng: 126.9780, endLat: 10.8231, endLng: 106.6297, arcAlt: 0.14, color: "#ffffff" },
+  { order: 21, startLat: 37.5665, startLng: 126.9780, endLat: 10.8231, endLng: 106.6297, arcAlt: 0.14, color: "#F7F91D" },
   // Korea to Malaysia (Kuala Lumpur)
-  { order: 22, startLat: 37.5665, startLng: 126.9780, endLat: 3.1390, endLng: 101.6869, arcAlt: 0.16, color: "#ffffff" },
+  { order: 22, startLat: 37.5665, startLng: 126.9780, endLat: 3.1390, endLng: 101.6869, arcAlt: 0.16, color: "#F7F91D" },
   // Korea to Argentina (Buenos Aires)
-  { order: 23, startLat: 37.5665, startLng: 126.9780, endLat: -34.6037, endLng: -58.3816, arcAlt: 0.55, color: "#ffffff" },
+  { order: 23, startLat: 37.5665, startLng: 126.9780, endLat: -34.6037, endLng: -58.3816, arcAlt: 0.55, color: "#F7F91D" },
   // Korea to Chile (Santiago)
-  { order: 24, startLat: 37.5665, startLng: 126.9780, endLat: -33.4489, endLng: -70.6693, arcAlt: 0.52, color: "#ffffff" },
+  { order: 24, startLat: 37.5665, startLng: 126.9780, endLat: -33.4489, endLng: -70.6693, arcAlt: 0.52, color: "#F7F91D" },
   // Korea to USA (Chicago)
-  { order: 25, startLat: 37.5665, startLng: 126.9780, endLat: 41.8781, endLng: -87.6298, arcAlt: 0.38, color: "#ffffff" },
+  { order: 25, startLat: 37.5665, startLng: 126.9780, endLat: 41.8781, endLng: -87.6298, arcAlt: 0.38, color: "#F7F91D" },
   // Korea to USA (Miami)
-  { order: 26, startLat: 37.5665, startLng: 126.9780, endLat: 25.7617, endLng: -80.1918, arcAlt: 0.42, color: "#ffffff" },
+  { order: 26, startLat: 37.5665, startLng: 126.9780, endLat: 25.7617, endLng: -80.1918, arcAlt: 0.42, color: "#F7F91D" },
   // Korea to Netherlands (Amsterdam)
-  { order: 27, startLat: 37.5665, startLng: 126.9780, endLat: 52.3676, endLng: 4.9041, arcAlt: 0.41, color: "#ffffff" },
+  { order: 27, startLat: 37.5665, startLng: 126.9780, endLat: 52.3676, endLng: 4.9041, arcAlt: 0.41, color: "#F7F91D" },
   // Korea to Sweden (Stockholm)
-  { order: 28, startLat: 37.5665, startLng: 126.9780, endLat: 59.3293, endLng: 18.0686, arcAlt: 0.44, color: "#ffffff" },
+  { order: 28, startLat: 37.5665, startLng: 126.9780, endLat: 59.3293, endLng: 18.0686, arcAlt: 0.44, color: "#F7F91D" },
   // Korea to Turkey (Istanbul)
-  { order: 29, startLat: 37.5665, startLng: 126.9780, endLat: 41.0082, endLng: 28.9784, arcAlt: 0.36, color: "#ffffff" },
+  { order: 29, startLat: 37.5665, startLng: 126.9780, endLat: 41.0082, endLng: 28.9784, arcAlt: 0.36, color: "#F7F91D" },
   // Korea to Egypt (Cairo)
-  { order: 30, startLat: 37.5665, startLng: 126.9780, endLat: 30.0444, endLng: 31.2357, arcAlt: 0.38, color: "#ffffff" },
+  { order: 30, startLat: 37.5665, startLng: 126.9780, endLat: 30.0444, endLng: 31.2357, arcAlt: 0.38, color: "#F7F91D" },
 ];
 
 const globeConfig = {
@@ -126,9 +126,9 @@ export function HeroSection({ lang }: HeroSectionProps) {
 
   return (
     <section className="relative min-h-screen bg-black text-white overflow-hidden">
-      {/* Globe Background - Smaller View */}
-      <div className="absolute inset-0 z-0">
-        <div className="absolute inset-0 scale-[0.9] translate-y-[15%]">
+      {/* Globe Background - Centered */}
+      <div className="absolute inset-0 z-0 flex items-center justify-center">
+        <div className="w-[min(80vh,80vw)] h-[min(80vh,80vw)] aspect-square">
           <World globeConfig={globeConfig} data={globeArcs} />
         </div>
         {/* Radial gradient overlay for depth */}
