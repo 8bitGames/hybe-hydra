@@ -1,18 +1,10 @@
 """Redis-based job queue for managing render jobs."""
 
+import redis.asyncio as redis
 import json
 import logging
 from typing import Optional, Callable, Any
 from datetime import datetime
-
-# Make redis import optional for Modal deployment (redis not needed there)
-try:
-    import redis.asyncio as redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    redis = None  # type: ignore
-    REDIS_AVAILABLE = False
-    logging.warning("Redis not available - using in-memory job store only")
 
 from ..models.responses import JobStatus, JobStatusResponse
 
@@ -43,20 +35,12 @@ class JobQueue:
 
     def __init__(self, redis_url: str):
         self.redis_url = redis_url
-        self.client: Optional[Any] = None  # Can be Redis or InMemoryJobStore
+        self.client: Optional[redis.Redis] = None
         self.is_connected = False
         self._fallback_store: Optional[InMemoryJobStore] = None
 
     async def connect(self) -> None:
         """Connect to Redis with graceful fallback."""
-        # If redis module is not available, use in-memory store immediately
-        if not REDIS_AVAILABLE or redis is None:
-            logger.info("Redis module not available, using in-memory job store")
-            self._fallback_store = InMemoryJobStore()
-            self.client = self._fallback_store
-            self.is_connected = False
-            return
-
         try:
             self.client = redis.from_url(self.redis_url)
             await self.client.ping()

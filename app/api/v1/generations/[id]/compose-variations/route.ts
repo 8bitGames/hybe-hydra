@@ -4,7 +4,7 @@ import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { Prisma } from "@prisma/client";
 import { searchImagesMultiQuery, isGoogleSearchConfigured } from "@/lib/google-search";
-import { submitRenderToModal, ModalRenderRequest } from "@/lib/modal/client";
+import { submitBatchRenderToModal, ModalRenderRequest } from "@/lib/modal/client";
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
@@ -317,82 +317,94 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     console.log(`[Compose Variations] Found ${images.length} images for rendering`);
 
-    // Start background jobs for each variation (call Modal directly)
-    createdGenerations.forEach(async ({ generation, settings }) => {
-      try {
-        const outputKey = `compose/renders/${generation.id}/output.mp4`;
-
-        // Prepare render request for Modal
-        const modalRequest: ModalRenderRequest = {
-          job_id: generation.id,
-          images,
-          audio: {
-            url: seedGeneration.audioAsset?.s3Url || "",
-            start_time: 0,
-            duration: null, // Auto-calculate
-          },
-          script: originalScriptLines && originalScriptLines.length > 0
-            ? { lines: originalScriptLines }
-            : null,
-          settings: {
-            vibe: settings.vibe,
-            effect_preset: settings.effectPreset,
-            aspect_ratio: seedGeneration.aspectRatio,
-            target_duration: seedGeneration.durationSeconds || 0,
-            text_style: settings.textStyle,
-            color_grade: settings.colorGrade,
-          },
-          output: {
-            s3_bucket: S3_BUCKET,
-            s3_key: outputKey,
-          },
-        };
-
-        console.log(`[Compose Variations] Submitting ${generation.id} to Modal:`, {
+    // Prepare all render requests for batch submission
+    const modalRequests: ModalRenderRequest[] = createdGenerations.map(({ generation, settings }) => {
+      const outputKey = `compose/renders/${generation.id}/output.mp4`;
+      return {
+        job_id: generation.id,
+        images,
+        audio: {
+          url: seedGeneration.audioAsset?.s3Url || "",
+          start_time: 0,
+          duration: null, // Auto-calculate
+        },
+        script: originalScriptLines && originalScriptLines.length > 0
+          ? { lines: originalScriptLines }
+          : null,
+        settings: {
           vibe: settings.vibe,
           effect_preset: settings.effectPreset,
-          images_count: images.length,
-        });
-
-        // Submit to Modal (CPU rendering)
-        const modalResponse = await submitRenderToModal(modalRequest);
-
-        console.log(`[Compose Variations] Modal response for ${generation.id}:`, modalResponse);
-
-        // Update generation with modalCallId for status polling
-        await prisma.videoGeneration.update({
-          where: { id: generation.id },
-          data: {
-            status: "PROCESSING",
-            qualityMetadata: {
-              batchId,
-              seedGenerationId,
-              variationType: "compose_variation",
-              modalCallId: modalResponse.call_id,
-              createdAt: new Date().toISOString(),
-              settings: {
-                effectPreset: settings.effectPreset,
-                colorGrade: settings.colorGrade,
-                textStyle: settings.textStyle,
-                vibe: settings.vibe,
-              },
-            } as Prisma.InputJsonValue,
-          },
-        });
-
-        console.log(`[Compose Variations] Started job ${generation.id} with Modal call_id: ${modalResponse.call_id}`);
-      } catch (error) {
-        console.error(`Failed to start compose variation ${generation.id}:`, error);
-        await prisma.videoGeneration.update({
-          where: { id: generation.id },
-          data: {
-            status: "FAILED",
-            progress: 100,
-            errorMessage: error instanceof Error ? error.message : "Failed to start Modal render job",
-          },
-        });
-      }
+          aspect_ratio: seedGeneration.aspectRatio,
+          target_duration: seedGeneration.durationSeconds || 0,
+          text_style: settings.textStyle,
+          color_grade: settings.colorGrade,
+        },
+        output: {
+          s3_bucket: S3_BUCKET,
+          s3_key: outputKey,
+        },
+      };
     });
+
+    console.log(`[Compose Variations] Submitting ${modalRequests.length} jobs to Modal batch endpoint`);
+
+    // Submit all jobs in a single batch request (parallel processing on Modal)
+    try {
+      const batchResponse = await submitBatchRenderToModal(modalRequests);
+
+      console.log(`[Compose Variations] Batch response:`, {
+        batch_id: batchResponse.batch_id,
+        total_jobs: batchResponse.total_jobs,
+        status: batchResponse.status,
+      });
+
+      // Update all generations with their modalCallIds
+      await Promise.all(
+        batchResponse.call_ids.map(async ({ job_id, call_id }) => {
+          const genData = createdGenerations.find(g => g.generation.id === job_id);
+          if (!genData) return;
+
+          await prisma.videoGeneration.update({
+            where: { id: job_id },
+            data: {
+              status: "PROCESSING",
+              qualityMetadata: {
+                batchId,
+                modalBatchId: batchResponse.batch_id,
+                seedGenerationId,
+                variationType: "compose_variation",
+                modalCallId: call_id,
+                createdAt: new Date().toISOString(),
+                settings: {
+                  effectPreset: genData.settings.effectPreset,
+                  colorGrade: genData.settings.colorGrade,
+                  textStyle: genData.settings.textStyle,
+                  vibe: genData.settings.vibe,
+                },
+              } as Prisma.InputJsonValue,
+            },
+          });
+
+          console.log(`[Compose Variations] Started ${job_id} with call_id: ${call_id}`);
+        })
+      );
+    } catch (error) {
+      console.error(`[Compose Variations] Batch submit failed:`, error);
+      // Mark all as failed
+      await Promise.all(
+        createdGenerations.map(({ generation }) =>
+          prisma.videoGeneration.update({
+            where: { id: generation.id },
+            data: {
+              status: "FAILED",
+              progress: 100,
+              errorMessage: error instanceof Error ? error.message : "Failed to start Modal batch render",
+            },
+          })
+        )
+      );
+      throw error;
+    }
 
     // Format response
     const variations = createdGenerations.map(({ generation, variationLabel, settings }) => ({
