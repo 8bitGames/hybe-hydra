@@ -375,7 +375,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 variationType: "compose_variation",
                 modalCallId: call_id,
                 createdAt: new Date().toISOString(),
-                settings: genData.settings,
+                settings: {
+                  effectPreset: genData.settings.effectPreset,
+                  colorGrade: genData.settings.colorGrade,
+                  textStyle: genData.settings.textStyle,
+                  vibe: genData.settings.vibe,
+                },
               } as Prisma.InputJsonValue,
             },
           });
