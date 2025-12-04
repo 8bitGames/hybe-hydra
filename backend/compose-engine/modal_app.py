@@ -360,45 +360,23 @@ def get_render_status(call_id: str):
 
 
 # ============================================================================
-# TikTok Trends Scraping (Playwright)
+# TikTok Trends Scraping (RapidAPI - ScrapTik)
 # ============================================================================
 
-# Separate image for Playwright-based scraping (no GPU needed)
+# Lightweight image for API-based scraping (no browser needed)
 scraper_image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install(
-        "wget",
-        "gnupg",
-        "libnss3",
-        "libnspr4",
-        "libatk1.0-0",
-        "libatk-bridge2.0-0",
-        "libcups2",
-        "libdrm2",
-        "libxkbcommon0",
-        "libxcomposite1",
-        "libxdamage1",
-        "libxfixes3",
-        "libxrandr2",
-        "libgbm1",
-        "libasound2",
-        "libpango-1.0-0",
-        "libcairo2",
-        "libatspi2.0-0",
-    )
     .pip_install(
-        "playwright==1.49.0",
         "httpx==0.26.0",
         "pydantic==2.5.3",
         "fastapi[standard]",
     )
     .run_commands(
-        "playwright install chromium",
-        "playwright install-deps chromium",
+        "mkdir -p /root/app/services",
     )
-    .add_local_dir(
-        Path(__file__).parent / "app",
-        remote_path="/root/app",
+    .add_local_file(
+        Path(__file__).parent / "app" / "services" / "tiktok_scraper.py",
+        remote_path="/root/app/services/tiktok_scraper.py",
         copy=True
     )
 )
@@ -406,15 +384,15 @@ scraper_image = (
 
 @app.function(
     image=scraper_image,
-    timeout=300,  # 5 minutes max
-    memory=4096,  # 4GB RAM for browser
-    cpu=2.0,
+    timeout=60,  # 1 minute max (API calls are fast)
+    memory=512,  # 512MB RAM (no browser needed)
+    cpu=0.5,
     retries=2,
-    scaledown_window=120,  # Keep container warm for 2 minutes
+    scaledown_window=60,
 )
 def scrape_tiktok_trends(request_data: dict) -> dict:
     """
-    Scrape TikTok trends using Playwright.
+    Scrape TikTok trends using RapidAPI (ScrapTik).
 
     Args:
         request_data: Dictionary containing:
