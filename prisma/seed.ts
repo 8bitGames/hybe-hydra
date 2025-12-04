@@ -41,6 +41,22 @@ async function main() {
         code: "REPUBLIC",
       },
     }),
+    prisma.label.upsert({
+      where: { code: "BIGLOUD" },
+      update: {},
+      create: {
+        name: "Big Loud Records",
+        code: "BIGLOUD",
+      },
+    }),
+    prisma.label.upsert({
+      where: { code: "CACTUSJACK" },
+      update: {},
+      create: {
+        name: "Cactus Jack Records",
+        code: "CACTUSJACK",
+      },
+    }),
   ]);
 
   console.log(`✅ Created ${labels.length} labels`);
@@ -100,15 +116,44 @@ async function main() {
         profileImageUrl: "https://www.thebandperry.co/images/tbp-profile.jpg",
       },
     }),
+    prisma.artist.upsert({
+      where: { id: "morgan-wallen" },
+      update: {},
+      create: {
+        id: "morgan-wallen",
+        name: "Morgan Cole Wallen",
+        stageName: "Morgan Wallen",
+        labelId: labels[3].id, // Big Loud Records
+        profileDescription: "Multi-platinum country music superstar. 2024 CMA Entertainer of the Year. Known for hits like 'Last Night', 'Whiskey Glasses', and albums 'Dangerous' and 'One Thing at a Time'. Blends traditional country with modern production.",
+        brandGuidelines: "Authentic country vibes. Raw and emotional storytelling. No over-polished content. Brand tone: Rugged, Authentic, Party-ready.",
+        profileImageUrl: "https://bigloud.com/artists/morgan-wallen/profile.jpg",
+      },
+    }),
+    prisma.artist.upsert({
+      where: { id: "travis-scott" },
+      update: {},
+      create: {
+        id: "travis-scott",
+        name: "Jacques Berman Webster II",
+        stageName: "Travis Scott",
+        labelId: labels[4].id, // Cactus Jack Records
+        profileDescription: "Grammy-nominated rapper, singer, and record producer. Founder of Cactus Jack Records. Known for hits like 'SICKO MODE', 'goosebumps', and albums 'Astroworld' and 'Utopia'. Pioneer in combining music, fashion, and visual art.",
+        brandGuidelines: "Psychedelic visuals. Dark, atmospheric aesthetics. High-energy concert vibes. Brand tone: Bold, Futuristic, Experimental.",
+        profileImageUrl: "https://cactusjack.com/artists/travis-scott/profile.jpg",
+      },
+    }),
   ]);
 
   console.log(`✅ Created ${artists.length} artists`);
 
   // Create admin user
   const hashedPassword = await bcrypt.hash("admin123", 10);
+  const allLabelIds = labels.map((l) => l.id);
   const adminUser = await prisma.user.upsert({
     where: { email: "admin@hydra.com" },
-    update: {},
+    update: {
+      labelIds: allLabelIds, // Update labelIds to include new labels
+    },
     create: {
       email: "admin@hydra.com",
       name: "HYDRA Admin",
