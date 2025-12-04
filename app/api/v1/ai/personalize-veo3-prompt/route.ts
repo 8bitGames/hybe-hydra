@@ -1095,7 +1095,7 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
 
     try {
       // Use Modal for GPU-accelerated audio composition
-      const s3Bucket = process.env.S3_BUCKET || "hydra-media";
+      const s3Bucket = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
       const s3Key = generateS3Key(campaignId, "composed_video.mp4");
 
       const composeRequest: AudioComposeRequest = {
