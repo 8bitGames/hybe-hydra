@@ -129,7 +129,7 @@ export default function CampaignInfoPage() {
   if (!campaign) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-[7%]">
       {/* Campaign Info Card */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-4">

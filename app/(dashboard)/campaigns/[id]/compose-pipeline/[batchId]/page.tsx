@@ -161,7 +161,7 @@ export default function ComposePipelineDetailPage() {
   const StatusIcon = statusConfig.icon;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-[7%]">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link href="/pipeline">

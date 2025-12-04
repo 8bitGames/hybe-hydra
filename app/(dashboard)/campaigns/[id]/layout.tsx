@@ -262,7 +262,7 @@ export default function CampaignWorkspaceLayout({
       </div>
 
       {/* Page Content */}
-      <div className="p-6">
+      <div className="py-6 px-[7%]">
         {children}
       </div>
     </div>
