@@ -11,6 +11,7 @@ numpy==1.26.3
 # Audio processing
 librosa==0.10.1
 soundfile==0.12.1
+scipy==1.11.4  # Pin to <1.12 for scipy.signal.hann compatibility with librosa
 
 # AWS/MinIO
 boto3==1.35.0
