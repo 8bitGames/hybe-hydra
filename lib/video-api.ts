@@ -758,3 +758,81 @@ export const composeVariationsApi = {
       (config || {}) as unknown as Record<string, unknown>
     ),
 };
+
+// Quick Create Types
+export interface QuickCreateRequest {
+  prompt: string;
+  negative_prompt?: string;
+  duration_seconds?: number;
+  aspect_ratio?: "16:9" | "9:16" | "1:1";
+  reference_style?: string;
+  enable_i2v?: boolean;
+  image_description?: string;
+}
+
+export interface QuickCreateGeneration {
+  id: string;
+  is_quick_create: boolean;
+  campaign_id: string | null;
+  prompt: string;
+  negative_prompt: string | null;
+  duration_seconds: number;
+  aspect_ratio: string;
+  reference_style: string | null;
+  status: VideoGenerationStatus;
+  progress: number;
+  error_message: string | null;
+  output_url: string | null;
+  quality_score: number | null;
+  quality_metadata: Record<string, unknown> | null;
+  is_favorite: boolean;
+  tags: string[];
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuickCreateListResponse {
+  items: QuickCreateGeneration[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export interface SaveToCampaignResponse {
+  id: string;
+  campaign_id: string;
+  is_quick_create: boolean;
+  prompt: string;
+  status: string;
+  output_url: string | null;
+  message: string;
+}
+
+// Quick Create API - Independent video generation without campaign
+export const quickCreateApi = {
+  // Create a new Quick Create generation
+  create: (options: QuickCreateRequest) =>
+    api.post<QuickCreateGeneration & { message: string }>(
+      "/api/v1/quick-create",
+      options as unknown as Record<string, unknown>
+    ),
+
+  // List user's Quick Create generations
+  list: (page = 1, pageSize = 20) =>
+    api.get<QuickCreateListResponse>(
+      `/api/v1/quick-create?page=${page}&page_size=${pageSize}`
+    ),
+
+  // Get a specific Quick Create generation
+  get: (generationId: string) =>
+    api.get<QuickCreateGeneration>(`/api/v1/quick-create/${generationId}`),
+
+  // Save Quick Create generation to a campaign
+  saveToCampaign: (generationId: string, campaignId: string) =>
+    api.post<SaveToCampaignResponse>(
+      `/api/v1/quick-create/${generationId}/save-to-campaign`,
+      { campaign_id: campaignId }
+    ),
+};

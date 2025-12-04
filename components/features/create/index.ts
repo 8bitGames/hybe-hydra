@@ -6,3 +6,5 @@ export { QuickCreateMode } from "./QuickCreateMode";
 export { GenerateMode } from "./GenerateMode";
 export { ComposeMode } from "./ComposeMode";
 export { BatchMode } from "./BatchMode";
+export { SaveToCampaignModal } from "./SaveToCampaignModal";
+export { CampaignSelector } from "./CampaignSelector";
