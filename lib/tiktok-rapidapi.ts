@@ -57,100 +57,141 @@ function getHeaders() {
 }
 
 /**
- * Search TikTok for videos by keyword
+ * Parse video items from API response
  */
-export async function searchTikTok(keyword: string, limit: number = 20): Promise<SearchResult> {
-  console.log(`[TIKTOK-RAPIDAPI] Searching for: ${keyword}`);
+function parseVideoItems(items: Record<string, unknown>[], hashtagsSet: Set<string>): TikTokVideo[] {
+  const videos: TikTokVideo[] = [];
 
-  try {
-    const params = new URLSearchParams({
-      keyword,
-      count: String(Math.min(limit, 30)),
-      offset: "0",
-      use_filters: "0",
-      publish_time: "0",
-      sort_type: "0",
-      region: "US",
-    });
+  for (const item of items) {
+    const videoId = item.aweme_id || item.id || "";
+    const author = (item.author || {}) as Record<string, unknown>;
+    const authorId = (author.unique_id || "") as string;
+    const stats = (item.statistics || {}) as Record<string, number>;
 
-    const response = await fetch(`${BASE_URL}/search-posts?${params}`, {
-      method: "GET",
-      headers: getHeaders(),
-    });
-
-    console.log(`[TIKTOK-RAPIDAPI] Response status: ${response.status}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[TIKTOK-RAPIDAPI] Error: ${errorText}`);
-      return {
-        success: false,
-        keyword,
-        videos: [],
-        relatedHashtags: [],
-        error: `API error: ${response.status}`,
-      };
+    // Extract hashtags from text_extra
+    const videoHashtags: string[] = [];
+    for (const extra of (item.text_extra || []) as Array<{ hashtag_name?: string }>) {
+      if (extra.hashtag_name) {
+        videoHashtags.push(extra.hashtag_name);
+        hashtagsSet.add(`#${extra.hashtag_name}`);
+      }
     }
 
-    const data = await response.json();
-    const videos: TikTokVideo[] = [];
-    const hashtagsSet = new Set<string>();
+    // Get cover image URL
+    let coverUrl = "";
+    const video = item.video as Record<string, unknown> | undefined;
+    const cover = video?.cover || video?.origin_cover;
+    const urlList = (cover as Record<string, unknown>)?.url_list as string[] | undefined;
+    if (urlList?.length && urlList.length > 0) {
+      coverUrl = urlList[0];
+    }
 
-    // ScrapTik returns data in search_item_list[].aweme_info, not aweme_list
-    const searchItems = data.search_item_list || [];
-    const items = searchItems.length > 0
-      ? searchItems.map((si: { aweme_info?: Record<string, unknown> }) => si.aweme_info).filter(Boolean)
-      : (data.aweme_list || data.data || []);
-    console.log(`[TIKTOK-RAPIDAPI] Found ${items.length} items`);
+    const avatarThumb = author.avatar_thumb as Record<string, unknown> | undefined;
+    const avatarUrlList = avatarThumb?.url_list as string[] | undefined;
 
-    for (const item of items.slice(0, limit)) {
-      const videoId = item.aweme_id || item.id || "";
-      const author = item.author || {};
-      const authorId = author.unique_id || "";
-      const stats = item.statistics || {};
+    videos.push({
+      id: String(videoId),
+      description: (item.desc || "") as string,
+      author: {
+        uniqueId: authorId,
+        nickname: (author.nickname || "") as string,
+        avatarUrl: avatarUrlList?.[0] || "",
+      },
+      stats: {
+        playCount: stats.play_count || 0,
+        likeCount: stats.digg_count || 0,
+        commentCount: stats.comment_count || 0,
+        shareCount: stats.share_count || 0,
+      },
+      videoUrl: `https://www.tiktok.com/@${authorId}/video/${videoId}`,
+      thumbnailUrl: coverUrl,
+      hashtags: videoHashtags,
+      createTime: item.create_time as number | undefined,
+      musicTitle: ((item.music as Record<string, unknown>)?.title || "") as string,
+    });
+  }
 
-      // Extract hashtags from text_extra
-      const videoHashtags: string[] = [];
-      for (const extra of item.text_extra || []) {
-        if (extra.hashtag_name) {
-          videoHashtags.push(extra.hashtag_name);
-          hashtagsSet.add(`#${extra.hashtag_name}`);
+  return videos;
+}
+
+/**
+ * Search TikTok for videos by keyword
+ * Fetches multiple pages if needed to get at least 20 results
+ */
+export async function searchTikTok(keyword: string, limit: number = 30): Promise<SearchResult> {
+  console.log(`[TIKTOK-RAPIDAPI] Searching for: ${keyword}, limit: ${limit}`);
+
+  const videos: TikTokVideo[] = [];
+  const hashtagsSet = new Set<string>();
+  const seenIds = new Set<string>();
+  let offset = 0;
+  const perPage = 30; // ScrapTik max per request
+  const maxPages = Math.ceil(limit / perPage);
+
+  try {
+    for (let page = 0; page < maxPages && videos.length < limit; page++) {
+      const params = new URLSearchParams({
+        keyword,
+        count: String(perPage),
+        offset: String(offset),
+        use_filters: "0",
+        publish_time: "0",
+        sort_type: "0",
+        region: "US",
+      });
+
+      const response = await fetch(`${BASE_URL}/search-posts?${params}`, {
+        method: "GET",
+        headers: getHeaders(),
+      });
+
+      console.log(`[TIKTOK-RAPIDAPI] Page ${page + 1} response status: ${response.status}`);
+
+      if (!response.ok) {
+        if (videos.length > 0) break; // Return what we have
+        const errorText = await response.text();
+        console.error(`[TIKTOK-RAPIDAPI] Error: ${errorText}`);
+        return {
+          success: false,
+          keyword,
+          videos: [],
+          relatedHashtags: [],
+          error: `API error: ${response.status}`,
+        };
+      }
+
+      const data = await response.json();
+
+      // ScrapTik returns data in search_item_list[].aweme_info, not aweme_list
+      const searchItems = data.search_item_list || [];
+      const items = searchItems.length > 0
+        ? searchItems.map((si: { aweme_info?: Record<string, unknown> }) => si.aweme_info).filter(Boolean)
+        : (data.aweme_list || data.data || []);
+
+      console.log(`[TIKTOK-RAPIDAPI] Page ${page + 1} found ${items.length} items`);
+
+      if (items.length === 0) break;
+
+      // Parse and deduplicate videos
+      const pageVideos = parseVideoItems(items, hashtagsSet);
+      for (const video of pageVideos) {
+        if (!seenIds.has(video.id) && videos.length < limit) {
+          seenIds.add(video.id);
+          videos.push(video);
         }
       }
 
-      // Get cover image URL
-      let coverUrl = "";
-      const cover = item.video?.cover || item.video?.origin_cover;
-      if (cover?.url_list?.length > 0) {
-        coverUrl = cover.url_list[0];
-      }
+      // Use cursor from response if available, otherwise increment offset
+      offset = data.cursor || offset + perPage;
 
-      videos.push({
-        id: String(videoId),
-        description: item.desc || "",
-        author: {
-          uniqueId: authorId,
-          nickname: author.nickname || "",
-          avatarUrl: author.avatar_thumb?.url_list?.[0] || "",
-        },
-        stats: {
-          playCount: stats.play_count || 0,
-          likeCount: stats.digg_count || 0,
-          commentCount: stats.comment_count || 0,
-          shareCount: stats.share_count || 0,
-        },
-        videoUrl: `https://www.tiktok.com/@${authorId}/video/${videoId}`,
-        thumbnailUrl: coverUrl,
-        hashtags: videoHashtags,
-        createTime: item.create_time,
-        musicTitle: item.music?.title || "",
-      });
+      // Check if there are more results
+      if (!data.has_more) break;
     }
 
-    console.log(`[TIKTOK-RAPIDAPI] Processed ${videos.length} videos, ${hashtagsSet.size} hashtags`);
+    console.log(`[TIKTOK-RAPIDAPI] Total processed: ${videos.length} videos, ${hashtagsSet.size} hashtags`);
 
     return {
-      success: true,
+      success: videos.length > 0,
       keyword,
       videos,
       relatedHashtags: Array.from(hashtagsSet),
@@ -158,10 +199,10 @@ export async function searchTikTok(keyword: string, limit: number = 20): Promise
   } catch (error) {
     console.error(`[TIKTOK-RAPIDAPI] Error:`, error);
     return {
-      success: false,
+      success: videos.length > 0,
       keyword,
-      videos: [],
-      relatedHashtags: [],
+      videos,
+      relatedHashtags: Array.from(hashtagsSet),
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
