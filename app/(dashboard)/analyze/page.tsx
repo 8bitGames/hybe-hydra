@@ -17,7 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
-import { cn } from "@/lib/utils";
+import { cn, getProxiedImageUrl } from "@/lib/utils";
 import {
   Lightbulb,
   ArrowRight,
@@ -198,7 +198,7 @@ function ContextReceptionPanel() {
                 >
                   {v.thumbnailUrl && (
                     <img
-                      src={v.thumbnailUrl}
+                      src={getProxiedImageUrl(v.thumbnailUrl) || ""}
                       alt=""
                       className="w-full h-full object-cover"
                     />

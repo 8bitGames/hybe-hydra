@@ -8,6 +8,7 @@ import {
   getTrendingVideos,
   TikTokVideo,
 } from "@/lib/tiktok-rapidapi";
+import { batchCacheImagesToS3 } from "@/lib/storage";
 
 // POST /api/v1/trends/collect - Trigger trend collection (admin only)
 export async function POST(request: NextRequest) {
@@ -118,20 +119,44 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Save to database
-    const trendData = collectedTrends.map((trend) => ({
-      platform: platform as TrendPlatform,
-      keyword: trend.keyword,
-      rank: trend.rank,
-      region,
-      viewCount: trend.viewCount ? BigInt(Math.floor(trend.viewCount)) : null,
-      videoCount: trend.videoCount || null,
-      description: trend.description || null,
-      hashtags: trend.hashtag ? [trend.hashtag] : [],
-      metadata: Prisma.JsonNull,
-      trendUrl: null,
-      thumbnailUrl: trend.thumbnailUrl || null,
-    }));
+    // Cache thumbnail images to S3 (TikTok CDN URLs expire quickly)
+    const thumbnailUrls = collectedTrends
+      .map((t) => t.thumbnailUrl)
+      .filter((url): url is string => !!url && url.startsWith("http"));
+
+    let cachedUrlMap = new Map<string, string>();
+    if (thumbnailUrls.length > 0) {
+      console.log(`[TRENDS-COLLECT] Caching ${thumbnailUrls.length} thumbnail images to S3...`);
+      try {
+        cachedUrlMap = await batchCacheImagesToS3(thumbnailUrls, "cache/trends");
+        console.log(`[TRENDS-COLLECT] Cached ${cachedUrlMap.size} images to S3`);
+      } catch (cacheError) {
+        console.warn("[TRENDS-COLLECT] Image caching failed (non-fatal):", cacheError);
+        // Continue without caching - proxy will handle expired URLs
+      }
+    }
+
+    // Save to database with cached S3 URLs where available
+    const trendData = collectedTrends.map((trend) => {
+      // Use cached S3 URL if available, otherwise keep original (proxy will handle it)
+      const cachedThumbnailUrl = trend.thumbnailUrl
+        ? cachedUrlMap.get(trend.thumbnailUrl) || trend.thumbnailUrl
+        : null;
+
+      return {
+        platform: platform as TrendPlatform,
+        keyword: trend.keyword,
+        rank: trend.rank,
+        region,
+        viewCount: trend.viewCount ? BigInt(Math.floor(trend.viewCount)) : null,
+        videoCount: trend.videoCount || null,
+        description: trend.description || null,
+        hashtags: trend.hashtag ? [trend.hashtag] : [],
+        metadata: Prisma.JsonNull,
+        trendUrl: null,
+        thumbnailUrl: cachedThumbnailUrl,
+      };
+    });
 
     const created = await prisma.trendSnapshot.createMany({
       data: trendData,
@@ -146,6 +171,7 @@ export async function POST(request: NextRequest) {
       method: "rapidapi",
       collected_count: collectedTrends.length,
       saved_count: created.count,
+      cached_images: cachedUrlMap.size,
       trends: collectedTrends.slice(0, 10).map((t) => ({
         rank: t.rank,
         keyword: t.keyword,

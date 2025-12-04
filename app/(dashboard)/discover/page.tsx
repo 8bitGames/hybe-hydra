@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn, sanitizeUsername } from "@/lib/utils";
+import { cn, sanitizeUsername, getProxiedImageUrl } from "@/lib/utils";
 import {
   Search,
   TrendingUp,
@@ -89,7 +89,7 @@ function VideoCard({ video, onSaveInspiration, isSaved, showRank = false }: Vide
       <div className="relative aspect-[9/16] rounded-lg overflow-hidden bg-neutral-100 mb-2">
         {video.thumbnailUrl && !imageError ? (
           <img
-            src={video.thumbnailUrl}
+            src={getProxiedImageUrl(video.thumbnailUrl) || ""}
             alt=""
             className="w-full h-full object-cover transition-transform group-hover:scale-105"
             onError={() => setImageError(true)}
@@ -501,8 +501,9 @@ function AnalysisResults({
 // Small thumbnail with error handling
 function SmallThumbnail({ url }: { url: string | null }) {
   const [error, setError] = useState(false);
+  const proxiedUrl = getProxiedImageUrl(url);
 
-  if (!url || error) {
+  if (!proxiedUrl || error) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-neutral-200">
         <Play className="h-4 w-4 text-neutral-400" />
@@ -512,7 +513,7 @@ function SmallThumbnail({ url }: { url: string | null }) {
 
   return (
     <img
-      src={url}
+      src={proxiedUrl}
       alt=""
       className="w-full h-full object-cover"
       onError={() => setError(true)}

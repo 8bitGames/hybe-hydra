@@ -97,12 +97,12 @@ export const analyzeVideo = inngest.createFunction(
  * Veo 3으로 AI 영상 생성
  *
  * Full implementation using the Veo 3 service.
- * Supports both Text-to-Video (T2V) and Image-to-Video (I2V) modes.
+ * MANDATORY I2V: Always requires a reference image - generates image first, then animates with Veo3.
  */
 export const generateVideo = inngest.createFunction(
   {
     id: "generate-video",
-    name: "Generate AI Video (Veo 3)",
+    name: "Generate AI Video (Veo 3 - Mandatory I2V)",
     retries: 1,
     concurrency: {
       limit: 3, // Max 3 concurrent Veo generations
@@ -123,19 +123,26 @@ export const generateVideo = inngest.createFunction(
       });
     });
 
-    // Step 2: Get reference image URL if provided (for I2V mode)
+    // Step 2: MANDATORY - Get reference image for I2V mode
     const referenceImageUrl = await step.run("get-reference-image", async () => {
       if (options?.referenceImageAssetId) {
         const asset = await prisma.asset.findUnique({
           where: { id: options.referenceImageAssetId },
           select: { s3Url: true },
         });
-        return asset?.s3Url || null;
+        if (!asset?.s3Url) {
+          throw new Error("Reference image asset not found - image is required for I2V generation");
+        }
+        return asset.s3Url;
       }
-      return options?.referenceImageUrl || null;
+      if (options?.referenceImageUrl) {
+        return options.referenceImageUrl;
+      }
+      // MANDATORY: Reference image is required
+      throw new Error("Reference image is required for I2V video generation. Please provide referenceImageAssetId or referenceImageUrl.");
     });
 
-    // Step 3: Call Veo 3 API
+    // Step 3: Call Veo 3 API with MANDATORY I2V
     const result = await step.run("call-veo-api", async () => {
       const veoParams: VeoGenerationParams = {
         prompt,
@@ -145,10 +152,11 @@ export const generateVideo = inngest.createFunction(
         style: options?.stylePreset,
         model: (options?.model as VeoGenerationParams["model"]) || "veo-3.1-generate-preview",
         resolution: (options?.resolution as "720p" | "1080p") || "720p",
-        referenceImageUrl: referenceImageUrl || undefined,
+        // MANDATORY I2V: Always use reference image
+        referenceImageUrl: referenceImageUrl,
       };
 
-      console.log(`[Inngest] Starting Veo 3 generation: ${referenceImageUrl ? "I2V mode" : "T2V mode"}`);
+      console.log(`[Inngest] Starting Veo 3 generation: MANDATORY I2V mode with image: ${referenceImageUrl.slice(0, 80)}...`);
 
       // Update progress
       await prisma.videoGeneration.update({

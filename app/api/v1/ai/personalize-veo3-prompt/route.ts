@@ -794,6 +794,14 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
     );
   }
 
+  // MANDATORY: Reference image is required for I2V generation
+  if (!images || images.length === 0) {
+    return NextResponse.json(
+      { success: false, error: "At least one reference image is required for I2V video generation" },
+      { status: 400 }
+    );
+  }
+
   const response: GenerateResponse = {
     success: false,
     steps: {},
@@ -907,7 +915,12 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
         }
       }
     } else {
-      console.log(`[GENERATE]    Step 2a: No reference image provided (text-only generation)`);
+      // This should not happen since we validate images are required above
+      console.error(`[GENERATE]    ❌ No reference image provided - this should not happen!`);
+      return NextResponse.json(
+        { success: false, error: "Reference image is required for I2V generation" },
+        { status: 400 }
+      );
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -972,16 +985,21 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
           completed: true,
         };
       } else {
+        // MANDATORY: Image generation is required - fail if it doesn't work
         console.error("[GENERATE]    ❌ Gemini 3 Pro generation failed:", imageResult.error);
         response.steps.imageGeneration = {
           completed: false,
         };
+        response.error = `Image generation failed: ${imageResult.error}. Image is required for I2V video generation.`;
+        return NextResponse.json(response, { status: 500 });
       }
     } catch (imgError) {
       console.error("[GENERATE]    ❌ Gemini 3 Pro error:", imgError);
       response.steps.imageGeneration = {
         completed: false,
       };
+      response.error = `Image generation error: ${imgError instanceof Error ? imgError.message : "Unknown error"}. Image is required for I2V video generation.`;
+      return NextResponse.json(response, { status: 500 });
     }
 
     // Summary
@@ -993,7 +1011,15 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
     if (generatedImageBase64) {
       console.log(`[GENERATE]      Generated size: ${Math.round(generatedImageBase64.length / 1024)}KB`);
     }
-    console.log(`[GENERATE]    ════════════════════════════════════════`)
+    console.log(`[GENERATE]    ════════════════════════════════════════`);
+
+    // MANDATORY: Verify we have an image before proceeding to Veo3
+    if (!generatedImageBase64) {
+      const errorMsg = "Image generation is required but no image was generated. Cannot proceed with I2V.";
+      console.error(`[GENERATE] ❌ ${errorMsg}`);
+      response.error = errorMsg;
+      return NextResponse.json(response, { status: 500 });
+    }
 
     // ========================================================================
     // STEP 2b: Generate Video Prompt with Animation Instructions
@@ -1021,23 +1047,21 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
     console.log(`[GENERATE]    Video prompt: ${finalVideoPrompt.slice(0, 80)}...`);
 
     // ========================================================================
-    // STEP 3: Video Generation with Veo3
+    // STEP 3: Video Generation with Veo3 (MANDATORY I2V mode)
     // ========================================================================
-    console.log("[GENERATE] 🎥 Step 3: Generating video with Veo3...");
+    console.log("[GENERATE] 🎥 Step 3: Generating video with Veo3 (I2V mode)...");
+    console.log(`[GENERATE]    ✓ Using generated image (${Math.round(generatedImageBase64.length / 1024)}KB)`);
 
     let rawVideoUrl: string | undefined;
 
     try {
-      // Start video generation with I2V (if image available) or T2V
-      // generateVideo handles polling internally and returns the final videoUrl
+      // MANDATORY I2V: Always use the generated image
       const videoGenParams: VeoGenerationParams = {
         prompt: finalVideoPrompt,
         aspectRatio: aspectRatio as "16:9" | "9:16",
         durationSeconds: durationSeconds,
-        // Use referenceImageBase64 for I2V mode
-        ...(generatedImageBase64 && {
-          referenceImageBase64: generatedImageBase64,
-        }),
+        // MANDATORY: Always include the generated image for I2V
+        referenceImageBase64: generatedImageBase64,
       };
 
       const videoResult = await generateVideo(videoGenParams);
