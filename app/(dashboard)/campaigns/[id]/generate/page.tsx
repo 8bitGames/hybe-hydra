@@ -1588,8 +1588,9 @@ export default function VideoGeneratePage() {
         </Card>
       )}
 
-      <div className="max-w-2xl">
-        {/* Generation Form */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left: Generation Form */}
+        <div className="lg:col-span-2">
         <Card>
           <CardHeader>
             <CardTitle>{pt.newGeneration}</CardTitle>
@@ -1988,6 +1989,245 @@ export default function VideoGeneratePage() {
             </div>
           </CardContent>
         </Card>
+        </div>
+
+        {/* Right: Generations List */}
+        <div className="lg:col-span-1">
+          <Card className="sticky top-4">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">{pt.generationHistory}</CardTitle>
+                {generations.filter(g => g.status === "completed" && !g.quality_score).length > 0 && (
+                  <Button
+                    onClick={handleScoreAll}
+                    disabled={scoringAll}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {scoringAll ? (
+                      <>
+                        <Spinner className="w-3 h-3 mr-1" />
+                        {pt.scoring}
+                      </>
+                    ) : (
+                      <>
+                        <Star className="w-3 h-3 mr-1" />
+                        {pt.scoreAll}
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="max-h-[calc(100vh-200px)] overflow-y-auto">
+              {generations.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Play className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">{pt.noGenerationsYet}</p>
+                  <p className="text-xs mt-1">{pt.startGenerating}</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {generations.map((gen) => (
+                    <div
+                      key={gen.id}
+                      className={`p-3 rounded-lg border transition-all ${
+                        gen.status === "processing" || gen.status === "pending"
+                          ? "border-primary/50 bg-primary/5"
+                          : gen.status === "completed"
+                          ? "border-border hover:border-primary/30"
+                          : "border-destructive/30 bg-destructive/5"
+                      }`}
+                    >
+                      {/* Status & Progress */}
+                      <div className="flex items-center justify-between mb-2">
+                        <Badge variant={getStatusVariant(gen.status)}>
+                          {gen.status === "processing" && (
+                            <Spinner className="w-3 h-3 mr-1" />
+                          )}
+                          {gen.status}
+                        </Badge>
+                        <div className="flex items-center gap-1">
+                          {gen.quality_score && (
+                            <button
+                              onClick={() => handleGetScoreDetails(gen.id)}
+                              className={`px-2 py-0.5 rounded text-xs font-bold ${getGradeColor(
+                                gen.quality_score >= 90 ? "S" :
+                                gen.quality_score >= 80 ? "A" :
+                                gen.quality_score >= 70 ? "B" :
+                                gen.quality_score >= 60 ? "C" : "D"
+                              )}`}
+                            >
+                              {gen.quality_score}
+                            </button>
+                          )}
+                          <Button
+                            onClick={() => handleDelete(gen.id)}
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar (for processing) */}
+                      {(gen.status === "processing" || gen.status === "pending") && (
+                        <div className="mb-2">
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary transition-all duration-500"
+                              style={{ width: `${gen.progress || 5}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {gen.progress || 0}% complete
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Prompt Preview */}
+                      <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                        {gen.prompt}
+                      </p>
+
+                      {/* Style Badge */}
+                      {gen.reference_style && (
+                        <Badge variant="secondary" className="text-xs mb-2">
+                          {gen.reference_style}
+                        </Badge>
+                      )}
+
+                      {/* Video Thumbnail / Preview */}
+                      {gen.status === "completed" && (gen.output_url || gen.composed_output_url) && (
+                        <div className="relative rounded-lg overflow-hidden bg-muted mb-2 aspect-video">
+                          <video
+                            src={gen.composed_output_url || gen.output_url || ""}
+                            className="w-full h-full object-cover"
+                            muted
+                            playsInline
+                            onMouseEnter={(e) => e.currentTarget.play()}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.pause();
+                              e.currentTarget.currentTime = 0;
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 hover:opacity-100 transition-opacity">
+                            <Play className="w-8 h-8 text-white" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Error Message */}
+                      {gen.status === "failed" && gen.error_message && (
+                        <p className="text-xs text-destructive mb-2">
+                          {gen.error_message}
+                        </p>
+                      )}
+
+                      {/* Action Buttons */}
+                      {gen.status === "completed" && (
+                        <div className="flex gap-2">
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 text-xs"
+                          >
+                            <a
+                              href={gen.composed_output_url || gen.output_url || "#"}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <Play className="w-3 h-3 mr-1" />
+                              {pt.watchVideo}
+                            </a>
+                          </Button>
+                          <Button
+                            onClick={() => handleOpenVariationModal(gen)}
+                            size="sm"
+                            variant="ghost"
+                            className="text-xs"
+                          >
+                            <Layers className="w-3 h-3 mr-1" />
+                            {pt.createVariations}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Score Details (expanded) */}
+                      {expandedScoreId === gen.id && scoreDetails[gen.id] && (
+                        <div className="mt-3 pt-3 border-t border-border">
+                          <p className="text-xs font-medium text-foreground mb-2">
+                            {pt.overallScore}: {scoreDetails[gen.id].total_score} ({scoreDetails[gen.id].grade})
+                          </p>
+                          <div className="space-y-2">
+                            {[
+                              { name: "Prompt", score: scoreDetails[gen.id].breakdown.promptQuality.score },
+                              { name: "Technical", score: scoreDetails[gen.id].breakdown.technicalSettings.score },
+                              { name: "Style", score: scoreDetails[gen.id].breakdown.styleAlignment.score },
+                              { name: "Trend", score: scoreDetails[gen.id].breakdown.trendAlignment.score },
+                            ].map((dim) => (
+                              <div key={dim.name} className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground w-16 truncate">{dim.name}</span>
+                                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full bg-gradient-to-r ${getScoreBarColor(dim.score)}`}
+                                    style={{ width: `${dim.score}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs text-foreground w-6 text-right">{dim.score}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {scoreDetails[gen.id].recommendations.length > 0 && (
+                            <div className="mt-2">
+                              <p className="text-xs font-medium text-foreground mb-1">{pt.recommendations}</p>
+                              <ul className="text-xs text-muted-foreground space-y-1">
+                                {scoreDetails[gen.id].recommendations.slice(0, 2).map((rec, i) => (
+                                  <li key={i}>• {rec}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Score button for completed without score */}
+                      {gen.status === "completed" && !gen.quality_score && (
+                        <Button
+                          onClick={() => handleScoreGeneration(gen.id)}
+                          disabled={scoringId === gen.id}
+                          variant="ghost"
+                          size="sm"
+                          className="w-full mt-2 text-xs"
+                        >
+                          {scoringId === gen.id ? (
+                            <>
+                              <Spinner className="w-3 h-3 mr-1" />
+                              {pt.scoring}
+                            </>
+                          ) : (
+                            <>
+                              <Star className="w-3 h-3 mr-1" />
+                              {pt.score}
+                            </>
+                          )}
+                        </Button>
+                      )}
+
+                      {/* Timestamp */}
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {new Date(gen.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Variation Modal */}
