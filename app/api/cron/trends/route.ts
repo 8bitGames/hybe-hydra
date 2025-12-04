@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { TrendPlatform, Prisma } from "@prisma/client";
+import { batchCacheImagesToS3 } from "@/lib/storage";
 
 // For fallback local scraping (not recommended in production)
 import {
@@ -270,22 +271,45 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Save to database
-    const trendData = collectedTrends.map((trend) => ({
-      platform: "TIKTOK" as TrendPlatform,
-      keyword: trend.keyword,
-      rank: trend.rank,
-      region: "KR",
-      viewCount: trend.viewCount ? BigInt(Math.floor(trend.viewCount)) : null,
-      videoCount: trend.videoCount || null,
-      description: trend.description || null,
-      hashtags: trend.hashtag ? [trend.hashtag] : [],
-      metadata: trend.source
-        ? ({ source: trend.source } as Prisma.InputJsonValue)
-        : Prisma.JsonNull,
-      trendUrl: trend.trendUrl || null,
-      thumbnailUrl: trend.thumbnailUrl || null,
-    }));
+    // Cache thumbnail images to S3 (TikTok CDN URLs expire)
+    const thumbnailUrls = collectedTrends
+      .map((t) => t.thumbnailUrl)
+      .filter((url): url is string => !!url && url.startsWith("http"));
+
+    let cachedUrlMap = new Map<string, string>();
+    if (thumbnailUrls.length > 0) {
+      console.log(`[CRON-TRENDS] Caching ${thumbnailUrls.length} thumbnail images to S3...`);
+      try {
+        cachedUrlMap = await batchCacheImagesToS3(thumbnailUrls, "cache/trends");
+        console.log(`[CRON-TRENDS] Cached ${cachedUrlMap.size} images to S3`);
+      } catch (cacheError) {
+        console.warn("[CRON-TRENDS] Image caching failed (non-fatal):", cacheError);
+      }
+    }
+
+    // Save to database with cached S3 URLs
+    const trendData = collectedTrends.map((trend) => {
+      // Use cached S3 URL if available, otherwise keep original
+      const cachedThumbnailUrl = trend.thumbnailUrl
+        ? cachedUrlMap.get(trend.thumbnailUrl) || trend.thumbnailUrl
+        : null;
+
+      return {
+        platform: "TIKTOK" as TrendPlatform,
+        keyword: trend.keyword,
+        rank: trend.rank,
+        region: "KR",
+        viewCount: trend.viewCount ? BigInt(Math.floor(trend.viewCount)) : null,
+        videoCount: trend.videoCount || null,
+        description: trend.description || null,
+        hashtags: trend.hashtag ? [trend.hashtag] : [],
+        metadata: trend.source
+          ? ({ source: trend.source, originalThumbnailUrl: trend.thumbnailUrl } as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        trendUrl: trend.trendUrl || null,
+        thumbnailUrl: cachedThumbnailUrl,
+      };
+    });
 
     const created = await prisma.trendSnapshot.createMany({
       data: trendData,

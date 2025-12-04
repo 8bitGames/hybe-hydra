@@ -192,8 +192,8 @@ export default function DashboardPage() {
             : "What would you like to do? Get started quickly below"}
         </p>
 
+        {/* Quick Action Cards - Hidden
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* AI Generate Card */}
           <Card
             className="cursor-pointer hover:border-primary/50 transition-colors group"
             onClick={() => {
@@ -221,7 +221,6 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Compose Video Card */}
           <Card
             className="cursor-pointer hover:border-primary/50 transition-colors group"
             onClick={() => {
@@ -248,7 +247,6 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* View Trends Card */}
           <Card
             className="cursor-pointer hover:border-primary/50 transition-colors group"
             onClick={() => {
@@ -276,6 +274,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+        */}
       </div>
 
       {/* Key Metrics */}

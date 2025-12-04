@@ -7,15 +7,15 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient(): PrismaClient {
-  // Use DIRECT_URL for pg adapter (avoids PgBouncer issues)
-  // Fall back to DATABASE_URL if DIRECT_URL not set
-  const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
+  // Use DATABASE_URL (pooler) for runtime queries
+  // DIRECT_URL is only used for migrations via prisma.config.ts
+  const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
-    throw new Error("DATABASE_URL or DIRECT_URL environment variable is not set");
+    throw new Error("DATABASE_URL environment variable is not set");
   }
 
-  // Configure pool for Supabase direct connection
+  // Configure pool for Supabase connection via pooler
   const pool = new Pool({
     connectionString,
     max: 10,

@@ -28,7 +28,7 @@ import {
   Lightbulb,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
-import { cn, sanitizeUsername, sanitizeText } from "@/lib/utils";
+import { cn, sanitizeUsername, sanitizeText, getProxiedImageUrl } from "@/lib/utils";
 import {
   TrendVideoContext,
   storeTrendContext,
@@ -142,7 +142,7 @@ export function TrendVideoActionDialog({
                 <div className="aspect-[9/16] rounded-lg overflow-hidden bg-muted">
                   {context.video.thumbnailUrl && (
                     <img
-                      src={context.video.thumbnailUrl}
+                      src={getProxiedImageUrl(context.video.thumbnailUrl) || ""}
                       alt=""
                       className="w-full h-full object-cover"
                     />

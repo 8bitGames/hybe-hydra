@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import { useKeywordAnalysis, KeywordAnalysis, useInvalidateQueries } from "@/lib/queries";
 import { useI18n } from "@/lib/i18n";
-import { cn, sanitizeUsername, sanitizeText } from "@/lib/utils";
+import { cn, sanitizeUsername, sanitizeText, getProxiedImageUrl } from "@/lib/utils";
 import { TrendVideoActionDialog } from "./TrendVideoActionDialog";
 import { TrendVideoContext } from "@/lib/trend-context";
 
@@ -82,7 +82,7 @@ function VideoCard({
       <div className="relative aspect-[9/16] rounded-lg overflow-hidden bg-muted mb-2">
         {video.thumbnailUrl && (
           <img
-            src={video.thumbnailUrl}
+            src={getProxiedImageUrl(video.thumbnailUrl) || ""}
             alt=""
             className="w-full h-full object-cover transition-transform group-hover:scale-105"
           />

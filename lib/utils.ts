@@ -49,6 +49,54 @@ export function sanitizeUsername(username: string | null | undefined): string {
     .trim();
 }
 
+/**
+ * TikTok CDN domains that require proxying
+ */
+const TIKTOK_CDN_DOMAINS = [
+  "tiktokcdn.com",
+  "tiktokcdn-us.com",
+  "tiktokcdn-eu.com",
+  "tiktokcdn-in.com",
+  "byteoversea.com",
+  "ibytedtos.com",
+  "muscdn.com",
+];
+
+/**
+ * Check if URL is from TikTok CDN (requires proxy)
+ */
+export function isTikTokCdnUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const hostname = new URL(url).hostname;
+    return TIKTOK_CDN_DOMAINS.some(domain => hostname.endsWith(domain));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get proxied URL for TikTok images
+ * Returns the original URL if it's already from our S3 or not a TikTok CDN URL
+ */
+export function getProxiedImageUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+
+  // Already from our S3 (cached) - no proxy needed
+  if (url.includes("s3.") && url.includes("amazonaws.com")) {
+    return url;
+  }
+
+  // TikTok CDN - proxy through our backend
+  if (isTikTokCdnUrl(url)) {
+    return `/api/v1/proxy/image?url=${encodeURIComponent(url)}`;
+  }
+
+  // Other URLs - return as-is
+  return url;
+}
+
+
 
 
 

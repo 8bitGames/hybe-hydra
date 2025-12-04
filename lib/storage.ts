@@ -228,3 +228,86 @@ export async function uploadVideoFromUrl(
 export function generateVideoKey(campaignId: string, generationId: string): string {
   return `campaigns/${campaignId}/videos/${generationId}.mp4`;
 }
+
+/**
+ * Cache an external image to S3
+ * Useful for caching TikTok CDN images that expire
+ */
+export async function cacheImageToS3(
+  imageUrl: string,
+  folder: string = "cache/images"
+): Promise<{ success: boolean; url?: string; key?: string; error?: string }> {
+  try {
+    // Generate a hash-based key from the URL to enable deduplication
+    const urlHash = Buffer.from(imageUrl).toString("base64url").slice(0, 32);
+    const ext = imageUrl.includes(".webp") ? "webp" : imageUrl.includes(".png") ? "png" : "jpeg";
+    const key = `${folder}/${urlHash}.${ext}`;
+
+    // Fetch the image with TikTok-compatible headers
+    const response = await fetch(imageUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.tiktok.com/",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      },
+    });
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `Failed to fetch image: ${response.status}`,
+      };
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const contentType = response.headers.get("content-type") || `image/${ext}`;
+
+    const url = await uploadToS3(buffer, key, contentType);
+
+    return { success: true, url, key };
+  } catch (error) {
+    console.error("[S3 Image Cache] Error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Cache failed",
+    };
+  }
+}
+
+/**
+ * Batch cache multiple images to S3
+ * Returns a map of original URL -> S3 URL
+ */
+export async function batchCacheImagesToS3(
+  imageUrls: string[],
+  folder: string = "cache/trends"
+): Promise<Map<string, string>> {
+  const urlMap = new Map<string, string>();
+
+  // Process in parallel with concurrency limit
+  const CONCURRENCY = 5;
+  const chunks = [];
+  for (let i = 0; i < imageUrls.length; i += CONCURRENCY) {
+    chunks.push(imageUrls.slice(i, i + CONCURRENCY));
+  }
+
+  for (const chunk of chunks) {
+    const results = await Promise.allSettled(
+      chunk.map(async (url) => {
+        const result = await cacheImageToS3(url, folder);
+        if (result.success && result.url) {
+          return { original: url, cached: result.url };
+        }
+        return null;
+      })
+    );
+
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value) {
+        urlMap.set(result.value.original, result.value.cached);
+      }
+    }
+  }
+
+  return urlMap;
+}
