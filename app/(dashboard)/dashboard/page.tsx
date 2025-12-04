@@ -50,6 +50,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { trackHome, trackTrends, trackQuickCreate } from "@/lib/analytics";
+import TrendingVideosTile from "@/components/dashboard/TrendingVideosTile";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -397,6 +398,9 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
+
+      {/* Trending Videos from TikTok */}
+      <TrendingVideosTile maxVideos={15} showHashtagFilter={true} />
 
       {/* Workflow Pipeline */}
       <Card>

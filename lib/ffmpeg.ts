@@ -3,6 +3,14 @@ import path from "path";
 import fs from "fs/promises";
 import os from "os";
 import { v4 as uuidv4 } from "uuid";
+import {
+  composeVideoWithAudioModal,
+  getMediaDurationFromModal,
+  AudioComposeRequest,
+} from "./modal/client";
+
+// Environment flag to use Modal for FFmpeg operations
+const USE_MODAL_FFMPEG = process.env.USE_MODAL_FFMPEG !== 'false'; // Default: true
 
 export interface ComposeOptions {
   videoUrl: string;
@@ -13,11 +21,15 @@ export interface ComposeOptions {
   fadeOut?: number; // Fade out duration (seconds)
   mixOriginalAudio?: boolean; // Mix with original video audio
   originalAudioVolume?: number; // Original audio volume if mixing
+  // Modal-specific options
+  outputS3Bucket?: string; // S3 bucket for output (Modal mode)
+  outputS3Key?: string; // S3 key for output (Modal mode)
 }
 
 export interface ComposeResult {
   success: boolean;
-  outputPath?: string;
+  outputPath?: string; // Local mode: local file path
+  outputUrl?: string; // Modal mode: S3 URL
   duration?: number;
   error?: string;
 }
@@ -41,9 +53,29 @@ async function downloadFile(url: string, filename: string): Promise<string> {
 }
 
 /**
- * Get video duration using ffprobe
+ * Get video duration using ffprobe (local) or Modal
+ * If a URL is provided, uses Modal. If a local path, uses local ffprobe.
  */
-export function getVideoDuration(videoPath: string): Promise<number> {
+export async function getVideoDuration(videoPathOrUrl: string): Promise<number> {
+  // Check if it's a URL (use Modal) or local path (use local ffprobe)
+  if (videoPathOrUrl.startsWith('http://') || videoPathOrUrl.startsWith('https://')) {
+    if (USE_MODAL_FFMPEG) {
+      const result = await getMediaDurationFromModal(videoPathOrUrl, 'video');
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      return result.duration;
+    }
+  }
+
+  // Local ffprobe
+  return getVideoDurationLocal(videoPathOrUrl);
+}
+
+/**
+ * Get video duration using local ffprobe
+ */
+function getVideoDurationLocal(videoPath: string): Promise<number> {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(videoPath, (err, metadata) => {
       if (err) {
@@ -57,8 +89,110 @@ export function getVideoDuration(videoPath: string): Promise<number> {
 
 /**
  * Compose video with audio track
+ * Uses Modal by default, falls back to local FFmpeg if USE_MODAL_FFMPEG=false
  */
 export async function composeVideoWithAudio(
+  options: ComposeOptions
+): Promise<ComposeResult> {
+  const {
+    videoUrl,
+    audioUrl,
+    audioStartTime = 0,
+    audioVolume = 1.0,
+    fadeIn = 0,
+    fadeOut = 0,
+    mixOriginalAudio = false,
+    originalAudioVolume = 0.3,
+    outputS3Bucket,
+    outputS3Key,
+  } = options;
+
+  // Use Modal for FFmpeg processing (production)
+  if (USE_MODAL_FFMPEG) {
+    return composeVideoWithAudioViaModal(options);
+  }
+
+  // Local FFmpeg processing (development fallback)
+  return composeVideoWithAudioLocal(options);
+}
+
+/**
+ * Compose video with audio using Modal (production)
+ */
+async function composeVideoWithAudioViaModal(
+  options: ComposeOptions
+): Promise<ComposeResult> {
+  const {
+    videoUrl,
+    audioUrl,
+    audioStartTime = 0,
+    audioVolume = 1.0,
+    fadeIn = 0,
+    fadeOut = 0,
+    mixOriginalAudio = false,
+    originalAudioVolume = 0.3,
+    outputS3Bucket = process.env.AWS_S3_BUCKET || 'hydra-assets-hybe',
+    outputS3Key,
+  } = options;
+
+  const jobId = `compose-${uuidv4().slice(0, 8)}`;
+
+  // Generate S3 key if not provided
+  const s3Key = outputS3Key || `composed/${jobId}.mp4`;
+
+  console.log(`[FFmpeg-Modal] Starting composition job: ${jobId}`);
+
+  try {
+    const request: AudioComposeRequest = {
+      job_id: jobId,
+      video_url: videoUrl,
+      audio_url: audioUrl,
+      audio_start_time: audioStartTime,
+      audio_volume: audioVolume,
+      fade_in: fadeIn,
+      fade_out: fadeOut,
+      mix_original_audio: mixOriginalAudio,
+      original_audio_volume: originalAudioVolume,
+      output_s3_bucket: outputS3Bucket,
+      output_s3_key: s3Key,
+    };
+
+    const result = await composeVideoWithAudioModal({
+      ...request,
+      pollInterval: 2000,
+      maxWaitTime: 300000, // 5 minutes
+      onProgress: (status) => {
+        console.log(`[FFmpeg-Modal] Job ${jobId}: ${status.status}`);
+      },
+    });
+
+    if (result.status === 'completed' && result.output_url) {
+      console.log(`[FFmpeg-Modal] Composition complete: ${result.output_url}`);
+      return {
+        success: true,
+        outputUrl: result.output_url,
+        duration: result.duration || undefined,
+      };
+    } else {
+      console.error(`[FFmpeg-Modal] Composition failed: ${result.error}`);
+      return {
+        success: false,
+        error: result.error || 'Composition failed',
+      };
+    }
+  } catch (error) {
+    console.error('[FFmpeg-Modal] Composition error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Compose video with audio using local FFmpeg (development fallback)
+ */
+async function composeVideoWithAudioLocal(
   options: ComposeOptions
 ): Promise<ComposeResult> {
   const {
@@ -83,7 +217,7 @@ export async function composeVideoWithAudio(
     const outputPath = path.join(tempDir, `output_${sessionId}.mp4`);
 
     // Get video duration for fade out calculation
-    const videoDuration = await getVideoDuration(videoPath);
+    const videoDuration = await getVideoDurationLocal(videoPath);
     console.log(`Video duration: ${videoDuration}s`);
 
     return new Promise((resolve) => {
@@ -210,9 +344,29 @@ export function checkFFmpeg(): Promise<boolean> {
 }
 
 /**
- * Get audio duration using ffprobe
+ * Get audio duration using ffprobe (local) or Modal
+ * If a URL is provided, uses Modal. If a local path, uses local ffprobe.
  */
-export function getAudioDuration(audioPath: string): Promise<number> {
+export async function getAudioDuration(audioPathOrUrl: string): Promise<number> {
+  // Check if it's a URL (use Modal) or local path (use local ffprobe)
+  if (audioPathOrUrl.startsWith('http://') || audioPathOrUrl.startsWith('https://')) {
+    if (USE_MODAL_FFMPEG) {
+      const result = await getMediaDurationFromModal(audioPathOrUrl, 'audio');
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      return result.duration;
+    }
+  }
+
+  // Local ffprobe
+  return getAudioDurationLocal(audioPathOrUrl);
+}
+
+/**
+ * Get audio duration using local ffprobe
+ */
+function getAudioDurationLocal(audioPath: string): Promise<number> {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(audioPath, (err, metadata) => {
       if (err) {

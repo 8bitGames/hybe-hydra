@@ -1,15 +1,33 @@
-"""Image processing utilities."""
+"""Image processing utilities with GPU acceleration (cupy/CUDA)."""
 
 from PIL import Image
 from typing import Tuple
 import os
+import numpy as np
+
+# Try to import cupy for GPU acceleration
+try:
+    import cupy as cp
+    from cupyx.scipy.ndimage import zoom as gpu_zoom
+    GPU_AVAILABLE = True
+except ImportError:
+    GPU_AVAILABLE = False
+    cp = None
 
 
 class ImageProcessor:
-    """Service for processing images before video composition."""
+    """Service for processing images before video composition.
+
+    Uses GPU (cupy/CUDA) when available, falls back to CPU (PIL/numpy).
+    """
 
     def __init__(self):
         self.supported_formats = [".jpg", ".jpeg", ".png", ".webp", ".gif"]
+        self.use_gpu = GPU_AVAILABLE
+        if self.use_gpu:
+            print("[ImageProcessor] GPU acceleration enabled (cupy/CUDA)")
+        else:
+            print("[ImageProcessor] Using CPU (PIL) - cupy not available")
 
     def resize_for_aspect(
         self,
@@ -19,6 +37,7 @@ class ImageProcessor:
     ) -> str:
         """
         Resize and crop image for target aspect ratio.
+        Uses GPU when available for faster processing.
         Returns path to processed image.
         """
         ratios = {
@@ -39,6 +58,7 @@ class ImageProcessor:
         img_ratio = img_w / img_h
         target_ratio = target_w / target_h
 
+        # Crop to aspect ratio
         if img_ratio > target_ratio:
             # Image is wider - crop sides
             new_w = int(img_h * target_ratio)
@@ -50,8 +70,11 @@ class ImageProcessor:
             y_offset = (img_h - new_h) // 2
             img = img.crop((0, y_offset, img_w, y_offset + new_h))
 
-        # Resize to target dimensions
-        img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        # Resize using GPU or CPU
+        if self.use_gpu:
+            img = self._resize_gpu(img, target_w, target_h)
+        else:
+            img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
         # Save
         if output_path is None:
@@ -60,6 +83,30 @@ class ImageProcessor:
 
         img.save(output_path, quality=95)
         return output_path
+
+    def _resize_gpu(self, img: Image.Image, target_w: int, target_h: int) -> Image.Image:
+        """Resize image using GPU (cupy)."""
+        # Convert PIL to numpy array
+        arr = np.array(img)
+        current_h, current_w = arr.shape[:2]
+
+        # Calculate zoom factors
+        zoom_h = target_h / current_h
+        zoom_w = target_w / current_w
+
+        # Transfer to GPU
+        gpu_arr = cp.asarray(arr)
+
+        # Resize on GPU (zoom each channel)
+        resized = cp.zeros((target_h, target_w, 3), dtype=cp.uint8)
+        for c in range(3):
+            resized[:, :, c] = gpu_zoom(gpu_arr[:, :, c].astype(cp.float32),
+                                        (zoom_h, zoom_w), order=1).astype(cp.uint8)
+
+        # Transfer back to CPU
+        result = cp.asnumpy(resized)
+
+        return Image.fromarray(result)
 
     def get_dimensions(self, image_path: str) -> Tuple[int, int]:
         """Get image dimensions."""

@@ -45,81 +45,18 @@ from pathlib import Path
 # Modal App Configuration
 # ============================================================================
 
-# Define the container image with NVIDIA CUDA + Jellyfin FFmpeg (NVENC support)
+# Use custom Dockerfile for reproducible builds
+# This ensures the same environment locally (docker build) and on Modal
+# Jellyfin FFmpeg is installed FIRST, before any Python packages
 video_image = (
-    modal.Image.from_registry(
-        "nvidia/cuda:12.4.0-devel-ubuntu22.04",
-        add_python="3.11"
+    modal.Image.from_dockerfile(
+        Path(__file__).parent / "Dockerfile",
+        # Context directory for Dockerfile's COPY commands
+        context_dir=Path(__file__).parent,
+        # Ignore unnecessary files to speed up build
+        ignore=["__pycache__", "*.pyc", ".git", "scripts/test_*.py"],
     )
     .entrypoint([])  # Remove chatty NVIDIA prints on container start
-    # System dependencies
-    .apt_install(
-        "wget",
-        "gnupg",
-        "libsm6",
-        "libxext6",
-        "libgl1-mesa-glx",
-        "libglib2.0-0",
-        "libsndfile1",
-        "libmpg123-0",
-        "fonts-noto-cjk",
-        "fonts-dejavu",
-        # OpenGL/EGL for future GL Transitions support
-        "libegl1-mesa",
-        "libegl1-mesa-dev",
-        "libglew-dev",
-        "libglfw3-dev",
-        "mesa-utils",
-    )
-    # Install Jellyfin FFmpeg (has NVENC h264_nvenc/hevc_nvenc baked in)
-    .run_commands(
-        # Step 1: Add Jellyfin repo
-        "echo '=== STEP 1: Adding Jellyfin GPG key ===' && wget -O - https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /usr/share/keyrings/jellyfin.gpg && echo 'GPG key added successfully'",
-        "echo '=== STEP 2: Adding Jellyfin apt repo ===' && echo 'deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/ubuntu jammy main' > /etc/apt/sources.list.d/jellyfin.list && cat /etc/apt/sources.list.d/jellyfin.list",
-        # Step 2: Install jellyfin-ffmpeg6
-        "echo '=== STEP 3: Installing jellyfin-ffmpeg6 ===' && apt-get update && apt-get install -y jellyfin-ffmpeg6 && echo 'jellyfin-ffmpeg6 installed'",
-        # Step 3: Check what was installed
-        "echo '=== STEP 4: Checking installed files ===' && ls -la /usr/lib/jellyfin-ffmpeg/ || echo 'ERROR: /usr/lib/jellyfin-ffmpeg/ not found'",
-        # Step 4: Create symlinks
-        "echo '=== STEP 5: Creating symlinks ===' && ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg && ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe && ls -la /usr/local/bin/ffmpeg /usr/local/bin/ffprobe",
-        # Step 5: Verify ffmpeg
-        "echo '=== STEP 6: Verifying ffmpeg ===' && which ffmpeg && ffmpeg -version 2>&1 | head -10",
-        # Step 6: Check for NVENC encoders
-        "echo '=== STEP 7: Checking NVENC encoders ===' && ffmpeg -encoders 2>&1 | grep -i nvenc || echo 'WARNING: No NVENC encoders found in ffmpeg'",
-        # Step 7: Check NVIDIA driver
-        "echo '=== STEP 8: Checking NVIDIA ===' && nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>&1 || echo 'nvidia-smi not available during build (expected - GPU only at runtime)'",
-    )
-    # Set environment for jellyfin-ffmpeg with NVENC
-    .env({
-        # CRITICAL: Tell imageio/MoviePy to use jellyfin-ffmpeg instead of bundled ffmpeg
-        "IMAGEIO_FFMPEG_EXE": "/usr/lib/jellyfin-ffmpeg/ffmpeg",
-        # Library path for NVENC runtime libs
-        "LD_LIBRARY_PATH": "/usr/lib/jellyfin-ffmpeg/lib:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}",
-    })
-    # Python dependencies
-    .pip_install(
-        "moviepy==2.1.1",
-        "Pillow>=10.0.0",
-        "numpy>=1.26.0",
-        "librosa==0.10.1",
-        "soundfile==0.12.1",
-        "audioread==3.0.1",
-        "scipy>=1.11.0,<1.13.0",
-        "boto3==1.35.0",
-        "botocore==1.35.0",
-        "httpx==0.26.0",
-        "aiofiles==23.2.1",
-        "pydantic==2.5.3",
-        "pydantic-settings==2.1.0",
-        "fastapi[standard]",
-        "redis>=5.0.0",
-    )
-    # Add the entire app source code
-    .add_local_dir(
-        Path(__file__).parent / "app",
-        remote_path="/root/app",
-        copy=True
-    )
 )
 
 # Create the Modal app
@@ -157,10 +94,10 @@ def send_callback(callback_url: str, callback_secret: str, job_id: str, status: 
 
 
 @app.function(
-    gpu="T4",  # NVIDIA T4 GPU for NVENC hardware encoding
+    gpu="T4",  # NVIDIA T4 GPU - NVENC encoder + CUDA for cupy
     timeout=600,  # 10 minutes max per video
-    memory=8192,  # 8GB RAM
-    cpu=4.0,  # More CPU cores for parallel image processing
+    memory=16384,  # 16GB RAM for parallel processing
+    cpu=8.0,  # 8 CPU cores for parallel image/audio processing
     secrets=[modal.Secret.from_name("aws-s3-secret")],
     retries=2,  # Auto-retry on failure
     scaledown_window=300,  # Keep container warm for 5 minutes (faster cold starts)
@@ -566,6 +503,7 @@ scraper_image = (
         "playwright==1.49.0",
         "httpx==0.26.0",
         "pydantic==2.5.3",
+        "fastapi[standard]",
     )
     .run_commands(
         "playwright install chromium",
@@ -732,6 +670,570 @@ def tiktok_hashtag(hashtag: str):
 
 
 # ============================================================================
+# Audio Processing (FFmpeg-based)
+# ============================================================================
+
+# Reuse the video_image which has FFmpeg installed
+@app.function(
+    timeout=300,  # 5 minutes max
+    memory=4096,  # 4GB RAM
+    cpu=2.0,
+    secrets=[modal.Secret.from_name("aws-s3-secret")],
+    retries=2,
+    scaledown_window=120,
+)
+def compose_audio(request_data: dict) -> dict:
+    """
+    Compose video with audio track using FFmpeg.
+
+    Args:
+        request_data: Dictionary containing:
+            - video_url: URL of the video file
+            - audio_url: URL of the audio file
+            - audio_start_time: Start time in audio (seconds)
+            - audio_volume: Volume level (0.0 - 1.0)
+            - fade_in: Fade in duration (seconds)
+            - fade_out: Fade out duration (seconds)
+            - mix_original_audio: Whether to mix with original audio
+            - original_audio_volume: Original audio volume if mixing
+            - output_s3_bucket: S3 bucket for output
+            - output_s3_key: S3 key for output
+
+    Returns:
+        Dictionary with status, output_url, duration, error
+    """
+    import os
+    import subprocess
+    import tempfile
+    import httpx
+    import boto3
+    from pathlib import Path
+
+    job_id = request_data.get("job_id", "audio-compose")
+    print(f"[{job_id}] Starting audio composition on Modal")
+
+    try:
+        # Extract parameters
+        video_url = request_data["video_url"]
+        audio_url = request_data["audio_url"]
+        audio_start_time = request_data.get("audio_start_time", 0)
+        audio_volume = request_data.get("audio_volume", 1.0)
+        fade_in = request_data.get("fade_in", 0)
+        fade_out = request_data.get("fade_out", 0)
+        mix_original_audio = request_data.get("mix_original_audio", False)
+        original_audio_volume = request_data.get("original_audio_volume", 0.3)
+        output_s3_bucket = request_data.get("output_s3_bucket")
+        output_s3_key = request_data.get("output_s3_key")
+
+        # FFmpeg path (jellyfin-ffmpeg)
+        ffmpeg_path = os.environ.get("FFMPEG_BINARY", "/usr/lib/jellyfin-ffmpeg/ffmpeg")
+        ffprobe_path = os.environ.get("FFPROBE_BINARY", "/usr/lib/jellyfin-ffmpeg/ffprobe")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir = Path(temp_dir)
+            video_path = temp_dir / "input_video.mp4"
+            audio_path = temp_dir / "input_audio.mp3"
+            output_path = temp_dir / "output.mp4"
+
+            # Download video and audio
+            print(f"[{job_id}] Downloading video and audio...")
+            with httpx.Client(timeout=60.0) as client:
+                # Download video
+                response = client.get(video_url, follow_redirects=True)
+                response.raise_for_status()
+                video_path.write_bytes(response.content)
+
+                # Download audio
+                response = client.get(audio_url, follow_redirects=True)
+                response.raise_for_status()
+                audio_path.write_bytes(response.content)
+
+            # Get video duration using ffprobe
+            print(f"[{job_id}] Getting video duration...")
+            probe_cmd = [
+                ffprobe_path, "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(video_path)
+            ]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True)
+            video_duration = float(result.stdout.strip()) if result.stdout.strip() else 0
+            print(f"[{job_id}] Video duration: {video_duration}s")
+
+            # Build FFmpeg command
+            print(f"[{job_id}] Building FFmpeg command...")
+
+            # Audio filters
+            audio_filters = []
+
+            # Trim audio if start time specified
+            if audio_start_time > 0:
+                audio_filters.append(f"atrim=start={audio_start_time}")
+                audio_filters.append("asetpts=PTS-STARTPTS")
+
+            # Apply volume
+            if audio_volume != 1.0:
+                audio_filters.append(f"volume={audio_volume}")
+
+            # Apply fade in
+            if fade_in > 0:
+                audio_filters.append(f"afade=t=in:st=0:d={fade_in}")
+
+            # Apply fade out
+            if fade_out > 0:
+                fade_out_start = video_duration - fade_out
+                audio_filters.append(f"afade=t=out:st={fade_out_start}:d={fade_out}")
+
+            # Trim audio to video duration
+            audio_filters.append(f"atrim=duration={video_duration}")
+
+            # Build complex filter
+            if mix_original_audio:
+                complex_filter = f"[0:a]volume={original_audio_volume}[oa];[1:a]{','.join(audio_filters)}[na];[oa][na]amix=inputs=2:duration=first[aout]"
+            else:
+                complex_filter = f"[1:a]{','.join(audio_filters)}[aout]"
+
+            # FFmpeg command
+            cmd = [
+                ffmpeg_path, "-y",
+                "-i", str(video_path),
+                "-i", str(audio_path),
+                "-filter_complex", complex_filter,
+                "-map", "0:v",
+                "-map", "[aout]",
+                "-c:v", "copy",  # Copy video codec (fast)
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+                str(output_path)
+            ]
+
+            print(f"[{job_id}] Running FFmpeg...")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                print(f"[{job_id}] FFmpeg error: {result.stderr}")
+                return {
+                    "status": "failed",
+                    "job_id": job_id,
+                    "output_url": None,
+                    "duration": None,
+                    "error": f"FFmpeg failed: {result.stderr[:500]}",
+                }
+
+            print(f"[{job_id}] FFmpeg completed, uploading to S3...")
+
+            # Upload to S3
+            if output_s3_bucket and output_s3_key:
+                s3 = boto3.client(
+                    "s3",
+                    aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+                    aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+                    region_name=os.environ.get("AWS_REGION", "ap-southeast-2"),
+                )
+
+                s3.upload_file(
+                    str(output_path),
+                    output_s3_bucket,
+                    output_s3_key,
+                    ExtraArgs={"ContentType": "video/mp4"}
+                )
+
+                output_url = f"https://{output_s3_bucket}.s3.{os.environ.get('AWS_REGION', 'ap-southeast-2')}.amazonaws.com/{output_s3_key}"
+            else:
+                output_url = None
+
+            print(f"[{job_id}] Composition complete: {output_url}")
+
+            return {
+                "status": "completed",
+                "job_id": job_id,
+                "output_url": output_url,
+                "duration": video_duration,
+                "error": None,
+            }
+
+    except Exception as e:
+        import traceback
+        print(f"[{job_id}] Composition failed: {e}")
+        print(traceback.format_exc())
+        return {
+            "status": "failed",
+            "job_id": job_id,
+            "output_url": None,
+            "duration": None,
+            "error": str(e),
+        }
+
+
+@app.function(
+    timeout=300,
+    memory=4096,
+    cpu=2.0,
+    retries=2,
+    scaledown_window=120,
+)
+def analyze_audio(request_data: dict) -> dict:
+    """
+    Analyze audio file for BPM, energy curves, and segments using FFmpeg.
+
+    Args:
+        request_data: Dictionary containing:
+            - audio_url: URL of the audio file
+            - target_duration: Target clip duration for finding best segment (default: 15)
+
+    Returns:
+        Dictionary with analysis results
+    """
+    import os
+    import subprocess
+    import tempfile
+    import httpx
+    import json
+    from pathlib import Path
+
+    job_id = request_data.get("job_id", "audio-analyze")
+    print(f"[{job_id}] Starting audio analysis on Modal")
+
+    try:
+        audio_url = request_data["audio_url"]
+        target_duration = request_data.get("target_duration", 15)
+
+        # FFmpeg paths
+        ffmpeg_path = os.environ.get("FFMPEG_BINARY", "/usr/lib/jellyfin-ffmpeg/ffmpeg")
+        ffprobe_path = os.environ.get("FFPROBE_BINARY", "/usr/lib/jellyfin-ffmpeg/ffprobe")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir = Path(temp_dir)
+            audio_path = temp_dir / "input_audio.mp3"
+
+            # Download audio
+            print(f"[{job_id}] Downloading audio...")
+            with httpx.Client(timeout=60.0) as client:
+                response = client.get(audio_url, follow_redirects=True)
+                response.raise_for_status()
+                audio_path.write_bytes(response.content)
+
+            # Get audio metadata using ffprobe
+            print(f"[{job_id}] Getting audio metadata...")
+            probe_cmd = [
+                ffprobe_path, "-v", "quiet",
+                "-print_format", "json",
+                "-show_format", "-show_streams",
+                str(audio_path)
+            ]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True)
+            metadata = json.loads(result.stdout)
+
+            duration = float(metadata["format"].get("duration", 0))
+            audio_stream = next((s for s in metadata.get("streams", []) if s.get("codec_type") == "audio"), {})
+            sample_rate = int(audio_stream.get("sample_rate", 44100))
+            channels = int(audio_stream.get("channels", 2))
+            bitrate = int(metadata["format"].get("bit_rate", 128000))
+
+            print(f"[{job_id}] Duration: {duration}s, Sample rate: {sample_rate}")
+
+            # Extract energy levels (1 sample per second)
+            print(f"[{job_id}] Extracting energy levels...")
+            energy_curve = []
+
+            for start_time in range(int(duration)):
+                segment_duration = min(1.0, duration - start_time)
+
+                # Use volumedetect filter
+                cmd = [
+                    ffmpeg_path, "-y",
+                    "-ss", str(start_time),
+                    "-t", str(segment_duration),
+                    "-i", str(audio_path),
+                    "-af", "volumedetect",
+                    "-f", "null", "-"
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+
+                # Parse mean_volume from stderr
+                mean_volume = -60  # Default very quiet
+                for line in result.stderr.split("\n"):
+                    if "mean_volume:" in line:
+                        try:
+                            mean_volume = float(line.split("mean_volume:")[1].split("dB")[0].strip())
+                        except:
+                            pass
+
+                # Normalize to 0-1 scale
+                normalized = max(0, min(1, (mean_volume + 60) / 60))
+                energy_curve.append(normalized)
+
+            # Calculate statistics
+            peak_energy = max(energy_curve) if energy_curve else 0
+            avg_energy = sum(energy_curve) / len(energy_curve) if energy_curve else 0
+
+            # Detect segments based on energy changes
+            print(f"[{job_id}] Detecting segments...")
+            segments = []
+            window_size = 4  # 4 second windows
+
+            current_start = 0
+            current_energy = 0
+            sample_count = 0
+
+            for i, energy in enumerate(energy_curve):
+                current_energy += energy
+                sample_count += 1
+
+                if sample_count >= window_size or i == len(energy_curve) - 1:
+                    avg = current_energy / sample_count
+                    segment_end = min(i + 1, duration)
+
+                    # Classify segment type
+                    if current_start == 0 and avg < 0.4:
+                        seg_type = "intro"
+                    elif segment_end >= duration - 4 and avg < 0.4:
+                        seg_type = "outro"
+                    elif avg > 0.7:
+                        seg_type = "chorus"
+                    elif avg > 0.4:
+                        seg_type = "verse"
+                    else:
+                        seg_type = "bridge"
+
+                    segments.append({
+                        "start": current_start,
+                        "end": segment_end,
+                        "energy": avg,
+                        "type": seg_type,
+                    })
+
+                    current_start = segment_end
+                    current_energy = 0
+                    sample_count = 0
+
+            # Find best segment for target duration
+            print(f"[{job_id}] Finding best {target_duration}s segment...")
+            best_start = 0
+            best_energy = 0
+
+            if duration > target_duration:
+                for start in range(int(duration - target_duration) + 1):
+                    end_idx = min(start + target_duration, len(energy_curve))
+                    window_energy = energy_curve[start:end_idx]
+                    avg = sum(window_energy) / len(window_energy) if window_energy else 0
+
+                    if avg > best_energy:
+                        best_energy = avg
+                        best_start = start
+            else:
+                best_energy = avg_energy
+
+            # Estimate BPM (simplified - count energy peaks)
+            print(f"[{job_id}] Estimating BPM...")
+            analysis_length = min(30, duration)
+            threshold = avg_energy * 1.2
+            peak_count = 0
+
+            for i in range(1, min(int(analysis_length), len(energy_curve) - 1)):
+                if (energy_curve[i] > threshold and
+                    energy_curve[i] > energy_curve[i-1] and
+                    energy_curve[i] > energy_curve[i+1]):
+                    peak_count += 1
+
+            bpm = int(max(60, min(200, (peak_count / analysis_length) * 60))) if analysis_length > 0 else 120
+
+            print(f"[{job_id}] Analysis complete: BPM={bpm}, best_start={best_start}s")
+
+            return {
+                "status": "completed",
+                "job_id": job_id,
+                "analysis": {
+                    "duration": duration,
+                    "bpm": bpm,
+                    "energy_curve": energy_curve,
+                    "peak_energy": peak_energy,
+                    "avg_energy": avg_energy,
+                    "segments": segments,
+                    "best_15s_start": best_start,
+                    "best_15s_energy": best_energy,
+                    "metadata": {
+                        "sample_rate": sample_rate,
+                        "channels": channels,
+                        "bitrate": bitrate,
+                    }
+                },
+                "error": None,
+            }
+
+    except Exception as e:
+        import traceback
+        print(f"[{job_id}] Analysis failed: {e}")
+        print(traceback.format_exc())
+        return {
+            "status": "failed",
+            "job_id": job_id,
+            "analysis": None,
+            "error": str(e),
+        }
+
+
+@app.function(
+    timeout=60,
+    memory=2048,
+    cpu=1.0,
+    retries=2,
+)
+def get_media_duration(request_data: dict) -> dict:
+    """
+    Get duration of a media file (video or audio) using ffprobe.
+
+    Args:
+        request_data: Dictionary containing:
+            - url: URL of the media file
+            - media_type: 'video' or 'audio'
+
+    Returns:
+        Dictionary with duration
+    """
+    import os
+    import subprocess
+    import tempfile
+    import httpx
+    from pathlib import Path
+
+    try:
+        url = request_data["url"]
+        media_type = request_data.get("media_type", "video")
+
+        ffprobe_path = os.environ.get("FFPROBE_BINARY", "/usr/lib/jellyfin-ffmpeg/ffprobe")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir = Path(temp_dir)
+            ext = ".mp4" if media_type == "video" else ".mp3"
+            file_path = temp_dir / f"input{ext}"
+
+            # Download file
+            with httpx.Client(timeout=60.0) as client:
+                response = client.get(url, follow_redirects=True)
+                response.raise_for_status()
+                file_path.write_bytes(response.content)
+
+            # Get duration
+            cmd = [
+                ffprobe_path, "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(file_path)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            duration = float(result.stdout.strip()) if result.stdout.strip() else 0
+
+            return {
+                "status": "completed",
+                "duration": duration,
+                "error": None,
+            }
+
+    except Exception as e:
+        return {
+            "status": "failed",
+            "duration": None,
+            "error": str(e),
+        }
+
+
+# Web endpoints for audio processing
+@app.function(
+    secrets=[modal.Secret.from_name("aws-s3-secret")],
+)
+@modal.fastapi_endpoint(method="POST")
+def submit_audio_compose(request_data: dict):
+    """
+    Submit an audio composition job.
+
+    POST /submit_audio_compose
+    Body: { video_url, audio_url, audio_start_time, audio_volume, ... }
+    Returns: { call_id, job_id, status }
+    """
+    job_id = request_data.get("job_id", "audio-compose")
+    print(f"[{job_id}] Received audio compose request")
+
+    call = compose_audio.spawn(request_data)
+
+    return {
+        "call_id": call.object_id,
+        "job_id": job_id,
+        "status": "queued",
+        "message": "Audio composition job queued",
+    }
+
+
+@app.function()
+@modal.fastapi_endpoint(method="POST")
+def submit_audio_analyze(request_data: dict):
+    """
+    Submit an audio analysis job.
+
+    POST /submit_audio_analyze
+    Body: { audio_url, target_duration }
+    Returns: { call_id, job_id, status }
+    """
+    job_id = request_data.get("job_id", "audio-analyze")
+    print(f"[{job_id}] Received audio analysis request")
+
+    call = analyze_audio.spawn(request_data)
+
+    return {
+        "call_id": call.object_id,
+        "job_id": job_id,
+        "status": "queued",
+        "message": "Audio analysis job queued",
+    }
+
+
+@app.function()
+@modal.fastapi_endpoint(method="POST")
+def get_duration(request_data: dict):
+    """
+    Get media duration (synchronous - returns immediately).
+
+    POST /get_duration
+    Body: { url, media_type }
+    Returns: { duration, error }
+    """
+    result = get_media_duration.remote(request_data)
+    return result
+
+
+@app.function()
+@modal.fastapi_endpoint(method="GET")
+def get_audio_status(call_id: str):
+    """
+    Poll for audio job status.
+
+    GET /get_audio_status?call_id=xxx
+    Returns: { status, result } or 202 if still processing
+    """
+    import fastapi
+
+    try:
+        function_call = modal.FunctionCall.from_id(call_id)
+        result = function_call.get(timeout=0)
+
+        return {
+            "status": result.get("status", "completed"),
+            "result": result,
+        }
+    except TimeoutError:
+        return fastapi.responses.JSONResponse(
+            {"status": "processing", "call_id": call_id},
+            status_code=202
+        )
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+
+
+# ============================================================================
 # Local Development
 # ============================================================================
 
@@ -745,10 +1247,16 @@ def main():
     print("Deploy:")
     print("  modal deploy modal_app.py")
     print()
-    print("Endpoints after deploy:")
+    print("Video Rendering Endpoints:")
     print("  POST /submit_render   - Start a render job")
     print("  GET  /get_render_status?call_id=xxx - Poll status")
     print("  GET  /health          - Health check")
+    print()
+    print("Audio Processing Endpoints:")
+    print("  POST /submit_audio_compose  - Compose video with audio")
+    print("  POST /submit_audio_analyze  - Analyze audio (BPM, energy, segments)")
+    print("  POST /get_duration          - Get media duration")
+    print("  GET  /get_audio_status?call_id=xxx - Poll audio job status")
     print()
     print("TikTok Scraping Endpoints:")
     print("  POST /tiktok_collect  - Collect trends")

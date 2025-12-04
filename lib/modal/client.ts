@@ -544,3 +544,293 @@ export async function getTikTokHashtag(
 
   return response.json();
 }
+
+// ============================================================================
+// Audio Processing (Modal FFmpeg)
+// ============================================================================
+
+const MODAL_AUDIO_COMPOSE_URL = process.env.MODAL_AUDIO_COMPOSE_URL ||
+  'https://modawnai--hydra-compose-engine-submit-audio-compose.modal.run';
+const MODAL_AUDIO_ANALYZE_URL = process.env.MODAL_AUDIO_ANALYZE_URL ||
+  'https://modawnai--hydra-compose-engine-submit-audio-analyze.modal.run';
+const MODAL_DURATION_URL = process.env.MODAL_DURATION_URL ||
+  'https://modawnai--hydra-compose-engine-get-duration.modal.run';
+const MODAL_AUDIO_STATUS_URL = process.env.MODAL_AUDIO_STATUS_URL ||
+  'https://modawnai--hydra-compose-engine-get-audio-status.modal.run';
+
+export interface AudioComposeRequest {
+  job_id?: string;
+  video_url: string;
+  audio_url: string;
+  audio_start_time?: number;
+  audio_volume?: number;
+  fade_in?: number;
+  fade_out?: number;
+  mix_original_audio?: boolean;
+  original_audio_volume?: number;
+  output_s3_bucket?: string;
+  output_s3_key?: string;
+}
+
+export interface AudioComposeResponse {
+  call_id: string;
+  job_id: string;
+  status: 'queued' | 'error';
+  message?: string;
+}
+
+export interface AudioAnalyzeRequest {
+  job_id?: string;
+  audio_url: string;
+  target_duration?: number;
+}
+
+export interface AudioAnalyzeResponse {
+  call_id: string;
+  job_id: string;
+  status: 'queued' | 'error';
+  message?: string;
+}
+
+export interface AudioSegment {
+  start: number;
+  end: number;
+  energy: number;
+  type: 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro' | 'unknown';
+}
+
+export interface AudioAnalysis {
+  duration: number;
+  bpm: number;
+  energy_curve: number[];
+  peak_energy: number;
+  avg_energy: number;
+  segments: AudioSegment[];
+  best_15s_start: number;
+  best_15s_energy: number;
+  metadata?: {
+    sample_rate: number;
+    channels: number;
+    bitrate: number;
+  };
+}
+
+export interface AudioJobResult {
+  status: 'completed' | 'failed';
+  job_id: string;
+  output_url?: string | null;
+  duration?: number | null;
+  analysis?: AudioAnalysis | null;
+  error?: string | null;
+}
+
+export interface AudioStatusResponse {
+  status: 'processing' | 'completed' | 'failed' | 'error';
+  call_id?: string;
+  result?: AudioJobResult;
+  error?: string;
+}
+
+/**
+ * Submit an audio composition job to Modal
+ * Composes video with audio track using FFmpeg on Modal
+ */
+export async function submitAudioComposeToModal(
+  request: AudioComposeRequest
+): Promise<AudioComposeResponse> {
+  const response = await fetch(MODAL_AUDIO_COMPOSE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Modal audio compose submit failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Submit an audio analysis job to Modal
+ * Analyzes audio for BPM, energy curves, segments
+ */
+export async function submitAudioAnalyzeToModal(
+  request: AudioAnalyzeRequest
+): Promise<AudioAnalyzeResponse> {
+  const response = await fetch(MODAL_AUDIO_ANALYZE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Modal audio analyze submit failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get media duration using Modal (FFprobe)
+ * Synchronous call - returns immediately with duration
+ */
+export async function getMediaDurationFromModal(
+  url: string,
+  mediaType: 'video' | 'audio' = 'video'
+): Promise<{ duration: number; error?: string }> {
+  const response = await fetch(MODAL_DURATION_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ url, media_type: mediaType }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Modal duration check failed: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
+  return {
+    duration: result.duration || 0,
+    error: result.error,
+  };
+}
+
+/**
+ * Poll for audio job status
+ */
+export async function getAudioJobStatus(callId: string): Promise<AudioStatusResponse> {
+  const url = new URL(MODAL_AUDIO_STATUS_URL);
+  url.searchParams.set('call_id', callId);
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  // Modal returns 202 for "still processing"
+  if (response.status === 202) {
+    const data = await response.json();
+    return {
+      status: 'processing',
+      call_id: data.call_id,
+    };
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Modal audio status check failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Wait for audio job to complete with polling
+ * Returns the final result when job completes
+ */
+export async function waitForAudioJob(
+  callId: string,
+  options: {
+    pollInterval?: number;
+    maxWaitTime?: number;
+    onProgress?: (status: AudioStatusResponse) => void;
+  } = {}
+): Promise<AudioJobResult> {
+  const {
+    pollInterval = 2000,
+    maxWaitTime = 300000, // 5 minutes
+    onProgress,
+  } = options;
+
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitTime) {
+    const status = await getAudioJobStatus(callId);
+
+    if (onProgress) {
+      onProgress(status);
+    }
+
+    if (status.status === 'completed' || status.status === 'failed') {
+      if (status.result) {
+        return status.result;
+      }
+      throw new Error(`Job ${status.status} but no result returned`);
+    }
+
+    if (status.status === 'error') {
+      throw new Error(status.error || 'Unknown error');
+    }
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error(`Audio job timed out after ${maxWaitTime}ms`);
+}
+
+/**
+ * Compose video with audio using Modal (convenience function)
+ * Submits job and waits for completion
+ */
+export async function composeVideoWithAudioModal(
+  options: AudioComposeRequest & {
+    pollInterval?: number;
+    maxWaitTime?: number;
+    onProgress?: (status: AudioStatusResponse) => void;
+  }
+): Promise<AudioJobResult> {
+  const { pollInterval, maxWaitTime, onProgress, ...request } = options;
+
+  // Submit job
+  const submitResult = await submitAudioComposeToModal(request);
+
+  // Wait for completion
+  return waitForAudioJob(submitResult.call_id, {
+    pollInterval,
+    maxWaitTime,
+    onProgress,
+  });
+}
+
+/**
+ * Analyze audio using Modal (convenience function)
+ * Submits job and waits for completion
+ */
+export async function analyzeAudioModal(
+  options: AudioAnalyzeRequest & {
+    pollInterval?: number;
+    maxWaitTime?: number;
+    onProgress?: (status: AudioStatusResponse) => void;
+  }
+): Promise<AudioAnalysis> {
+  const { pollInterval, maxWaitTime, onProgress, ...request } = options;
+
+  // Submit job
+  const submitResult = await submitAudioAnalyzeToModal(request);
+
+  // Wait for completion
+  const result = await waitForAudioJob(submitResult.call_id, {
+    pollInterval,
+    maxWaitTime,
+    onProgress,
+  });
+
+  if (result.status === 'failed' || !result.analysis) {
+    throw new Error(result.error || 'Audio analysis failed');
+  }
+
+  return result.analysis;
+}

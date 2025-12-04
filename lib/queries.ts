@@ -55,6 +55,7 @@ export const queryKeys = {
   trends: ["trends"] as const,
   trendsList: ["trends", "list"] as const,
   savedTrends: ["trends", "saved"] as const,
+  trendingVideos: (hashtags?: string[]) => ["trends", "trending", hashtags] as const,
 };
 
 // Dashboard Stats
@@ -581,6 +582,67 @@ export function useSavedTrends() {
   });
 }
 
+// Trending Videos - top videos by play count
+export interface TrendingVideo {
+  id: string;
+  platform: string;
+  videoId: string;
+  searchQuery: string;
+  searchType: string;
+  description: string | null;
+  authorId: string;
+  authorName: string;
+  playCount: number | null;
+  likeCount: number | null;
+  commentCount: number | null;
+  shareCount: number | null;
+  hashtags: string[];
+  videoUrl: string;
+  thumbnailUrl: string | null;
+  collectedAt: string;
+}
+
+export interface AvailableHashtag {
+  query: string;
+  videoCount: number;
+  totalPlayCount: number;
+}
+
+export interface TrendingVideosResponse {
+  success: boolean;
+  videos: TrendingVideo[];
+  availableHashtags: AvailableHashtag[];
+  total: number;
+}
+
+export function useTrendingVideos(params?: {
+  hashtags?: string[];
+  limit?: number;
+}) {
+  return useQuery({
+    queryKey: queryKeys.trendingVideos(params?.hashtags),
+    queryFn: async (): Promise<TrendingVideosResponse> => {
+      const searchParams = new URLSearchParams();
+      if (params?.limit) searchParams.set("limit", params.limit.toString());
+      if (params?.hashtags && params.hashtags.length > 0) {
+        searchParams.set("hashtags", params.hashtags.join(","));
+      }
+
+      const query = searchParams.toString();
+      const response = await api.get<TrendingVideosResponse>(
+        `/api/v1/trends/trending${query ? `?${query}` : ""}`
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
 // Invalidation helpers
 export function useInvalidateQueries() {
   const queryClient = useQueryClient();
@@ -602,6 +664,8 @@ export function useInvalidateQueries() {
       queryClient.invalidateQueries({ queryKey: queryKeys.composeVideos }),
     invalidateTrends: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.trends }),
+    invalidateTrendingVideos: () =>
+      queryClient.invalidateQueries({ queryKey: ["trends", "trending"] }),
     invalidateAll: () => queryClient.invalidateQueries(),
   };
 }
