@@ -44,74 +44,11 @@ export async function POST(request: NextRequest) {
     const metadata = asset.metadata as Record<string, unknown> || {};
     const audioDuration = (metadata.duration || metadata.audioDurationSec || 180) as number;
 
-    // Call Modal backend for best segment detection
-    const modalUrl = process.env.MODAL_COMPOSE_URL;
-    if (modalUrl) {
-      try {
-        // Use the existing /audio/best-segment endpoint
-        const segmentResponse = await fetch(`${modalUrl}/audio/best-segment`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            audio_url: asset.s3Url,
-            target_duration: targetDuration,
-            job_id: `analyze-${assetId}`
-          })
-        });
+    // NOTE: Modal audio web endpoints are not deployed.
+    // Audio functions (compose_audio, analyze_audio) exist in Modal but have no web endpoints.
+    // Using local heuristic-based analysis instead.
 
-        if (segmentResponse.ok) {
-          const segmentData = await segmentResponse.json();
-
-          // Also get full analysis for BPM
-          let bpm: number | null = typeof metadata.bpm === 'number' ? metadata.bpm :
-                                   typeof metadata.audioBpm === 'number' ? metadata.audioBpm : null;
-          try {
-            const analyzeResponse = await fetch(`${modalUrl}/audio/analyze`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                audio_url: asset.s3Url,
-                job_id: `analyze-${assetId}`
-              })
-            });
-            if (analyzeResponse.ok) {
-              const analyzeData = await analyzeResponse.json();
-              bpm = typeof analyzeData.bpm === 'number' ? analyzeData.bpm : bpm;
-            }
-          } catch {
-            // BPM analysis failed, use metadata
-          }
-
-          // Add buildup time before the climax (전조)
-          // Calculate buildup based on BPM - use 2 bars (8 beats in 4/4 time) for musical buildup
-          const buildupSeconds = calculateBpmBuildup(bpm);
-          const buildupTime = Math.min(buildupSeconds, segmentData.start_time);
-          const adjustedStartTime = Math.max(0, segmentData.start_time - buildupTime);
-
-          console.log('[Audio Analyze] Best segment adjustment:', {
-            bpm,
-            calculated_buildup: buildupSeconds,
-            original_start: segmentData.start_time,
-            applied_buildup: buildupTime,
-            adjusted_start: adjustedStartTime,
-            original_end: segmentData.end_time,
-          });
-
-          return NextResponse.json({
-            assetId,
-            duration: audioDuration,
-            bpm,
-            suggestedStartTime: adjustedStartTime,
-            suggestedEndTime: segmentData.end_time,
-            analyzed: true
-          });
-        }
-      } catch (modalError) {
-        console.warn('Modal audio analysis failed, using fallback:', modalError);
-      }
-    }
-
-    // Fallback: Use simple heuristics without librosa analysis
+    // Use heuristics for audio analysis
     const metadataBpm = (metadata.bpm || metadata.audioBpm || null) as number | null;
     const suggestedStart = calculateFallbackStart(audioDuration, targetDuration, metadataBpm);
 

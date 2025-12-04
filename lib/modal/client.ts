@@ -405,12 +405,9 @@ export async function getBatchRenderStatus(
 // TikTok Trends Scraping (Modal)
 // ============================================================================
 
-const MODAL_TIKTOK_COLLECT_URL = process.env.MODAL_TIKTOK_COLLECT_URL ||
-  'https://modawnai--hydra-compose-engine-tiktok-collect.modal.run';
-const MODAL_TIKTOK_SEARCH_URL = process.env.MODAL_TIKTOK_SEARCH_URL ||
-  'https://modawnai--hydra-compose-engine-tiktok-search.modal.run';
-const MODAL_TIKTOK_HASHTAG_URL = process.env.MODAL_TIKTOK_HASHTAG_URL ||
-  'https://modawnai--hydra-compose-engine-tiktok-hashtag.modal.run';
+// Unified TikTok endpoint - handles collect, search, and hashtag actions via POST body
+const MODAL_TIKTOK_ENDPOINT = process.env.MODAL_TIKTOK_ENDPOINT ||
+  'https://modawnai--hydra-compose-engine-collect-trends-endpoint.modal.run';
 
 export interface TikTokTrendItem {
   rank: number;
@@ -469,18 +466,20 @@ export interface TikTokHashtagResponse {
 
 /**
  * Collect TikTok trends using Modal (Playwright)
+ * Uses the unified endpoint with action='collect'
  */
 export async function collectTikTokTrends(options: {
   keywords?: string[];
   hashtags?: string[];
   includeExplore?: boolean;
 }): Promise<TikTokCollectResponse> {
-  const response = await fetch(MODAL_TIKTOK_COLLECT_URL, {
+  const response = await fetch(MODAL_TIKTOK_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      action: 'collect',
       keywords: options.keywords || [],
       hashtags: options.hashtags || [],
       include_explore: options.includeExplore ?? true,
@@ -497,20 +496,22 @@ export async function collectTikTokTrends(options: {
 
 /**
  * Search TikTok for a keyword using Modal (Playwright)
+ * Uses the unified endpoint with action='search'
  */
 export async function searchTikTok(
   keyword: string,
   limit: number = 40
 ): Promise<TikTokSearchResponse> {
-  const url = new URL(MODAL_TIKTOK_SEARCH_URL);
-  url.searchParams.set('keyword', keyword);
-  url.searchParams.set('limit', limit.toString());
-
-  const response = await fetch(url.toString(), {
-    method: 'GET',
+  const response = await fetch(MODAL_TIKTOK_ENDPOINT, {
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
+    body: JSON.stringify({
+      action: 'search',
+      keyword,
+      limit,
+    }),
   });
 
   if (!response.ok) {
@@ -523,18 +524,20 @@ export async function searchTikTok(
 
 /**
  * Get TikTok hashtag details using Modal (Playwright)
+ * Uses the unified endpoint with action='hashtag'
  */
 export async function getTikTokHashtag(
   hashtag: string
 ): Promise<TikTokHashtagResponse> {
-  const url = new URL(MODAL_TIKTOK_HASHTAG_URL);
-  url.searchParams.set('hashtag', hashtag);
-
-  const response = await fetch(url.toString(), {
-    method: 'GET',
+  const response = await fetch(MODAL_TIKTOK_ENDPOINT, {
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
+    body: JSON.stringify({
+      action: 'hashtag',
+      hashtag,
+    }),
   });
 
   if (!response.ok) {
@@ -546,17 +549,12 @@ export async function getTikTokHashtag(
 }
 
 // ============================================================================
-// Audio Processing (Modal FFmpeg)
+// Audio Processing Types
 // ============================================================================
-
-const MODAL_AUDIO_COMPOSE_URL = process.env.MODAL_AUDIO_COMPOSE_URL ||
-  'https://modawnai--hydra-compose-engine-submit-audio-compose.modal.run';
-const MODAL_AUDIO_ANALYZE_URL = process.env.MODAL_AUDIO_ANALYZE_URL ||
-  'https://modawnai--hydra-compose-engine-submit-audio-analyze.modal.run';
-const MODAL_DURATION_URL = process.env.MODAL_DURATION_URL ||
-  'https://modawnai--hydra-compose-engine-get-duration.modal.run';
-const MODAL_AUDIO_STATUS_URL = process.env.MODAL_AUDIO_STATUS_URL ||
-  'https://modawnai--hydra-compose-engine-get-audio-status.modal.run';
+// NOTE: Audio functions (compose_audio, analyze_audio, get_media_duration) exist
+// in Modal but have NO web endpoints - they are internal functions only.
+// Audio analysis is handled locally via fallback heuristics in the API route.
+// If web endpoints are needed in the future, they must be added to modal_app.py.
 
 export interface AudioComposeRequest {
   job_id?: string;
@@ -633,204 +631,82 @@ export interface AudioStatusResponse {
 
 /**
  * Submit an audio composition job to Modal
- * Composes video with audio track using FFmpeg on Modal
+ * @deprecated Modal audio web endpoints are not deployed. Use local processing or add endpoints to modal_app.py
  */
 export async function submitAudioComposeToModal(
-  request: AudioComposeRequest
+  _request: AudioComposeRequest
 ): Promise<AudioComposeResponse> {
-  const response = await fetch(MODAL_AUDIO_COMPOSE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Modal audio compose submit failed: ${response.status} - ${errorText}`);
-  }
-
-  return response.json();
+  throw new Error('Modal audio compose endpoint not available. Audio functions exist in Modal but have no web endpoints.');
 }
 
 /**
  * Submit an audio analysis job to Modal
- * Analyzes audio for BPM, energy curves, segments
+ * @deprecated Modal audio web endpoints are not deployed. Use local processing or add endpoints to modal_app.py
  */
 export async function submitAudioAnalyzeToModal(
-  request: AudioAnalyzeRequest
+  _request: AudioAnalyzeRequest
 ): Promise<AudioAnalyzeResponse> {
-  const response = await fetch(MODAL_AUDIO_ANALYZE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Modal audio analyze submit failed: ${response.status} - ${errorText}`);
-  }
-
-  return response.json();
+  throw new Error('Modal audio analyze endpoint not available. Audio functions exist in Modal but have no web endpoints.');
 }
 
 /**
  * Get media duration using Modal (FFprobe)
- * Synchronous call - returns immediately with duration
+ * @deprecated Modal audio web endpoints are not deployed. Use local processing or add endpoints to modal_app.py
  */
 export async function getMediaDurationFromModal(
-  url: string,
-  mediaType: 'video' | 'audio' = 'video'
+  _url: string,
+  _mediaType: 'video' | 'audio' = 'video'
 ): Promise<{ duration: number; error?: string }> {
-  const response = await fetch(MODAL_DURATION_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ url, media_type: mediaType }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Modal duration check failed: ${response.status} - ${errorText}`);
-  }
-
-  const result = await response.json();
-  return {
-    duration: result.duration || 0,
-    error: result.error,
-  };
+  throw new Error('Modal duration endpoint not available. Audio functions exist in Modal but have no web endpoints.');
 }
 
 /**
  * Poll for audio job status
+ * @deprecated Modal audio web endpoints are not deployed
  */
-export async function getAudioJobStatus(callId: string): Promise<AudioStatusResponse> {
-  const url = new URL(MODAL_AUDIO_STATUS_URL);
-  url.searchParams.set('call_id', callId);
-
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  // Modal returns 202 for "still processing"
-  if (response.status === 202) {
-    const data = await response.json();
-    return {
-      status: 'processing',
-      call_id: data.call_id,
-    };
-  }
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Modal audio status check failed: ${response.status} - ${errorText}`);
-  }
-
-  return response.json();
+export async function getAudioJobStatus(_callId: string): Promise<AudioStatusResponse> {
+  throw new Error('Modal audio status endpoint not available. Audio functions exist in Modal but have no web endpoints.');
 }
 
 /**
  * Wait for audio job to complete with polling
- * Returns the final result when job completes
+ * @deprecated Modal audio web endpoints are not deployed
  */
 export async function waitForAudioJob(
-  callId: string,
-  options: {
+  _callId: string,
+  _options: {
     pollInterval?: number;
     maxWaitTime?: number;
     onProgress?: (status: AudioStatusResponse) => void;
   } = {}
 ): Promise<AudioJobResult> {
-  const {
-    pollInterval = 2000,
-    maxWaitTime = 300000, // 5 minutes
-    onProgress,
-  } = options;
-
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < maxWaitTime) {
-    const status = await getAudioJobStatus(callId);
-
-    if (onProgress) {
-      onProgress(status);
-    }
-
-    if (status.status === 'completed' || status.status === 'failed') {
-      if (status.result) {
-        return status.result;
-      }
-      throw new Error(`Job ${status.status} but no result returned`);
-    }
-
-    if (status.status === 'error') {
-      throw new Error(status.error || 'Unknown error');
-    }
-
-    // Wait before next poll
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-
-  throw new Error(`Audio job timed out after ${maxWaitTime}ms`);
+  throw new Error('Modal audio endpoints not available. Audio functions exist in Modal but have no web endpoints.');
 }
 
 /**
  * Compose video with audio using Modal (convenience function)
- * Submits job and waits for completion
+ * @deprecated Modal audio web endpoints are not deployed
  */
 export async function composeVideoWithAudioModal(
-  options: AudioComposeRequest & {
+  _options: AudioComposeRequest & {
     pollInterval?: number;
     maxWaitTime?: number;
     onProgress?: (status: AudioStatusResponse) => void;
   }
 ): Promise<AudioJobResult> {
-  const { pollInterval, maxWaitTime, onProgress, ...request } = options;
-
-  // Submit job
-  const submitResult = await submitAudioComposeToModal(request);
-
-  // Wait for completion
-  return waitForAudioJob(submitResult.call_id, {
-    pollInterval,
-    maxWaitTime,
-    onProgress,
-  });
+  throw new Error('Modal audio endpoints not available. Audio functions exist in Modal but have no web endpoints.');
 }
 
 /**
  * Analyze audio using Modal (convenience function)
- * Submits job and waits for completion
+ * @deprecated Modal audio web endpoints are not deployed
  */
 export async function analyzeAudioModal(
-  options: AudioAnalyzeRequest & {
+  _options: AudioAnalyzeRequest & {
     pollInterval?: number;
     maxWaitTime?: number;
     onProgress?: (status: AudioStatusResponse) => void;
   }
 ): Promise<AudioAnalysis> {
-  const { pollInterval, maxWaitTime, onProgress, ...request } = options;
-
-  // Submit job
-  const submitResult = await submitAudioAnalyzeToModal(request);
-
-  // Wait for completion
-  const result = await waitForAudioJob(submitResult.call_id, {
-    pollInterval,
-    maxWaitTime,
-    onProgress,
-  });
-
-  if (result.status === 'failed' || !result.analysis) {
-    throw new Error(result.error || 'Audio analysis failed');
-  }
-
-  return result.analysis;
+  throw new Error('Modal audio endpoints not available. Audio functions exist in Modal but have no web endpoints.');
 }
