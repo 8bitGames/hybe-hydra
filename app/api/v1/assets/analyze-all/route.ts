@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 
@@ -67,8 +68,8 @@ export async function POST(request: NextRequest) {
       where: {
         type: "AUDIO",
         OR: [
-          { metadata: { equals: null } },
-          { metadata: { path: ["bpm"], equals: null } }
+          { metadata: { equals: Prisma.DbNull } },
+          { metadata: { path: ["bpm"], equals: Prisma.JsonNull } }
         ]
       },
       select: {

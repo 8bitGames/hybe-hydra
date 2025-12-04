@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { validateFile, generateS3Key, uploadToS3, AssetType as StorageAssetType } from "@/lib/storage";
-import { AssetType, MerchandiseType } from "@prisma/client";
+import { AssetType, MerchandiseType, Prisma } from "@prisma/client";
 
 interface AudioAnalysisResult {
   bpm: number;
@@ -236,7 +236,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         fileSize: file.size,
         mimeType: file.type,
         createdBy: user.id,
-        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        metadata: Object.keys(metadata).length > 0 ? metadata as Prisma.InputJsonValue : undefined,
       },
     });
 

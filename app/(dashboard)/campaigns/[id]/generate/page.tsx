@@ -869,15 +869,20 @@ export default function VideoGeneratePage() {
               negative_prompt: "",
               technical_settings: {
                 aspect_ratio: "9:16", // TikTok default vertical
+                fps: 30,
                 duration_seconds: 15,
-                style_preset: null,
+                guidance_scale: 7,
               },
               analysis: {
                 intent: analysisData.style_analysis.overall_mood || "TikTok 스타일 영상",
                 trend_applied: analysisData.prompt_elements?.hashtags || [],
+                safety_check: {
+                  passed: true,
+                  concerns: [],
+                },
                 suggestions: [],
               },
-              celebrity_warning: false,
+              celebrity_warning: undefined,
               detected_celebrities: [],
             });
           }
