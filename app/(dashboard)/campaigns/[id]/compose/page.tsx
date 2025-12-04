@@ -542,7 +542,7 @@ export default function ComposePage() {
   if (!campaign) return null;
 
   return (
-    <div className="space-y-6 pb-8">
+    <div className="space-y-6 pb-8 px-[7%]">
       {/* Progress Steps - Minimal horizontal stepper */}
       <div className="flex items-center gap-2 p-1 bg-muted/50 rounded-lg">
         {STEPS.map((step, idx) => {

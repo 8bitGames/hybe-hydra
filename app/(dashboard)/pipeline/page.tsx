@@ -664,7 +664,7 @@ export default function GlobalPipelinePage() {
 
   return (
     <TooltipProvider>
-      <div className="space-y-6">
+      <div className="space-y-6 px-[7%]">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>

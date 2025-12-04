@@ -32,6 +32,7 @@ import {
   Lightbulb,
   ArrowRight,
   Loader2,
+  Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -130,6 +131,12 @@ const secondaryItems: NavItem[] = [
         href: "/pipeline",
         icon: Layers,
         description: { ko: "생성 작업 현황", en: "Generation job status" },
+      },
+      {
+        name: { ko: "발행 관리", en: "Publishing" },
+        href: "/publishing",
+        icon: Calendar,
+        description: { ko: "예약 및 발행된 게시물", en: "Scheduled & published posts" },
       },
     ],
   },

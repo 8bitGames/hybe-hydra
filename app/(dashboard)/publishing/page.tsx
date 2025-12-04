@@ -17,6 +17,12 @@ import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Send,
   Clock,
   CheckCircle,
@@ -25,11 +31,12 @@ import {
   ExternalLink,
   Eye,
   Heart,
-  Plus,
   RefreshCw,
   Settings,
   List,
   XCircle,
+  MessageCircle,
+  Share2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +57,10 @@ interface ScheduledPost {
   shareCount: number | null;
   errorMessage: string | null;
   thumbnailUrl: string | null;
+  // TikTok publishing details
+  caption: string | null;
+  hashtags: string[];
+  videoUrl: string | null;
 }
 
 interface SocialAccount {
@@ -114,6 +125,7 @@ export default function PublishingPage() {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
+  const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
 
   useEffect(() => {
     if (accessToken) {
@@ -147,12 +159,16 @@ export default function PublishingPage() {
           scheduledAt: post.scheduled_at,
           publishedAt: post.published_at,
           publishedUrl: post.published_url,
-          viewCount: post.view_count,
-          likeCount: post.like_count,
-          commentCount: post.comment_count,
-          shareCount: post.share_count,
+          viewCount: post.view_count ?? post.analytics?.view_count,
+          likeCount: post.like_count ?? post.analytics?.like_count,
+          commentCount: post.comment_count ?? post.analytics?.comment_count,
+          shareCount: post.share_count ?? post.analytics?.share_count,
           errorMessage: post.error_message,
           thumbnailUrl: post.thumbnail_url,
+          // TikTok publishing details
+          caption: post.caption,
+          hashtags: post.hashtags || [],
+          videoUrl: post.generation?.output_url || post.thumbnail_url,
         }));
         setPosts(allPosts);
       }
@@ -173,7 +189,7 @@ export default function PublishingPage() {
   const cancelledPosts = posts.filter(p => p.status === "CANCELLED");
 
   return (
-    <div className="space-y-6 pb-8">
+    <div className="space-y-6 pb-8 px-[7%]">
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
@@ -355,22 +371,14 @@ export default function PublishingPage() {
                           </div>
                         )}
                       </div>
-                      {post.publishedUrl ? (
-                        <Button variant="outline" size="sm" asChild>
-                          <a href={post.publishedUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-4 w-4 mr-2" />
-                            {language === "ko" ? "보기" : "View"}
-                          </a>
-                        </Button>
-                      ) : (
-                        <Button
+                      <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => router.push(`/campaigns/${post.campaignId}/publish`)}
+                          onClick={() => setSelectedPost(post)}
                         >
+                          <Eye className="h-4 w-4 mr-2" />
                           {language === "ko" ? "보기" : "View"}
                         </Button>
-                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -422,8 +430,9 @@ export default function PublishingPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => router.push(`/campaigns/${post.campaignId}/publish`)}
+                        onClick={() => setSelectedPost(post)}
                       >
+                        <Eye className="h-4 w-4 mr-2" />
                         {language === "ko" ? "보기" : "View"}
                       </Button>
                     </div>
@@ -537,9 +546,10 @@ export default function PublishingPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => router.push(`/campaigns/${post.campaignId}/publish`)}
+                        onClick={() => setSelectedPost(post)}
                       >
-                        {language === "ko" ? "재시도" : "Retry"}
+                        <Eye className="h-4 w-4 mr-2" />
+                        {language === "ko" ? "보기" : "View"}
                       </Button>
                     </div>
                   </CardContent>
@@ -583,8 +593,9 @@ export default function PublishingPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => router.push(`/campaigns/${post.campaignId}/publish`)}
+                        onClick={() => setSelectedPost(post)}
                       >
+                        <Eye className="h-4 w-4 mr-2" />
                         {language === "ko" ? "보기" : "View"}
                       </Button>
                     </div>
@@ -595,6 +606,190 @@ export default function PublishingPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Post Detail Modal */}
+      <Dialog open={!!selectedPost} onOpenChange={(open) => !open && setSelectedPost(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-xl">{selectedPost && getPlatformIcon(selectedPost.platform)}</span>
+              {language === "ko" ? "발행 상세" : "Post Details"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedPost && (
+            <div className="space-y-4">
+              {/* Video - Vertical Display (9:16) */}
+              {(selectedPost.videoUrl || selectedPost.thumbnailUrl) && (
+                <div className="flex justify-center">
+                  <div className="aspect-[9/16] w-[180px] bg-muted rounded-lg overflow-hidden">
+                    <video
+                      src={selectedPost.videoUrl || selectedPost.thumbnailUrl || ""}
+                      className="w-full h-full object-cover"
+                      controls
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Platform, Status & Account */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <span className="text-xs text-muted-foreground block mb-1">
+                    {language === "ko" ? "플랫폼" : "Platform"}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-lg">{getPlatformIcon(selectedPost.platform)}</span>
+                    <span className="font-medium text-sm">
+                      {selectedPost.platform === "TIKTOK" ? "TikTok" :
+                       selectedPost.platform === "YOUTUBE" ? "YouTube" :
+                       selectedPost.platform === "INSTAGRAM" ? "Instagram" :
+                       selectedPost.platform === "TWITTER" ? "Twitter" :
+                       selectedPost.platform}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground block mb-1">
+                    {language === "ko" ? "상태" : "Status"}
+                  </span>
+                  {getStatusBadge(selectedPost.status, language)}
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground block mb-1">
+                    {language === "ko" ? "계정" : "Account"}
+                  </span>
+                  <span className="font-medium text-sm">{selectedPost.accountName}</span>
+                </div>
+              </div>
+
+              {/* Campaign */}
+              <div>
+                <span className="text-xs text-muted-foreground block mb-1">
+                  {language === "ko" ? "캠페인" : "Campaign"}
+                </span>
+                <span className="font-medium text-sm">{selectedPost.campaignName}</span>
+              </div>
+
+              {/* Caption (Description) */}
+              {selectedPost.caption && (
+                <div>
+                  <span className="text-xs text-muted-foreground block mb-1">
+                    {language === "ko" ? "캡션" : "Caption"}
+                  </span>
+                  <p className="text-sm bg-muted/50 p-2 rounded-lg whitespace-pre-wrap">
+                    {selectedPost.caption}
+                  </p>
+                </div>
+              )}
+
+              {/* Hashtags */}
+              {selectedPost.hashtags && selectedPost.hashtags.length > 0 && (
+                <div>
+                  <span className="text-xs text-muted-foreground block mb-1">
+                    {language === "ko" ? "해시태그" : "Hashtags"}
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedPost.hashtags.map((tag, index) => (
+                      <Badge key={index} variant="secondary" className="text-xs">
+                        #{tag.replace(/^#/, "")}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Schedule / Publish Time */}
+              {selectedPost.publishedAt && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    {language === "ko" ? "발행 일시" : "Published At"}
+                  </span>
+                  <span>{new Date(selectedPost.publishedAt).toLocaleString()}</span>
+                </div>
+              )}
+              {selectedPost.scheduledAt && !selectedPost.publishedAt && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    {language === "ko" ? "예약 일시" : "Scheduled At"}
+                  </span>
+                  <span>{new Date(selectedPost.scheduledAt).toLocaleString()}</span>
+                </div>
+              )}
+
+              {/* Analytics (for published posts) */}
+              {selectedPost.status === "PUBLISHED" && (
+                <div className="border-t pt-4">
+                  <p className="text-sm font-medium mb-3">
+                    {language === "ko" ? "성과" : "Analytics"}
+                  </p>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="text-center p-2 bg-muted rounded-lg">
+                      <Eye className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
+                      <p className="text-sm font-medium">{formatNumber(selectedPost.viewCount)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {language === "ko" ? "조회" : "Views"}
+                      </p>
+                    </div>
+                    <div className="text-center p-2 bg-muted rounded-lg">
+                      <Heart className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
+                      <p className="text-sm font-medium">{formatNumber(selectedPost.likeCount)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {language === "ko" ? "좋아요" : "Likes"}
+                      </p>
+                    </div>
+                    <div className="text-center p-2 bg-muted rounded-lg">
+                      <MessageCircle className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
+                      <p className="text-sm font-medium">{formatNumber(selectedPost.commentCount)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {language === "ko" ? "댓글" : "Comments"}
+                      </p>
+                    </div>
+                    <div className="text-center p-2 bg-muted rounded-lg">
+                      <Share2 className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
+                      <p className="text-sm font-medium">{formatNumber(selectedPost.shareCount)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {language === "ko" ? "공유" : "Shares"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Error Message (for failed posts) */}
+              {selectedPost.status === "FAILED" && selectedPost.errorMessage && (
+                <div className="border-t pt-4">
+                  <p className="text-sm font-medium mb-2 text-destructive">
+                    {language === "ko" ? "오류 메시지" : "Error Message"}
+                  </p>
+                  <p className="text-sm text-muted-foreground bg-destructive/10 p-3 rounded-lg">
+                    {selectedPost.errorMessage}
+                  </p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2">
+                {selectedPost.publishedUrl && (
+                  <Button variant="outline" className="flex-1" asChild>
+                    <a href={selectedPost.publishedUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      {language === "ko" ? "게시물 보기" : "View Post"}
+                    </a>
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => router.push(`/campaigns/${selectedPost.campaignId}`)}
+                >
+                  {language === "ko" ? "캠페인으로 이동" : "Go to Campaign"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
