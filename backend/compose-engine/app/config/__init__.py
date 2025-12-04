@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     google_search_api_key: str = ""
     google_search_cx: str = ""
 
+    # Gemini API (for AI effect analysis)
+    gemini_api_key: str = ""
+
     # Temp directory for rendering (platform-aware default)
     temp_dir: str = os.path.join(tempfile.gettempdir(), "compose")
 

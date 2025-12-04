@@ -2,19 +2,14 @@
 FROM python:3.11-slim
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
     libmagic1 \
     imagemagick \
     fonts-dejavu \
     fonts-liberation \
-    # OpenGL/EGL for future GL Transitions support
-    libegl1-mesa \
-    libegl1-mesa-dev \
-    libglew-dev \
-    libglfw3-dev \
-    mesa-utils \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure ImageMagick policy for MoviePy text rendering

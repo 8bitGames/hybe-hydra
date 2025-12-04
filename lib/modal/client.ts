@@ -1,20 +1,36 @@
 /**
- * Modal.com Client for Direct Video Rendering
+ * Compose Engine Client for Video Rendering
  *
- * This client calls Modal serverless GPU functions directly,
- * bypassing Railway for simpler architecture.
+ * Supports two modes:
+ *   - modal (default): Modal serverless GPU (production)
+ *   - local: Local compose-engine Docker container (development)
  *
- * Flow: Next.js → Modal (GPU T4 + NVENC) → S3
+ * Modal Flow: Next.js → Modal (GPU T4 + NVENC) → S3
+ * Local Flow: Next.js → Docker compose-engine (CPU) → S3
  *
- * GPU Stack:
+ * GPU Stack (Modal):
  *   - Base: nvidia/cuda:12.4.0-devel-ubuntu22.04
  *   - FFmpeg: jellyfin-ffmpeg6 (has h264_nvenc baked in)
  *   - Encoder: h264_nvenc (5-10x faster than CPU)
  */
 
+// Compose engine mode: 'modal' (production) or 'local' (development)
+const COMPOSE_ENGINE_MODE = process.env.COMPOSE_ENGINE_MODE || 'modal';
+
+// Modal endpoints (production)
 const MODAL_SUBMIT_URL = process.env.MODAL_SUBMIT_URL;
 const MODAL_STATUS_URL = process.env.MODAL_STATUS_URL;
 const MODAL_CALLBACK_SECRET = process.env.MODAL_CALLBACK_SECRET || 'hydra-modal-callback-secret';
+
+// Local compose engine (development)
+const LOCAL_COMPOSE_URL = process.env.LOCAL_COMPOSE_URL || 'http://localhost:8000';
+
+/**
+ * Check if running in local development mode
+ */
+export function isLocalMode(): boolean {
+  return COMPOSE_ENGINE_MODE === 'local';
+}
 
 // Callback URL for Modal to notify us when render completes
 function getCallbackUrl(): string {
@@ -91,11 +107,9 @@ export interface ModalStatusResponse {
 }
 
 /**
- * Submit a render job to Modal
- * Returns immediately with a call_id for polling
- * Automatically includes callback URL for database updates on completion
+ * Submit a render job to Modal (production)
  */
-export async function submitRenderToModal(
+async function submitToModal(
   request: ModalRenderRequest
 ): Promise<ModalSubmitResponse> {
   if (!MODAL_SUBMIT_URL) {
@@ -125,12 +139,62 @@ export async function submitRenderToModal(
 }
 
 /**
- * Poll Modal for render job status
- * Returns current status, progress, and output URL when complete
+ * Submit a render job to local compose engine (development)
+ * Uses job_id as call_id for unified status polling
  */
-export async function getModalRenderStatus(
-  callId: string
-): Promise<ModalStatusResponse> {
+async function submitToLocal(
+  request: ModalRenderRequest
+): Promise<ModalSubmitResponse> {
+  const url = `${LOCAL_COMPOSE_URL}/render`;
+
+  console.log('[Local Compose] Submitting to:', url);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Local compose submit failed: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  // Map local response to Modal response format
+  // Local uses job_id, Modal uses call_id - we use job_id for both in local mode
+  return {
+    call_id: data.job_id, // Use job_id as call_id for unified polling
+    job_id: data.job_id,
+    status: data.status === 'accepted' ? 'queued' : 'error',
+    message: data.message,
+  };
+}
+
+/**
+ * Submit a render job (auto-selects Modal or Local based on COMPOSE_ENGINE_MODE)
+ * Returns immediately with a call_id for polling
+ * Automatically includes callback URL for database updates on completion (Modal only)
+ */
+export async function submitRenderToModal(
+  request: ModalRenderRequest
+): Promise<ModalSubmitResponse> {
+  if (isLocalMode()) {
+    console.log('[Compose] Using LOCAL mode');
+    return submitToLocal(request);
+  } else {
+    console.log('[Compose] Using MODAL mode');
+    return submitToModal(request);
+  }
+}
+
+/**
+ * Poll Modal for render job status (production)
+ */
+async function getModalStatus(callId: string): Promise<ModalStatusResponse> {
   if (!MODAL_STATUS_URL) {
     throw new Error('MODAL_STATUS_URL environment variable not set');
   }
@@ -160,6 +224,71 @@ export async function getModalRenderStatus(
   }
 
   return response.json();
+}
+
+/**
+ * Poll local compose engine for job status (development)
+ * Maps local status format to Modal status format
+ */
+async function getLocalStatus(jobId: string): Promise<ModalStatusResponse> {
+  const url = `${LOCAL_COMPOSE_URL}/job/${jobId}/status`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (response.status === 404) {
+    return {
+      status: 'error',
+      error: `Job ${jobId} not found`,
+    };
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Local status check failed: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  // Map local status to Modal status format
+  // Local: { job_id, status: "queued"|"processing"|"completed"|"failed", progress, output_url, error }
+  // Modal: { status: "processing"|"completed"|"failed"|"error", result?: { job_id, output_url, error } }
+  const statusMap: Record<string, ModalStatusResponse['status']> = {
+    queued: 'processing',
+    processing: 'processing',
+    completed: 'completed',
+    failed: 'failed',
+  };
+
+  return {
+    status: statusMap[data.status] || 'processing',
+    call_id: data.job_id,
+    result: data.status === 'completed' || data.status === 'failed' ? {
+      status: data.status,
+      job_id: data.job_id,
+      output_url: data.output_url || null,
+      error: data.error || null,
+    } : undefined,
+    error: data.error,
+  };
+}
+
+/**
+ * Poll for render job status (auto-selects Modal or Local based on COMPOSE_ENGINE_MODE)
+ * Returns current status, progress, and output URL when complete
+ */
+export async function getModalRenderStatus(
+  callId: string
+): Promise<ModalStatusResponse> {
+  if (isLocalMode()) {
+    return getLocalStatus(callId);
+  } else {
+    return getModalStatus(callId);
+  }
 }
 
 /**

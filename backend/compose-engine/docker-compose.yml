@@ -1,0 +1,36 @@
+# Compose Engine - Local Development
+# Run: docker-compose up --build
+#
+# Usage with Next.js:
+#   1. Set COMPOSE_ENGINE_MODE=local in .env.local
+#   2. Set LOCAL_COMPOSE_URL=http://localhost:8000
+#   3. Run: cd backend/compose-engine && docker-compose up --build
+#   4. Run: npm run dev
+
+services:
+  compose-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hydra-compose-engine
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Override or add additional env vars here
+      - TEMP_DIR=/tmp/compose
+    volumes:
+      # Mount source for hot reload during development
+      - ./app:/app/app:ro
+      # Persistent temp directory
+      - compose-temp:/tmp/compose
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  compose-temp:
