@@ -756,7 +756,7 @@ export default function VideoGeneratePage() {
   const { data: campaign, isLoading: campaignLoading, error: campaignError } = useCampaign(campaignId);
   const { data: imageAssetsData, isLoading: imageLoading } = useAssets(campaignId, { type: "image", page_size: 50 });
   const { data: audioAssetsData, isLoading: audioLoading } = useAssets(campaignId, { type: "audio", page_size: 50 });
-  const { data: videosData, isLoading: videosLoading } = useVideos(campaignId, { page_size: 50, generation_type: "AI" });
+  const { data: videosData, isLoading: videosLoading } = useVideos(campaignId, { page_size: 100, generation_type: "AI" });
 
   const images = imageAssetsData?.items || [];
   // Local state for audio tracks (allows adding new uploads)
@@ -773,8 +773,8 @@ export default function VideoGeneratePage() {
 
   React.useEffect(() => {
     if (videosData?.items) {
-      // Filter to only show AI generations (client-side safety filter)
-      setGenerations(videosData.items.filter(g => g.generation_type === "AI"));
+      // API now filters by generation_type, but keep client-side safety filter
+      setGenerations(videosData.items);
     }
   }, [videosData?.items]);
 
@@ -2020,7 +2020,12 @@ export default function VideoGeneratePage() {
               </div>
             </CardHeader>
             <CardContent className="max-h-[calc(100vh-200px)] overflow-y-auto">
-              {generations.length === 0 ? (
+              {videosLoading ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Spinner className="w-8 h-8 mx-auto mb-3" />
+                  <p className="text-sm">{t.common.loading}...</p>
+                </div>
+              ) : generations.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Play className="w-10 h-10 mx-auto mb-3 opacity-30" />
                   <p className="text-sm">{pt.noGenerationsYet}</p>

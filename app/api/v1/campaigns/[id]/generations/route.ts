@@ -324,6 +324,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("page_size") || "20");
     const status = searchParams.get("status") as VideoGenerationStatus | null;
+    const generationType = searchParams.get("generation_type") as "AI" | "COMPOSE" | null;
 
     // Check campaign access
     const campaign = await prisma.campaign.findUnique({
@@ -345,6 +346,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const where: Record<string, unknown> = { campaignId };
     if (status) {
       where.status = status.toUpperCase() as VideoGenerationStatus;
+    }
+    if (generationType) {
+      where.generationType = generationType;
     }
 
     const total = await prisma.videoGeneration.count({ where });
@@ -403,6 +407,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       created_by: gen.createdBy,
       created_at: gen.createdAt.toISOString(),
       updated_at: gen.updatedAt.toISOString(),
+      generation_type: gen.generationType,
       reference_image: gen.referenceImage
         ? {
             id: gen.referenceImage.id,
