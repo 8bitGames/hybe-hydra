@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useCallback, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/lib/auth-store";
 import { saveBridgePrompt } from "@/lib/bridge-storage";
 import { useI18n } from "@/lib/i18n";
@@ -115,9 +115,13 @@ export default function TrendsPage() {
   const { language } = useI18n();
   const toast = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Main tab state
   const [mainTab, setMainTab] = useState<"bridge" | "analyze">("bridge");
+
+  // TikTok URL to analyze (from dashboard trending click)
+  const [tiktokUrlToAnalyze, setTiktokUrlToAnalyze] = useState<string | null>(null);
 
   // Use TanStack Query for campaigns with caching
   const { data: campaignsData, isLoading: campaignsLoading } = useCampaigns({ page_size: 20, status: "active" });
@@ -160,6 +164,35 @@ export default function TrendsPage() {
   const [videoAnalysis, setVideoAnalysis] = useState<VideoTrendAnalysisResponse | null>(null);
   const [trendReport, setTrendReport] = useState<TrendReportResponse | null>(null);
   const [analysisTab, setAnalysisTab] = useState("report");
+
+  // Handle URL params from dashboard trending click
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    const analyzeUrl = searchParams.get("analyze_url") || sessionStorage.getItem("tiktok_analyze_url");
+
+    if (tabParam === "bridge") {
+      setMainTab("bridge");
+    }
+
+    if (analyzeUrl) {
+      setTiktokUrlToAnalyze(analyzeUrl);
+      setMainTab("bridge");
+      // Pre-fill user input with instruction to analyze the video
+      const tiktokInstruction = language === "ko"
+        ? `이 TikTok 영상과 비슷한 스타일의 영상을 만들어주세요:\n${analyzeUrl}`
+        : `Create a video similar to this TikTok:\n${analyzeUrl}`;
+      setUserInput(tiktokInstruction);
+      // Clear session storage after reading
+      sessionStorage.removeItem("tiktok_analyze_url");
+    }
+  }, [searchParams, language]);
+
+  // Auto-select first campaign when available and analyzing TikTok
+  useEffect(() => {
+    if (tiktokUrlToAnalyze && campaigns.length > 0 && !selectedCampaignId) {
+      setSelectedCampaignId(campaigns[0].id);
+    }
+  }, [tiktokUrlToAnalyze, campaigns, selectedCampaignId]);
 
   // Translations
   const t = {

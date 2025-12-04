@@ -14,18 +14,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   TrendingUp,
-  Play,
   Eye,
   Heart,
-  MessageCircle,
-  Share2,
-  ExternalLink,
   Hash,
   RefreshCw,
   ChevronRight,
   Flame,
-  Volume2,
-  VolumeX,
+  Sparkles,
+  ArrowRight,
+  Play,
 } from "lucide-react";
 import { useTrendingVideos, TrendingVideo } from "@/lib/queries";
 import { useI18n } from "@/lib/i18n";
@@ -45,153 +42,88 @@ function formatCount(num: number | null | undefined): string {
   return num.toLocaleString();
 }
 
-function VideoCard({
+function VideoRow({
   video,
-  onOpenTikTok,
-  soundEnabled,
+  rank,
+  onAnalyze,
 }: {
   video: TrendingVideo;
-  onOpenTikTok: (url: string) => void;
-  soundEnabled: boolean;
+  rank: number;
+  onAnalyze: (url: string) => void;
 }) {
-  const [isHovered, setIsHovered] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const videoRef = React.useRef<HTMLVideoElement>(null);
-
-  const handleMouseEnter = useCallback(() => {
-    setIsHovered(true);
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.muted = !soundEnabled;
-      if (soundEnabled) {
-        videoRef.current.volume = 0.3;
-      }
-      videoRef.current.play().then(() => {
-        setIsPlaying(true);
-      }).catch(() => {
-        // Autoplay blocked, that's okay
-      });
-    }
-  }, [soundEnabled]);
-
-  const handleMouseLeave = useCallback(() => {
-    setIsHovered(false);
-    setIsPlaying(false);
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.currentTime = 0;
-      videoRef.current.muted = true;
-    }
-  }, []);
-
-  // Construct TikTok video URL for embedding
-  // TikTok doesn't allow direct video embedding, so we use the videoUrl stored
-  const videoSrc = video.videoUrl;
+  const isHot = video.playCount && video.playCount > 1000000;
 
   return (
     <div
-      className="group relative flex-shrink-0 w-[180px] cursor-pointer"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onClick={() => onOpenTikTok(video.videoUrl)}
+      className="group flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors border border-transparent hover:border-border"
+      onClick={() => onAnalyze(video.videoUrl)}
     >
-      {/* Video/Thumbnail Container */}
-      <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-muted">
-        {/* Video element - always present but hidden until hover */}
-        <video
-          ref={videoRef}
-          src={videoSrc}
-          className={cn(
-            "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
-            isHovered && isPlaying ? "opacity-100" : "opacity-0"
-          )}
-          muted
-          loop
-          playsInline
-          preload="none"
-        />
-
-        {/* Thumbnail - shown when not hovering */}
-        {video.thumbnailUrl ? (
-          <img
-            src={video.thumbnailUrl}
-            alt={video.description || "TikTok video"}
-            className={cn(
-              "w-full h-full object-cover transition-all duration-300",
-              isHovered && isPlaying ? "opacity-0" : "opacity-100 group-hover:scale-105"
-            )}
-          />
-        ) : (
-          <div className={cn(
-            "w-full h-full flex items-center justify-center bg-gradient-to-br from-pink-500/20 to-purple-500/20",
-            isHovered && isPlaying ? "opacity-0" : "opacity-100"
-          )}>
-            <Play className="h-8 w-8 text-muted-foreground" />
-          </div>
-        )}
-
-        {/* Stats Overlay - always visible at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 pt-8">
-          <div className="flex items-center gap-3 text-white text-xs">
-            <span className="flex items-center gap-1">
-              <Eye className="h-3 w-3" />
-              {formatCount(video.playCount)}
-            </span>
-            <span className="flex items-center gap-1">
-              <Heart className="h-3 w-3" />
-              {formatCount(video.likeCount)}
-            </span>
-          </div>
-        </div>
-
-        {/* Hashtag badge - top left */}
-        <div className="absolute top-2 left-2">
-          <Badge
-            variant="secondary"
-            className="bg-black/50 backdrop-blur-sm text-white text-[10px] px-1.5 py-0.5 border-0"
-          >
-            #{video.searchQuery}
-          </Badge>
-        </div>
-
-        {/* Play icon - shown when not playing */}
-        <div
-          className={cn(
-            "absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-200",
-            isPlaying ? "opacity-0" : "opacity-100"
-          )}
-        >
-          <div className="bg-black/40 rounded-full p-3 backdrop-blur-sm">
-            <Play className="h-6 w-6 text-white fill-white" />
-          </div>
-        </div>
-
-        {/* External link indicator on hover */}
-        {isHovered && (
-          <div className="absolute top-2 right-2">
-            <div className="bg-black/50 backdrop-blur-sm rounded-full p-1.5">
-              <ExternalLink className="h-3 w-3 text-white" />
-            </div>
-          </div>
-        )}
-
-        {/* Flame badge for top performers */}
-        {video.playCount && video.playCount > 1000000 && !isHovered && (
-          <div className="absolute top-2 right-2">
-            <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-white text-[10px] px-1.5 py-0.5 border-0">
-              <Flame className="h-3 w-3 mr-0.5" />
-              Hot
-            </Badge>
-          </div>
-        )}
+      {/* Rank */}
+      <div className="flex-shrink-0 w-6 text-center">
+        <span className={cn(
+          "text-sm font-bold",
+          rank <= 3 ? "text-primary" : "text-muted-foreground"
+        )}>
+          {rank}
+        </span>
       </div>
 
-      {/* Author info below */}
-      <div className="mt-2 px-1">
-        <p className="text-xs font-medium truncate">@{video.authorId}</p>
-        <p className="text-[10px] text-muted-foreground line-clamp-2 leading-tight mt-0.5">
+      {/* Thumbnail - only if available */}
+      {video.thumbnailUrl && (
+        <div className="flex-shrink-0 w-12 h-16 rounded-md overflow-hidden bg-muted relative">
+          <img
+            src={video.thumbnailUrl}
+            alt=""
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Play className="h-4 w-4 text-white fill-white" />
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-sm font-medium truncate">@{video.authorId}</span>
+          {isHot && (
+            <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-white text-[10px] px-1.5 py-0 border-0 h-4">
+              <Flame className="h-2.5 w-2.5 mr-0.5" />
+              Hot
+            </Badge>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground line-clamp-1">
           {video.description || "No description"}
         </p>
+      </div>
+
+      {/* Stats */}
+      <div className="flex-shrink-0 flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <Eye className="h-3 w-3" />
+          {formatCount(video.playCount)}
+        </span>
+        <span className="flex items-center gap-1">
+          <Heart className="h-3 w-3" />
+          {formatCount(video.likeCount)}
+        </span>
+      </div>
+
+      {/* Hashtag Badge */}
+      <Badge
+        variant="secondary"
+        className="flex-shrink-0 text-[10px] px-2 py-0.5"
+      >
+        #{video.searchQuery}
+      </Badge>
+
+      {/* Action */}
+      <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button size="sm" variant="ghost" className="h-7 px-2 gap-1 text-xs">
+          <Sparkles className="h-3 w-3" />
+          분석
+        </Button>
       </div>
     </div>
   );
@@ -243,16 +175,11 @@ export default function TrendingVideosTile({
   const [selectedHashtags, setSelectedHashtags] = useState<string[]>(
     initialHashtags || []
   );
-  const [soundEnabled, setSoundEnabled] = useState(false);
 
   const { data, isLoading, error, refetch } = useTrendingVideos({
     hashtags: selectedHashtags.length > 0 ? selectedHashtags : undefined,
     limit: maxVideos,
   });
-
-  const handleSoundToggle = useCallback(() => {
-    setSoundEnabled((prev) => !prev);
-  }, []);
 
   const handleHashtagToggle = useCallback((hashtag: string) => {
     setSelectedHashtags((prev) =>
@@ -262,15 +189,23 @@ export default function TrendingVideosTile({
     );
   }, []);
 
-  const handleOpenTikTok = useCallback((url: string) => {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }, []);
+  const handleAnalyze = useCallback((url: string) => {
+    // Store URL in session storage for the trends/generate page to pick up
+    sessionStorage.setItem("tiktok_analyze_url", url);
+    // Navigate to trends page with analyze mode
+    router.push(`/trends?tab=bridge&analyze_url=${encodeURIComponent(url)}`);
+  }, [router]);
 
   const handleViewAll = useCallback(() => {
     router.push("/trends");
   }, [router]);
 
-  const videos = useMemo(() => data?.videos || [], [data]);
+  // Filter to only show videos with thumbnails
+  const videos = useMemo(() => {
+    const allVideos = data?.videos || [];
+    return allVideos.filter(v => v.thumbnailUrl && v.playCount);
+  }, [data]);
+
   const availableHashtags = useMemo(() => data?.availableHashtags || [], [data]);
 
   if (error) {
@@ -300,15 +235,6 @@ export default function TrendingVideosTile({
             {language === "ko" ? "TikTok 트렌딩" : "TikTok Trending"}
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Button
-              variant={soundEnabled ? "default" : "ghost"}
-              size="icon"
-              className="h-8 w-8"
-              onClick={handleSoundToggle}
-              title={language === "ko" ? (soundEnabled ? "소리 끄기" : "소리 켜기") : (soundEnabled ? "Mute" : "Unmute")}
-            >
-              {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -350,12 +276,16 @@ export default function TrendingVideosTile({
 
       <CardContent className="pt-0">
         {isLoading ? (
-          <div className="flex gap-4 overflow-hidden">
+          <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex-shrink-0 w-[180px]">
-                <Skeleton className="aspect-[9/16] rounded-xl" />
-                <Skeleton className="h-4 w-24 mt-2" />
-                <Skeleton className="h-3 w-full mt-1" />
+              <div key={i} className="flex items-center gap-3 p-3">
+                <Skeleton className="h-4 w-4" />
+                <Skeleton className="h-16 w-12 rounded-md" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-3 w-full" />
+                </div>
+                <Skeleton className="h-4 w-16" />
               </div>
             ))}
           </div>
@@ -378,19 +308,33 @@ export default function TrendingVideosTile({
             </Button>
           </div>
         ) : (
-          <ScrollArea className="w-full">
-            <div className="flex gap-4 pb-4">
-              {videos.map((video) => (
-                <VideoCard
-                  key={video.id}
-                  video={video}
-                  onOpenTikTok={handleOpenTikTok}
-                  soundEnabled={soundEnabled}
-                />
-              ))}
-            </div>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
+          <div className="space-y-1">
+            {videos.slice(0, 10).map((video, index) => (
+              <VideoRow
+                key={video.id}
+                video={video}
+                rank={index + 1}
+                onAnalyze={handleAnalyze}
+              />
+            ))}
+
+            {/* Show more link if there are more videos */}
+            {videos.length > 10 && (
+              <div className="pt-2 text-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleViewAll}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  {language === "ko"
+                    ? `+${videos.length - 10}개 더 보기`
+                    : `+${videos.length - 10} more`}
+                  <ArrowRight className="h-3 w-3 ml-1" />
+                </Button>
+              </div>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>
