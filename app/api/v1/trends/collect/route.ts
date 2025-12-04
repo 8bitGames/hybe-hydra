@@ -11,9 +11,9 @@ import {
   HashtagVideo,
 } from "@/lib/tiktok-trends";
 
-// Modal TikTok Trends endpoint for production
+// Modal TikTok Trends endpoint for production (unified endpoint)
 const MODAL_TIKTOK_ENDPOINT = process.env.MODAL_TIKTOK_ENDPOINT ||
-  "https://modawnai--hydra-tiktok-trends-collect-trends-endpoint.modal.run";
+  "https://modawnai--hydra-compose-engine-collect-trends-endpoint.modal.run";
 
 // Use Modal in production (Vercel), local Playwright in development
 const USE_MODAL = process.env.VERCEL === "1" || process.env.USE_MODAL_TIKTOK === "true";
@@ -54,7 +54,7 @@ interface ModalResponse {
 }
 
 /**
- * Call Modal TikTok scraping function
+ * Call Modal TikTok scraping function (unified endpoint)
  */
 async function callModalScraper(
   keywords: string[],
@@ -65,18 +65,43 @@ async function callModalScraper(
   try {
     console.log("[TRENDS-COLLECT] Calling Modal endpoint:", MODAL_TIKTOK_ENDPOINT);
 
+    // Determine action based on inputs
+    let action = "collect";
+    let requestBody: Record<string, unknown> = {
+      action,
+      keywords,
+      hashtags,
+      include_explore: includeExplore,
+      secret: process.env.MODAL_API_SECRET || "",
+      limit: limitPerKeyword,
+    };
+
+    // If only one keyword and no hashtags, use search action
+    if (keywords.length === 1 && hashtags.length === 0 && !includeExplore) {
+      action = "search";
+      requestBody = {
+        action,
+        keyword: keywords[0],
+        limit: limitPerKeyword,
+        secret: process.env.MODAL_API_SECRET || "",
+      };
+    }
+    // If only one hashtag and no keywords, use hashtag action
+    else if (hashtags.length === 1 && keywords.length === 0 && !includeExplore) {
+      action = "hashtag";
+      requestBody = {
+        action,
+        hashtag: hashtags[0],
+        secret: process.env.MODAL_API_SECRET || "",
+      };
+    }
+
     const response = await fetch(MODAL_TIKTOK_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        keywords,
-        hashtags,
-        includeExplore,
-        secret: process.env.MODAL_API_SECRET || "",
-        limitPerKeyword,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

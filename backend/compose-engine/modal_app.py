@@ -355,121 +355,8 @@ def get_render_status(call_id: str):
         }
 
 
-@app.function()
-@modal.fastapi_endpoint(method="GET")
-def health():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "service": "Hydra Compose Engine (Modal)",
-        "encoding": "h264_nvenc (GPU NVENC)",
-        "gpu": "T4",
-        "ffmpeg": "jellyfin-ffmpeg6",
-        "optimizations": [
-            "parallel_image_downloads",
-            "parallel_image_processing",
-            "container_warmup",
-            "nvenc_gpu_encoding",
-            "retry_logic",
-        ],
-    }
-
-
-# ============================================================================
-# Batch Processing (For Variations)
-# ============================================================================
-
-@app.function(
-    secrets=[modal.Secret.from_name("aws-s3-secret")],
-)
-@modal.fastapi_endpoint(method="POST")
-def submit_batch_render(batch_data: dict):
-    """
-    Submit multiple render jobs in parallel for batch processing.
-    Ideal for compose variations - spawns all jobs at once.
-
-    POST /submit_batch_render
-    Body: { jobs: [RenderRequest, ...], use_gpu: bool }
-    Returns: { batch_id, call_ids: [{job_id, call_id}, ...], status }
-    """
-    import uuid
-
-    jobs = batch_data.get("jobs", [])
-    use_gpu = batch_data.get("use_gpu", True)
-    batch_id = str(uuid.uuid4())[:8]
-
-    print(f"[Batch {batch_id}] Received {len(jobs)} render jobs (GPU: {use_gpu})")
-
-    call_ids = []
-    for job_data in jobs:
-        job_id = job_data.get("job_id", "unknown")
-
-        # Spawn render function (all jobs start in parallel)
-        if use_gpu:
-            call = render_video.spawn(job_data)
-        else:
-            call = render_video_cpu.spawn(job_data)
-
-        call_ids.append({
-            "job_id": job_id,
-            "call_id": call.object_id,
-        })
-        print(f"[Batch {batch_id}] Spawned {job_id}: {call.object_id}")
-
-    return {
-        "batch_id": batch_id,
-        "total_jobs": len(jobs),
-        "call_ids": call_ids,
-        "status": "queued",
-        "message": f"Batch of {len(jobs)} jobs queued (GPU: {use_gpu})",
-    }
-
-
-@app.function()
-@modal.fastapi_endpoint(method="GET")
-def get_batch_status(call_ids: str):
-    """
-    Poll status for multiple render jobs.
-
-    GET /get_batch_status?call_ids=id1,id2,id3
-    Returns: { results: [{call_id, status, result}, ...] }
-    """
-    import fastapi
-
-    ids = call_ids.split(",")
-    results = []
-
-    for call_id in ids:
-        try:
-            function_call = modal.FunctionCall.from_id(call_id.strip())
-            result = function_call.get(timeout=0)
-            results.append({
-                "call_id": call_id,
-                "status": result.get("status", "completed"),
-                "result": result,
-            })
-        except TimeoutError:
-            results.append({
-                "call_id": call_id,
-                "status": "processing",
-            })
-        except Exception as e:
-            results.append({
-                "call_id": call_id,
-                "status": "error",
-                "error": str(e),
-            })
-
-    # Check if all are complete
-    all_complete = all(r["status"] in ["completed", "failed", "error"] for r in results)
-    processing_count = sum(1 for r in results if r["status"] == "processing")
-
-    return {
-        "total": len(results),
-        "processing": processing_count,
-        "all_complete": all_complete,
-        "results": results,
-    }
+# Health check removed to save web endpoint quota
+# Batch processing endpoints removed - use individual submit_render calls instead
 
 
 # ============================================================================
@@ -611,60 +498,28 @@ def scrape_tiktok_trends(request_data: dict) -> dict:
 
 @app.function(image=scraper_image)
 @modal.fastapi_endpoint(method="POST")
-def tiktok_collect(request_data: dict):
+def collect_trends_endpoint(request_data: dict):
     """
-    Collect TikTok trends.
+    Unified TikTok trends endpoint - handles collect, search, and hashtag actions.
 
-    POST /tiktok_collect
-    Body: { keywords: [], hashtags: [], include_explore: bool }
-    Returns: { success, method, trends[], error }
+    POST /collect_trends_endpoint
+    Body: {
+        action: 'collect' | 'search' | 'hashtag',
+        keywords: [] (for collect),
+        hashtags: [] (for collect),
+        include_explore: bool (for collect),
+        keyword: str (for search),
+        hashtag: str (for hashtag),
+        limit: int (for search, default 40),
+        secret: str (optional auth)
+    }
+    Returns: varies by action
     """
-    print(f"[TIKTOK] Collect request: {request_data}")
+    action = request_data.get("action", "collect")
+    print(f"[TIKTOK] {action} request: {request_data}")
 
-    # Run synchronously for web endpoint
-    result = scrape_tiktok_trends.remote({
-        "action": "collect",
-        **request_data,
-    })
-
-    return result
-
-
-@app.function(image=scraper_image)
-@modal.fastapi_endpoint(method="GET")
-def tiktok_search(keyword: str, limit: int = 40):
-    """
-    Search TikTok for a keyword.
-
-    GET /tiktok_search?keyword=xxx&limit=40
-    Returns: { success, keyword, videos[], related_hashtags[], error }
-    """
-    print(f"[TIKTOK] Search request: keyword={keyword}, limit={limit}")
-
-    result = scrape_tiktok_trends.remote({
-        "action": "search",
-        "keyword": keyword,
-        "limit": limit,
-    })
-
-    return result
-
-
-@app.function(image=scraper_image)
-@modal.fastapi_endpoint(method="GET")
-def tiktok_hashtag(hashtag: str):
-    """
-    Get TikTok hashtag details.
-
-    GET /tiktok_hashtag?hashtag=xxx
-    Returns: { success, hashtag, info, videos[], error }
-    """
-    print(f"[TIKTOK] Hashtag request: {hashtag}")
-
-    result = scrape_tiktok_trends.remote({
-        "action": "hashtag",
-        "hashtag": hashtag,
-    })
+    # Run the scraper
+    result = scrape_tiktok_trends.remote(request_data)
 
     return result
 
@@ -1139,98 +994,9 @@ def get_media_duration(request_data: dict) -> dict:
         }
 
 
-# Web endpoints for audio processing
-@app.function(
-    secrets=[modal.Secret.from_name("aws-s3-secret")],
-)
-@modal.fastapi_endpoint(method="POST")
-def submit_audio_compose(request_data: dict):
-    """
-    Submit an audio composition job.
-
-    POST /submit_audio_compose
-    Body: { video_url, audio_url, audio_start_time, audio_volume, ... }
-    Returns: { call_id, job_id, status }
-    """
-    job_id = request_data.get("job_id", "audio-compose")
-    print(f"[{job_id}] Received audio compose request")
-
-    call = compose_audio.spawn(request_data)
-
-    return {
-        "call_id": call.object_id,
-        "job_id": job_id,
-        "status": "queued",
-        "message": "Audio composition job queued",
-    }
-
-
-@app.function()
-@modal.fastapi_endpoint(method="POST")
-def submit_audio_analyze(request_data: dict):
-    """
-    Submit an audio analysis job.
-
-    POST /submit_audio_analyze
-    Body: { audio_url, target_duration }
-    Returns: { call_id, job_id, status }
-    """
-    job_id = request_data.get("job_id", "audio-analyze")
-    print(f"[{job_id}] Received audio analysis request")
-
-    call = analyze_audio.spawn(request_data)
-
-    return {
-        "call_id": call.object_id,
-        "job_id": job_id,
-        "status": "queued",
-        "message": "Audio analysis job queued",
-    }
-
-
-@app.function()
-@modal.fastapi_endpoint(method="POST")
-def get_duration(request_data: dict):
-    """
-    Get media duration (synchronous - returns immediately).
-
-    POST /get_duration
-    Body: { url, media_type }
-    Returns: { duration, error }
-    """
-    result = get_media_duration.remote(request_data)
-    return result
-
-
-@app.function()
-@modal.fastapi_endpoint(method="GET")
-def get_audio_status(call_id: str):
-    """
-    Poll for audio job status.
-
-    GET /get_audio_status?call_id=xxx
-    Returns: { status, result } or 202 if still processing
-    """
-    import fastapi
-
-    try:
-        function_call = modal.FunctionCall.from_id(call_id)
-        result = function_call.get(timeout=0)
-
-        return {
-            "status": result.get("status", "completed"),
-            "result": result,
-        }
-    except TimeoutError:
-        return fastapi.responses.JSONResponse(
-            {"status": "processing", "call_id": call_id},
-            status_code=202
-        )
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e),
-        }
+# Audio web endpoints removed to save web endpoint quota
+# Audio functions (compose_audio, analyze_audio, get_media_duration) are still available
+# for internal use via .remote() calls from other Modal functions
 
 
 # ============================================================================
@@ -1247,21 +1013,22 @@ def main():
     print("Deploy:")
     print("  modal deploy modal_app.py")
     print()
-    print("Video Rendering Endpoints:")
-    print("  POST /submit_render   - Start a render job")
-    print("  GET  /get_render_status?call_id=xxx - Poll status")
-    print("  GET  /health          - Health check")
+    print("Web Endpoints (4 total - within free tier limit of 8):")
     print()
-    print("Audio Processing Endpoints:")
-    print("  POST /submit_audio_compose  - Compose video with audio")
-    print("  POST /submit_audio_analyze  - Analyze audio (BPM, energy, segments)")
-    print("  POST /get_duration          - Get media duration")
-    print("  GET  /get_audio_status?call_id=xxx - Poll audio job status")
+    print("  Video Rendering:")
+    print("    POST /submit_render              - Start a render job")
+    print("    GET  /get_render_status?call_id  - Poll render status")
     print()
-    print("TikTok Scraping Endpoints:")
-    print("  POST /tiktok_collect  - Collect trends")
-    print("  GET  /tiktok_search?keyword=xxx - Search TikTok")
-    print("  GET  /tiktok_hashtag?hashtag=xxx - Get hashtag info")
+    print("  TikTok Scraping:")
+    print("    POST /collect_trends_endpoint    - Unified trends endpoint")
+    print("         Body: { action: 'collect'|'search'|'hashtag', ... }")
+    print()
+    print("Internal Functions (no web endpoints, call via .remote()):")
+    print("  - render_video / render_video_cpu  - Video rendering")
+    print("  - scrape_tiktok_trends             - TikTok scraping")
+    print("  - compose_audio                    - Audio composition")
+    print("  - analyze_audio                    - Audio analysis")
+    print("  - get_media_duration               - Media duration")
     print()
     print("Test locally:")
     print("  modal run modal_app.py::render_video --input '{...}'")
