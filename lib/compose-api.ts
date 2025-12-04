@@ -4,6 +4,7 @@
  */
 
 import { api } from './api';
+import type { SelectedEffects } from './effects-api';
 
 // Types
 export interface ScriptLine {
@@ -160,6 +161,10 @@ export interface RenderRequest {
   prompt?: string;  // User's original video concept prompt
   searchKeywords?: string[];
   tiktokSEO?: TikTokSEO;
+  // AI Effect Selection System
+  useAiEffects?: boolean;  // Enable AI-based effect selection
+  aiPrompt?: string;  // Prompt for AI effect analysis (defaults to prompt field)
+  aiEffects?: SelectedEffects;  // Pre-selected AI effects (auto-selected if not provided)
 }
 
 export interface RenderResponse {

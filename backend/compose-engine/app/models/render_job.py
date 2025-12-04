@@ -1,7 +1,7 @@
 """Pydantic models for render job requests."""
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from enum import Enum
 
 
@@ -43,6 +43,15 @@ class ColorGrade(str, Enum):
     BRIGHT = "bright"
     NATURAL = "natural"
     MOODY = "moody"
+
+
+class AIEffectSelection(BaseModel):
+    """AI-selected effects for video rendering."""
+    transitions: List[str] = Field(default=[], description="List of transition effect IDs")
+    motions: List[str] = Field(default=[], description="List of motion effect IDs")
+    filters: List[str] = Field(default=[], description="List of filter effect IDs")
+    text_animations: List[str] = Field(default=[], description="List of text animation IDs")
+    analysis: Optional[Dict[str, Any]] = Field(default=None, description="AI analysis results")
 
 
 class ImageData(BaseModel):
@@ -92,6 +101,19 @@ class RenderSettings(BaseModel):
     color_grade: ColorGrade = Field(
         default=ColorGrade.VIBRANT,
         description="Color grading"
+    )
+    # AI Effect Selection System (GL Transitions + xfade fallback)
+    use_ai_effects: bool = Field(
+        default=True,
+        description="Enable AI-based effect selection (GL Transitions with xfade fallback)"
+    )
+    ai_prompt: Optional[str] = Field(
+        default=None,
+        description="Prompt for AI effect selection (e.g., '신나는 K-POP 댄스')"
+    )
+    ai_effects: Optional[AIEffectSelection] = Field(
+        default=None,
+        description="Pre-selected AI effects (if not provided, will be auto-selected)"
     )
 
 

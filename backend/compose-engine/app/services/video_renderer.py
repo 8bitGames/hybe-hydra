@@ -29,6 +29,9 @@ from ..models.responses import AudioAnalysis
 from .beat_sync import BeatSyncEngine, MIN_IMAGE_DURATION
 from .image_processor import ImageProcessor
 from ..effects import transitions, filters, text_overlay, motion
+from ..effects import get_registry, EffectSelector, SelectionConfig, SelectedEffects
+from ..effects.renderers import get_renderer, RendererAdapter
+from ..effects.renderers.adapter import TransitionSpec
 from ..presets import get_preset
 from ..utils.s3_client import S3Client
 from ..utils.temp_files import TempFileManager
@@ -37,7 +40,8 @@ from ..models.render_job import (
     ImageData,
     AudioData,
     ScriptData,
-    RenderSettings
+    RenderSettings,
+    AIEffectSelection
 )
 
 
@@ -76,6 +80,8 @@ class VideoRenderer:
         self.beat_sync = BeatSyncEngine()
         self.image_processor = ImageProcessor()
         self.temp = TempFileManager()
+        self.effect_selector = EffectSelector()
+        self.renderer_adapter = get_renderer(prefer_gpu=True)
 
     async def render(
         self,
@@ -151,13 +157,26 @@ class VideoRenderer:
             )
 
             # ============================================================
-            # STEP 6: APPLY TRANSITIONS
+            # STEP 6: APPLY TRANSITIONS (AI-powered or preset-based)
             # ============================================================
             await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
 
-            effect_preset = request.settings.effect_preset.value if request.settings.effect_preset else preset.transition_type
-            transition_func = transitions.get_transition(effect_preset)
-            video = transition_func(clips, duration=preset.transition_duration)
+            if request.settings.use_ai_effects:
+                # Use AI-selected effects
+                video = await self._apply_ai_transitions(
+                    clips=clips,
+                    settings=request.settings,
+                    num_images=len(image_paths),
+                    bpm=audio_analysis.bpm,
+                    preset=preset,
+                    job_dir=job_dir,
+                    job_id=job_id
+                )
+            else:
+                # Use traditional preset-based effects
+                effect_preset = request.settings.effect_preset.value if request.settings.effect_preset else preset.transition_type
+                transition_func = transitions.get_transition(effect_preset)
+                video = transition_func(clips, duration=preset.transition_duration)
 
             # ============================================================
             # STEP 7: ADD TEXT OVERLAYS
@@ -496,6 +515,180 @@ class VideoRenderer:
                 pass
 
         gc.collect()
+
+    async def _apply_ai_transitions(
+        self,
+        clips: List[ImageClip],
+        settings: RenderSettings,
+        num_images: int,
+        bpm: Optional[float],
+        preset,
+        job_dir: str,
+        job_id: str
+    ) -> CompositeVideoClip:
+        """
+        Apply AI-selected transitions to clips.
+
+        Uses either pre-selected effects from settings.ai_effects
+        or auto-selects based on ai_prompt using the EffectSelector.
+        """
+        try:
+            # Get AI effects (pre-selected or auto-select)
+            ai_effects = await self._get_ai_effects(settings, num_images, bpm, job_id)
+
+            if not ai_effects.transitions:
+                # Fallback to default preset if no AI transitions
+                logger.warning(f"[{job_id}] No AI transitions selected, using preset fallback")
+                effect_preset = settings.effect_preset.value if settings.effect_preset else preset.transition_type
+                transition_func = transitions.get_transition(effect_preset)
+                return transition_func(clips, duration=preset.transition_duration)
+
+            # Build transition specs from AI selections
+            transition_specs = []
+            for i in range(len(clips) - 1):
+                # Cycle through selected transitions if fewer than needed
+                effect_id = ai_effects.transitions[i % len(ai_effects.transitions)]
+                transition_specs.append(TransitionSpec(
+                    effect_id=effect_id,
+                    duration=preset.transition_duration
+                ))
+
+            logger.info(f"[{job_id}] Applying {len(transition_specs)} AI transitions: {[t.effect_id for t in transition_specs[:3]]}...")
+
+            # Use renderer adapter (with xfade fallback)
+            video = self.renderer_adapter.apply_transitions_to_clips(
+                clips=clips,
+                transitions=transition_specs,
+                temp_dir=job_dir,
+                job_id=job_id
+            )
+
+            if video is not None:
+                return video
+
+            # Fallback if adapter fails
+            logger.warning(f"[{job_id}] Renderer adapter failed, using MoviePy fallback")
+            transition_func = transitions.get_transition("crossfade")
+            return transition_func(clips, duration=preset.transition_duration)
+
+        except Exception as e:
+            logger.error(f"[{job_id}] AI transition error: {e}, using preset fallback")
+            effect_preset = settings.effect_preset.value if settings.effect_preset else preset.transition_type
+            transition_func = transitions.get_transition(effect_preset)
+            return transition_func(clips, duration=preset.transition_duration)
+
+    async def _get_ai_effects(
+        self,
+        settings: RenderSettings,
+        num_images: int,
+        bpm: Optional[float],
+        job_id: str
+    ) -> AIEffectSelection:
+        """
+        Get AI effects - either from pre-selected settings or auto-select.
+        """
+        # If AI effects already provided, use them
+        if settings.ai_effects and settings.ai_effects.transitions:
+            logger.info(f"[{job_id}] Using pre-selected AI effects: {len(settings.ai_effects.transitions)} transitions")
+            return settings.ai_effects
+
+        # Auto-select based on prompt
+        prompt = settings.ai_prompt or ""
+        if not prompt:
+            # Generate default prompt based on vibe
+            vibe_prompts = {
+                "Exciting": "energetic fast-paced dynamic video",
+                "Emotional": "emotional heartfelt touching video",
+                "Pop": "trendy K-POP style video",
+                "Minimal": "clean minimal elegant video"
+            }
+            prompt = vibe_prompts.get(settings.vibe.value, "modern stylish video")
+
+        logger.info(f"[{job_id}] Auto-selecting AI effects for prompt: '{prompt[:50]}...'")
+
+        # Try to get analyzer (requires google-generativeai)
+        try:
+            from ..effects import get_analyzer
+            if get_analyzer is not None:
+                analyzer = get_analyzer()
+                analysis = await analyzer.analyze(prompt, bpm=int(bpm) if bpm else None)
+            else:
+                # Use fallback analysis
+                analysis = self._create_fallback_analysis(prompt, bpm)
+        except Exception as e:
+            logger.warning(f"[{job_id}] Analyzer failed: {e}, using fallback")
+            analysis = self._create_fallback_analysis(prompt, bpm)
+
+        # Select effects based on analysis
+        config = SelectionConfig(
+            num_transitions=min(num_images, 8),  # Max 8 unique transitions
+            num_motions=2,
+            num_filters=1,
+            prefer_gpu=True
+        )
+
+        selected = self.effect_selector.select(analysis, config)
+
+        logger.info(f"[{job_id}] AI selected: {len(selected.transitions)} transitions, {len(selected.motions)} motions")
+
+        return AIEffectSelection(
+            transitions=[e.id for e in selected.transitions],
+            motions=[e.id for e in selected.motions],
+            filters=[e.id for e in selected.filters],
+            text_animations=[e.id for e in selected.text_animations],
+            analysis={
+                "moods": analysis.moods,
+                "genres": analysis.genres,
+                "keywords": analysis.keywords,
+                "intensity": analysis.intensity
+            }
+        )
+
+    def _create_fallback_analysis(self, prompt: str, bpm: Optional[float]):
+        """Create fallback analysis when Gemini analyzer is unavailable."""
+        from ..effects.selector import PromptAnalysis
+
+        # Simple keyword matching
+        prompt_lower = prompt.lower()
+
+        moods = []
+        if any(w in prompt_lower for w in ["exciting", "energetic", "fast", "dynamic", "빠른", "신나는"]):
+            moods.append("energetic")
+        if any(w in prompt_lower for w in ["emotional", "touching", "sad", "감성", "슬픈"]):
+            moods.append("emotional")
+        if any(w in prompt_lower for w in ["calm", "peaceful", "relaxing", "차분한", "평화"]):
+            moods.append("calm")
+        if any(w in prompt_lower for w in ["dramatic", "epic", "intense", "극적인"]):
+            moods.append("dramatic")
+
+        if not moods:
+            moods = ["modern", "dynamic"]
+
+        genres = []
+        if any(w in prompt_lower for w in ["kpop", "k-pop", "케이팝", "아이돌"]):
+            genres.append("kpop")
+        if any(w in prompt_lower for w in ["tiktok", "틱톡", "shorts", "숏폼"]):
+            genres.append("tiktok")
+        if any(w in prompt_lower for w in ["cinematic", "movie", "영화", "시네마틱"]):
+            genres.append("cinematic")
+
+        if not genres:
+            genres = ["general"]
+
+        # Determine intensity from BPM
+        intensity = "medium"
+        if bpm:
+            if bpm > 130:
+                intensity = "high"
+            elif bpm < 90:
+                intensity = "low"
+
+        return PromptAnalysis(
+            moods=moods,
+            genres=genres,
+            keywords=prompt.split()[:5],
+            intensity=intensity
+        )
 
     def _adjust_script_timings(
         self,

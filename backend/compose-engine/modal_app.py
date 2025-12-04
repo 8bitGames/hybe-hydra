@@ -64,6 +64,12 @@ video_image = (
         "libmpg123-0",
         "fonts-noto-cjk",
         "fonts-dejavu",
+        # OpenGL/EGL for future GL Transitions support
+        "libegl1-mesa",
+        "libegl1-mesa-dev",
+        "libglew-dev",
+        "libglfw3-dev",
+        "mesa-utils",
     )
     # Install Jellyfin FFmpeg (has NVENC h264_nvenc/hevc_nvenc baked in)
     .run_commands(

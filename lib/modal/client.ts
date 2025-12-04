@@ -22,6 +22,15 @@ function getCallbackUrl(): string {
   return `${baseUrl}/api/v1/compose/callback`;
 }
 
+// AI Effect Selection types
+export interface AIEffectSelection {
+  transitions?: string[];
+  motions?: string[];
+  filters?: string[];
+  text_animations?: string[];
+  analysis?: Record<string, unknown>;
+}
+
 export interface ModalRenderRequest {
   job_id: string;
   images: Array<{
@@ -47,6 +56,10 @@ export interface ModalRenderRequest {
     target_duration: number;
     text_style: string;
     color_grade: string;
+    // AI Effect Selection System
+    use_ai_effects?: boolean;
+    ai_prompt?: string;
+    ai_effects?: AIEffectSelection;
   };
   output: {
     s3_bucket: string;

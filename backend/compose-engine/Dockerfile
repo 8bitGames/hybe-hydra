@@ -9,6 +9,12 @@ RUN apt-get update && apt-get install -y \
     imagemagick \
     fonts-dejavu \
     fonts-liberation \
+    # OpenGL/EGL for future GL Transitions support
+    libegl1-mesa \
+    libegl1-mesa-dev \
+    libglew-dev \
+    libglfw3-dev \
+    mesa-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure ImageMagick policy for MoviePy text rendering
