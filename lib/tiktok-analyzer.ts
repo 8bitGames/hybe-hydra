@@ -333,6 +333,135 @@ Analyze the video and respond in this exact JSON format:
 }
 
 /**
+ * Analyze image content using Gemini Vision (for photo/slideshow posts)
+ */
+export async function analyzeImageWithGemini(
+  imageUrl: string,
+  metadata: {
+    description: string;
+    hashtags: string[];
+    musicTitle?: string;
+    isSlideshow?: boolean;
+  }
+): Promise<{
+  success: boolean;
+  error?: string;
+  style_analysis?: VideoStyleAnalysis;
+  content_analysis?: VideoContentAnalysis;
+  suggested_prompt?: string;
+  prompt_elements?: TikTokAnalysisResult["prompt_elements"];
+}> {
+  try {
+    const ai = getGeminiClient();
+
+    // Download image and convert to base64
+    console.log("[GEMINI] Fetching image for analysis:", imageUrl);
+
+    const imageResponse = await fetch(imageUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+    }
+
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const imageBase64 = Buffer.from(imageBuffer).toString("base64");
+    const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
+
+    console.log(`[GEMINI] Image size: ${(imageBuffer.byteLength / 1024).toFixed(2)} KB`);
+
+    const analysisPrompt = `You are a visual style analyst specializing in social media content. Analyze this TikTok ${metadata.isSlideshow ? "slideshow/photo carousel" : "image"} and provide a detailed breakdown.
+
+Context from the post:
+- Original description: "${metadata.description}"
+- Hashtags: ${metadata.hashtags.join(", ")}
+${metadata.musicTitle ? `- Music: "${metadata.musicTitle}"` : ""}
+
+Analyze the image and respond in this exact JSON format:
+{
+  "style_analysis": {
+    "visual_style": "describe the overall visual aesthetic (e.g., 'minimalist', 'vibrant pop', 'aesthetic', 'editorial')",
+    "color_palette": ["list", "dominant", "colors"],
+    "lighting": "describe lighting style (e.g., 'natural daylight', 'soft', 'dramatic', 'studio')",
+    "camera_movement": ["suggest video camera techniques that would match this style"],
+    "transitions": ["suggest transition styles for video version"],
+    "mood": "overall emotional tone (e.g., 'calm', 'energetic', 'dreamy', 'bold')",
+    "pace": "suggested editing pace for video (e.g., 'slow and contemplative', 'medium', 'fast-paced')",
+    "effects": ["visual effects to apply like 'soft focus', 'grain', 'color grading'"]
+  },
+  "content_analysis": {
+    "main_subject": "describe the main subject in the image",
+    "actions": ["suggest actions/movements for video version"],
+    "setting": "describe the location/environment",
+    "props": ["list notable props or objects"],
+    "clothing_style": "describe fashion/clothing style if applicable"
+  },
+  "suggested_prompt": "Write a detailed Veo video generation prompt that would create a video matching this image's style and mood. Be specific about visual elements, suggested camera work, and mood. Include motion and action suggestions. Do NOT include any real person names.",
+  "prompt_elements": {
+    "style_keywords": ["5-7 key style descriptors"],
+    "mood_keywords": ["3-5 mood/emotion keywords"],
+    "action_keywords": ["3-5 suggested action/movement keywords"],
+    "technical_suggestions": {
+      "aspect_ratio": "9:16 or 16:9 or 1:1 based on the image",
+      "duration": 8,
+      "camera_style": "suggested camera technique"
+    }
+  }
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType: contentType,
+                data: imageBase64,
+              },
+            },
+            { text: analysisPrompt },
+          ],
+        },
+      ],
+    });
+
+    const responseText = response.text || "";
+    console.log("[GEMINI] Image analysis response received, length:", responseText.length);
+
+    // Parse JSON from response
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error("[GEMINI] Failed to find JSON in response");
+      throw new Error("Failed to parse analysis response");
+    }
+
+    const analysis = JSON.parse(jsonMatch[0]);
+
+    console.log("[GEMINI] Parsed image analysis keys:", Object.keys(analysis));
+    console.log("[GEMINI] suggested_prompt:", analysis.suggested_prompt?.slice(0, 200));
+
+    return {
+      success: true,
+      style_analysis: analysis.style_analysis,
+      content_analysis: analysis.content_analysis,
+      suggested_prompt: analysis.suggested_prompt,
+      prompt_elements: analysis.prompt_elements,
+    };
+  } catch (error) {
+    console.error("[GEMINI] Image analysis error:", error);
+
+    // Fallback to metadata-only analysis
+    console.log("[GEMINI] Falling back to metadata-only analysis");
+    return analyzeFromMetadataOnly(metadata);
+  }
+}
+
+/**
  * Fallback analysis using only metadata (no video)
  */
 function analyzeFromMetadataOnly(metadata: {
@@ -540,6 +669,36 @@ export async function analyzeTikTokVideo(url: string): Promise<TikTokAnalysisRes
     return 0;
   };
 
+  // Check if this is a photo/slideshow post
+  const getImageUrls = (): string[] => {
+    // Check for image type post
+    if (data.type === "image" || data.imagePost) {
+      // Try different image field structures
+      const images = data.images as Array<{ url?: string; displayImage?: string }> | undefined;
+      if (Array.isArray(images)) {
+        return images
+          .map(img => img.url || img.displayImage || "")
+          .filter(url => url.length > 0);
+      }
+      // Some versions use imagePost.images
+      const imagePost = data.imagePost as { images?: Array<{ url?: string }> } | undefined;
+      if (imagePost?.images) {
+        return imagePost.images
+          .map(img => img.url || "")
+          .filter(url => url.length > 0);
+      }
+    }
+    // Check for cover images as fallback
+    const covers = data.covers as string[] | undefined;
+    if (Array.isArray(covers) && covers.length > 0) {
+      return covers;
+    }
+    return [];
+  };
+
+  const isPhotoPost = data.type === "image" || !!data.imagePost || getImageUrls().length > 0;
+  const imageUrls = getImageUrls();
+
   const metadata = {
     id: (data.id || data.aweme_id || "") as string,
     description: (data.description || data.desc || "") as string,
@@ -550,6 +709,8 @@ export async function analyzeTikTokVideo(url: string): Promise<TikTokAnalysisRes
     duration: getDuration(),
     thumbnail_url: getThumbnail(),
     video_url: getVideoUrl(),
+    is_photo_post: isPhotoPost,
+    image_urls: imageUrls,
   };
 
   console.log("[ANALYZER] Metadata extracted:", {
@@ -561,16 +722,28 @@ export async function analyzeTikTokVideo(url: string): Promise<TikTokAnalysisRes
     videoUrl: metadata.video_url?.slice(0, 100),
     thumbnail: metadata.thumbnail_url?.slice(0, 100),
     stats: metadata.stats,
+    isPhotoPost: isPhotoPost,
+    imageCount: imageUrls.length,
   });
 
-  // Step 2: Analyze with Gemini (if video URL available)
+  // Step 2: Analyze with Gemini
   let analysisResult;
 
   if (metadata.video_url) {
+    // Video analysis
     analysisResult = await analyzeVideoWithGemini(metadata.video_url, {
       description: metadata.description,
       hashtags: metadata.hashtags,
       musicTitle: metadata.music?.title,
+    });
+  } else if (metadata.is_photo_post && (metadata.image_urls.length > 0 || metadata.thumbnail_url)) {
+    // Photo/slideshow analysis - use images or thumbnail
+    const imageUrl = metadata.image_urls[0] || metadata.thumbnail_url;
+    analysisResult = await analyzeImageWithGemini(imageUrl, {
+      description: metadata.description,
+      hashtags: metadata.hashtags,
+      musicTitle: metadata.music?.title,
+      isSlideshow: metadata.image_urls.length > 1,
     });
   } else {
     // Fallback to metadata-only analysis
@@ -604,10 +777,12 @@ export async function analyzeTikTokVideo(url: string): Promise<TikTokAnalysisRes
 
 /**
  * Check if URL is a valid TikTok URL
+ * Supports: /video/, /photo/, short URLs (vm.tiktok.com, vt.tiktok.com, /t/)
  */
 export function isValidTikTokUrl(url: string): boolean {
   const tiktokPatterns = [
     /^https?:\/\/(www\.)?tiktok\.com\/@[\w.-]+\/video\/\d+/,
+    /^https?:\/\/(www\.)?tiktok\.com\/@[\w.-]+\/photo\/\d+/, // Photo/slideshow posts
     /^https?:\/\/(vm|vt)\.tiktok\.com\/[\w]+/,
     /^https?:\/\/(www\.)?tiktok\.com\/t\/[\w]+/,
   ];

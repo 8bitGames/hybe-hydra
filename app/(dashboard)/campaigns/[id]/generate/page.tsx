@@ -846,6 +846,52 @@ export default function VideoGeneratePage() {
     }
   }, [searchParams]);
 
+  // Load TikTok analysis prompt from session storage (from Create page TikTok analysis)
+  useEffect(() => {
+    try {
+      const tiktokPrompt = sessionStorage.getItem("tiktok_analysis_prompt");
+      const tiktokData = sessionStorage.getItem("tiktok_analysis_data");
+
+      if (tiktokPrompt) {
+        setPrompt(tiktokPrompt);
+        console.log("[Generate] Loaded TikTok analysis prompt from session storage");
+
+        // Parse analysis data for additional context
+        if (tiktokData) {
+          const analysisData = JSON.parse(tiktokData);
+          console.log("[Generate] TikTok analysis data:", analysisData);
+
+          // Set transformed prompt info if we have style analysis
+          if (analysisData.style_analysis) {
+            setTransformedPrompt({
+              status: "success",
+              veo_prompt: tiktokPrompt,
+              negative_prompt: "",
+              technical_settings: {
+                aspect_ratio: "9:16", // TikTok default vertical
+                duration_seconds: 15,
+                style_preset: null,
+              },
+              analysis: {
+                intent: analysisData.style_analysis.overall_mood || "TikTok 스타일 영상",
+                trend_applied: analysisData.prompt_elements?.hashtags || [],
+                suggestions: [],
+              },
+              celebrity_warning: false,
+              detected_celebrities: [],
+            });
+          }
+        }
+
+        // Clear session storage after reading to prevent stale data
+        sessionStorage.removeItem("tiktok_analysis_prompt");
+        sessionStorage.removeItem("tiktok_analysis_data");
+      }
+    } catch (err) {
+      console.error("[Generate] Error loading TikTok analysis from session storage:", err);
+    }
+  }, []);
+
   // Load prompt from Bridge on mount
   useEffect(() => {
     const bridgeData = loadBridgePrompt(campaignId);
