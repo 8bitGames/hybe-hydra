@@ -202,7 +202,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       negative_prompt,
       merchandise_references,
       style_preset_ids,
-      duration_seconds = 5,
+      duration_seconds = 8,
       aspect_ratio = "9:16",
       reference_image_id,
       audio_asset_id,  // Required: audio track for composition

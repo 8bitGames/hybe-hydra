@@ -114,7 +114,7 @@ async function startQuickVideoGeneration(
       const veoParams: VeoGenerationParams = {
         prompt: finalVideoPrompt,
         negativePrompt: params.negativePrompt,
-        durationSeconds: params.durationSeconds || 5,
+        durationSeconds: params.durationSeconds || 8,
         aspectRatio: (params.aspectRatio as "16:9" | "9:16" | "1:1") || "16:9",
         referenceImageBase64: generatedImageBase64,
         style: params.style,
@@ -263,7 +263,7 @@ export async function POST(request: NextRequest) {
     const {
       prompt,
       negative_prompt,
-      duration_seconds = 5,
+      duration_seconds = 8,
       aspect_ratio = "9:16",
       reference_style,
       enable_i2v,

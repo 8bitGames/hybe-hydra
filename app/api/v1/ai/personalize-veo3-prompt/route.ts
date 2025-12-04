@@ -228,7 +228,7 @@ interface GenerateRequest {
   images: ImageData[];
   // Video settings
   aspectRatio?: string;  // Default: 9:16
-  durationSeconds?: number;  // Default: 5
+  durationSeconds?: number;  // Default: 8
   style?: string;
   // Context for prompt optimization
   context?: ContextData;
@@ -749,7 +749,7 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
     audioAssetId,
     images,
     aspectRatio = "9:16",
-    durationSeconds = 5,
+    durationSeconds = 8,
     style,
     context,
     imageDescription,

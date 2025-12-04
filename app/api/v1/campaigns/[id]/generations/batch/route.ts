@@ -48,7 +48,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       base_prompt,
       negative_prompt,
       style_preset_ids,
-      duration_seconds = 5,
+      duration_seconds = 8,
       aspect_ratio = "16:9",
       reference_image_id,
       reference_style,
