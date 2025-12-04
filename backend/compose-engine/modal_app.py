@@ -84,7 +84,7 @@ def send_callback(callback_url: str, callback_secret: str, job_id: str, status: 
         }
         print(f"[{job_id}] Sending callback to {callback_url}")
 
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=30.0) as client:  # 30s to handle Vercel cold starts
             response = client.post(callback_url, json=payload)
             print(f"[{job_id}] Callback response: {response.status_code}")
             if response.status_code != 200:
@@ -102,6 +102,7 @@ def send_callback(callback_url: str, callback_secret: str, job_id: str, status: 
     retries=2,  # Auto-retry on failure
     scaledown_window=300,  # Keep container warm for 5 minutes (faster cold starts)
     volumes={"/cache": cache_volume},  # Persistent cache for audio/image analysis
+    max_containers=8,  # Limit to max 8 concurrent GPU workers
 )
 def render_video(request_data: dict) -> dict:
     """
@@ -202,6 +203,7 @@ def render_video(request_data: dict) -> dict:
     retries=2,
     scaledown_window=300,  # Keep container warm for 5 minutes
     volumes={"/cache": cache_volume},
+    max_containers=8,  # Limit to max 8 concurrent CPU workers
 )
 def render_video_cpu(request_data: dict) -> dict:
     """

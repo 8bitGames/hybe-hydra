@@ -29,6 +29,22 @@ class ImageProcessor:
         else:
             print("[ImageProcessor] Using CPU (PIL) - cupy not available")
 
+    def create_black_image(
+        self,
+        aspect_ratio: str,
+        output_path: str
+    ) -> str:
+        """Create a black screen image for the given aspect ratio."""
+        ratios = {
+            "9:16": (1080, 1920),
+            "16:9": (1920, 1080),
+            "1:1": (1080, 1080)
+        }
+        target_w, target_h = ratios.get(aspect_ratio, (1080, 1920))
+        img = Image.new("RGB", (target_w, target_h), (0, 0, 0))
+        img.save(output_path, quality=95)
+        return output_path
+
     def resize_for_aspect(
         self,
         image_path: str,
@@ -39,6 +55,7 @@ class ImageProcessor:
         Resize and crop image for target aspect ratio.
         Uses GPU when available for faster processing.
         Returns path to processed image.
+        If image is invalid/corrupted, creates a black screen instead.
         """
         ratios = {
             "9:16": (1080, 1920),
@@ -47,8 +64,19 @@ class ImageProcessor:
         }
         target_w, target_h = ratios.get(aspect_ratio, (1080, 1920))
 
-        # Open image
-        img = Image.open(image_path)
+        if output_path is None:
+            base, ext = os.path.splitext(image_path)
+            output_path = f"{base}_processed{ext}"
+
+        # Try to open image, fall back to black screen on error
+        try:
+            img = Image.open(image_path)
+            img.verify()  # Verify it's a valid image
+            # Re-open after verify (verify consumes the file)
+            img = Image.open(image_path)
+        except Exception as e:
+            print(f"[ImageProcessor] Invalid image, using black screen: {image_path} - {e}")
+            return self.create_black_image(aspect_ratio, output_path)
 
         # Convert to RGB if necessary
         if img.mode in ("RGBA", "P"):
@@ -77,10 +105,6 @@ class ImageProcessor:
             img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
         # Save
-        if output_path is None:
-            base, ext = os.path.splitext(image_path)
-            output_path = f"{base}_processed{ext}"
-
         img.save(output_path, quality=95)
         return output_path
 

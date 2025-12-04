@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import {
   RefreshCw,
+  RefreshCcw,
   Search,
   ArrowRight,
   ArrowLeft,
@@ -68,7 +69,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 
-type StatusFilter = "all" | "processing" | "completed" | "approved" | "rejected";
+type StatusFilter = "all" | "processing" | "completed" | "approved" | "rejected" | "failed";
 type ViewMode = "grid" | "list";
 type SortBy = "newest" | "oldest" | "status";
 
@@ -79,16 +80,24 @@ function VideoDetailModal({
   onClose,
   onApprove,
   onReject,
+  onRetry,
+  onDelete,
   isApproving,
   isRejecting,
+  isRetrying,
+  isDeleting,
 }: {
   video: ProcessingVideo | null;
   isOpen: boolean;
   onClose: () => void;
   onApprove: () => void;
   onReject: () => void;
+  onRetry: () => void;
+  onDelete: () => void;
   isApproving: boolean;
   isRejecting: boolean;
+  isRetrying: boolean;
+  isDeleting: boolean;
 }) {
   const { language } = useI18n();
   const isKorean = language === "ko";
@@ -587,6 +596,17 @@ function VideoDetailModal({
                     {isKorean ? "거부" : "Reject"}
                   </Button>
                 </div>
+              ) : video.status === "failed" ? (
+                <div className="flex items-center gap-3">
+                  <Button
+                    className="flex-1 h-11 bg-neutral-900 text-white hover:bg-neutral-800"
+                    onClick={onRetry}
+                    disabled={isRetrying}
+                  >
+                    {isRetrying ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCcw className="w-4 h-4 mr-2" />}
+                    {isKorean ? "재시도" : "Retry"}
+                  </Button>
+                </div>
               ) : video.status === "approved" ? (
                 <div className="flex items-center justify-center gap-2 py-2 px-4 bg-emerald-50 border border-emerald-200 rounded-lg">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600" />
@@ -600,6 +620,23 @@ function VideoDetailModal({
                   <span className="font-medium text-neutral-600">
                     {isKorean ? "거부된 영상" : "Rejected"}
                   </span>
+                </div>
+              ) : video.status === "processing" ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 flex items-center justify-center gap-2 py-2 px-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                    <span className="font-medium text-blue-700">
+                      {isKorean ? "처리중..." : "Processing..."}
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="h-11 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    onClick={onDelete}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -952,9 +989,12 @@ export default function ProcessingPage() {
   const [selectedVideo, setSelectedVideo] = useState<ProcessingVideo | null>(null);
   const [isApproving, setIsApproving] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isBulkApproving, setIsBulkApproving] = useState(false);
   const [isBulkRejecting, setIsBulkRejecting] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isBulkRetrying, setIsBulkRetrying] = useState(false);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
@@ -979,6 +1019,35 @@ export default function ProcessingPage() {
     setIsRejecting(false);
     setSelectedVideo(null);
   }, [selectedVideo, rejectProcessingVideo]);
+
+  const handleRetry = useCallback(async () => {
+    if (!selectedVideo) return;
+    setIsRetrying(true);
+    try {
+      await videoApi.retry(selectedVideo.id);
+      // Refresh the list to get updated status
+      await refetchGenerations();
+      setSelectedVideo(null);
+    } catch (error) {
+      console.error('Retry failed:', error);
+    }
+    setIsRetrying(false);
+  }, [selectedVideo, refetchGenerations]);
+
+  const handleDelete = useCallback(async () => {
+    if (!selectedVideo) return;
+    setIsDeleting(true);
+    try {
+      // Use force=true to delete processing videos
+      await videoApi.delete(selectedVideo.id, true);
+      // Refresh the list
+      await refetchGenerations();
+      setSelectedVideo(null);
+    } catch (error) {
+      console.error('Delete failed:', error);
+    }
+    setIsDeleting(false);
+  }, [selectedVideo, refetchGenerations]);
 
   // Bulk action handlers - all videos are selectable (for deletion)
   const selectableVideos = useMemo(() =>
@@ -1041,6 +1110,27 @@ export default function ProcessingPage() {
     refetchGenerations();
   }, [selectedVideos, removeProcessingVideo, setSelectedProcessingVideos, refetchGenerations]);
 
+  const handleBulkRetry = useCallback(async () => {
+    setIsBulkRetrying(true);
+    const failedIds = selectedVideos.filter((id) => {
+      const video = videos.find((v) => v.id === id);
+      return video?.status === "failed";
+    });
+
+    for (const id of failedIds) {
+      try {
+        await videoApi.retry(id);
+      } catch (error) {
+        console.error(`Failed to retry video ${id}:`, error);
+      }
+    }
+
+    setSelectedProcessingVideos([]);
+    setIsBulkRetrying(false);
+    // Refetch to sync with database
+    refetchGenerations();
+  }, [selectedVideos, videos, setSelectedProcessingVideos, refetchGenerations]);
+
   const handleClearSelection = useCallback(() => {
     setSelectedProcessingVideos([]);
   }, [setSelectedProcessingVideos]);
@@ -1090,6 +1180,7 @@ export default function ProcessingPage() {
     completed: videos.filter((v) => v.status === "completed").length,
     approved: videos.filter((v) => v.status === "approved").length,
     rejected: videos.filter((v) => v.status === "rejected").length,
+    failed: videos.filter((v) => v.status === "failed").length,
   }), [videos]);
 
   // Handle proceed to publish - always allowed
@@ -1156,6 +1247,20 @@ export default function ProcessingPage() {
               <p className="text-lg font-bold text-emerald-600">{stats.approved}</p>
             </div>
           </div>
+          {stats.failed > 0 && (
+            <>
+              <div className="h-8 w-px bg-neutral-200" />
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-red-50 border border-red-200 flex items-center justify-center">
+                  <XCircle className="h-4 w-4 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-500">{isKorean ? "실패" : "Failed"}</p>
+                  <p className="text-lg font-bold text-red-600">{stats.failed}</p>
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="flex-1" />
 
@@ -1218,6 +1323,7 @@ export default function ProcessingPage() {
               <SelectItem value="completed">{isKorean ? "완료" : "Completed"}</SelectItem>
               <SelectItem value="approved">{isKorean ? "승인됨" : "Approved"}</SelectItem>
               <SelectItem value="rejected">{isKorean ? "거부됨" : "Rejected"}</SelectItem>
+              <SelectItem value="failed">{isKorean ? "실패" : "Failed"}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -1416,6 +1522,27 @@ export default function ProcessingPage() {
 
             <div className="h-5 w-px bg-neutral-600" />
 
+            {/* Bulk Retry - only show if any selected are failed */}
+            {selectedVideos.some((id) => {
+              const v = videos.find((v) => v.id === id);
+              return v?.status === "failed";
+            }) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleBulkRetry}
+                disabled={isBulkRetrying}
+                className="text-amber-400 hover:text-amber-300 hover:bg-neutral-800 disabled:text-neutral-600"
+              >
+                {isBulkRetrying ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4 mr-2" />
+                )}
+                {isKorean ? "재시도" : "Retry"}
+              </Button>
+            )}
+
             {/* Bulk Approve */}
             <Button
               variant="ghost"
@@ -1489,8 +1616,12 @@ export default function ProcessingPage() {
         onClose={() => setSelectedVideo(null)}
         onApprove={handleApprove}
         onReject={handleReject}
+        onRetry={handleRetry}
+        onDelete={handleDelete}
         isApproving={isApproving}
         isRejecting={isRejecting}
+        isRetrying={isRetrying}
+        isDeleting={isDeleting}
       />
     </div>
   );

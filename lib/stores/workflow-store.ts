@@ -154,7 +154,7 @@ export interface ProcessingVideo {
 export interface ProcessingData {
   videos: ProcessingVideo[];
   selectedVideos: string[]; // IDs of videos selected for publishing
-  filterStatus: "all" | "processing" | "completed" | "approved" | "rejected";
+  filterStatus: "all" | "processing" | "completed" | "approved" | "rejected" | "failed";
   sortBy: "newest" | "oldest" | "status";
   viewMode: "grid" | "list";
 }

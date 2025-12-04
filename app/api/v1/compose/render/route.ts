@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
+import { Prisma } from '@prisma/client';
 import { submitRenderToModal, ModalRenderRequest } from '@/lib/modal/client';
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
@@ -128,28 +129,71 @@ export async function POST(request: NextRequest) {
       aiEffects,
     }));
 
-    // Create or update VideoGeneration record with composeData
+    // Build imageAssets data for storage - includes URLs for retry functionality
+    const imageAssetsData = images.map((img, idx) => ({
+      id: `image-${idx}`,
+      url: img.url,
+      order: img.order,
+    }));
+
+    // Build script data for storage
+    const scriptDataForDb = script?.lines ? {
+      lines: script.lines,
+      totalDuration: targetDuration,
+    } as Prisma.InputJsonValue : Prisma.JsonNull;
+
+    // Build TikTok SEO data for storage
+    const tiktokSEOData = tiktokSEO ? {
+      description: tiktokSEO.description,
+      hashtags: tiktokSEO.hashtags,
+      keywords: tiktokSEO.keywords,
+      searchIntent: tiktokSEO.searchIntent,
+      suggestedPostingTimes: tiktokSEO.suggestedPostingTimes,
+      textOverlayKeywords: tiktokSEO.textOverlayKeywords,
+    } as Prisma.InputJsonValue : Prisma.JsonNull;
+
+    // Create or update VideoGeneration record with all compose metadata
     await prisma.videoGeneration.upsert({
       where: { id: generationId },
       create: {
         id: generationId,
         campaignId,
+        generationType: 'COMPOSE',
         prompt,
         audioAssetId,
+        audioStartTime,
         aspectRatio,
-        durationSeconds: Math.ceil(targetDuration),
+        durationSeconds: Math.ceil(targetDuration) || 15,
         status: 'PROCESSING',
         progress: 0,
         createdBy: user.id,
+        // Store compose-specific fields in proper DB columns
+        scriptData: scriptDataForDb,
+        imageAssets: imageAssetsData,
+        effectPreset,
+        trendKeywords: searchKeywords,
+        tiktokSEO: tiktokSEOData,
+        // Store additional compose settings in qualityMetadata for retry
         qualityMetadata: {
           composeData,
+          imageUrls: images.map(img => img.url), // Store URLs for easy retry access
         },
       },
       update: {
+        generationType: 'COMPOSE',
+        audioStartTime,
         status: 'PROCESSING',
         progress: 0,
+        errorMessage: null, // Clear any previous error
+        // Update compose-specific fields
+        scriptData: scriptDataForDb,
+        imageAssets: imageAssetsData,
+        effectPreset,
+        trendKeywords: searchKeywords,
+        tiktokSEO: tiktokSEOData,
         qualityMetadata: {
           composeData,
+          imageUrls: images.map(img => img.url),
         },
       }
     });
@@ -208,13 +252,14 @@ export async function POST(request: NextRequest) {
 
     console.log('[Compose Render] Modal response:', modalResponse);
 
-    // Store modal call_id in database for status polling
+    // Store modal call_id and image URLs in database for status polling and retry
     await prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         qualityMetadata: {
           composeData,
           modalCallId: modalResponse.call_id,
+          imageUrls: images.map(img => img.url), // Store for retry functionality
         },
       }
     });

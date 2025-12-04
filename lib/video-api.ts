@@ -325,8 +325,13 @@ export const videoApi = {
   cancel: (generationId: string) =>
     api.post<VideoGeneration>(`/api/v1/generations/${generationId}/cancel`),
 
-  delete: (generationId: string) =>
-    api.delete(`/api/v1/generations/${generationId}`),
+  delete: (generationId: string, force?: boolean) =>
+    api.delete(`/api/v1/generations/${generationId}${force ? '?force=true' : ''}`),
+
+  retry: (generationId: string) =>
+    api.post<{ jobId: string; generationId: string; status: string; message: string }>(
+      `/api/v1/generations/${generationId}/retry`
+    ),
 };
 
 // Preview Image Types (for I2V two-step workflow)

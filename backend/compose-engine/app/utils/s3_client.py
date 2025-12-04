@@ -44,7 +44,7 @@ def get_s3_executor() -> ThreadPoolExecutor:
     """Get or create shared thread pool for S3 operations."""
     global _s3_executor
     if _s3_executor is None:
-        _s3_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="s3_pool")
+        _s3_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="s3_pool")
     return _s3_executor
 
 
@@ -112,6 +112,23 @@ class S3Client:
                 get_s3_executor(),
                 lambda k=key: self.client.download_file(self.bucket, k, local_path)
             )
+            # Validate downloaded file exists and is not empty
+            if not os.path.exists(local_path):
+                raise ValueError(f"S3 download failed - file not created: {local_path}")
+            file_size = os.path.getsize(local_path)
+            if file_size == 0:
+                os.remove(local_path)
+                raise ValueError(f"S3 download failed - empty file: {key}")
+            print(f"[S3Client] Downloaded {file_size} bytes to {local_path}")
+
+            # Log a warning if image file seems invalid (don't throw - image processor will handle it)
+            if local_path.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')):
+                with open(local_path, 'rb') as f:
+                    data = f.read()
+                if is_html_response(data):
+                    print(f"[S3Client] WARNING: S3 file appears to be HTML (error page?): {key}")
+                elif not is_valid_image(data):
+                    print(f"[S3Client] WARNING: S3 file may not be a valid image: {key} (size={file_size})")
         elif f".s3.{self.region}.amazonaws.com" in url or f".s3.amazonaws.com" in url:
             # Alternative S3 URL format - fallback to HTTP download since key extraction is complex
             print(f"[S3Client] Alternative S3 URL format - using HTTP download")

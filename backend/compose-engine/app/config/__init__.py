@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     temp_dir: str = os.path.join(tempfile.gettempdir(), "compose")
 
     # Rendering settings
-    max_concurrent_jobs: int = 4
+    max_concurrent_jobs: int = 8  # Max 8 concurrent render jobs
     default_fps: int = 30
     default_video_codec: str = "libx264"
     default_audio_codec: str = "aac"

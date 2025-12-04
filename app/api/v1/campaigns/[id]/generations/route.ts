@@ -5,7 +5,9 @@ import { VideoGenerationStatus } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
 import { generateVideo, VeoGenerationParams } from "@/lib/veo";
 import { analyzeAudio } from "@/lib/audio-analyzer";
-import { composeWithOptimalAudio } from "@/lib/video-audio-composer";
+// Use Modal for audio composition (GPU-accelerated, works in serverless)
+import { composeVideoWithAudioModal, type AudioComposeRequest } from "@/lib/modal/client";
+import { generateS3Key } from "@/lib/storage";
 import { generateImage, convertAspectRatioForImagen } from "@/lib/imagen";
 import { generateImagePromptForI2V, generateVideoPromptForI2V } from "@/lib/gemini-prompt";
 
@@ -289,31 +291,53 @@ async function startVideoGeneration(
         },
       });
 
-      // Step 3: Compose video with audio
-      console.log(`[Generation ${generationId}] Composing video with audio...`);
-      const composeResult = await composeWithOptimalAudio({
-        videoUrl: result.videoUrl,
-        audioUrl: params.audioUrl,
-        campaignId,
-        audioAnalysis,
-        maxAudioDuration: 15,
-        fadeIn: 0.5,
-        fadeOut: 1.0,
+      // Step 3: Compose video with audio using Modal (GPU-accelerated)
+      console.log(`[Generation ${generationId}] Composing video with audio via Modal...`);
+
+      const s3Bucket = process.env.S3_BUCKET || "hydra-media";
+      const s3Key = generateS3Key(campaignId, "composed_video.mp4");
+
+      const composeRequest: AudioComposeRequest = {
+        job_id: uuidv4(),
+        video_url: result.videoUrl,
+        audio_url: params.audioUrl,
+        audio_start_time: audioAnalysis?.best_15s_start || 0,
+        audio_volume: 1.0,
+        fade_in: 0.5,
+        fade_out: 1.0,
+        mix_original_audio: false,
+        output_s3_bucket: s3Bucket,
+        output_s3_key: s3Key,
+      };
+
+      console.log(`[Generation ${generationId}] Modal compose request:`, {
+        video_url: result.videoUrl.slice(0, 60) + "...",
+        audio_start_time: composeRequest.audio_start_time,
+        output_key: s3Key,
       });
 
-      if (composeResult.success && composeResult.composedUrl) {
+      const composeResult = await composeVideoWithAudioModal({
+        ...composeRequest,
+        pollInterval: 3000,  // Poll every 3 seconds
+        maxWaitTime: 300000, // Max 5 minutes
+        onProgress: (status) => {
+          console.log(`[Generation ${generationId}] Modal compose status: ${status.status}`);
+        },
+      });
+
+      if (composeResult.status === "completed" && composeResult.output_url) {
         // Success - update with composed video URL
         await prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "COMPLETED",
             progress: 100,
-            composedOutputUrl: composeResult.composedUrl,
-            audioStartTime: composeResult.audioStartTime,
-            audioDuration: composeResult.audioDuration,
+            composedOutputUrl: composeResult.output_url,
+            audioStartTime: audioAnalysis?.best_15s_start || 0,
+            audioDuration: 15,
           },
         });
-        console.log(`[Generation ${generationId}] Complete with audio!`);
+        console.log(`[Generation ${generationId}] Complete with audio! URL: ${composeResult.output_url.slice(0, 60)}...`);
       } else {
         // Composition failed, but video succeeded - mark as completed with warning
         console.warn(`[Generation ${generationId}] Audio composition failed:`, composeResult.error);

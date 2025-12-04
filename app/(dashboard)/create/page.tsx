@@ -46,6 +46,7 @@ import {
   Check,
   Library,
 } from "lucide-react";
+import { InlineComposeFlow } from "@/components/features/create/compose/InlineComposeFlow";
 
 // ============================================================================
 // Helper Functions
@@ -1283,6 +1284,7 @@ export default function CreatePage() {
   const [audioAsset, setAudioAsset] = useState<UploadedAsset | null>(null);
   const [imageAssets, setImageAssets] = useState<UploadedAsset[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showComposeFlow, setShowComposeFlow] = useState(false);
 
   // Personalization modal state
   const [showPersonalizeModal, setShowPersonalizeModal] = useState(false);
@@ -1536,7 +1538,7 @@ export default function CreatePage() {
     };
   }, [analyze, selectedCampaignName, selectedCampaign]);
 
-  // Handle compose
+  // Handle compose - show inline compose flow instead of navigating
   const handleCompose = useCallback(() => {
     if (!selectedCampaignId) {
       toast.warning(
@@ -1546,10 +1548,9 @@ export default function CreatePage() {
       return;
     }
 
-    setIsGenerating(true);
-    // Navigate to campaign compose page
-    router.push(`/campaigns/${selectedCampaignId}/compose?from_workflow=true`);
-  }, [selectedCampaignId, router, language, toast]);
+    // Show inline compose flow instead of navigating to a new page
+    setShowComposeFlow(true);
+  }, [selectedCampaignId, language, toast]);
 
   // Translations
   const t = {
@@ -1561,6 +1562,26 @@ export default function CreatePage() {
     back: language === "ko" ? "분석으로" : "Back to Analyze",
     selectCampaign: language === "ko" ? "캠페인 선택" : "Select Campaign",
   };
+
+  // If compose flow is active, show the inline compose flow WITH partially disabled WorkflowHeader
+  if (showComposeFlow && selectedCampaignId) {
+    return (
+      <div className="h-full flex flex-col bg-white">
+        {/* WorkflowHeader - can go back to Analyze, but cannot go forward to Processing */}
+        <WorkflowHeader
+          onBack={goToAnalyze}
+          disableForward={true}
+          subtitle={language === "ko" ? "컴포즈 영상 생성 중..." : "Creating Compose Video..."}
+        />
+        {/* Inline Compose Flow - has its own step navigation */}
+        <InlineComposeFlow
+          campaignId={selectedCampaignId}
+          campaignName={selectedCampaignName}
+          onBack={() => setShowComposeFlow(false)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col bg-white">

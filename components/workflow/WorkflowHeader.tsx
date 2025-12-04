@@ -35,6 +35,12 @@ interface WorkflowHeaderProps {
 
   // Optional subtitle override
   subtitle?: string;
+
+  // Disable all navigation (for sub-flows like compose)
+  disabled?: boolean;
+
+  // Only disable forward navigation (allow back but not forward)
+  disableForward?: boolean;
 }
 
 export function WorkflowHeader({
@@ -43,6 +49,8 @@ export function WorkflowHeader({
   canProceed = true,
   actionButton,
   subtitle,
+  disabled = false,
+  disableForward = false,
 }: WorkflowHeaderProps) {
   const { language } = useI18n();
   const pathname = usePathname();
@@ -80,41 +88,60 @@ export function WorkflowHeader({
           const StageIcon = stage.icon;
           const isCurrent = pathname.startsWith(stage.route);
           const isPast = index < currentIndex;
+          const isFuture = index > currentIndex;
           const isLast = index === STAGES.length - 1;
+
+          // Determine if this link should be disabled
+          const isLinkDisabled = disabled || (disableForward && isFuture);
+
+          const content = (
+            <>
+              <div
+                className={cn(
+                  "flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all",
+                  isCurrent && "border-neutral-900 bg-neutral-900 text-white",
+                  isPast && "border-neutral-400 bg-transparent text-neutral-400",
+                  !isCurrent && !isPast && "border-neutral-300 bg-transparent text-neutral-300",
+                  !isLinkDisabled && "hover:border-neutral-500",
+                  isLinkDisabled && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                <StageIcon className="w-4 h-4" />
+              </div>
+              <span
+                className={cn(
+                  "text-xs font-medium whitespace-nowrap transition-colors",
+                  isCurrent && "text-neutral-900",
+                  isPast && "text-neutral-500",
+                  !isCurrent && !isPast && "text-neutral-400",
+                  isLinkDisabled && "opacity-50"
+                )}
+              >
+                {stage.label[language]}
+              </span>
+            </>
+          );
 
           return (
             <React.Fragment key={stage.id}>
-              <Link
-                href={stage.route}
-                className="flex flex-col items-center gap-1 transition-all cursor-pointer"
-              >
-                <div
-                  className={cn(
-                    "flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all",
-                    isCurrent && "border-neutral-900 bg-neutral-900 text-white",
-                    isPast && "border-neutral-400 bg-transparent text-neutral-400",
-                    !isCurrent && !isPast && "border-neutral-300 bg-transparent text-neutral-300",
-                    "hover:border-neutral-500"
-                  )}
-                >
-                  <StageIcon className="w-4 h-4" />
+              {isLinkDisabled ? (
+                <div className="flex flex-col items-center gap-1 cursor-not-allowed">
+                  {content}
                 </div>
-                <span
-                  className={cn(
-                    "text-xs font-medium whitespace-nowrap transition-colors",
-                    isCurrent && "text-neutral-900",
-                    isPast && "text-neutral-500",
-                    !isCurrent && !isPast && "text-neutral-400"
-                  )}
+              ) : (
+                <Link
+                  href={stage.route}
+                  className="flex flex-col items-center gap-1 transition-all cursor-pointer"
                 >
-                  {stage.label[language]}
-                </span>
-              </Link>
+                  {content}
+                </Link>
+              )}
               {!isLast && (
                 <div
                   className={cn(
                     "mx-1 w-6 h-0.5 rounded-full transition-colors",
-                    isPast ? "bg-neutral-400" : "bg-neutral-200"
+                    isPast ? "bg-neutral-400" : "bg-neutral-200",
+                    (disabled || (disableForward && isFuture)) && "opacity-50"
                   )}
                 />
               )}
@@ -131,7 +158,11 @@ export function WorkflowHeader({
             variant="outline"
             size="sm"
             onClick={onBack}
-            className="h-9 px-3 border-neutral-300 text-neutral-700 hover:bg-neutral-100"
+            disabled={disabled}
+            className={cn(
+              "h-9 px-3 border-neutral-300 text-neutral-700 hover:bg-neutral-100",
+              disabled && "opacity-50 cursor-not-allowed"
+            )}
           >
             <ArrowLeft className="h-4 w-4 mr-1.5" />
             {prevStage.label[language]}
@@ -143,8 +174,11 @@ export function WorkflowHeader({
           <Button
             size="sm"
             onClick={actionButton.onClick}
-            disabled={actionButton.disabled}
-            className="h-9 px-4 bg-neutral-900 text-white hover:bg-neutral-800"
+            disabled={actionButton.disabled || disabled || disableForward}
+            className={cn(
+              "h-9 px-4 bg-neutral-900 text-white hover:bg-neutral-800",
+              (disabled || disableForward) && "opacity-50 cursor-not-allowed"
+            )}
           >
             {actionButton.loading ? (
               <Spinner className="h-4 w-4 mr-1.5" />
@@ -153,12 +187,15 @@ export function WorkflowHeader({
             ) : null}
             {actionButton.label}
           </Button>
-        ) : nextStage ? (
+        ) : nextStage && !disableForward ? (
           <Button
             size="sm"
             onClick={onNext}
-            disabled={!canProceed}
-            className="h-9 px-4 bg-neutral-900 text-white hover:bg-neutral-800"
+            disabled={!canProceed || disabled}
+            className={cn(
+              "h-9 px-4 bg-neutral-900 text-white hover:bg-neutral-800",
+              disabled && "opacity-50 cursor-not-allowed"
+            )}
           >
             {nextStage.label[language]}
             <ArrowRight className="h-4 w-4 ml-1.5" />
