@@ -7,10 +7,13 @@ import {
   PromptTransformResponse,
   quickCreateApi,
   QuickCreateGeneration,
+  videoAnalysisApi,
+  VideoAnalysisResult,
 } from "@/lib/video-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -29,6 +32,9 @@ import {
   Image as ImageIcon,
   Music,
   VolumeX,
+  Link2,
+  Search,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SaveToCampaignModal } from "./SaveToCampaignModal";
@@ -102,6 +108,11 @@ export function QuickCreateMode({
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [savedToCampaign, setSavedToCampaign] = useState(false);
 
+  // TikTok analysis state
+  const [tiktokUrl, setTiktokUrl] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<VideoAnalysisResult | null>(null);
+
   // Poll for generation status
   const pollGenerationStatus = useCallback(async (generationId: string) => {
     const pollInterval = setInterval(async () => {
@@ -140,6 +151,49 @@ export function QuickCreateMode({
 
     return () => clearInterval(pollInterval);
   }, [language]);
+
+  // Analyze TikTok video and extract prompt
+  const handleAnalyzeTikTok = async () => {
+    if (!tiktokUrl.trim()) return;
+
+    setIsAnalyzing(true);
+    setError("");
+
+    try {
+      const result = await videoAnalysisApi.analyze(tiktokUrl.trim());
+
+      if (result.error) {
+        setError(result.error.message || (language === "ko" ? "분석 실패" : "Analysis failed"));
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // result.data is VideoAnalysisResponse { success, data?, error? }
+      // result.data.data is VideoAnalysisResult
+      if (result.data?.data) {
+        const analysisData = result.data.data;
+        setAnalysisResult(analysisData);
+
+        // Auto-fill prompt with suggested_prompt
+        if (analysisData.suggested_prompt) {
+          setPrompt(analysisData.suggested_prompt);
+          setTransformedPrompt(null); // Reset transformed prompt
+        }
+      } else if (result.data?.error) {
+        setError(result.data.error);
+      }
+    } catch {
+      setError(language === "ko" ? "TikTok 분석 중 오류 발생" : "Error analyzing TikTok");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // Clear TikTok analysis
+  const handleClearAnalysis = () => {
+    setTiktokUrl("");
+    setAnalysisResult(null);
+  };
 
   // Transform prompt with AI
   const handleTransformPrompt = async () => {
@@ -333,6 +387,9 @@ export function QuickCreateMode({
     setTransformedPrompt(null);
     setError("");
     setSavedToCampaign(false);
+    // Reset TikTok analysis
+    setTiktokUrl("");
+    setAnalysisResult(null);
   };
 
   // Get current generation ID (AI or Compose)
@@ -751,6 +808,113 @@ export function QuickCreateMode({
                       ? "무엇을 만들까요?"
                       : "What would you like to create?"}
                   </h2>
+                </div>
+
+                {/* TikTok URL Analysis Section */}
+                <div className="p-4 rounded-xl bg-muted/30 border border-dashed border-muted-foreground/30 space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Link2 className="h-4 w-4" />
+                    <span>
+                      {language === "ko"
+                        ? "TikTok 영상 분석 (선택)"
+                        : "Analyze TikTok Video (Optional)"}
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        value={tiktokUrl}
+                        onChange={(e) => setTiktokUrl(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleAnalyzeTikTok()}
+                        placeholder={
+                          language === "ko"
+                            ? "TikTok 영상 URL을 붙여넣으세요..."
+                            : "Paste TikTok video URL..."
+                        }
+                        className="pr-8"
+                        disabled={isAnalyzing}
+                      />
+                      {tiktokUrl && (
+                        <button
+                          onClick={handleClearAnalysis}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    <Button
+                      onClick={handleAnalyzeTikTok}
+                      disabled={isAnalyzing || !tiktokUrl.trim()}
+                      size="icon"
+                      variant="outline"
+                    >
+                      {isAnalyzing ? (
+                        <Spinner className="w-4 h-4" />
+                      ) : (
+                        <Search className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Analysis Result Preview */}
+                  {analysisResult && (
+                    <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-green-600" />
+                        <span className="text-sm font-medium text-green-600">
+                          {language === "ko" ? "분석 완료!" : "Analysis Complete!"}
+                        </span>
+                      </div>
+
+                      {/* Video Metadata */}
+                      {analysisResult.metadata && (
+                        <div className="flex items-start gap-3">
+                          {analysisResult.metadata.thumbnail_url && (
+                            <img
+                              src={analysisResult.metadata.thumbnail_url}
+                              alt=""
+                              className="w-16 h-24 rounded object-cover"
+                            />
+                          )}
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                              {analysisResult.metadata.description || "No description"}
+                            </p>
+                            {analysisResult.metadata.author && (
+                              <p className="text-xs text-muted-foreground">
+                                @{analysisResult.metadata.author.username}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Style Keywords */}
+                      {analysisResult.prompt_elements?.style_keywords && (
+                        <div className="flex flex-wrap gap-1">
+                          {analysisResult.prompt_elements.style_keywords.slice(0, 5).map((keyword) => (
+                            <Badge key={keyword} variant="secondary" className="text-[10px]">
+                              {keyword}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+
+                      <p className="text-xs text-green-600">
+                        {language === "ko"
+                          ? "프롬프트가 자동으로 채워졌습니다. 필요하면 수정하세요!"
+                          : "Prompt auto-filled. Edit if needed!"}
+                      </p>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-muted-foreground">
+                    {language === "ko"
+                      ? "TikTok 영상을 분석해서 비슷한 스타일의 프롬프트를 자동 생성합니다"
+                      : "Analyze TikTok video to auto-generate a similar style prompt"}
+                  </p>
                 </div>
 
                 <textarea

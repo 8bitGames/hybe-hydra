@@ -122,6 +122,10 @@ export default function ComposePage() {
   // Track which keywords are selected for search (only these will be searched)
   const [selectedSearchKeywords, setSelectedSearchKeywords] = useState<Set<string>>(new Set());
 
+  // Track original user input for soft reset
+  const [originalPrompt, setOriginalPrompt] = useState<string | null>(null);
+  const [originalKeywords, setOriginalKeywords] = useState<string[] | null>(null);
+
   // Redirect if campaign not found
   if (campaignError) {
     router.push("/campaigns");
@@ -181,6 +185,12 @@ export default function ComposePage() {
 
     setError("");
     setGeneratingScript(true);
+
+    // Save original user input on first generation (for soft reset)
+    if (originalPrompt === null) {
+      setOriginalPrompt(prompt.trim());
+      setOriginalKeywords([...editableKeywords]);
+    }
 
     try {
       let trendContext: { keyword: string; hashtags: string[]; platform: string }[] = [];
@@ -435,6 +445,15 @@ export default function ComposePage() {
 
   const handleNext = () => {
     if (currentStep < 4 && canProceed()) {
+      // Warn if trying to proceed to render while audio is still being analyzed
+      if (currentStep === 3 && analyzingAudio) {
+        const confirmed = window.confirm(
+          language === "ko"
+            ? "음원 최적 구간을 분석 중입니다. 분석이 완료되기 전에 렌더링으로 넘어가시겠습니까?\n\n분석이 완료되면 더 좋은 결과를 얻을 수 있습니다."
+            : "Audio optimization is in progress. Do you want to proceed to rendering before analysis is complete?\n\nBetter results are available after analysis completes."
+        );
+        if (!confirmed) return;
+      }
       setCurrentStep((prev) => (prev + 1) as WizardStep);
     }
   };
@@ -456,6 +475,36 @@ export default function ComposePage() {
     setRenderStatus(null);
     setOutputUrl(null);
     setError("");
+    // Reset keyword-related states
+    setEditableKeywords([]);
+    setSelectedSearchKeywords(new Set());
+    setNewKeyword("");
+    setGenerationId(null);
+    // Clear original values too
+    setOriginalPrompt(null);
+    setOriginalKeywords(null);
+  };
+
+  // Soft reset: Keep original prompt and keywords, reset everything else
+  const handleSoftReset = () => {
+    if (originalPrompt === null) return;
+
+    setCurrentStep(1);
+    setPrompt(originalPrompt);
+    setScriptData(null);
+    setImageCandidates([]);
+    setSelectedImages([]);
+    setAudioMatches([]);
+    setSelectedAudio(null);
+    setRenderStatus(null);
+    setOutputUrl(null);
+    setError("");
+    // Restore original keywords
+    const keywords = originalKeywords || [];
+    setEditableKeywords(keywords);
+    setSelectedSearchKeywords(new Set(keywords));
+    setNewKeyword("");
+    setGenerationId(null);
   };
 
   const getVibeColor = (vibe: string) => {
@@ -1429,6 +1478,12 @@ export default function ComposePage() {
 
               {outputUrl ? (
                 <div className="space-y-3">
+                  {originalPrompt && (
+                    <Button variant="outline" className="w-full justify-start h-11" onClick={handleSoftReset}>
+                      <Wand2 className="w-4 h-4 mr-2" />
+                      {language === "ko" ? "원본으로 재시작" : "Restart with Original"}
+                    </Button>
+                  )}
                   <Button variant="outline" className="w-full justify-start h-11" onClick={handleReset}>
                     <RotateCcw className="w-4 h-4 mr-2" />
                     {language === "ko" ? "새로 시작하기" : "Start Over"}
@@ -1442,6 +1497,17 @@ export default function ComposePage() {
                 </div>
               ) : (
                 <div className="space-y-3">
+                  {/* Soft reset button - only show if we have original values */}
+                  {originalPrompt && currentStep > 1 && (
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start h-11"
+                      onClick={handleSoftReset}
+                    >
+                      <Wand2 className="w-4 h-4 mr-2" />
+                      {language === "ko" ? "원본으로 재시작" : "Restart with Original"}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     className="w-full justify-start h-11"

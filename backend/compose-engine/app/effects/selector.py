@@ -172,11 +172,18 @@ class EffectSelector:
             max_duration=config.max_transition_duration if effect_type == "transition" else None,
         )
 
-        # If no candidates match mood/genre, get all of that type
-        if not candidates:
-            candidates = self.registry.by_type(effect_type)
+        # If not enough candidates for diversity, get ALL of that type
+        # This ensures we can select diverse effects even when mood/genre filtering is too strict
+        if len(candidates) < count:
+            all_of_type = self.registry.by_type(effect_type)
             if not config.gpu_available:
-                candidates = [c for c in candidates if not c.gpu_required]
+                all_of_type = [c for c in all_of_type if not c.gpu_required]
+            # Add effects not already in candidates
+            existing_ids = {c.id for c in candidates}
+            for effect in all_of_type:
+                if effect.id not in existing_ids:
+                    candidates.append(effect)
+            logger.info(f"Expanded candidates from {len(existing_ids)} to {len(candidates)} for diversity")
 
         # Apply source filtering
         if config.preferred_sources:

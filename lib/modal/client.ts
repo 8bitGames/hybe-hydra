@@ -400,3 +400,147 @@ export async function getBatchRenderStatus(
 
   return response.json();
 }
+
+// ============================================================================
+// TikTok Trends Scraping (Modal)
+// ============================================================================
+
+const MODAL_TIKTOK_COLLECT_URL = process.env.MODAL_TIKTOK_COLLECT_URL ||
+  'https://modawnai--hydra-compose-engine-tiktok-collect.modal.run';
+const MODAL_TIKTOK_SEARCH_URL = process.env.MODAL_TIKTOK_SEARCH_URL ||
+  'https://modawnai--hydra-compose-engine-tiktok-search.modal.run';
+const MODAL_TIKTOK_HASHTAG_URL = process.env.MODAL_TIKTOK_HASHTAG_URL ||
+  'https://modawnai--hydra-compose-engine-tiktok-hashtag.modal.run';
+
+export interface TikTokTrendItem {
+  rank: number;
+  keyword: string;
+  hashtag?: string;
+  view_count?: number;
+  video_count?: number;
+  description?: string;
+  thumbnail_url?: string;
+  trend_url?: string;
+}
+
+export interface TikTokVideo {
+  id: string;
+  description: string;
+  author: {
+    uniqueId: string;
+    nickname: string;
+  };
+  stats: {
+    playCount: number;
+    likeCount: number;
+    commentCount: number;
+    shareCount: number;
+  };
+  videoUrl?: string;
+  hashtags: string[];
+}
+
+export interface TikTokCollectResponse {
+  success: boolean;
+  method: string;
+  trends: TikTokTrendItem[];
+  error?: string;
+}
+
+export interface TikTokSearchResponse {
+  success: boolean;
+  keyword: string;
+  videos: TikTokVideo[];
+  related_hashtags: string[];
+  error?: string;
+}
+
+export interface TikTokHashtagResponse {
+  success: boolean;
+  hashtag: string;
+  info?: {
+    title: string;
+    viewCount: number;
+    videoCount: number;
+  };
+  videos: TikTokVideo[];
+  error?: string;
+}
+
+/**
+ * Collect TikTok trends using Modal (Playwright)
+ */
+export async function collectTikTokTrends(options: {
+  keywords?: string[];
+  hashtags?: string[];
+  includeExplore?: boolean;
+}): Promise<TikTokCollectResponse> {
+  const response = await fetch(MODAL_TIKTOK_COLLECT_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      keywords: options.keywords || [],
+      hashtags: options.hashtags || [],
+      include_explore: options.includeExplore ?? true,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Modal TikTok collect failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Search TikTok for a keyword using Modal (Playwright)
+ */
+export async function searchTikTok(
+  keyword: string,
+  limit: number = 40
+): Promise<TikTokSearchResponse> {
+  const url = new URL(MODAL_TIKTOK_SEARCH_URL);
+  url.searchParams.set('keyword', keyword);
+  url.searchParams.set('limit', limit.toString());
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Modal TikTok search failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get TikTok hashtag details using Modal (Playwright)
+ */
+export async function getTikTokHashtag(
+  hashtag: string
+): Promise<TikTokHashtagResponse> {
+  const url = new URL(MODAL_TIKTOK_HASHTAG_URL);
+  url.searchParams.set('hashtag', hashtag);
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Modal TikTok hashtag failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}

@@ -536,6 +536,202 @@ def get_batch_status(call_ids: str):
 
 
 # ============================================================================
+# TikTok Trends Scraping (Playwright)
+# ============================================================================
+
+# Separate image for Playwright-based scraping (no GPU needed)
+scraper_image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .apt_install(
+        "wget",
+        "gnupg",
+        "libnss3",
+        "libnspr4",
+        "libatk1.0-0",
+        "libatk-bridge2.0-0",
+        "libcups2",
+        "libdrm2",
+        "libxkbcommon0",
+        "libxcomposite1",
+        "libxdamage1",
+        "libxfixes3",
+        "libxrandr2",
+        "libgbm1",
+        "libasound2",
+        "libpango-1.0-0",
+        "libcairo2",
+        "libatspi2.0-0",
+    )
+    .pip_install(
+        "playwright==1.49.0",
+        "httpx==0.26.0",
+        "pydantic==2.5.3",
+    )
+    .run_commands(
+        "playwright install chromium",
+        "playwright install-deps chromium",
+    )
+    .add_local_dir(
+        Path(__file__).parent / "app",
+        remote_path="/root/app",
+        copy=True
+    )
+)
+
+
+@app.function(
+    image=scraper_image,
+    timeout=300,  # 5 minutes max
+    memory=4096,  # 4GB RAM for browser
+    cpu=2.0,
+    retries=2,
+    scaledown_window=120,  # Keep container warm for 2 minutes
+)
+def scrape_tiktok_trends(request_data: dict) -> dict:
+    """
+    Scrape TikTok trends using Playwright.
+
+    Args:
+        request_data: Dictionary containing:
+            - action: 'collect' | 'search' | 'hashtag'
+            - keywords: list of keywords (for collect/search)
+            - hashtags: list of hashtags (for collect/hashtag)
+            - include_explore: bool (for collect)
+            - keyword: single keyword (for search)
+            - hashtag: single hashtag (for hashtag)
+            - limit: max results (for search)
+
+    Returns:
+        Dictionary with scraping results
+    """
+    import sys
+    import asyncio
+
+    sys.path.insert(0, "/root")
+
+    from app.services.tiktok_scraper import (
+        collect_tiktok_trends,
+        search_tiktok,
+        scrape_hashtag_page,
+    )
+
+    action = request_data.get("action", "collect")
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        if action == "collect":
+            result = loop.run_until_complete(
+                collect_tiktok_trends(
+                    keywords=request_data.get("keywords", []),
+                    hashtags=request_data.get("hashtags", []),
+                    include_explore=request_data.get("include_explore", True),
+                )
+            )
+            return {
+                "success": result.success,
+                "method": result.method,
+                "trends": result.trends,
+                "error": result.error,
+            }
+
+        elif action == "search":
+            keyword = request_data.get("keyword", "")
+            limit = request_data.get("limit", 40)
+            result = loop.run_until_complete(search_tiktok(keyword, limit))
+            return {
+                "success": result.success,
+                "keyword": keyword,
+                "videos": result.videos,
+                "related_hashtags": result.related_hashtags,
+                "error": result.error,
+            }
+
+        elif action == "hashtag":
+            hashtag = request_data.get("hashtag", "")
+            result = loop.run_until_complete(scrape_hashtag_page(hashtag))
+            return {
+                "success": result.success,
+                "hashtag": hashtag,
+                "info": result.info,
+                "videos": result.videos,
+                "error": result.error,
+            }
+
+        else:
+            return {"success": False, "error": f"Unknown action: {action}"}
+
+    except Exception as e:
+        import traceback
+        print(f"[TIKTOK] Scraping failed: {e}")
+        print(traceback.format_exc())
+        return {"success": False, "error": str(e)}
+    finally:
+        loop.close()
+
+
+@app.function(image=scraper_image)
+@modal.fastapi_endpoint(method="POST")
+def tiktok_collect(request_data: dict):
+    """
+    Collect TikTok trends.
+
+    POST /tiktok_collect
+    Body: { keywords: [], hashtags: [], include_explore: bool }
+    Returns: { success, method, trends[], error }
+    """
+    print(f"[TIKTOK] Collect request: {request_data}")
+
+    # Run synchronously for web endpoint
+    result = scrape_tiktok_trends.remote({
+        "action": "collect",
+        **request_data,
+    })
+
+    return result
+
+
+@app.function(image=scraper_image)
+@modal.fastapi_endpoint(method="GET")
+def tiktok_search(keyword: str, limit: int = 40):
+    """
+    Search TikTok for a keyword.
+
+    GET /tiktok_search?keyword=xxx&limit=40
+    Returns: { success, keyword, videos[], related_hashtags[], error }
+    """
+    print(f"[TIKTOK] Search request: keyword={keyword}, limit={limit}")
+
+    result = scrape_tiktok_trends.remote({
+        "action": "search",
+        "keyword": keyword,
+        "limit": limit,
+    })
+
+    return result
+
+
+@app.function(image=scraper_image)
+@modal.fastapi_endpoint(method="GET")
+def tiktok_hashtag(hashtag: str):
+    """
+    Get TikTok hashtag details.
+
+    GET /tiktok_hashtag?hashtag=xxx
+    Returns: { success, hashtag, info, videos[], error }
+    """
+    print(f"[TIKTOK] Hashtag request: {hashtag}")
+
+    result = scrape_tiktok_trends.remote({
+        "action": "hashtag",
+        "hashtag": hashtag,
+    })
+
+    return result
+
+
+# ============================================================================
 # Local Development
 # ============================================================================
 
@@ -553,6 +749,11 @@ def main():
     print("  POST /submit_render   - Start a render job")
     print("  GET  /get_render_status?call_id=xxx - Poll status")
     print("  GET  /health          - Health check")
+    print()
+    print("TikTok Scraping Endpoints:")
+    print("  POST /tiktok_collect  - Collect trends")
+    print("  GET  /tiktok_search?keyword=xxx - Search TikTok")
+    print("  GET  /tiktok_hashtag?hashtag=xxx - Get hashtag info")
     print()
     print("Test locally:")
     print("  modal run modal_app.py::render_video --input '{...}'")

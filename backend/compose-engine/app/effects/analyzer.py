@@ -45,7 +45,8 @@ class PromptAnalyzer:
             raise ValueError("GEMINI_API_KEY environment variable is required")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel("gemini-2.0-flash-lite")
+        # Use gemini-3-pro-preview for analysis
+        self.model = genai.GenerativeModel("gemini-3-pro-preview")
 
         # Get available moods and genres from registry
         registry = get_registry()

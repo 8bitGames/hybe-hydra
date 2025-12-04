@@ -9,6 +9,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 EffectType = Literal["transition", "motion", "filter", "text"]
+
+# Blacklisted effects that cause visual corruption or make images invisible
+# These effects don't render properly with xfade in many configurations
+BLACKLISTED_EFFECTS = {
+    "xfade_hlslice",   # Horizontal left slice - causes horizontal stripes
+    "xfade_hrslice",   # Horizontal right slice - causes horizontal stripes
+    "xfade_vuslice",   # Vertical up slice - causes vertical stripes
+    "xfade_vdslice",   # Vertical down slice - causes vertical stripes
+    "xfade_hblur",     # Horizontal blur - can make images invisible
+    "gl_windowslice",  # Window slice - similar issues
+}
 EffectSource = Literal["gl-transitions", "ffmpeg-xfade", "moviepy"]
 Intensity = Literal["low", "medium", "high"]
 
@@ -134,8 +145,16 @@ class EffectRegistry:
             self._moods = data.get("moods", [])
             self._genres = data.get("genres", [])
 
+            blacklisted_count = 0
             for effect_data in data.get("effects", []):
                 effect = EffectMetadata(effect_data)
+
+                # Skip blacklisted effects that cause visual corruption
+                if effect.id in BLACKLISTED_EFFECTS:
+                    blacklisted_count += 1
+                    logger.debug(f"Skipping blacklisted effect: {effect.id}")
+                    continue
+
                 self._effects[effect.id] = effect
 
                 if effect.type in self._by_type:
@@ -144,7 +163,7 @@ class EffectRegistry:
                 if effect.source in self._by_source:
                     self._by_source[effect.source].append(effect)
 
-            logger.info(f"Loaded {len(self._effects)} effects from catalog v{self._version}")
+            logger.info(f"Loaded {len(self._effects)} effects from catalog v{self._version} (skipped {blacklisted_count} blacklisted)")
 
         except Exception as e:
             logger.error(f"Failed to load effects catalog: {e}")

@@ -199,14 +199,21 @@ class XfadeRenderer:
             for i, clip in enumerate(clips):
                 inputs.extend(["-i", clip.path])
 
-            # Build filter chain
+            # Build filter chain with cumulative offset calculation
+            # FFmpeg xfade chains: each xfade operates on the OUTPUT of the previous one
+            # So offsets must be calculated relative to accumulated duration
             filter_parts = []
             current_label = "[0:v]"
 
+            # Start with first clip's duration
+            accumulated_duration = clips[0].duration
+
             for i, transition in enumerate(transitions):
                 next_input = f"[{i + 1}:v]"
-                # Calculate offset based on previous clip duration
-                offset = clips[i].duration - transition_duration
+
+                # Offset is where in the accumulated stream the transition starts
+                # It should be: accumulated_duration - transition_duration
+                offset = max(0, accumulated_duration - transition_duration)
 
                 if i < len(transitions) - 1:
                     output_label = f"[v{i}]"
@@ -216,10 +223,24 @@ class XfadeRenderer:
                 xfade_filter = f"{current_label}{next_input}xfade=transition={transition}:duration={transition_duration}:offset={offset}{output_label}"
                 filter_parts.append(xfade_filter)
 
+                # Update accumulated duration: add next clip, subtract overlap
+                accumulated_duration = offset + transition_duration + clips[i + 1].duration - transition_duration
+                # Simplified: accumulated_duration = offset + clips[i + 1].duration
+
                 if output_label:
                     current_label = output_label
 
+            print(f"[XFADE_RENDERER] Filter chain: {len(filter_parts)} transitions")
+            print(f"[XFADE_RENDERER] Effects being applied: {transitions}")
+            print(f"[XFADE_RENDERER] Each filter part:")
+            for idx, part in enumerate(filter_parts):
+                print(f"  [{idx}] {part}")
+            logger.info(f"xfade filter chain: {len(filter_parts)} transitions with effects: {transitions}")
+            logger.info(f"xfade final duration: ~{accumulated_duration:.1f}s")
+
             filter_complex = ";".join(filter_parts)
+            print(f"[XFADE_RENDERER] Full filter_complex: {filter_complex}")
+            logger.debug(f"FFmpeg filter_complex: {filter_complex[:200]}...")
 
             # Build command
             cmd = [self.ffmpeg_path, "-y"]
@@ -247,6 +268,8 @@ class XfadeRenderer:
                 output_path
             ])
 
+            print(f"[XFADE_RENDERER] Full FFmpeg command:")
+            print(f"  {' '.join(cmd)}")
             logger.info(f"Running xfade sequence render with {len(clips)} clips")
             result = subprocess.run(
                 cmd,
@@ -256,9 +279,12 @@ class XfadeRenderer:
             )
 
             if result.returncode != 0:
+                print(f"[XFADE_RENDERER] FFmpeg FAILED! Return code: {result.returncode}")
+                print(f"[XFADE_RENDERER] stderr: {result.stderr[:1000]}")
                 logger.error(f"xfade sequence render failed: {result.stderr[:500]}")
                 return False
 
+            print(f"[XFADE_RENDERER] FFmpeg SUCCESS! Output: {output_path}")
             return True
 
         except subprocess.TimeoutExpired:
@@ -347,10 +373,30 @@ class XfadeRenderer:
             return 0.0
 
     def _check_nvenc(self) -> bool:
-        """Check if NVENC is available."""
+        """Check if NVENC is actually available by testing a real encode."""
+        # Use cached result if available
+        if hasattr(self, '_nvenc_available_cache'):
+            return self._nvenc_available_cache
+
         try:
-            cmd = [self.ffmpeg_path, "-encoders"]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            return "h264_nvenc" in result.stdout
-        except Exception:
+            # Actually test NVENC encoding, not just encoder listing
+            result = subprocess.run(
+                [
+                    self.ffmpeg_path, "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "color=black:s=64x64:d=0.1",
+                    "-c:v", "h264_nvenc", "-f", "null", "-"
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            self._nvenc_available_cache = result.returncode == 0
+            if self._nvenc_available_cache:
+                logger.info("NVENC GPU encoding is available")
+            else:
+                logger.info("NVENC not available, using CPU encoding")
+            return self._nvenc_available_cache
+        except Exception as e:
+            logger.debug(f"NVENC check failed: {e}")
+            self._nvenc_available_cache = False
             return False

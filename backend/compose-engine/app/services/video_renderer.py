@@ -572,16 +572,31 @@ class VideoRenderer:
                 return transition_func(clips, duration=preset.transition_duration)
 
             # Build transition specs from AI selections
+            # Ensure each transition uses a different effect for variety
             transition_specs = []
-            for i in range(len(clips) - 1):
-                # Cycle through selected transitions if fewer than needed
-                effect_id = ai_effects.transitions[i % len(ai_effects.transitions)]
+            num_transitions_needed = len(clips) - 1
+            available_effects = ai_effects.transitions.copy()
+
+            for i in range(num_transitions_needed):
+                if available_effects:
+                    # Use each effect once before repeating
+                    effect_id = available_effects.pop(0)
+                    # Refill when exhausted (only if we need more than available)
+                    if not available_effects and i < num_transitions_needed - 1:
+                        available_effects = ai_effects.transitions.copy()
+                else:
+                    # Fallback to cycling if something goes wrong
+                    effect_id = ai_effects.transitions[i % len(ai_effects.transitions)]
+
                 transition_specs.append(TransitionSpec(
                     effect_id=effect_id,
                     duration=preset.transition_duration
                 ))
 
-            logger.info(f"[{job_id}] Applying {len(transition_specs)} AI transitions: {[t.effect_id for t in transition_specs[:3]]}...")
+            # Log all transitions to verify diversity
+            all_effects = [t.effect_id for t in transition_specs]
+            print(f"[VIDEO_RENDERER][{job_id}] About to apply {len(transition_specs)} AI transitions: {all_effects}")
+            logger.info(f"[{job_id}] Applying {len(transition_specs)} AI transitions: {all_effects}")
 
             # Use renderer adapter (with xfade fallback)
             video = self.renderer_adapter.apply_transitions_to_clips(
@@ -615,10 +630,31 @@ class VideoRenderer:
         """
         Get AI effects - either from pre-selected settings or auto-select.
         """
-        # If AI effects already provided, use them
+        # Import blacklist
+        from ..effects.registry import BLACKLISTED_EFFECTS
+
+        # If AI effects already provided, use them (but filter out blacklisted)
         if settings.ai_effects and settings.ai_effects.transitions:
-            logger.info(f"[{job_id}] Using pre-selected AI effects: {len(settings.ai_effects.transitions)} transitions")
-            return settings.ai_effects
+            # Filter out blacklisted effects from pre-selected transitions
+            filtered_transitions = [
+                t for t in settings.ai_effects.transitions
+                if t not in BLACKLISTED_EFFECTS
+            ]
+            if len(filtered_transitions) < len(settings.ai_effects.transitions):
+                removed = set(settings.ai_effects.transitions) - set(filtered_transitions)
+                logger.warning(f"[{job_id}] Removed blacklisted effects from pre-selected: {removed}")
+
+            if filtered_transitions:
+                logger.info(f"[{job_id}] Using pre-selected AI effects: {len(filtered_transitions)} transitions")
+                return AIEffectSelection(
+                    transitions=filtered_transitions,
+                    motions=settings.ai_effects.motions,
+                    filters=settings.ai_effects.filters,
+                    text_animations=settings.ai_effects.text_animations,
+                    analysis=settings.ai_effects.analysis
+                )
+            # If all transitions were blacklisted, fall through to auto-select
+            logger.warning(f"[{job_id}] All pre-selected transitions were blacklisted, auto-selecting...")
 
         # Auto-select based on prompt
         prompt = settings.ai_prompt or ""
@@ -648,11 +684,15 @@ class VideoRenderer:
             analysis = self._create_fallback_analysis(prompt, bpm)
 
         # Select effects based on analysis
+        # We need exactly (num_images - 1) transitions, one for each cut between images
+        # Request that many unique transitions so each cut has a different effect
+        num_transitions_needed = num_images - 1
         config = SelectionConfig(
-            num_transitions=min(num_images, 8),  # Max 8 unique transitions
+            num_transitions=num_transitions_needed,  # One unique transition per cut
             num_motions=2,
             num_filters=1,
-            prefer_gpu=True
+            gpu_available=True,
+            diversity_weight=0.5,  # Higher diversity to ensure different effects
         )
 
         selected = self.effect_selector.select(analysis, config)
@@ -677,31 +717,47 @@ class VideoRenderer:
         from ..effects.selector import PromptAnalysis
 
         # Simple keyword matching
+        # Valid moods: energetic, calm, dramatic, playful, elegant, romantic, dark, bright, mysterious, modern
+        # Valid genres: kpop, hiphop, emotional, corporate, tiktok, cinematic, vlog, documentary, edm, indie
         prompt_lower = prompt.lower()
 
         moods = []
         if any(w in prompt_lower for w in ["exciting", "energetic", "fast", "dynamic", "빠른", "신나는"]):
             moods.append("energetic")
         if any(w in prompt_lower for w in ["emotional", "touching", "sad", "감성", "슬픈"]):
-            moods.append("emotional")
+            moods.append("romantic")  # romantic is a valid mood
         if any(w in prompt_lower for w in ["calm", "peaceful", "relaxing", "차분한", "평화"]):
             moods.append("calm")
         if any(w in prompt_lower for w in ["dramatic", "epic", "intense", "극적인"]):
             moods.append("dramatic")
+        if any(w in prompt_lower for w in ["playful", "fun", "cute", "귀여운", "재미"]):
+            moods.append("playful")
+        if any(w in prompt_lower for w in ["dark", "mysterious", "어두운"]):
+            moods.append("dark")
+        if any(w in prompt_lower for w in ["bright", "happy", "밝은"]):
+            moods.append("bright")
 
+        # Default to common moods that match many effects
         if not moods:
-            moods = ["modern", "dynamic"]
+            moods = ["modern", "energetic"]
 
         genres = []
         if any(w in prompt_lower for w in ["kpop", "k-pop", "케이팝", "아이돌"]):
             genres.append("kpop")
-        if any(w in prompt_lower for w in ["tiktok", "틱톡", "shorts", "숏폼"]):
+        if any(w in prompt_lower for w in ["tiktok", "틱톡", "shorts", "숏폼", "reels"]):
             genres.append("tiktok")
         if any(w in prompt_lower for w in ["cinematic", "movie", "영화", "시네마틱"]):
             genres.append("cinematic")
+        if any(w in prompt_lower for w in ["hiphop", "hip-hop", "힙합", "랩"]):
+            genres.append("hiphop")
+        if any(w in prompt_lower for w in ["edm", "electronic", "일렉트로닉", "댄스"]):
+            genres.append("edm")
+        if any(w in prompt_lower for w in ["vlog", "브이로그", "일상"]):
+            genres.append("vlog")
 
+        # Default to common genres that match many effects
         if not genres:
-            genres = ["general"]
+            genres = ["tiktok", "kpop"]
 
         # Determine intensity from BPM
         intensity = "medium"

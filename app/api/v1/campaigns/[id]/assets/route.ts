@@ -4,6 +4,56 @@ import { getUserFromHeader } from "@/lib/auth";
 import { validateFile, generateS3Key, uploadToS3, AssetType as StorageAssetType } from "@/lib/storage";
 import { AssetType, MerchandiseType } from "@prisma/client";
 
+interface AudioAnalysisResult {
+  bpm: number;
+  duration: number;
+  beat_times?: number[];
+}
+
+/**
+ * Analyze audio file using compose-engine to extract BPM and duration
+ */
+async function analyzeAudioFile(s3Url: string): Promise<AudioAnalysisResult | null> {
+  const composeUrl = process.env.MODAL_COMPOSE_URL || process.env.LOCAL_COMPOSE_URL;
+
+  if (!composeUrl) {
+    console.warn('[Asset Upload] No compose engine URL configured, skipping audio analysis');
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${composeUrl}/audio/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_url: s3Url,
+        job_id: `asset-upload-${Date.now()}`
+      })
+    });
+
+    if (!response.ok) {
+      console.warn(`[Asset Upload] Audio analysis failed with status ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    console.log('[Asset Upload] Audio analysis result:', {
+      bpm: data.bpm,
+      duration: data.duration,
+      beat_count: data.beat_times?.length || 0
+    });
+
+    return {
+      bpm: data.bpm,
+      duration: data.duration,
+      beat_times: data.beat_times
+    };
+  } catch (error) {
+    console.error('[Asset Upload] Audio analysis error:', error);
+    return null;
+  }
+}
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
@@ -155,6 +205,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const s3Key = generateS3Key(campaignId, file.name);
     const s3Url = await uploadToS3(buffer, s3Key, file.type);
 
+    // Analyze audio file to extract BPM and duration
+    let metadata: Record<string, unknown> = {};
+    if (validation.type === "AUDIO") {
+      console.log('[Asset Upload] Analyzing audio file:', file.name);
+      const analysisResult = await analyzeAudioFile(s3Url);
+      if (analysisResult) {
+        metadata = {
+          bpm: analysisResult.bpm,
+          audioBpm: analysisResult.bpm,
+          duration: analysisResult.duration,
+          audioDurationSec: analysisResult.duration,
+          analyzed: true,
+          analyzedAt: new Date().toISOString()
+        };
+        console.log('[Asset Upload] Audio metadata stored:', metadata);
+      }
+    }
+
     // Create asset record
     const asset = await prisma.asset.create({
       data: {
@@ -168,6 +236,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         fileSize: file.size,
         mimeType: file.type,
         createdBy: user.id,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       },
     });
 
@@ -178,6 +247,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         s3_url: asset.s3Url,
         type: asset.type.toLowerCase(),
         merchandise_type: asset.merchandiseType?.toLowerCase() || null,
+        metadata: asset.metadata || null,
         message: "Asset uploaded successfully",
       },
       { status: 201 }

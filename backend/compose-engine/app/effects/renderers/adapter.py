@@ -11,7 +11,7 @@ from enum import Enum
 from moviepy import ImageClip, CompositeVideoClip, concatenate_videoclips
 
 from .xfade_renderer import XfadeRenderer, ClipSegment, XFADE_TRANSITIONS
-from ..registry import get_registry, EffectMetadata
+from ..registry import get_registry, EffectMetadata, BLACKLISTED_EFFECTS
 
 logger = logging.getLogger(__name__)
 
@@ -122,16 +122,30 @@ class RendererAdapter:
         while len(transitions) < len(clips) - 1:
             transitions.append(TransitionSpec(effect_id="xfade_fade", duration=0.5))
 
+        # Log the transitions we're about to apply
+        effect_ids = [t.effect_id for t in transitions]
+        print(f"[ADAPTER][{job_id}] Applying transitions: {effect_ids}")
+        logger.info(f"[{job_id}] Applying transitions: {effect_ids}")
+
         # Group by renderer type for batch processing
         groups = self._group_by_renderer(transitions)
+        print(f"[ADAPTER][{job_id}] Renderer types: {[g.value for g in groups]}")
+        logger.info(f"[{job_id}] Renderer types: {[g.value for g in groups]}")
 
         # If all transitions can use xfade, process as batch
         if all(r == RendererType.XFADE for r in groups):
+            print(f"[ADAPTER][{job_id}] Using xfade batch renderer for {len(transitions)} transitions")
+            logger.info(f"[{job_id}] Using xfade batch renderer for {len(transitions)} transitions")
             result = self._apply_xfade_batch(clips, transitions, temp_dir, job_id)
             if result is not None:
+                print(f"[ADAPTER][{job_id}] xfade batch SUCCESS!")
                 return result
+            print(f"[ADAPTER][{job_id}] xfade batch FAILED, falling back to MoviePy")
+            logger.warning(f"[{job_id}] xfade batch failed, falling back to MoviePy")
 
         # Otherwise, fall back to MoviePy-based processing
+        print(f"[ADAPTER][{job_id}] Using MoviePy fallback renderer")
+        logger.info(f"[{job_id}] Using MoviePy fallback renderer")
         return self._apply_moviepy_transitions(clips, transitions)
 
     def _group_by_renderer(self, transitions: List[TransitionSpec]) -> List[RendererType]:
@@ -181,10 +195,18 @@ class RendererAdapter:
                 if t.effect_id in XFADE_TRANSITIONS:
                     xfade_names.append(XFADE_TRANSITIONS[t.effect_id])
                 elif t.effect_id.startswith("xfade_"):
-                    xfade_names.append(t.effect_id.replace("xfade_", ""))
+                    xfade_name = t.effect_id.replace("xfade_", "")
+                    # Check if this is a blacklisted effect
+                    if t.effect_id in BLACKLISTED_EFFECTS:
+                        logger.warning(f"[{job_id}] Replacing blacklisted {t.effect_id} with fade")
+                        xfade_name = "fade"
+                    xfade_names.append(xfade_name)
                 else:
                     # Map GL transition to similar xfade
                     xfade_names.append(self._map_to_xfade(t.effect_id))
+
+            print(f"[ADAPTER][{job_id}] xfade effects to apply: {xfade_names}")
+            logger.info(f"[{job_id}] xfade effects to apply: {xfade_names}")
 
             # Render with xfade
             output_path = os.path.join(temp_dir, f"{job_id}_xfade_output.mp4")
@@ -201,9 +223,15 @@ class RendererAdapter:
             if success and os.path.exists(output_path):
                 # Load the result back as a MoviePy clip
                 from moviepy import VideoFileClip
+                print(f"[ADAPTER][{job_id}] Loading xfade output from: {output_path}")
+                file_size = os.path.getsize(output_path)
+                print(f"[ADAPTER][{job_id}] Output file size: {file_size} bytes ({file_size / 1024 / 1024:.2f} MB)")
                 result = VideoFileClip(output_path)
+                print(f"[ADAPTER][{job_id}] Loaded clip duration: {result.duration}s, size: {result.size}")
                 logger.info(f"[{job_id}] Applied {len(transitions)} xfade transitions")
                 return result
+            else:
+                print(f"[ADAPTER][{job_id}] xfade output failed - success={success}, exists={os.path.exists(output_path)}")
 
             # Cleanup temp clips on failure
             for path in clip_paths:
@@ -219,23 +247,27 @@ class RendererAdapter:
             return None
 
     def _map_to_xfade(self, effect_id: str) -> str:
-        """Map a GL Transition or other effect to similar xfade transition."""
+        """Map a GL Transition or other effect to similar xfade transition.
+
+        IMPORTANT: Never map to blacklisted effects that cause visual corruption.
+        """
         # Mapping from GL Transitions to xfade equivalents
+        # NOTE: Avoid mapping to blacklisted effects (hlslice, hrslice, vuslice, vdslice, hblur)
         gl_to_xfade = {
-            # Direct mappings
+            # Direct mappings - safe effects only
             "gl_fade": "fade",
             "gl_fadecolor": "fadeblack",
             "gl_fadegrayscale": "fadegrays",
             "gl_crosswarp": "dissolve",
-            "gl_dreamy": "hblur",
+            "gl_dreamy": "dissolve",         # Changed from hblur (BLACKLISTED)
             "gl_pixelize": "pixelize",
             "gl_circleopen": "circleopen",
             "gl_directionalwipe": "wipeleft",
             "gl_cube": "diagtl",
             "gl_doorway": "vertopen",
-            "gl_linearblur": "hblur",
+            "gl_linearblur": "dissolve",     # Changed from hblur (BLACKLISTED)
             "gl_radial": "radial",
-            "gl_windowslice": "hlslice",
+            "gl_windowslice": "wipeleft",    # Changed from hlslice (BLACKLISTED)
             "gl_squeeze": "squeezeh",
             "gl_crosszoom": "zoomin",
             "gl_swap": "slideright",
@@ -252,14 +284,31 @@ class RendererAdapter:
             "gl_rotate_scale_fade": "zoomin",
             "gl_swirl": "radial",
             "gl_wind": "slideleft",
-            "gl_windowblinds": "hlslice",
+            "gl_windowblinds": "wipeleft",   # Changed from hlslice (BLACKLISTED)
+            # Additional mappings for common GL effects
+            "gl_displacement": "dissolve",   # Displacement -> dissolve (smooth)
+            "gl_flyeye": "pixelize",         # Fly eye -> pixelize (similar look)
+            "gl_heart": "circleopen",        # Heart -> circle open
+            "gl_powerKaleido": "radial",     # Power kaleido -> radial
+            "gl_static": "pixelize",         # Static -> pixelize
+            "gl_undulating": "dissolve",     # Undulating -> dissolve
+            "gl_simpleZoom": "zoomin",       # Simple zoom -> zoomin
+            "gl_directional": "wipeleft",    # Directional -> wipe left
+            "gl_bowTie": "vertopen",         # Bow tie -> vert open
+            "gl_colorphaseRotate": "radial", # Color phase rotate -> radial
         }
 
         # Try direct mapping
         if effect_id in gl_to_xfade:
-            return gl_to_xfade[effect_id]
+            mapped = gl_to_xfade[effect_id]
+            # Double-check: ensure mapped effect is not blacklisted
+            xfade_id = f"xfade_{mapped}"
+            if xfade_id in BLACKLISTED_EFFECTS:
+                logger.warning(f"Mapped effect {mapped} is blacklisted, using fade instead")
+                return "fade"
+            return mapped
 
-        # Try partial match
+        # Try partial match - use safe alternatives
         effect_lower = effect_id.lower()
         if "fade" in effect_lower:
             return "fade"
@@ -270,11 +319,13 @@ class RendererAdapter:
         elif "zoom" in effect_lower:
             return "zoomin"
         elif "blur" in effect_lower:
-            return "hblur"
+            return "dissolve"  # Changed from hblur (BLACKLISTED)
         elif "circle" in effect_lower:
             return "circleopen"
         elif "pixel" in effect_lower:
             return "pixelize"
+        elif "slice" in effect_lower:
+            return "wipeleft"  # Changed from any slice (BLACKLISTED)
 
         # Default fallback
         return "fade"
