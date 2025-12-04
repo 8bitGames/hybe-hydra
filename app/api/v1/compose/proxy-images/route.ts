@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { uploadToS3 } from '@/lib/storage';
-import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
+import {
+  getOrCheckImageCache,
+  setCachedImage,
+  generateContentHash,
+} from '@/lib/image-cache';
 
 interface ProxyRequest {
   images: Array<{
@@ -17,6 +22,12 @@ interface ProxyResult {
   id: string;
   success: boolean;
   error?: string;
+  fromCache?: boolean;
+}
+
+// Simple hash function for unique filenames
+function hashUrl(url: string): string {
+  return crypto.createHash('md5').update(url).digest('hex').slice(0, 12);
 }
 
 export async function POST(request: NextRequest) {
@@ -39,12 +50,33 @@ export async function POST(request: NextRequest) {
     }
 
     const results: ProxyResult[] = [];
+    let cacheHits = 0;
+    let cacheMisses = 0;
 
     // Process images in parallel
     await Promise.all(
       images.map(async (image, index) => {
         try {
-          // Download image with browser-like headers
+          // =====================================================
+          // STEP 1: Check URL cache first (fast, no download)
+          // =====================================================
+          const urlCacheCheck = await getOrCheckImageCache(image.url);
+          if (urlCacheCheck.cached) {
+            cacheHits++;
+            console.log(`[Proxy] ✅ CACHE HIT (URL): ${image.url.slice(0, 50)}...`);
+            results.push({
+              originalUrl: image.url,
+              minioUrl: urlCacheCheck.s3Url,
+              id: image.id,
+              success: true,
+              fromCache: true,
+            });
+            return;
+          }
+
+          // =====================================================
+          // STEP 2: Cache miss - download image
+          // =====================================================
           const response = await fetch(image.url, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -62,26 +94,62 @@ export async function POST(request: NextRequest) {
           const arrayBuffer = await response.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
 
-          // Determine file extension
+          // =====================================================
+          // STEP 3: Check content hash for deduplication
+          // =====================================================
+          const contentHash = generateContentHash(buffer);
+          const contentCacheCheck = await getOrCheckImageCache(image.url, buffer);
+          if (contentCacheCheck.cached) {
+            cacheHits++;
+            console.log(`[Proxy] ✅ CACHE HIT (content hash): ${image.url.slice(0, 50)}...`);
+            results.push({
+              originalUrl: image.url,
+              minioUrl: contentCacheCheck.s3Url,
+              id: image.id,
+              success: true,
+              fromCache: true,
+            });
+            return;
+          }
+
+          // =====================================================
+          // STEP 4: Upload to S3 and cache
+          // =====================================================
+          cacheMisses++;
           let ext = 'jpg';
           if (contentType.includes('png')) ext = 'png';
           else if (contentType.includes('webp')) ext = 'webp';
           else if (contentType.includes('gif')) ext = 'gif';
 
-          // Upload to MinIO using storage.ts helper
-          const objectKey = `compose/${generationId}/images/${index}_${uuidv4().slice(0, 8)}.${ext}`;
+          // Use shared cache path for deduplication
+          const urlHash = hashUrl(image.url);
+          const objectKey = `compose/cached/${urlHash}.${ext}`;
           const minioUrl = await uploadToS3(buffer, objectKey, contentType);
 
+          // Store in cache (fire and forget - don't block on this)
+          setCachedImage({
+            sourceUrl: image.url,
+            contentHash,
+            s3Url: minioUrl,
+            s3Key: objectKey,
+            mimeType: contentType,
+            fileSize: buffer.length,
+          }).catch(err => {
+            console.warn(`[Proxy] Cache store failed (non-fatal):`, err);
+          });
+
+          console.log(`[Proxy] 💾 NEW: ${image.url.slice(0, 50)}... → ${objectKey}`);
           results.push({
             originalUrl: image.url,
             minioUrl,
             id: image.id,
             success: true,
+            fromCache: false,
           });
         } catch (error) {
           // Log warning instead of error (404s are common for web-scraped images)
           const errMsg = error instanceof Error ? error.message : 'Unknown error';
-          console.warn(`[Proxy] Skipped image (${errMsg}): ${image.url.slice(0, 80)}...`);
+          console.warn(`[Proxy] ❌ Skipped (${errMsg}): ${image.url.slice(0, 60)}...`);
           results.push({
             originalUrl: image.url,
             minioUrl: '',
@@ -95,6 +163,9 @@ export async function POST(request: NextRequest) {
 
     // Check if we have enough successful images
     const successfulImages = results.filter(r => r.success);
+    const cachedCount = results.filter(r => r.fromCache).length;
+
+    console.log(`[Proxy] Complete - Success: ${successfulImages.length}, Failed: ${results.length - successfulImages.length}, Cache hits: ${cacheHits}, New uploads: ${cacheMisses}`);
 
     return NextResponse.json({
       results,

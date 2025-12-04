@@ -579,3 +579,50 @@ model ScheduledPost {
   @@index([platform])
   @@map("scheduled_posts")
 }
+
+// =====================================================
+// IMAGE CACHING SYSTEM
+// =====================================================
+
+// Image Search Cache - caches Google CSE results for 24 hours
+model ImageSearchCache {
+  id           String   @id @default(uuid())
+  cacheKey     String   @unique @map("cache_key") // MD5 hash of keywords+params
+  keywords     String[] // Original keywords for debugging
+  searchParams Json?    @map("search_params") // {maxImages, safeSearch, imageSize}
+  results      Json     // Full search response {candidates, totalFound, filtered}
+  totalResults Int      @map("total_results")
+  hitCount     Int      @default(0) @map("hit_count") // Analytics
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at") // TTL enforcement (24h default)
+
+  @@index([cacheKey])
+  @@index([expiresAt])
+  @@map("image_search_cache")
+}
+
+// Cached Image - stores proxied images with URL and content hash deduplication
+model CachedImage {
+  id            String   @id @default(uuid())
+  sourceUrl     String   @unique @map("source_url") // Original image URL
+  sourceUrlHash String   @map("source_url_hash") // MD5 of URL for fast lookup
+  contentHash   String   @map("content_hash") // MD5 of image bytes (deduplication)
+  s3Url         String   @map("s3_url") // Cached S3 URL
+  s3Key         String   @map("s3_key") // S3 object key
+  thumbnailUrl  String?  @map("thumbnail_url")
+  width         Int?
+  height        Int?
+  fileSize      Int?     @map("file_size")
+  mimeType      String?  @map("mime_type")
+  sourceTitle   String?  @map("source_title")
+  sourceDomain  String?  @map("source_domain")
+  qualityScore  Float?   @map("quality_score")
+  hitCount      Int      @default(0) @map("hit_count")
+  lastUsedAt    DateTime @default(now()) @map("last_used_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([sourceUrlHash])
+  @@index([contentHash])
+  @@index([lastUsedAt])
+  @@map("cached_images")
+}

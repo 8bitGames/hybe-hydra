@@ -5,6 +5,20 @@ import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { searchImagesMultiQuery, isGoogleSearchConfigured, ImageSearchResult } from '@/lib/google-search';
 import { uploadToS3 } from '@/lib/storage';
+import crypto from 'crypto';
+import {
+  generateSearchCacheKey,
+  getCachedSearchResults,
+  setCachedSearchResults,
+  getOrCheckImageCache,
+  setCachedImage,
+  generateContentHash,
+} from '@/lib/image-cache';
+
+// Simple hash function for unique filenames
+function hashUrl(url: string): string {
+  return crypto.createHash('md5').update(url).digest('hex').slice(0, 12);
+}
 
 const GOOGLE_API_KEY = process.env.GOOGLE_AI_API_KEY || '';
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
@@ -126,7 +140,7 @@ Rules:
   }
 }
 
-// Search and proxy images
+// Search and proxy images with caching
 async function searchAndProxyImages(
   generationId: string,
   keywords: string[]
@@ -135,14 +149,41 @@ async function searchAndProxyImages(
     throw new Error('Google Custom Search API not configured');
   }
 
-  // Search images
-  const searchResults = await searchImagesMultiQuery(keywords, {
-    maxResultsPerQuery: 4,
-    totalMaxResults: 15,
-    safeSearch: 'medium',
-  });
+  // =====================================================
+  // STEP 1: Check search cache first
+  // =====================================================
+  const cacheKey = generateSearchCacheKey(keywords, { maxImages: 15, safeSearch: 'medium' });
+  let searchResults: ImageSearchResult[] = [];
+  let fromSearchCache = false;
 
-  console.log(`[Quick Compose] Found ${searchResults.length} images`);
+  const cachedSearch = await getCachedSearchResults(cacheKey);
+  if (cachedSearch && Array.isArray(cachedSearch.candidates)) {
+    console.log(`[Quick Compose] ✅ Search cache HIT for: ${keywords.join(', ')}`);
+    fromSearchCache = true;
+    // Map cached candidates back to ImageSearchResult format
+    searchResults = (cachedSearch.candidates as Array<{ sourceUrl: string; width: number; height: number; thumbnailUrl: string; sourceTitle?: string; sourceDomain?: string }>).map(c => ({
+      link: c.sourceUrl,
+      title: c.sourceTitle || '',
+      displayLink: c.sourceDomain || '',
+      image: {
+        width: c.width,
+        height: c.height,
+        thumbnailLink: c.thumbnailUrl,
+        contextLink: '',
+        thumbnailWidth: 0,
+        thumbnailHeight: 0,
+      },
+    }));
+  } else {
+    console.log(`[Quick Compose] ❌ Search cache MISS - calling Google API for: ${keywords.join(', ')}`);
+    searchResults = await searchImagesMultiQuery(keywords, {
+      maxResultsPerQuery: 4,
+      totalMaxResults: 15,
+      safeSearch: 'medium',
+    });
+  }
+
+  console.log(`[Quick Compose] Found ${searchResults.length} images (fromCache: ${fromSearchCache})`);
 
   // Filter by dimensions and quality
   const minWidth = 400;
@@ -166,22 +207,62 @@ async function searchAndProxyImages(
 
   console.log(`[Quick Compose] After filtering: ${validResults.length} images`);
 
-  // Proxy images to S3
+  // Store in search cache if not already cached
+  if (!fromSearchCache && validResults.length > 0) {
+    const candidates = validResults.map((r, idx) => ({
+      id: `cached-img-${idx}`,
+      sourceUrl: r.link,
+      thumbnailUrl: r.image?.thumbnailLink || r.link,
+      sourceTitle: r.title,
+      sourceDomain: r.displayLink,
+      width: r.image?.width || 0,
+      height: r.image?.height || 0,
+      isSelected: true,
+      sortOrder: idx,
+      qualityScore: 0.5,
+    }));
+    setCachedSearchResults(
+      cacheKey,
+      keywords,
+      { candidates, totalFound: searchResults.length, filtered: searchResults.length - validResults.length, filterReasons: {} },
+      { maxImages: 15, safeSearch: 'medium' }
+    ).catch(err => console.warn('[Quick Compose] Search cache store failed:', err));
+  }
+
+  // =====================================================
+  // STEP 2: Proxy images with deduplication
+  // =====================================================
   const proxiedImages: Array<{ url: string; order: number }> = [];
+  let imageCacheHits = 0;
+  let imageCacheMisses = 0;
 
   await Promise.all(
     validResults.map(async (result: ImageSearchResult, index: number) => {
       try {
+        // Check image cache first (by URL)
+        const urlCacheCheck = await getOrCheckImageCache(result.link);
+        if (urlCacheCheck.cached) {
+          imageCacheHits++;
+          console.log(`[Quick Compose] ✅ Image cache HIT: ${result.link.slice(0, 50)}...`);
+          proxiedImages.push({
+            url: urlCacheCheck.s3Url,
+            order: index,
+          });
+          return;
+        }
+
+        // Download image
         const response = await fetch(result.link, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
             'Referer': new URL(result.link).origin + '/',
           },
         });
 
         if (!response.ok) {
-          console.warn(`[Quick Compose] Failed to fetch image: ${result.link.slice(0, 50)}...`);
+          console.warn(`[Quick Compose] ❌ Failed to fetch (${response.status}): ${result.link.slice(0, 50)}...`);
           return;
         }
 
@@ -189,19 +270,50 @@ async function searchAndProxyImages(
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
+        // Check content hash cache
+        const contentHash = generateContentHash(buffer);
+        const contentCacheCheck = await getOrCheckImageCache(result.link, buffer);
+        if (contentCacheCheck.cached) {
+          imageCacheHits++;
+          console.log(`[Quick Compose] ✅ Content hash HIT: ${result.link.slice(0, 50)}...`);
+          proxiedImages.push({
+            url: contentCacheCheck.s3Url,
+            order: index,
+          });
+          return;
+        }
+
+        // New image - upload to shared cache path
+        imageCacheMisses++;
         let ext = 'jpg';
         if (contentType.includes('png')) ext = 'png';
         else if (contentType.includes('webp')) ext = 'webp';
+        else if (contentType.includes('gif')) ext = 'gif';
 
-        const objectKey = `compose/${generationId}/images/${index}_${uuidv4().slice(0, 8)}.${ext}`;
+        const urlHash = hashUrl(result.link);
+        const objectKey = `compose/cached/${urlHash}.${ext}`;
         const s3Url = await uploadToS3(buffer, objectKey, contentType);
 
+        // Store in cache (fire and forget)
+        setCachedImage({
+          sourceUrl: result.link,
+          contentHash,
+          s3Url,
+          s3Key: objectKey,
+          mimeType: contentType,
+          fileSize: buffer.length,
+          width: result.image?.width,
+          height: result.image?.height,
+        }).catch(err => console.warn('[Quick Compose] Image cache store failed:', err));
+
+        console.log(`[Quick Compose] 💾 NEW: ${result.link.slice(0, 50)}... → ${objectKey}`);
         proxiedImages.push({
           url: s3Url,
           order: index,
         });
       } catch (error) {
-        console.warn(`[Quick Compose] Image proxy error: ${error}`);
+        const errMsg = error instanceof Error ? error.message : 'Unknown error';
+        console.warn(`[Quick Compose] ❌ Skipped (${errMsg}): ${result.link.slice(0, 50)}...`);
       }
     })
   );
@@ -209,7 +321,7 @@ async function searchAndProxyImages(
   // Sort by order
   proxiedImages.sort((a, b) => a.order - b.order);
 
-  console.log(`[Quick Compose] Proxied ${proxiedImages.length} images`);
+  console.log(`[Quick Compose] Proxied ${proxiedImages.length} images (cache hits: ${imageCacheHits}, new uploads: ${imageCacheMisses})`);
   return proxiedImages;
 }
 

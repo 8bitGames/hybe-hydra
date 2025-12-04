@@ -5,6 +5,12 @@ import {
   isGoogleSearchConfigured,
   ImageSearchResult
 } from '@/lib/google-search';
+import {
+  generateSearchCacheKey,
+  getCachedSearchResults,
+  setCachedSearchResults,
+  type SearchCacheResult
+} from '@/lib/image-cache';
 
 interface ImageSearchRequest {
   generationId: string;
@@ -58,6 +64,36 @@ export async function POST(request: NextRequest) {
         message: 'Google Custom Search API not configured. Please set GOOGLE_CSE_API_KEY and GOOGLE_SEARCH_ENGINE_ID environment variables.'
       });
     }
+
+    // =====================================================
+    // CACHE CHECK - Try to get cached results first
+    // =====================================================
+    const cacheKey = generateSearchCacheKey(keywords, { maxImages, safeSearch });
+    console.log(`[Image Search] Checking cache for key: ${cacheKey.slice(0, 8)}...`);
+
+    const cachedResults = await getCachedSearchResults(cacheKey);
+
+    if (cachedResults) {
+      console.log(`[Image Search] ✅ CACHE HIT for: ${keywords.join(', ')}`);
+      // Update IDs for this generation (cache stores generic IDs)
+      const candidates = (cachedResults.candidates as ImageCandidate[]).map((c, idx) => ({
+        ...c,
+        id: `${generationId}-img-${idx}`,
+        sortOrder: idx,
+      }));
+      return NextResponse.json({
+        candidates,
+        totalFound: cachedResults.totalFound,
+        filtered: cachedResults.filtered,
+        filterReasons: cachedResults.filterReasons,
+        fromCache: true,
+      });
+    }
+
+    // =====================================================
+    // CACHE MISS - Call Google API
+    // =====================================================
+    console.log(`[Image Search] ❌ CACHE MISS - calling Google API for: ${keywords.join(', ')}`);
 
     // Search images using multiple keywords for better coverage
     const searchResults = await searchImagesMultiQuery(keywords, {
@@ -126,13 +162,37 @@ export async function POST(request: NextRequest) {
       c.sortOrder = idx;
     });
 
-    return NextResponse.json({
+    const response = {
       candidates,
       totalFound: searchResults.length,
       filtered: filteredCount,
       filterReasons: {
         low_resolution: filteredCount
       }
+    };
+
+    // =====================================================
+    // STORE IN CACHE for future requests (24h TTL)
+    // =====================================================
+    if (candidates.length > 0) {
+      console.log(`[Image Search] 💾 Storing ${candidates.length} results in cache...`);
+      // Store with generic IDs (will be remapped per request)
+      const cacheableCandidates = candidates.map((c, idx) => ({
+        ...c,
+        id: `cached-img-${idx}`,
+        sortOrder: idx,
+      }));
+      await setCachedSearchResults(
+        cacheKey,
+        keywords,
+        { ...response, candidates: cacheableCandidates },
+        { maxImages, safeSearch, minWidth, minHeight }
+      );
+    }
+
+    return NextResponse.json({
+      ...response,
+      fromCache: false,
     });
   } catch (error) {
     console.error('Image search error:', error);
