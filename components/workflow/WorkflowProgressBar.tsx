@@ -1,17 +1,18 @@
 "use client";
 
-import { useWorkflowNavigation } from "@/lib/hooks/useWorkflowNavigation";
-import { WorkflowStage } from "@/lib/stores/workflow-store";
 import { cn } from "@/lib/utils";
-import { Check, Search, Lightbulb, Video, Send } from "lucide-react";
+import { Compass, Sparkles, Clapperboard, Settings2, Upload } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
 
-const STAGE_ICONS: Record<WorkflowStage, typeof Search> = {
-  discover: Search,
-  analyze: Lightbulb,
-  create: Video,
-  publish: Send,
-};
+const STAGES = [
+  { id: "discover", route: "/discover", icon: Compass, label: { ko: "발견", en: "Discover" } },
+  { id: "analyze", route: "/analyze", icon: Sparkles, label: { ko: "분석", en: "Analyze" } },
+  { id: "create", route: "/create", icon: Clapperboard, label: { ko: "생성", en: "Create" } },
+  { id: "processing", route: "/processing", icon: Settings2, label: { ko: "프로세싱", en: "Processing" } },
+  { id: "publish", route: "/publish", icon: Upload, label: { ko: "발행", en: "Publish" } },
+];
 
 interface WorkflowProgressBarProps {
   className?: string;
@@ -24,95 +25,66 @@ export function WorkflowProgressBar({
   showLabels = true,
   size = "md",
 }: WorkflowProgressBarProps) {
-  const { stages, goToStage } = useWorkflowNavigation();
   const { language } = useI18n();
+  const pathname = usePathname();
 
   const sizeClasses = {
-    sm: {
-      container: "gap-1",
-      step: "w-6 h-6",
-      icon: "w-3 h-3",
-      line: "h-0.5",
-      label: "text-xs",
-    },
-    md: {
-      container: "gap-2",
-      step: "w-8 h-8",
-      icon: "w-4 h-4",
-      line: "h-0.5",
-      label: "text-xs",
-    },
-    lg: {
-      container: "gap-3",
-      step: "w-10 h-10",
-      icon: "w-5 h-5",
-      line: "h-1",
-      label: "text-sm",
-    },
+    sm: { container: "gap-1", step: "w-6 h-6", icon: "w-3 h-3", line: "h-0.5", label: "text-xs" },
+    md: { container: "gap-2", step: "w-8 h-8", icon: "w-4 h-4", line: "h-0.5", label: "text-xs" },
+    lg: { container: "gap-3", step: "w-10 h-10", icon: "w-5 h-5", line: "h-1", label: "text-sm" },
   };
 
   const sizes = sizeClasses[size];
+  const currentIndex = STAGES.findIndex((s) => pathname.startsWith(s.route));
 
   return (
-    <div className={cn("flex items-center", sizes.container, className)}>
-      {stages.map((stage, index) => {
-        const Icon = STAGE_ICONS[stage.id];
-        const isLast = index === stages.length - 1;
+    <div className={cn("flex items-center justify-center py-4 border-b border-neutral-100", sizes.container, className)}>
+      {STAGES.map((stage, index) => {
+        const Icon = stage.icon;
+        const isLast = index === STAGES.length - 1;
+        const isCurrent = pathname.startsWith(stage.route);
+        const isPast = index < currentIndex;
 
         return (
           <div key={stage.id} className="flex items-center">
-            {/* Step */}
-            <button
-              onClick={() => stage.canNavigate && goToStage(stage.id)}
-              disabled={!stage.canNavigate}
-              className={cn(
-                "flex flex-col items-center gap-1 transition-all",
-                stage.canNavigate ? "cursor-pointer" : "cursor-not-allowed"
-              )}
+            <Link
+              href={stage.route}
+              className="flex flex-col items-center gap-1 transition-all cursor-pointer"
             >
-              {/* Circle */}
               <div
                 className={cn(
                   "flex items-center justify-center rounded-full border-2 transition-all",
                   sizes.step,
-                  stage.isCompleted && "border-neutral-900 bg-neutral-900 text-white",
-                  stage.isCurrent && !stage.isCompleted && "border-neutral-900 bg-transparent text-neutral-900",
-                  !stage.isCurrent &&
-                    !stage.isCompleted &&
-                    "border-neutral-300 bg-transparent text-neutral-400",
-                  stage.canNavigate && !stage.isCurrent && "hover:border-neutral-500"
+                  isCurrent && "border-neutral-900 bg-neutral-900 text-white",
+                  isPast && "border-neutral-400 bg-transparent text-neutral-400",
+                  !isCurrent && !isPast && "border-neutral-300 bg-transparent text-neutral-300",
+                  "hover:border-neutral-500"
                 )}
               >
-                {stage.isCompleted ? (
-                  <Check className={sizes.icon} strokeWidth={3} />
-                ) : (
-                  <Icon className={sizes.icon} />
-                )}
+                <Icon className={sizes.icon} />
               </div>
 
-              {/* Label */}
               {showLabels && (
                 <span
                   className={cn(
                     "font-medium whitespace-nowrap transition-colors",
                     sizes.label,
-                    stage.isCurrent && "text-neutral-900",
-                    stage.isCompleted && "text-neutral-700",
-                    !stage.isCurrent && !stage.isCompleted && "text-neutral-400"
+                    isCurrent && "text-neutral-900",
+                    isPast && "text-neutral-500",
+                    !isCurrent && !isPast && "text-neutral-400"
                   )}
                 >
                   {stage.label[language]}
                 </span>
               )}
-            </button>
+            </Link>
 
-            {/* Connector Line */}
             {!isLast && (
               <div
                 className={cn(
                   "mx-2 flex-1 min-w-[24px] max-w-[60px] rounded-full transition-colors",
                   sizes.line,
-                  stage.isCompleted ? "bg-neutral-900" : "bg-neutral-200"
+                  isPast ? "bg-neutral-400" : "bg-neutral-200"
                 )}
               />
             )}
@@ -125,32 +97,27 @@ export function WorkflowProgressBar({
 
 // Compact version for mobile
 export function WorkflowProgressBarCompact({ className }: { className?: string }) {
-  const { stages, currentStage } = useWorkflowNavigation();
   const { language } = useI18n();
+  const pathname = usePathname();
 
-  const currentIndex = stages.findIndex((s) => s.id === currentStage);
-  const current = stages[currentIndex];
+  const currentIndex = STAGES.findIndex((s) => pathname.startsWith(s.route));
+  const current = STAGES[currentIndex];
 
   return (
     <div className={cn("flex items-center gap-3", className)}>
-      {/* Progress dots */}
       <div className="flex items-center gap-1">
-        {stages.map((stage, index) => (
+        {STAGES.map((stage, index) => (
           <div
             key={stage.id}
             className={cn(
               "w-2 h-2 rounded-full transition-colors",
-              stage.isCompleted && "bg-neutral-900",
-              stage.isCurrent && !stage.isCompleted && "bg-neutral-900",
-              !stage.isCurrent && !stage.isCompleted && "bg-neutral-300"
+              index <= currentIndex ? "bg-neutral-900" : "bg-neutral-300"
             )}
           />
         ))}
       </div>
-
-      {/* Current stage label */}
       <span className="text-sm text-neutral-600">
-        {currentIndex + 1}/{stages.length} · {current?.label[language]}
+        {currentIndex + 1}/{STAGES.length} · {current?.label[language]}
       </span>
     </div>
   );
@@ -158,79 +125,58 @@ export function WorkflowProgressBarCompact({ className }: { className?: string }
 
 // Vertical version for sidebar
 export function WorkflowProgressBarVertical({ className }: { className?: string }) {
-  const { stages, goToStage } = useWorkflowNavigation();
   const { language } = useI18n();
+  const pathname = usePathname();
+
+  const currentIndex = STAGES.findIndex((s) => pathname.startsWith(s.route));
 
   return (
     <div className={cn("flex flex-col", className)}>
-      {stages.map((stage, index) => {
-        const Icon = STAGE_ICONS[stage.id];
-        const isLast = index === stages.length - 1;
+      {STAGES.map((stage, index) => {
+        const Icon = stage.icon;
+        const isLast = index === STAGES.length - 1;
+        const isCurrent = pathname.startsWith(stage.route);
+        const isPast = index < currentIndex;
 
         return (
           <div key={stage.id} className="flex">
-            {/* Left side: icon + line */}
             <div className="flex flex-col items-center mr-3">
-              <button
-                onClick={() => stage.canNavigate && goToStage(stage.id)}
-                disabled={!stage.canNavigate}
+              <Link
+                href={stage.route}
                 className={cn(
-                  "flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all",
-                  stage.isCompleted && "border-neutral-900 bg-neutral-900 text-white",
-                  stage.isCurrent && !stage.isCompleted && "border-neutral-900 bg-transparent text-neutral-900",
-                  !stage.isCurrent &&
-                    !stage.isCompleted &&
-                    "border-neutral-300 bg-transparent text-neutral-400",
-                  stage.canNavigate ? "cursor-pointer hover:border-neutral-500" : "cursor-not-allowed"
+                  "flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all cursor-pointer",
+                  isCurrent && "border-neutral-900 bg-neutral-900 text-white",
+                  isPast && "border-neutral-400 bg-transparent text-neutral-400",
+                  !isCurrent && !isPast && "border-neutral-300 bg-transparent text-neutral-300",
+                  "hover:border-neutral-500"
                 )}
               >
-                {stage.isCompleted ? (
-                  <Check className="w-4 h-4" strokeWidth={3} />
-                ) : (
-                  <Icon className="w-4 h-4" />
-                )}
-              </button>
+                <Icon className="w-4 h-4" />
+              </Link>
 
               {!isLast && (
                 <div
                   className={cn(
                     "w-0.5 flex-1 min-h-[24px] transition-colors",
-                    stage.isCompleted ? "bg-neutral-900" : "bg-neutral-200"
+                    isPast ? "bg-neutral-400" : "bg-neutral-200"
                   )}
                 />
               )}
             </div>
 
-            {/* Right side: text */}
             <div className="pb-6">
-              <button
-                onClick={() => stage.canNavigate && goToStage(stage.id)}
-                disabled={!stage.canNavigate}
-                className={cn(
-                  "text-left transition-colors",
-                  stage.canNavigate ? "cursor-pointer" : "cursor-not-allowed"
-                )}
-              >
+              <Link href={stage.route} className="text-left transition-colors cursor-pointer">
                 <p
                   className={cn(
                     "font-medium",
-                    stage.isCurrent && "text-neutral-900",
-                    stage.isCompleted && "text-neutral-700",
-                    !stage.isCurrent && !stage.isCompleted && "text-neutral-400"
+                    isCurrent && "text-neutral-900",
+                    isPast && "text-neutral-500",
+                    !isCurrent && !isPast && "text-neutral-400"
                   )}
                 >
                   {stage.label[language]}
                 </p>
-                <p
-                  className={cn(
-                    "text-xs mt-0.5",
-                    stage.isCurrent && "text-neutral-500",
-                    !stage.isCurrent && "text-neutral-400"
-                  )}
-                >
-                  {stage.description[language]}
-                </p>
-              </button>
+              </Link>
             </div>
           </div>
         );

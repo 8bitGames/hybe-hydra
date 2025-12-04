@@ -644,6 +644,51 @@ model ScheduledPost {
 }
 
 // =====================================================
+// STASHED PROMPT ANALYSES
+// =====================================================
+
+// Stashed Prompt Analysis - saves analyze results for future use
+model StashedPromptAnalysis {
+  id          String   @id @default(uuid())
+  name        String   // User-defined name for this stash
+  campaignId  String?  @map("campaign_id")
+
+  // Original request context
+  context     Json     // ContextData from the original analyze request
+
+  // Images used (stored as references)
+  images      Json     // Array of {url, type, name} - original image data
+
+  // Analysis results
+  variations  Json     // Array of PromptVariation objects
+  imageAnalysis Json   @map("image_analysis") // {summary, detectedElements, colorPalette, mood}
+
+  // Prompts used for generation (stored for reproducibility)
+  analysisPromptUsed  String?  @map("analysis_prompt_used")  // Full prompt sent to Gemini for image analysis
+  finalizePromptUsed  String?  @map("finalize_prompt_used")  // Full prompt sent to Gemini for finalization
+
+  // Selected/finalized prompt (if user proceeded to finalize)
+  selectedVariationId String?  @map("selected_variation_id")
+  veo3Prompt          String?  @map("veo3_prompt")           // The final Veo3 video generation prompt
+  finalMetadata       Json?    @map("final_metadata")        // {duration, aspectRatio, style, recommendedSettings}
+
+  // Organization
+  tags        String[] @default([])
+  isFavorite  Boolean  @default(false) @map("is_favorite")
+
+  // Metadata
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([campaignId])
+  @@index([createdBy])
+  @@index([isFavorite])
+  @@index([createdAt])
+  @@map("stashed_prompt_analyses")
+}
+
+// =====================================================
 // IMAGE CACHING SYSTEM
 // =====================================================
 

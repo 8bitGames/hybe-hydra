@@ -31,6 +31,7 @@ import {
   Search,
   Lightbulb,
   ArrowRight,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -72,6 +73,13 @@ const workflowItems: NavItem[] = [
     href: "/create",
     icon: Sparkles,
     description: { ko: "AI 영상 또는 컴포즈 영상 생성", en: "Generate AI or compose videos" },
+    isWorkflow: true,
+  },
+  {
+    name: { ko: "프로세싱", en: "Processing" },
+    href: "/processing",
+    icon: Loader2,
+    description: { ko: "생성된 영상 확인 및 품질 검토", en: "Review generated videos and quality check" },
     isWorkflow: true,
   },
   {
@@ -245,7 +253,10 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
   return (
     <nav className={cn("flex items-center gap-1", className)}>
       {/* Workflow Navigation - Primary */}
-      <div className="flex items-center gap-0.5 px-2 py-1 bg-zinc-100 dark:bg-zinc-900 rounded-lg">
+      <div className={cn(
+        "flex items-center gap-0.5 px-2 py-1 rounded-lg",
+        isInWorkflow ? "bg-zinc-100 dark:bg-zinc-900" : "bg-transparent"
+      )}>
         {workflowItems.map((item, index) => (
           <div key={isKorean ? item.name.ko : item.name.en} className="flex items-center">
             <Link href={item.href!}>
@@ -254,7 +265,8 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
                 size="sm"
                 className={cn(
                   "gap-1.5 text-sm font-medium h-8",
-                  isActive(item.href) && "bg-white dark:bg-zinc-800 shadow-sm"
+                  isActive(item.href) && "bg-white dark:bg-zinc-800 shadow-sm",
+                  !isInWorkflow && "text-muted-foreground"
                 )}
               >
                 <item.icon className="h-4 w-4" />
@@ -262,7 +274,10 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
               </Button>
             </Link>
             {index < workflowItems.length - 1 && (
-              <ArrowRight className="h-3 w-3 text-muted-foreground mx-0.5" />
+              <ArrowRight className={cn(
+                "h-3 w-3 mx-0.5",
+                isInWorkflow ? "text-muted-foreground" : "text-muted-foreground/50"
+              )} />
             )}
           </div>
         ))}

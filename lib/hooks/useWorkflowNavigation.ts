@@ -7,6 +7,7 @@ import {
   WorkflowStage,
   selectCanProceedToAnalyze,
   selectCanProceedToCreate,
+  selectCanProceedToProcessing,
   selectCanProceedToPublish,
 } from "@/lib/stores/workflow-store";
 
@@ -19,17 +20,20 @@ export interface WorkflowNavigationResult {
   goToDiscover: () => void;
   goToAnalyze: () => void;
   goToCreate: () => void;
+  goToProcessing: () => void;
   goToPublish: () => void;
   goToStage: (stage: WorkflowStage) => void;
 
   // Proceed functions (with data transfer)
   proceedToAnalyze: () => void;
   proceedToCreate: () => void;
+  proceedToProcessing: () => void;
   proceedToPublish: () => void;
 
   // Validation
   canProceedToAnalyze: boolean;
   canProceedToCreate: boolean;
+  canProceedToProcessing: boolean;
   canProceedToPublish: boolean;
 
   // Reset
@@ -76,6 +80,13 @@ const STAGE_CONFIG: Record<
     route: "/create",
     icon: "Video",
   },
+  processing: {
+    id: "processing",
+    label: { ko: "프로세싱", en: "Processing" },
+    description: { ko: "생성된 영상 확인 및 품질 검토", en: "Review generated videos and quality check" },
+    route: "/processing",
+    icon: "Loader2",
+  },
   publish: {
     id: "publish",
     label: { ko: "발행", en: "Publish" },
@@ -85,7 +96,7 @@ const STAGE_CONFIG: Record<
   },
 };
 
-const STAGE_ORDER: WorkflowStage[] = ["discover", "analyze", "create", "publish"];
+const STAGE_ORDER: WorkflowStage[] = ["discover", "analyze", "create", "processing", "publish"];
 
 export function useWorkflowNavigation(): WorkflowNavigationResult {
   const router = useRouter();
@@ -95,11 +106,13 @@ export function useWorkflowNavigation(): WorkflowNavigationResult {
   const setCurrentStage = useWorkflowStore((state) => state.setCurrentStage);
   const transferToAnalyze = useWorkflowStore((state) => state.transferToAnalyze);
   const transferToCreate = useWorkflowStore((state) => state.transferToCreate);
+  const transferToProcessing = useWorkflowStore((state) => state.transferToProcessing);
   const transferToPublish = useWorkflowStore((state) => state.transferToPublish);
   const resetWorkflowStore = useWorkflowStore((state) => state.resetWorkflow);
 
   const canProceedToAnalyze = useWorkflowStore(selectCanProceedToAnalyze);
   const canProceedToCreate = useWorkflowStore(selectCanProceedToCreate);
+  const canProceedToProcessing = useWorkflowStore(selectCanProceedToProcessing);
   const canProceedToPublish = useWorkflowStore(selectCanProceedToPublish);
 
   // Simple navigation (just changes route)
@@ -116,6 +129,11 @@ export function useWorkflowNavigation(): WorkflowNavigationResult {
   const goToCreate = useCallback(() => {
     setCurrentStage("create");
     router.push("/create");
+  }, [router, setCurrentStage]);
+
+  const goToProcessing = useCallback(() => {
+    setCurrentStage("processing");
+    router.push("/processing");
   }, [router, setCurrentStage]);
 
   const goToPublish = useCallback(() => {
@@ -143,6 +161,12 @@ export function useWorkflowNavigation(): WorkflowNavigationResult {
     transferToCreate();
     router.push("/create");
   }, [router, transferToCreate, canProceedToCreate]);
+
+  const proceedToProcessing = useCallback(() => {
+    if (!canProceedToProcessing) return;
+    transferToProcessing();
+    router.push("/processing");
+  }, [router, transferToProcessing, canProceedToProcessing]);
 
   const proceedToPublish = useCallback(() => {
     if (!canProceedToPublish) return;
@@ -200,13 +224,16 @@ export function useWorkflowNavigation(): WorkflowNavigationResult {
     goToDiscover,
     goToAnalyze,
     goToCreate,
+    goToProcessing,
     goToPublish,
     goToStage,
     proceedToAnalyze,
     proceedToCreate,
+    proceedToProcessing,
     proceedToPublish,
     canProceedToAnalyze,
     canProceedToCreate,
+    canProceedToProcessing,
     canProceedToPublish,
     resetWorkflow,
     getStageInfo,

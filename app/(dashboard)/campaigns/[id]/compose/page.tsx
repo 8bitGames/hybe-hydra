@@ -54,7 +54,6 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { ScriptTimeline } from "@/components/features/script-timeline";
-import { ImageTextPreview } from "@/components/features/image-text-preview";
 import { AudioStructurePreview } from "@/components/features/audio-structure-preview";
 import { TrendRecommendationsCard } from "@/components/features/trend-analysis";
 import { TikTokSEOPreview } from "@/components/features/tiktok-seo-preview";
@@ -1044,15 +1043,6 @@ export default function ComposePage() {
                       </div>
                     )}
 
-                    {selectedImages.length >= 3 && scriptData?.script?.lines && (
-                      <div className="pt-6 border-t">
-                        <ImageTextPreview
-                          images={selectedImages}
-                          scriptLines={scriptData.script.lines}
-                          totalDuration={scriptData.script.totalDuration}
-                        />
-                      </div>
-                    )}
                   </>
                 )}
               </CardContent>

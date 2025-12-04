@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useI18n } from "@/lib/i18n";
 import {
   Dialog,
@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import {
@@ -505,10 +504,11 @@ export function PersonalizePromptModal({
   });
   const [userFeedback, setUserFeedback] = useState("");
 
-  // Reset state when modal opens
+  // Reset state when modal opens - use useEffect instead to properly trigger analysis
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
       if (newOpen) {
+        console.log("[PERSONALIZE] 📂 Modal opening, resetting state...");
         setStep(1);
         setIsAnalyzing(false);
         setIsFinalizing(false);
@@ -518,34 +518,58 @@ export function PersonalizePromptModal({
         setSelectedVariation(null);
         setFinalPrompt("");
         setUserFeedback("");
-        // Start analysis
-        analyzeImages();
       }
       onOpenChange(newOpen);
     },
     [onOpenChange]
   );
 
-  // Convert blob URL to base64
-  const blobUrlToBase64 = async (blobUrl: string): Promise<{ base64: string; mimeType: string } | null> => {
+  // Convert any image URL to base64 (works for blob, S3, and external URLs)
+  const imageUrlToBase64 = async (imageUrl: string): Promise<{ base64: string; mimeType: string } | null> => {
     try {
-      const response = await fetch(blobUrl);
-      const blob = await response.blob();
-      const mimeType = blob.type || "image/jpeg";
+      console.log("[PERSONALIZE-UI] Fetching image:", imageUrl.slice(0, 80));
+      const fetchStart = Date.now();
 
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const dataUrl = reader.result as string;
-          // Extract base64 from data URL (remove "data:image/...;base64," prefix)
-          const base64 = dataUrl.split(",")[1];
-          resolve({ base64, mimeType });
-        };
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(blob);
-      });
+      // For blob URLs, fetch directly (same origin)
+      if (imageUrl.startsWith("blob:")) {
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+          console.error("[PERSONALIZE-UI] Failed to fetch blob:", response.status);
+          return null;
+        }
+        const blob = await response.blob();
+        const mimeType = blob.type || "image/jpeg";
+        console.log("[PERSONALIZE-UI] Blob fetched in", Date.now() - fetchStart, "ms, size:", blob.size);
+
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const dataUrl = reader.result as string;
+            const base64 = dataUrl.split(",")[1];
+            console.log("[PERSONALIZE-UI] Converted blob to base64, length:", base64.length);
+            resolve({ base64, mimeType });
+          };
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      // For S3/external URLs, use proxy API to avoid CORS
+      console.log("[PERSONALIZE-UI] Using proxy for external URL");
+      const proxyResponse = await fetch(`/api/v1/proxy-image?url=${encodeURIComponent(imageUrl)}`);
+      if (!proxyResponse.ok) {
+        console.error("[PERSONALIZE-UI] Proxy failed:", proxyResponse.status);
+        return null;
+      }
+      const data = await proxyResponse.json();
+      console.log("[PERSONALIZE-UI] Proxy fetched in", Date.now() - fetchStart, "ms, base64 length:", data.base64?.length);
+
+      return {
+        base64: data.base64,
+        mimeType: data.mimeType,
+      };
     } catch (error) {
-      console.error("[PERSONALIZE-UI] Failed to convert blob to base64:", error);
+      console.error("[PERSONALIZE-UI] Failed to convert image to base64:", error);
       return null;
     }
   };
@@ -555,48 +579,74 @@ export function PersonalizePromptModal({
     setIsAnalyzing(true);
     setError(null);
 
-    console.log("[PERSONALIZE-UI] Starting analysis...");
-    console.log("[PERSONALIZE-UI] Images:", images.map(i => ({ url: i.url.slice(0, 50), name: i.name })));
+    console.log("=".repeat(60));
+    console.log("[PERSONALIZE] 🚀 Step 1: Starting image analysis");
+    console.log("[PERSONALIZE] 📷 Total images:", images.length);
+    images.forEach((img, idx) => {
+      console.log(`[PERSONALIZE]   Image ${idx + 1}: ${img.name || "unnamed"}`);
+      console.log(`[PERSONALIZE]     URL: ${img.url.slice(0, 80)}...`);
+      console.log(`[PERSONALIZE]     Type: ${img.type || "none"}`);
+      console.log(`[PERSONALIZE]     Has base64: ${!!img.base64}`);
+    });
     const startTime = Date.now();
 
     try {
-      // Convert blob URLs to base64 before sending to API
-      console.log("[PERSONALIZE-UI] Processing images...");
+      // Convert ALL images to base64 on client side (faster than server fetching from S3)
+      console.log("[PERSONALIZE] 🔄 Converting images to base64...");
+      const conversionStart = Date.now();
+
       const processedImages = await Promise.all(
-        images.map(async (img) => {
-          // Check if it's a blob URL (local file)
-          if (img.url.startsWith("blob:")) {
-            console.log("[PERSONALIZE-UI] Converting blob URL to base64:", img.name);
-            const result = await blobUrlToBase64(img.url);
-            if (result) {
-              return {
-                url: img.url, // Keep original for reference
-                type: img.type,
-                name: img.name,
-                base64: result.base64,
-                mimeType: result.mimeType,
-              };
-            }
-            return null; // Failed to convert
+        images.map(async (img, idx) => {
+          const imgStart = Date.now();
+          console.log(`[PERSONALIZE]   Processing image ${idx + 1}...`);
+
+          // If base64 already provided, use it
+          if (img.base64 && img.mimeType) {
+            console.log(`[PERSONALIZE]   ✅ Image ${idx + 1}: Already has base64 (${img.base64.length} chars)`);
+            return {
+              url: img.url,
+              type: img.type,
+              name: img.name,
+              base64: img.base64,
+              mimeType: img.mimeType,
+            };
           }
-          // S3 or external URL - pass as-is
-          return {
-            url: img.url,
-            type: img.type,
-            name: img.name,
-          };
+
+          // Convert URL (blob, S3, or external) to base64
+          const isBlob = img.url.startsWith("blob:");
+          console.log(`[PERSONALIZE]   Image ${idx + 1}: Converting ${isBlob ? "blob" : "external"} URL to base64...`);
+
+          const result = await imageUrlToBase64(img.url);
+
+          if (result) {
+            console.log(`[PERSONALIZE]   ✅ Image ${idx + 1}: Converted in ${Date.now() - imgStart}ms`);
+            console.log(`[PERSONALIZE]      Base64 length: ${result.base64.length} chars`);
+            console.log(`[PERSONALIZE]      MIME type: ${result.mimeType}`);
+            return {
+              url: img.url,
+              type: img.type,
+              name: img.name,
+              base64: result.base64,
+              mimeType: result.mimeType,
+            };
+          }
+
+          console.log(`[PERSONALIZE]   ❌ Image ${idx + 1}: Failed to convert`);
+          return null; // Failed to convert
         })
       );
 
       // Filter out null values (failed conversions)
       const validImages = processedImages.filter((img): img is NonNullable<typeof img> => img !== null);
-      console.log("[PERSONALIZE-UI] Processed images:", validImages.length);
+      console.log(`[PERSONALIZE] 📊 Conversion complete: ${validImages.length}/${images.length} images in ${Date.now() - conversionStart}ms`);
 
       if (validImages.length === 0) {
         throw new Error("No valid images to analyze");
       }
 
-      console.log("[PERSONALIZE-UI] Calling API...");
+      console.log("[PERSONALIZE] 🌐 Calling Gemini API for analysis...");
+      const apiStart = Date.now();
+
       const response = await fetch("/api/v1/ai/personalize-veo3-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -607,25 +657,39 @@ export function PersonalizePromptModal({
         }),
       });
 
-      console.log("[PERSONALIZE-UI] Response status:", response.status);
+      console.log(`[PERSONALIZE] 📡 API response status: ${response.status} (${Date.now() - apiStart}ms)`);
+
       const data = await response.json();
-      console.log("[PERSONALIZE-UI] Response data:", data.success ? "success" : data.error);
-      console.log("[PERSONALIZE-UI] Total time:", Date.now() - startTime, "ms");
 
       if (!data.success) {
+        console.log(`[PERSONALIZE] ❌ API error: ${data.error}`);
         throw new Error(data.error || "Analysis failed");
       }
+
+      console.log(`[PERSONALIZE] ✅ Analysis complete!`);
+      console.log(`[PERSONALIZE]    Variations: ${data.variations?.length || 0}`);
+      console.log(`[PERSONALIZE]    Image analysis: ${data.imageAnalysis ? "yes" : "no"}`);
+      console.log(`[PERSONALIZE] ⏱️ Total time: ${Date.now() - startTime}ms`);
+      console.log("=".repeat(60));
 
       setVariations(data.variations);
       setImageAnalysis(data.imageAnalysis);
       setStep(2);
     } catch (err) {
-      console.error("[PERSONALIZE-UI] Analysis error:", err);
+      console.error("[PERSONALIZE] ❌ Analysis error:", err);
       setError(err instanceof Error ? err.message : "Failed to analyze images");
     } finally {
       setIsAnalyzing(false);
     }
   }, [images, context]);
+
+  // Trigger analysis when modal opens
+  useEffect(() => {
+    if (open && step === 1 && !isAnalyzing && variations.length === 0 && !error) {
+      console.log("[PERSONALIZE] 🔄 useEffect triggering analyzeImages...");
+      analyzeImages();
+    }
+  }, [open, step, isAnalyzing, variations.length, error, analyzeImages]);
 
   // Step 2 → 3: Finalize prompt
   const finalizePrompt = useCallback(async () => {
@@ -746,7 +810,7 @@ export function PersonalizePromptModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" />
@@ -780,7 +844,7 @@ export function PersonalizePromptModal({
         )}
 
         {/* Step content */}
-        <ScrollArea className="flex-1 pr-4">
+        <div className="flex-1 min-h-0 overflow-y-auto max-h-[55vh] pr-2">
           {step === 1 && <AnalyzingStep images={images} />}
           {step === 2 && imageAnalysis && (
             <ChooseDirectionStep
@@ -801,7 +865,7 @@ export function PersonalizePromptModal({
               onRegenerate={handleRegenerate}
             />
           )}
-        </ScrollArea>
+        </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between pt-4 border-t border-neutral-200">

@@ -42,7 +42,7 @@ import {
   History,
   Clock,
 } from "lucide-react";
-import { WorkflowProgressBar } from "@/components/workflow/WorkflowProgressBar";
+import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 
 // ============================================================================
 // Helper Functions
@@ -894,34 +894,10 @@ export default function DiscoverPage() {
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col bg-white">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 bg-white shrink-0">
-        {/* Left: Icon + Title */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center">
-            <Search className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold text-neutral-900">{t.title}</h1>
-            <p className="text-xs text-neutral-500">{t.subtitle}</p>
-          </div>
-        </div>
-
-        {/* Center: Workflow Progress */}
-        <WorkflowProgressBar size="sm" />
-
-        {/* Right: Navigation Buttons */}
-        <div className="flex items-center gap-2">
-          {/* No back button for Discover - it's the first stage */}
-          <Button
-            onClick={handleProceedToAnalyze}
-            disabled={!canProceedToAnalyze}
-            className="bg-neutral-900 text-white hover:bg-neutral-800"
-          >
-            {t.proceed}
-            <ArrowRight className="h-4 w-4 ml-2" />
-          </Button>
-        </div>
-      </div>
+      <WorkflowHeader
+        onNext={handleProceedToAnalyze}
+        canProceed={canProceedToAnalyze}
+      />
 
       {/* Search Row */}
       <div className="flex items-center gap-4 px-4 py-3 border-b border-neutral-100 bg-white shrink-0">

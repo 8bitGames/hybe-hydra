@@ -7,6 +7,7 @@ import { useCampaigns, usePipelines, useSeedCandidates, useComposeCandidates, us
 import { pipelineApi, PipelineItem, cleanupApi, CleanupResponse } from "@/lib/pipeline-api";
 import { presetsApi, StylePreset, variationsApi, VariationConfigRequest, videoApi, VideoGeneration, composeVariationsApi } from "@/lib/video-api";
 import { socialAccountsApi, SocialAccount } from "@/lib/publishing-api";
+import { useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -109,6 +110,9 @@ export default function GlobalPipelinePage() {
   const router = useRouter();
   const { t, language } = useI18n();
   const isKorean = language === "ko";
+
+  // Sync workflow stage - keep "create" tab selected in workflow navigation
+  useWorkflowSync("create");
 
   // Use TanStack Query for campaigns with caching
   const { data: campaignsData, isLoading: campaignsLoading } = useCampaigns({ page_size: 50 });

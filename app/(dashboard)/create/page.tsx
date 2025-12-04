@@ -10,6 +10,8 @@ import { useCampaigns, useAssets, useMerchandise } from "@/lib/queries";
 import type { MerchandiseItem as MerchandiseItemType } from "@/lib/campaigns-api";
 import { useToast } from "@/components/ui/toast";
 import { PersonalizePromptModal } from "@/components/features/create/PersonalizePromptModal";
+import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
+import { videoApi } from "@/lib/video-api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -21,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { WorkflowProgressBar } from "@/components/workflow/WorkflowProgressBar";
+import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { cn } from "@/lib/utils";
 import {
   Sparkles,
@@ -84,7 +86,7 @@ function ContextPanel() {
     aiInsights,
   } = discover;
 
-  const { selectedIdea, campaignName, optimizedPrompt, hashtags: analyzeHashtags } = analyze;
+  const { selectedIdea, campaignName, campaignId, optimizedPrompt, hashtags: analyzeHashtags } = analyze;
 
   // Combine hashtags from discover and analyze
   const allHashtags = useMemo(() => {
@@ -208,6 +210,35 @@ function ContextPanel() {
             </p>
           </div>
         )}
+
+        {/* Stashed Prompts Panel */}
+        <StashedPromptsPanel
+          currentPrompt={optimizedPrompt || ""}
+          currentMetadata={{
+            // Basic settings
+            aspectRatio: "9:16",
+            duration: "5",
+            // Campaign & idea
+            campaignId: campaignId || undefined,
+            campaignName: campaignName || undefined,
+            selectedIdea: selectedIdea,
+            // Hashtags & keywords
+            hashtags: allHashtags,
+            keywords: keywords,
+            // Performance metrics
+            performanceMetrics: performanceMetrics,
+            // Saved inspiration (thumbnails & stats only)
+            savedInspiration: savedInspiration.map((v) => ({
+              id: v.id,
+              thumbnailUrl: v.thumbnailUrl,
+              stats: v.stats,
+            })),
+            // AI insights
+            aiInsights: aiInsights,
+          }}
+          source="create"
+          collapsed={true}
+        />
 
         {/* Campaign */}
         {campaignName && (
@@ -963,7 +994,10 @@ function CreateMethodCards({
         {selectedMethod === "ai" && (
           <div className="mt-4 pt-4 border-t border-neutral-200">
             <Button
-              onClick={onGenerate}
+              onClick={(e) => {
+                e.stopPropagation();
+                onGenerate();
+              }}
               disabled={isGenerating}
               className="w-full bg-neutral-900 text-white hover:bg-neutral-800"
             >
@@ -1115,13 +1149,12 @@ export default function CreatePage() {
 
   // Sync workflow stage
   useWorkflowSync("create");
-  const { goToAnalyze, proceedToPublish } = useWorkflowNavigation();
+  const { goToAnalyze } = useWorkflowNavigation();
 
   // Workflow store
-  const { analyze, markStageCompleted, setAnalyzeCampaign } = useWorkflowStore(
+  const { analyze, setAnalyzeCampaign } = useWorkflowStore(
     useShallow((state) => ({
       analyze: state.analyze,
-      markStageCompleted: state.markStageCompleted,
       setAnalyzeCampaign: state.setAnalyzeCampaign,
     }))
   );
@@ -1203,8 +1236,15 @@ export default function CreatePage() {
   }, [analyze.selectedIdea]);
 
   // Handle AI generation
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
+    console.log("[Veo3] handleGenerate called", {
+      selectedCampaignId,
+      audioAsset: audioAsset?.id,
+      imageAssetsCount: imageAssets.length,
+    });
+
     if (!selectedCampaignId) {
+      console.log("[Veo3] No campaign selected");
       toast.warning(
         language === "ko" ? "캠페인 필요" : "Campaign needed",
         language === "ko" ? "먼저 캠페인을 선택하세요" : "Please select a campaign first"
@@ -1212,37 +1252,172 @@ export default function CreatePage() {
       return;
     }
 
-    // If images are attached, show personalization modal first
-    if (imageAssets.length > 0) {
-      setShowPersonalizeModal(true);
+    // Check for audio asset - required for any video generation
+    if (!audioAsset) {
+      console.log("[Veo3] No audio asset selected");
+      toast.warning(
+        language === "ko" ? "음악 필요" : "Music required",
+        language === "ko" ? "영상 생성을 위해 음악을 선택하세요" : "Please select music for video generation"
+      );
       return;
     }
 
-    // No images, proceed directly to generate
-    setIsGenerating(true);
-    router.push(`/campaigns/${selectedCampaignId}/generate?from_workflow=true`);
-  }, [selectedCampaignId, imageAssets.length, router, language, toast]);
+    // If images are attached, show personalization modal first
+    if (imageAssets.length > 0) {
+      console.log("[Veo3] Images attached, showing personalization modal");
+      console.log("[Veo3] Image URLs:", imageAssets.map(a => a.url));
+      setShowPersonalizeModal(true);
+      console.log("[Veo3] showPersonalizeModal set to true");
+      return;
+    }
 
-  // Handle personalization complete - proceed to generation with personalized prompt
+    // No images, need a prompt from analyze stage or workflow
+    const defaultPrompt = analyze.optimizedPrompt || analyze.selectedIdea?.optimizedPrompt || "";
+    if (!defaultPrompt) {
+      toast.warning(
+        language === "ko" ? "프롬프트 필요" : "Prompt required",
+        language === "ko" ? "영상 생성을 위한 프롬프트가 필요합니다. 이미지를 추가하거나 분석 단계에서 아이디어를 선택하세요." : "A prompt is required for video generation. Add images or select an idea from Analyze."
+      );
+      return;
+    }
+
+    // Start generation via API
+    setIsGenerating(true);
+    try {
+      const response = await videoApi.create(selectedCampaignId, {
+        prompt: defaultPrompt,
+        audio_asset_id: audioAsset.id,
+        aspect_ratio: "9:16",
+        duration_seconds: 5,
+        // Bridge context from workflow
+        original_input: analyze.userIdea || undefined,
+        trend_keywords: useWorkflowStore.getState().discover.keywords,
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message || "Generation failed");
+      }
+
+      toast.success(
+        language === "ko" ? "생성 시작" : "Generation started",
+        language === "ko" ? "영상 생성이 시작되었습니다" : "Video generation has started"
+      );
+
+      // Navigate to processing page to monitor video generation
+      router.push("/processing");
+    } catch (error) {
+      console.error("Failed to start video generation:", error);
+      toast.error(
+        language === "ko" ? "생성 실패" : "Generation failed",
+        error instanceof Error ? error.message : "Unknown error"
+      );
+      setIsGenerating(false);
+    }
+  }, [selectedCampaignId, audioAsset, imageAssets.length, analyze, router, language, toast]);
+
+  // Helper function to convert File to base64
+  const fileToBase64 = useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove the data:image/xxx;base64, prefix
+        const base64 = result.split(",")[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  // Handle personalization complete - start generation with personalized prompt
   const handlePersonalizationComplete = useCallback(
-    (prompt: string, metadata: { duration: string; aspectRatio: string; style: string }) => {
+    async (prompt: string, metadata: { duration: string; aspectRatio: string; style: string }) => {
+      console.log("[Veo3] handlePersonalizationComplete called", {
+        prompt: prompt.slice(0, 100) + "...",
+        metadata,
+        audioAsset: audioAsset?.id,
+        imageAssetsCount: imageAssets.length,
+      });
+
+      if (!audioAsset) {
+        console.log("[Veo3] No audio asset in personalization complete");
+        toast.warning(
+          language === "ko" ? "음악 필요" : "Music required",
+          language === "ko" ? "영상 생성을 위해 음악을 선택하세요" : "Please select music for video generation"
+        );
+        return;
+      }
+
       setPersonalizedPrompt({ prompt, metadata });
       setShowPersonalizeModal(false);
       setIsGenerating(true);
 
-      // Navigate to generate page with personalized prompt
-      const params = new URLSearchParams({
-        from_workflow: "true",
-        personalized: "true",
-        prompt: encodeURIComponent(prompt),
-        duration: metadata.duration,
-        aspect_ratio: metadata.aspectRatio,
-        style: metadata.style,
-      });
+      try {
+        console.log("[Veo3] Starting video generation via API...");
+        // Get first image for I2V if available
+        const firstImage = imageAssets[0];
 
-      router.push(`/campaigns/${selectedCampaignId}/generate?${params.toString()}`);
+        // Prepare image data for the API
+        let previewImageBase64: string | undefined;
+        let previewImageUrl: string | undefined;
+
+        if (firstImage) {
+          if (firstImage.fromCampaign) {
+            // Campaign asset - use the S3 URL directly
+            previewImageUrl = firstImage.url;
+            console.log("[Veo3] Using campaign image URL:", previewImageUrl.slice(0, 80) + "...");
+          } else if (firstImage.file) {
+            // Local upload - convert to base64
+            console.log("[Veo3] Converting local image to base64...");
+            previewImageBase64 = await fileToBase64(firstImage.file);
+            console.log("[Veo3] Base64 image ready:", Math.round(previewImageBase64.length / 1024) + "KB");
+          } else if (firstImage.url && !firstImage.url.startsWith("blob:")) {
+            // External URL that's not a blob
+            previewImageUrl = firstImage.url;
+            console.log("[Veo3] Using external image URL:", previewImageUrl.slice(0, 80) + "...");
+          }
+        }
+
+        const response = await videoApi.create(selectedCampaignId, {
+          prompt,
+          audio_asset_id: audioAsset.id,
+          aspect_ratio: metadata.aspectRatio,
+          duration_seconds: parseInt(metadata.duration) || 5,
+          reference_style: metadata.style || undefined,
+          // Enable I2V if image is available
+          enable_i2v: !!(previewImageBase64 || previewImageUrl),
+          image_description: firstImage ? `Reference image for video generation` : undefined,
+          // Pass the actual image data
+          preview_image_base64: previewImageBase64,
+          preview_image_url: previewImageUrl,
+          reference_image_id: firstImage?.fromCampaign ? firstImage.id : undefined,
+          // Bridge context from workflow
+          original_input: analyze.userIdea || undefined,
+          trend_keywords: useWorkflowStore.getState().discover.keywords,
+        });
+
+        if (response.error) {
+          throw new Error(response.error.message || "Generation failed");
+        }
+
+        toast.success(
+          language === "ko" ? "생성 시작" : "Generation started",
+          language === "ko" ? "영상 생성이 시작되었습니다" : "Video generation has started"
+        );
+
+        // Navigate to processing page to monitor video generation
+        router.push("/processing");
+      } catch (error) {
+        console.error("Failed to start video generation:", error);
+        toast.error(
+          language === "ko" ? "생성 실패" : "Generation failed",
+          error instanceof Error ? error.message : "Unknown error"
+        );
+        setIsGenerating(false);
+      }
     },
-    [selectedCampaignId, router]
+    [selectedCampaignId, audioAsset, imageAssets, analyze, router, language, toast, fileToBase64]
   );
 
   // Build context for personalization modal
@@ -1279,15 +1454,6 @@ export default function CreatePage() {
     router.push(url);
   }, [selectedCampaignId, composeBatchMode, router, language, toast]);
 
-  // Handle proceed to publish
-  const handleProceedToPublish = () => {
-    markStageCompleted("create");
-    proceedToPublish();
-  };
-
-  // Check if we can proceed (has selected method and campaign)
-  const canProceed = selectedMethod !== null && selectedCampaignId !== "";
-
   // Translations
   const t = {
     title: language === "ko" ? "콘텐츠 만들기" : "Create Content",
@@ -1296,48 +1462,16 @@ export default function CreatePage() {
         ? "아이디어를 영상으로 만드세요"
         : "Turn your idea into a video",
     back: language === "ko" ? "분석으로" : "Back to Analyze",
-    proceed: language === "ko" ? "발행 단계로" : "Proceed to Publish",
     selectCampaign: language === "ko" ? "캠페인 선택" : "Select Campaign",
   };
 
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 bg-white shrink-0">
-        {/* Left: Icon + Title */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center">
-            <Sparkles className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold text-neutral-900">{t.title}</h1>
-            <p className="text-xs text-neutral-500">{t.subtitle}</p>
-          </div>
-        </div>
-
-        {/* Center: Workflow Progress */}
-        <WorkflowProgressBar size="sm" />
-
-        {/* Right: Navigation Buttons */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={goToAnalyze}
-            className="border-neutral-300 text-neutral-700"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            {t.back}
-          </Button>
-          <Button
-            onClick={handleProceedToPublish}
-            disabled={!canProceed}
-            className="bg-neutral-900 text-white hover:bg-neutral-800"
-          >
-            {t.proceed}
-            <ArrowRight className="h-4 w-4 ml-2" />
-          </Button>
-        </div>
-      </div>
+      <WorkflowHeader
+        onBack={goToAnalyze}
+        onNext={() => router.push("/processing")}
+      />
 
       {/* Main Content - Two Columns */}
       <div className="flex-1 flex overflow-hidden">
@@ -1349,6 +1483,17 @@ export default function CreatePage() {
         {/* Right Column - Campaign, Assets & Methods */}
         <div className="w-3/5 overflow-auto">
           <div className="p-6 space-y-6">
+            {/* Create Methods - At the top */}
+            <CreateMethodCards
+              selectedMethod={selectedMethod}
+              onSelectMethod={setSelectedMethod}
+              composeBatchMode={composeBatchMode}
+              onComposeBatchModeChange={setComposeBatchMode}
+              onGenerate={handleGenerate}
+              onCompose={handleCompose}
+              isGenerating={isGenerating}
+            />
+
             {/* Campaign Selector */}
             <div className="space-y-2">
               <Label className="text-xs text-neutral-500 flex items-center gap-1">
@@ -1396,17 +1541,6 @@ export default function CreatePage() {
               isLoadingAssets={isLoadingAssets}
               merchandiseItems={merchandiseItems}
               isLoadingMerchandise={isLoadingMerchandise}
-            />
-
-            {/* Create Methods */}
-            <CreateMethodCards
-              selectedMethod={selectedMethod}
-              onSelectMethod={setSelectedMethod}
-              composeBatchMode={composeBatchMode}
-              onComposeBatchModeChange={setComposeBatchMode}
-              onGenerate={handleGenerate}
-              onCompose={handleCompose}
-              isGenerating={isGenerating}
             />
           </div>
         </div>

@@ -972,9 +972,116 @@ def get_media_duration(request_data: dict) -> dict:
         }
 
 
-# Audio web endpoints removed to save web endpoint quota
-# Audio functions (compose_audio, analyze_audio, get_media_duration) are still available
-# for internal use via .remote() calls from other Modal functions
+# ============================================================================
+# Audio Web Endpoint (Unified)
+# ============================================================================
+# Consolidated into a single endpoint to save on web endpoint quota (limit: 8)
+
+@app.function(
+    secrets=[modal.Secret.from_name("aws-s3-secret")],
+)
+@modal.fastapi_endpoint(method="POST")
+def audio_endpoint(request_data: dict):
+    """
+    Unified audio processing endpoint - handles compose, analyze, status, and duration.
+
+    POST /audio_endpoint
+    Body: {
+        action: 'compose' | 'analyze' | 'status' | 'duration',
+        ... action-specific fields
+    }
+
+    Actions:
+    - compose: Submit audio composition job
+        Body: { action: 'compose', video_url, audio_url, audio_start_time?, audio_volume?, fade_in?, fade_out?, mix_original_audio?, original_audio_volume?, output_s3_bucket?, output_s3_key?, job_id? }
+        Returns: { call_id, job_id, status, message }
+
+    - analyze: Submit audio analysis job
+        Body: { action: 'analyze', audio_url, target_duration?, job_id? }
+        Returns: { call_id, job_id, status, message }
+
+    - status: Poll for job status
+        Body: { action: 'status', call_id }
+        Returns: { status, result } or 202 if still processing
+
+    - duration: Get media duration (synchronous)
+        Body: { action: 'duration', url, media_type? }
+        Returns: { status, duration, error }
+    """
+    import fastapi
+
+    action = request_data.get("action", "")
+
+    if action == "compose":
+        job_id = request_data.get("job_id", "audio-compose")
+        print(f"[{job_id}] Received audio compose request")
+
+        # Spawn the compose function (async - returns immediately)
+        call = compose_audio.spawn(request_data)
+
+        print(f"[{job_id}] Spawned Modal function: {call.object_id}")
+
+        return {
+            "call_id": call.object_id,
+            "job_id": job_id,
+            "status": "queued",
+            "message": "Audio composition job queued",
+        }
+
+    elif action == "analyze":
+        job_id = request_data.get("job_id", "audio-analyze")
+        print(f"[{job_id}] Received audio analyze request")
+
+        # Spawn the analyze function (async - returns immediately)
+        call = analyze_audio.spawn(request_data)
+
+        print(f"[{job_id}] Spawned Modal function: {call.object_id}")
+
+        return {
+            "call_id": call.object_id,
+            "job_id": job_id,
+            "status": "queued",
+            "message": "Audio analysis job queued",
+        }
+
+    elif action == "status":
+        call_id = request_data.get("call_id", "")
+        if not call_id:
+            return {"status": "error", "error": "call_id is required"}
+
+        try:
+            function_call = modal.FunctionCall.from_id(call_id)
+            result = function_call.get(timeout=0)
+
+            return {
+                "status": result.get("status", "completed"),
+                "result": result,
+            }
+        except TimeoutError:
+            # Still processing - return 202 Accepted
+            return fastapi.responses.JSONResponse(
+                {"status": "processing", "call_id": call_id},
+                status_code=202
+            )
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+            }
+
+    elif action == "duration":
+        url = request_data.get("url", "")
+        print(f"[DURATION] Getting duration for: {url[:60]}...")
+
+        # Run synchronously since it's fast
+        result = get_media_duration.remote(request_data)
+        return result
+
+    else:
+        return {
+            "status": "error",
+            "error": f"Unknown action: {action}. Use 'compose', 'analyze', 'status', or 'duration'.",
+        }
 
 
 # ============================================================================
@@ -991,7 +1098,7 @@ def main():
     print("Deploy:")
     print("  modal deploy modal_app.py")
     print()
-    print("Web Endpoints (4 total - within free tier limit of 8):")
+    print("Web Endpoints (4 total - within free tier limit):")
     print()
     print("  Video Rendering:")
     print("    POST /submit_render              - Start a render job")
@@ -1001,7 +1108,11 @@ def main():
     print("    POST /collect_trends_endpoint    - Unified trends endpoint")
     print("         Body: { action: 'collect'|'search'|'hashtag', ... }")
     print()
-    print("Internal Functions (no web endpoints, call via .remote()):")
+    print("  Audio Processing (unified):")
+    print("    POST /audio_endpoint             - Unified audio endpoint")
+    print("         Body: { action: 'compose'|'analyze'|'status'|'duration', ... }")
+    print()
+    print("Internal Functions (call via .remote()):")
     print("  - render_video / render_video_cpu  - Video rendering")
     print("  - scrape_tiktok_trends             - TikTok scraping")
     print("  - compose_audio                    - Audio composition")

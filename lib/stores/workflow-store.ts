@@ -1,11 +1,12 @@
 import { create } from "zustand";
 import { persist, subscribeWithSelector } from "zustand/middleware";
+import { useState, useEffect } from "react";
 
 // ============================================
 // TYPES
 // ============================================
 
-export type WorkflowStage = "discover" | "analyze" | "create" | "publish";
+export type WorkflowStage = "discover" | "analyze" | "create" | "processing" | "publish";
 
 // Discover Stage Types
 export interface TrendVideo {
@@ -111,6 +112,53 @@ export interface CreateData {
   }[];
 }
 
+// Processing Stage Types
+export interface ProcessingVideo {
+  id: string;
+  generationId: string;
+  campaignId: string;
+  campaignName: string;
+  status: "processing" | "completed" | "failed" | "approved" | "rejected";
+  progress: number;
+  outputUrl: string | null;
+  thumbnailUrl: string | null;
+  prompt: string;
+  duration: number;
+  aspectRatio: string;
+  qualityScore: number | null;
+  generationType: "AI" | "COMPOSE";
+  createdAt: string;
+  completedAt: string | null;
+  metadata: {
+    fps?: number;
+    resolution?: string;
+    fileSize?: number;
+    audioAssetId?: string;
+    audioName?: string;
+    audioUrl?: string;
+    imageAssets?: { id: string; url: string; name: string }[];
+    effectPreset?: string;
+    // Extended metadata
+    negativePrompt?: string;
+    referenceImageId?: string;
+    referenceImageUrl?: string;
+    referenceStyle?: string;
+    trendKeywords?: string[];
+    referenceUrls?: { url: string; title?: string; platform?: string; hashtags?: string[] }[];
+    tags?: string[];
+    scriptData?: Record<string, unknown>;
+  };
+  error?: string;
+}
+
+export interface ProcessingData {
+  videos: ProcessingVideo[];
+  selectedVideos: string[]; // IDs of videos selected for publishing
+  filterStatus: "all" | "processing" | "completed" | "approved" | "rejected";
+  sortBy: "newest" | "oldest" | "status";
+  viewMode: "grid" | "list";
+}
+
 // Publish Stage Types
 export interface ScheduledPost {
   id: string;
@@ -132,6 +180,50 @@ export interface PublishData {
   hashtags: string[];
 }
 
+// Stashed Prompts Types
+export interface StashedPrompt {
+  id: string;
+  prompt: string;
+  title: string;
+  source: "analyze" | "create" | "personalize";
+  metadata: {
+    // Basic settings
+    aspectRatio?: string;
+    duration?: string;
+    style?: string;
+    // Campaign & idea
+    campaignId?: string;
+    campaignName?: string;
+    selectedIdea?: ContentIdea | null;
+    // Hashtags & keywords
+    hashtags?: string[];
+    keywords?: string[];
+    // Performance & analytics
+    performanceMetrics?: {
+      avgViews: number;
+      avgEngagement: number;
+      viralBenchmark: number;
+    } | null;
+    // Inspiration videos (thumbnails & stats)
+    savedInspiration?: {
+      id: string;
+      thumbnailUrl: string | null;
+      stats: {
+        playCount: number;
+        likeCount: number;
+        commentCount: number;
+        shareCount: number;
+      };
+    }[];
+    // Target audience & goals
+    targetAudience?: string[];
+    contentGoals?: string[];
+    // AI insights
+    aiInsights?: string[];
+  };
+  createdAt: string;
+}
+
 // ============================================
 // STORE STATE
 // ============================================
@@ -145,7 +237,11 @@ interface WorkflowState {
   discover: DiscoverData;
   analyze: AnalyzeData;
   create: CreateData;
+  processing: ProcessingData;
   publish: PublishData;
+
+  // Stashed prompts (shared across stages)
+  stashedPrompts: StashedPrompt[];
 
   // Actions - Navigation
   setCurrentStage: (stage: WorkflowStage) => void;
@@ -188,6 +284,19 @@ interface WorkflowState {
   setSelectedGenerations: (ids: string[]) => void;
   updatePipelineStatus: (status: CreateData["pipelineStatus"]) => void;
 
+  // Actions - Processing
+  setProcessingVideos: (videos: ProcessingVideo[]) => void;
+  addProcessingVideo: (video: ProcessingVideo) => void;
+  updateProcessingVideo: (id: string, updates: Partial<ProcessingVideo>) => void;
+  removeProcessingVideo: (id: string) => void;
+  toggleProcessingVideoSelection: (id: string) => void;
+  setSelectedProcessingVideos: (ids: string[]) => void;
+  approveProcessingVideo: (id: string) => void;
+  rejectProcessingVideo: (id: string) => void;
+  setProcessingFilter: (filter: ProcessingData["filterStatus"]) => void;
+  setProcessingSort: (sort: ProcessingData["sortBy"]) => void;
+  setProcessingViewMode: (mode: ProcessingData["viewMode"]) => void;
+
   // Actions - Publish
   addScheduledPost: (post: ScheduledPost) => void;
   updateScheduledPost: (id: string, updates: Partial<ScheduledPost>) => void;
@@ -200,7 +309,14 @@ interface WorkflowState {
   // Actions - Bridge (transfer data between stages)
   transferToAnalyze: () => void;
   transferToCreate: () => void;
+  transferToProcessing: () => void;
   transferToPublish: () => void;
+
+  // Actions - Stashed Prompts
+  stashPrompt: (prompt: Omit<StashedPrompt, "id" | "createdAt">) => void;
+  restoreStashedPrompt: (id: string) => void;
+  removeStashedPrompt: (id: string) => void;
+  clearStashedPrompts: () => void;
 }
 
 // ============================================
@@ -241,6 +357,14 @@ const initialCreateData: CreateData = {
   pipelineStatus: [],
 };
 
+const initialProcessingData: ProcessingData = {
+  videos: [],
+  selectedVideos: [],
+  filterStatus: "all",
+  sortBy: "newest",
+  viewMode: "grid",
+};
+
 const initialPublishData: PublishData = {
   scheduledPosts: [],
   selectedPlatforms: [],
@@ -263,7 +387,9 @@ export const useWorkflowStore = create<WorkflowState>()(
         discover: initialDiscoverData,
         analyze: initialAnalyzeData,
         create: initialCreateData,
+        processing: initialProcessingData,
         publish: initialPublishData,
+        stashedPrompts: [],
 
         // Navigation Actions
         setCurrentStage: (stage) => set({ currentStage: stage }),
@@ -282,6 +408,7 @@ export const useWorkflowStore = create<WorkflowState>()(
             discover: initialDiscoverData,
             analyze: initialAnalyzeData,
             create: initialCreateData,
+            processing: initialProcessingData,
             publish: initialPublishData,
           }),
 
@@ -485,6 +612,90 @@ export const useWorkflowStore = create<WorkflowState>()(
             create: { ...state.create, pipelineStatus: status },
           })),
 
+        // Processing Actions
+        setProcessingVideos: (videos) =>
+          set((state) => ({
+            processing: { ...state.processing, videos },
+          })),
+
+        addProcessingVideo: (video) =>
+          set((state) => ({
+            processing: {
+              ...state.processing,
+              videos: [...state.processing.videos, video],
+            },
+          })),
+
+        updateProcessingVideo: (id, updates) =>
+          set((state) => ({
+            processing: {
+              ...state.processing,
+              videos: state.processing.videos.map((v) =>
+                v.id === id ? { ...v, ...updates } : v
+              ),
+            },
+          })),
+
+        removeProcessingVideo: (id) =>
+          set((state) => ({
+            processing: {
+              ...state.processing,
+              videos: state.processing.videos.filter((v) => v.id !== id),
+              selectedVideos: state.processing.selectedVideos.filter((vId) => vId !== id),
+            },
+          })),
+
+        toggleProcessingVideoSelection: (id) =>
+          set((state) => ({
+            processing: {
+              ...state.processing,
+              selectedVideos: state.processing.selectedVideos.includes(id)
+                ? state.processing.selectedVideos.filter((vId) => vId !== id)
+                : [...state.processing.selectedVideos, id],
+            },
+          })),
+
+        setSelectedProcessingVideos: (ids) =>
+          set((state) => ({
+            processing: { ...state.processing, selectedVideos: ids },
+          })),
+
+        approveProcessingVideo: (id) =>
+          set((state) => ({
+            processing: {
+              ...state.processing,
+              videos: state.processing.videos.map((v) =>
+                v.id === id ? { ...v, status: "approved" as const } : v
+              ),
+            },
+          })),
+
+        rejectProcessingVideo: (id) =>
+          set((state) => ({
+            processing: {
+              ...state.processing,
+              videos: state.processing.videos.map((v) =>
+                v.id === id ? { ...v, status: "rejected" as const } : v
+              ),
+              selectedVideos: state.processing.selectedVideos.filter((vId) => vId !== id),
+            },
+          })),
+
+        setProcessingFilter: (filter) =>
+          set((state) => ({
+            processing: { ...state.processing, filterStatus: filter },
+          })),
+
+        setProcessingSort: (sort) =>
+          set((state) => ({
+            processing: { ...state.processing, sortBy: sort },
+          })),
+
+        setProcessingViewMode: (mode) =>
+          set((state) => ({
+            processing: { ...state.processing, viewMode: mode },
+          })),
+
         // Publish Actions
         addScheduledPost: (post) =>
           set((state) => ({
@@ -562,15 +773,33 @@ export const useWorkflowStore = create<WorkflowState>()(
           });
         },
 
+        transferToProcessing: () => {
+          const state = get();
+          set({
+            currentStage: "processing",
+            completedStages: [...state.completedStages, "create" as WorkflowStage].filter(
+              (v, i, a) => a.indexOf(v) === i
+            ) as WorkflowStage[],
+            // Processing videos will be loaded from API in the processing page
+            processing: {
+              ...state.processing,
+              videos: [],
+              selectedVideos: [],
+            },
+          });
+        },
+
         transferToPublish: () => {
           const state = get();
-          const selectedVideos = state.create.generations.filter((g) =>
-            state.create.selectedGenerations.includes(g.id)
+          // Get selected videos from processing stage
+          const selectedVideos = state.processing.videos.filter((v) =>
+            state.processing.selectedVideos.includes(v.id) &&
+            (v.status === "completed" || v.status === "approved")
           );
 
           set({
             currentStage: "publish",
-            completedStages: [...state.completedStages, "create" as WorkflowStage].filter(
+            completedStages: [...state.completedStages, "processing" as WorkflowStage].filter(
               (v, i, a) => a.indexOf(v) === i
             ) as WorkflowStage[],
             publish: {
@@ -579,7 +808,7 @@ export const useWorkflowStore = create<WorkflowState>()(
               caption: state.analyze.selectedIdea?.hook || "",
               scheduledPosts: selectedVideos.map((video) => ({
                 id: `post-${video.id}`,
-                videoId: video.id,
+                videoId: video.generationId,
                 videoUrl: video.outputUrl || "",
                 thumbnailUrl: video.thumbnailUrl,
                 platforms: [],
@@ -591,6 +820,74 @@ export const useWorkflowStore = create<WorkflowState>()(
             },
           });
         },
+
+        // Stashed Prompts Actions
+        stashPrompt: (promptData) =>
+          set((state) => {
+            // Check if same prompt already exists
+            const isDuplicate = state.stashedPrompts.some(
+              (p) => p.prompt.trim() === promptData.prompt.trim()
+            );
+            if (isDuplicate) {
+              return state; // Don't add duplicate
+            }
+            return {
+              stashedPrompts: [
+                {
+                  ...promptData,
+                  id: `stash-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                  createdAt: new Date().toISOString(),
+                },
+                ...state.stashedPrompts,
+              ].slice(0, 20), // Keep max 20 stashed prompts
+            };
+          }),
+
+        restoreStashedPrompt: (id) => {
+          const state = get();
+          const stashed = state.stashedPrompts.find((p) => p.id === id);
+          if (stashed) {
+            const { metadata } = stashed;
+            // Restore to analyze stage with full metadata
+            set({
+              analyze: {
+                ...state.analyze,
+                optimizedPrompt: stashed.prompt,
+                hashtags: metadata.hashtags || state.analyze.hashtags,
+                campaignId: metadata.campaignId || state.analyze.campaignId,
+                campaignName: metadata.campaignName || state.analyze.campaignName,
+                selectedIdea: metadata.selectedIdea || state.analyze.selectedIdea,
+                targetAudience: metadata.targetAudience || state.analyze.targetAudience,
+                contentGoals: metadata.contentGoals || state.analyze.contentGoals,
+              },
+              discover: {
+                ...state.discover,
+                keywords: metadata.keywords || state.discover.keywords,
+                selectedHashtags: metadata.hashtags || state.discover.selectedHashtags,
+                performanceMetrics: metadata.performanceMetrics || state.discover.performanceMetrics,
+                aiInsights: metadata.aiInsights || state.discover.aiInsights,
+                // Restore inspiration videos if available
+                savedInspiration: metadata.savedInspiration
+                  ? metadata.savedInspiration.map((v) => ({
+                      ...v,
+                      videoUrl: "",
+                      description: "",
+                      author: { id: "", name: "" },
+                      hashtags: [],
+                      engagementRate: 0,
+                    }))
+                  : state.discover.savedInspiration,
+              },
+            });
+          }
+        },
+
+        removeStashedPrompt: (id) =>
+          set((state) => ({
+            stashedPrompts: state.stashedPrompts.filter((p) => p.id !== id),
+          })),
+
+        clearStashedPrompts: () => set({ stashedPrompts: [] }),
       }),
       {
         name: "hydra-workflow-state",
@@ -599,12 +896,41 @@ export const useWorkflowStore = create<WorkflowState>()(
           completedStages: state.completedStages,
           discover: state.discover,
           analyze: state.analyze,
+          stashedPrompts: state.stashedPrompts,
           // Don't persist create and publish - they have transient data
         }),
+        onRehydrateStorage: () => (state) => {
+          if (state) {
+            console.log("[WorkflowStore] Rehydrated from localStorage");
+          }
+        },
       }
     )
   )
 );
+
+// Hook to check if store is hydrated (for SSR/CSR mismatch prevention)
+export const useWorkflowHydrated = () => {
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    // Check if we're on the client and the store has rehydrated
+    const unsubscribe = useWorkflowStore.persist.onFinishHydration(() => {
+      setHydrated(true);
+    });
+
+    // If already hydrated (e.g., on subsequent renders)
+    if (useWorkflowStore.persist.hasHydrated()) {
+      setHydrated(true);
+    }
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  return hydrated;
+};
 
 // ============================================
 // SELECTORS
@@ -623,8 +949,15 @@ export const selectCanProceedToCreate = (state: WorkflowState) =>
   state.analyze.campaignId !== null &&
   (state.analyze.selectedIdea !== null || state.analyze.optimizedPrompt.length > 0);
 
+export const selectCanProceedToProcessing = (state: WorkflowState) =>
+  state.create.generations.some((g) => g.status === "completed" || g.status === "processing");
+
 export const selectCanProceedToPublish = (state: WorkflowState) =>
-  state.create.selectedGenerations.length > 0;
+  state.processing.selectedVideos.length > 0 &&
+  state.processing.videos.some(
+    (v) => state.processing.selectedVideos.includes(v.id) &&
+    (v.status === "completed" || v.status === "approved")
+  );
 
 export const selectDiscoverSummary = (state: WorkflowState) => ({
   keywordCount: state.discover.keywords.length,
@@ -650,6 +983,16 @@ export const selectCreateSummary = (state: WorkflowState) => ({
   hasActiveJobs: state.create.pipelineStatus.some(
     (p) => p.status === "queued" || p.status === "processing"
   ),
+});
+
+export const selectProcessingSummary = (state: WorkflowState) => ({
+  totalVideos: state.processing.videos.length,
+  processingCount: state.processing.videos.filter((v) => v.status === "processing").length,
+  completedCount: state.processing.videos.filter((v) => v.status === "completed").length,
+  approvedCount: state.processing.videos.filter((v) => v.status === "approved").length,
+  failedCount: state.processing.videos.filter((v) => v.status === "failed").length,
+  selectedCount: state.processing.selectedVideos.length,
+  hasProcessingJobs: state.processing.videos.some((v) => v.status === "processing"),
 });
 
 export const selectPublishSummary = (state: WorkflowState) => ({

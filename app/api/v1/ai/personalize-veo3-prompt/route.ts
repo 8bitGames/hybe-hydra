@@ -3,6 +3,7 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { v4 as uuidv4 } from "uuid";
 import { GoogleGenAI } from "@google/genai";
+import { prisma } from "@/lib/db/prisma";
 
 // S3 Client
 const s3Client = new S3Client({
@@ -18,7 +19,7 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "",
 });
 
-// Gemini SDK call with thinkingConfig
+// Gemini SDK call - fast, no thinking or search
 async function callGemini(
   contents: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }>,
   model: string = "gemini-flash-latest"
@@ -27,6 +28,7 @@ async function callGemini(
   if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
   console.log(`[PERSONALIZE] Calling Gemini SDK: ${model}`);
+  const startTime = Date.now();
 
   // Build parts array for the SDK
   const parts = contents.map((c) => {
@@ -41,17 +43,9 @@ async function callGemini(
     return { text: c.text || "" };
   });
 
-  const config = {
-    thinkingConfig: {
-      thinkingBudget: -1,
-    },
-    tools: [{ googleSearch: {} }],
-  };
-
   try {
     const response = await ai.models.generateContentStream({
       model,
-      config,
       contents: [
         {
           role: "user",
@@ -68,7 +62,7 @@ async function callGemini(
       }
     }
 
-    console.log(`[PERSONALIZE] Gemini response length: ${fullText.length} chars`);
+    console.log(`[PERSONALIZE] Gemini response: ${fullText.length} chars in ${Date.now() - startTime}ms`);
     return fullText;
   } catch (error) {
     console.error(`[PERSONALIZE] Gemini SDK error:`, error);
@@ -133,7 +127,86 @@ interface FinalizeRequest {
   userFeedback?: string;
 }
 
-type RequestBody = AnalyzeRequest | FinalizeRequest;
+interface StashRequest {
+  action: "stash";
+  name: string;
+  images: ImageData[];
+  context: ContextData;
+  variations: PromptVariation[];
+  imageAnalysis: {
+    summary: string;
+    detectedElements: string[];
+    colorPalette: string[];
+    mood: string;
+  };
+  // Prompts used for generation (for reproducibility)
+  analysisPromptUsed?: string;   // Full prompt sent to Gemini for image analysis
+  finalizePromptUsed?: string;   // Full prompt sent to Gemini for finalization
+  // Selected/finalized results
+  selectedVariationId?: string;
+  veo3Prompt?: string;           // The final Veo3 video generation prompt
+  finalMetadata?: {
+    duration: string;
+    aspectRatio: string;
+    style: string;
+    recommendedSettings: {
+      fps: number;
+      resolution: string;
+    };
+  };
+  tags?: string[];
+  campaignId?: string;
+}
+
+interface ListStashRequest {
+  action: "list-stash";
+  campaignId?: string;
+  tags?: string[];
+  favoritesOnly?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+interface GetStashRequest {
+  action: "get-stash";
+  id: string;
+}
+
+interface DeleteStashRequest {
+  action: "delete-stash";
+  id: string;
+}
+
+interface UpdateStashRequest {
+  action: "update-stash";
+  id: string;
+  name?: string;
+  tags?: string[];
+  isFavorite?: boolean;
+  // Prompts
+  analysisPromptUsed?: string;
+  finalizePromptUsed?: string;
+  selectedVariationId?: string;
+  veo3Prompt?: string;
+  finalMetadata?: {
+    duration: string;
+    aspectRatio: string;
+    style: string;
+    recommendedSettings: {
+      fps: number;
+      resolution: string;
+    };
+  };
+}
+
+type RequestBody =
+  | AnalyzeRequest
+  | FinalizeRequest
+  | StashRequest
+  | ListStashRequest
+  | GetStashRequest
+  | DeleteStashRequest
+  | UpdateStashRequest;
 
 interface AnalyzeResponse {
   success: boolean;
@@ -144,11 +217,12 @@ interface AnalyzeResponse {
     colorPalette: string[];
     mood: string;
   };
+  analysisPromptUsed: string;  // The full prompt sent to Gemini
 }
 
 interface FinalizeResponse {
   success: boolean;
-  finalPrompt: string;
+  veo3Prompt: string;          // The final Veo3 video generation prompt
   metadata: {
     duration: string;
     aspectRatio: string;
@@ -158,6 +232,7 @@ interface FinalizeResponse {
       resolution: string;
     };
   };
+  finalizePromptUsed: string;  // The full prompt sent to Gemini
 }
 
 // Extract S3 key from URL
@@ -275,16 +350,27 @@ export async function POST(request: NextRequest) {
   try {
     const body: RequestBody = await request.json();
 
-    if (body.action === "analyze") {
-      return await handleAnalyze(body);
-    } else if (body.action === "finalize") {
-      return await handleFinalize(body);
+    switch (body.action) {
+      case "analyze":
+        return await handleAnalyze(body);
+      case "finalize":
+        return await handleFinalize(body);
+      case "stash":
+        return await handleStash(body);
+      case "list-stash":
+        return await handleListStash(body);
+      case "get-stash":
+        return await handleGetStash(body);
+      case "delete-stash":
+        return await handleDeleteStash(body);
+      case "update-stash":
+        return await handleUpdateStash(body);
+      default:
+        return NextResponse.json(
+          { success: false, error: "Invalid action. Use 'analyze', 'finalize', 'stash', 'list-stash', 'get-stash', 'delete-stash', or 'update-stash'." },
+          { status: 400 }
+        );
     }
-
-    return NextResponse.json(
-      { success: false, error: "Invalid action. Use 'analyze' or 'finalize'." },
-      { status: 400 }
-    );
   } catch (error) {
     console.error("Personalize prompt error:", error);
     return NextResponse.json(
@@ -304,7 +390,12 @@ export async function POST(request: NextRequest) {
 async function handleAnalyze(request: AnalyzeRequest): Promise<NextResponse> {
   const { images, context } = request;
 
+  console.log("=".repeat(60));
+  console.log("[API] 🚀 handleAnalyze called");
+  console.log(`[API]    Images received: ${images?.length || 0}`);
+
   if (!images || images.length === 0) {
+    console.log("[API] ❌ No images provided");
     return NextResponse.json(
       { success: false, error: "At least one image is required" },
       { status: 400 }
@@ -312,17 +403,24 @@ async function handleAnalyze(request: AnalyzeRequest): Promise<NextResponse> {
   }
 
   try {
-    console.log(`[PERSONALIZE] START - Analyzing ${images.length} images`);
     const startTime = Date.now();
+    console.log(`[API] 📷 Processing ${images.length} images...`);
+
+    images.forEach((img, idx) => {
+      console.log(`[API]    Image ${idx + 1}:`);
+      console.log(`[API]      Name: ${img.name || "unnamed"}`);
+      console.log(`[API]      Has base64: ${!!img.base64} (${img.base64?.length || 0} chars)`);
+      console.log(`[API]      MIME type: ${img.mimeType || "none"}`);
+      console.log(`[API]      URL: ${img.url?.slice(0, 60)}...`);
+    });
 
     // Process images - either use provided base64 or fetch from URL
-    console.log(`[PERSONALIZE] Processing images...`);
     const fetchStart = Date.now();
     const imageDataResults = await Promise.all(
-      images.slice(0, 3).map(async (img) => {
+      images.slice(0, 3).map(async (img, idx) => {
         // If base64 is already provided (from local upload), use it directly
         if (img.base64 && img.mimeType) {
-          console.log(`[PERSONALIZE] Using provided base64 for: ${img.name || "unknown"}`);
+          console.log(`[API]    ✅ Image ${idx + 1}: Using provided base64 (${Math.round(img.base64.length / 1024)}KB)`);
           return {
             base64: img.base64,
             mimeType: img.mimeType,
@@ -332,14 +430,21 @@ async function handleAnalyze(request: AnalyzeRequest): Promise<NextResponse> {
         }
 
         // Otherwise, fetch from URL (S3 or external)
+        console.log(`[API]    🌐 Image ${idx + 1}: Fetching from URL...`);
         const data = await fetchImageAsBase64(img.url);
+        if (data) {
+          console.log(`[API]    ✅ Image ${idx + 1}: Fetched OK (${Math.round(data.base64.length / 1024)}KB)`);
+        } else {
+          console.log(`[API]    ❌ Image ${idx + 1}: Failed to fetch`);
+        }
         return data ? { ...data, name: img.name, type: img.type } : null;
       })
     );
     const validImageData = imageDataResults.filter((d) => d !== null);
-    console.log(`[PERSONALIZE] Images processed: ${validImageData.length}/${images.length} in ${Date.now() - fetchStart}ms`);
+    console.log(`[API] 📊 Images ready: ${validImageData.length}/${images.length} in ${Date.now() - fetchStart}ms`);
 
     if (validImageData.length === 0) {
+      console.log("[API] ❌ No valid images after processing");
       return NextResponse.json(
         { success: false, error: "Could not process any images. Please ensure images are accessible." },
         { status: 400 }
@@ -348,7 +453,8 @@ async function handleAnalyze(request: AnalyzeRequest): Promise<NextResponse> {
 
     // Build context string
     const contextStr = buildContextString(context);
-    console.log(`[PERSONALIZE] Context built, preparing Gemini request...`);
+    console.log(`[API] 📝 Context built (${contextStr.length} chars)`);
+    console.log(`[API] 🤖 Calling Gemini for analysis...`);
 
     // Build the analysis prompt
     const analysisPrompt = `You are a creative director specializing in viral TikTok and short-form video content.
@@ -416,17 +522,25 @@ Return ONLY valid JSON in this exact format:
 
     // Call Gemini SDK
     const geminiStart = Date.now();
+    console.log(`[API] 🌐 Sending to Gemini (${validImageData.length} images, ${contents.length} parts)...`);
     const responseText = await callGemini(contents);
-    console.log(`[PERSONALIZE] Gemini response received in ${Date.now() - geminiStart}ms`);
+    console.log(`[API] ✅ Gemini responded in ${Date.now() - geminiStart}ms`);
+    console.log(`[API]    Response length: ${responseText.length} chars`);
 
     // Parse response
+    console.log(`[API] 🔄 Parsing response...`);
     const parsed = parseAnalysisResponse(responseText);
-    console.log(`[PERSONALIZE] DONE - Total time: ${Date.now() - startTime}ms, variations: ${parsed.variations.length}`);
+    console.log(`[API] ✅ Analysis complete!`);
+    console.log(`[API]    Variations: ${parsed.variations.length}`);
+    console.log(`[API]    Image analysis summary: ${parsed.imageAnalysis.summary?.slice(0, 50)}...`);
+    console.log(`[API] ⏱️ Total time: ${Date.now() - startTime}ms`);
+    console.log("=".repeat(60));
 
     return NextResponse.json({
       success: true,
       variations: parsed.variations,
       imageAnalysis: parsed.imageAnalysis,
+      analysisPromptUsed: analysisPrompt,  // Return the prompt for stashing
     } as AnalyzeResponse);
   } catch (error) {
     console.error("[PERSONALIZE] Analysis error:", error);
@@ -542,8 +656,9 @@ Return ONLY the JSON object, no markdown or extra text.`;
 
     return NextResponse.json({
       success: true,
-      finalPrompt: parsed.finalPrompt,
+      veo3Prompt: parsed.finalPrompt,       // The final Veo3 video generation prompt
       metadata: parsed.metadata,
+      finalizePromptUsed: finalizePrompt,   // Return the prompt for stashing
     } as FinalizeResponse);
   } catch (error) {
     console.error("[PERSONALIZE] Finalization error:", error);
@@ -752,5 +867,282 @@ function parseFinalizeResponse(responseText: string): {
         },
       },
     };
+  }
+}
+
+// ============================================================================
+// Stash Handlers - Save and Retrieve Analysis Results
+// ============================================================================
+
+// Default user ID for stash operations (in production, get from auth)
+const DEFAULT_USER_ID = "system";
+
+async function handleStash(request: StashRequest): Promise<NextResponse> {
+  const {
+    name,
+    images,
+    context,
+    variations,
+    imageAnalysis,
+    analysisPromptUsed,
+    finalizePromptUsed,
+    selectedVariationId,
+    veo3Prompt,
+    finalMetadata,
+    tags,
+    campaignId,
+  } = request;
+
+  if (!name || name.trim() === "") {
+    return NextResponse.json(
+      { success: false, error: "Name is required for stashing" },
+      { status: 400 }
+    );
+  }
+
+  if (!variations || variations.length === 0) {
+    return NextResponse.json(
+      { success: false, error: "Variations are required for stashing" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    console.log(`[STASH] Saving analysis: ${name}`);
+
+    // Clean images - remove base64 data to save space (keep only URLs)
+    const cleanedImages = images.map((img) => ({
+      url: img.url,
+      type: img.type,
+      name: img.name,
+    }));
+
+    const stashed = await prisma.stashedPromptAnalysis.create({
+      data: {
+        name: name.trim(),
+        campaignId: campaignId || null,
+        context: context as object,
+        images: cleanedImages,
+        variations: variations as object[],
+        imageAnalysis: imageAnalysis as object,
+        analysisPromptUsed: analysisPromptUsed || null,
+        finalizePromptUsed: finalizePromptUsed || null,
+        selectedVariationId: selectedVariationId || null,
+        veo3Prompt: veo3Prompt || null,
+        finalMetadata: finalMetadata ? (finalMetadata as object) : null,
+        tags: tags || [],
+        createdBy: DEFAULT_USER_ID,
+      },
+    });
+
+    console.log(`[STASH] Saved successfully: ${stashed.id}`);
+
+    return NextResponse.json({
+      success: true,
+      id: stashed.id,
+      name: stashed.name,
+      createdAt: stashed.createdAt,
+    });
+  } catch (error) {
+    console.error("[STASH] Error saving:", error);
+    throw error;
+  }
+}
+
+async function handleListStash(request: ListStashRequest): Promise<NextResponse> {
+  const {
+    campaignId,
+    tags,
+    favoritesOnly,
+    page = 0,
+    pageSize = 20,
+  } = request;
+
+  try {
+    console.log(`[STASH] Listing stashed analyses`);
+
+    // Build where clause
+    const where: {
+      campaignId?: string;
+      tags?: { hasSome: string[] };
+      isFavorite?: boolean;
+    } = {};
+
+    if (campaignId) {
+      where.campaignId = campaignId;
+    }
+
+    if (tags && tags.length > 0) {
+      where.tags = { hasSome: tags };
+    }
+
+    if (favoritesOnly) {
+      where.isFavorite = true;
+    }
+
+    // Get total count
+    const total = await prisma.stashedPromptAnalysis.count({ where });
+
+    // Get paginated results
+    const items = await prisma.stashedPromptAnalysis.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: page * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        name: true,
+        campaignId: true,
+        context: true,
+        images: true,
+        variations: true,
+        imageAnalysis: true,
+        analysisPromptUsed: true,
+        finalizePromptUsed: true,
+        selectedVariationId: true,
+        veo3Prompt: true,
+        finalMetadata: true,
+        tags: true,
+        isFavorite: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    console.log(`[STASH] Found ${items.length} of ${total} total`);
+
+    return NextResponse.json({
+      success: true,
+      items,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    });
+  } catch (error) {
+    console.error("[STASH] Error listing:", error);
+    throw error;
+  }
+}
+
+async function handleGetStash(request: GetStashRequest): Promise<NextResponse> {
+  const { id } = request;
+
+  if (!id) {
+    return NextResponse.json(
+      { success: false, error: "ID is required" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    console.log(`[STASH] Getting stash: ${id}`);
+
+    const item = await prisma.stashedPromptAnalysis.findUnique({
+      where: { id },
+    });
+
+    if (!item) {
+      return NextResponse.json(
+        { success: false, error: "Stashed analysis not found" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      item,
+    });
+  } catch (error) {
+    console.error("[STASH] Error getting:", error);
+    throw error;
+  }
+}
+
+async function handleDeleteStash(request: DeleteStashRequest): Promise<NextResponse> {
+  const { id } = request;
+
+  if (!id) {
+    return NextResponse.json(
+      { success: false, error: "ID is required" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    console.log(`[STASH] Deleting stash: ${id}`);
+
+    await prisma.stashedPromptAnalysis.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Stashed analysis deleted",
+    });
+  } catch (error) {
+    console.error("[STASH] Error deleting:", error);
+    throw error;
+  }
+}
+
+async function handleUpdateStash(request: UpdateStashRequest): Promise<NextResponse> {
+  const {
+    id,
+    name,
+    tags,
+    isFavorite,
+    analysisPromptUsed,
+    finalizePromptUsed,
+    selectedVariationId,
+    veo3Prompt,
+    finalMetadata
+  } = request;
+
+  if (!id) {
+    return NextResponse.json(
+      { success: false, error: "ID is required" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    console.log(`[STASH] Updating stash: ${id}`);
+
+    // Build update data
+    const updateData: {
+      name?: string;
+      tags?: string[];
+      isFavorite?: boolean;
+      analysisPromptUsed?: string;
+      finalizePromptUsed?: string;
+      selectedVariationId?: string;
+      veo3Prompt?: string;
+      finalMetadata?: object;
+    } = {};
+
+    if (name !== undefined) updateData.name = name;
+    if (tags !== undefined) updateData.tags = tags;
+    if (isFavorite !== undefined) updateData.isFavorite = isFavorite;
+    if (analysisPromptUsed !== undefined) updateData.analysisPromptUsed = analysisPromptUsed;
+    if (finalizePromptUsed !== undefined) updateData.finalizePromptUsed = finalizePromptUsed;
+    if (selectedVariationId !== undefined) updateData.selectedVariationId = selectedVariationId;
+    if (veo3Prompt !== undefined) updateData.veo3Prompt = veo3Prompt;
+    if (finalMetadata !== undefined) updateData.finalMetadata = finalMetadata as object;
+
+    const updated = await prisma.stashedPromptAnalysis.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return NextResponse.json({
+      success: true,
+      item: updated,
+    });
+  } catch (error) {
+    console.error("[STASH] Error updating:", error);
+    throw error;
   }
 }

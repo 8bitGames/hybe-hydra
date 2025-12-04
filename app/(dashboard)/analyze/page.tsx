@@ -15,7 +15,8 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { WorkflowProgressBar } from "@/components/workflow/WorkflowProgressBar";
+import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
 import { cn } from "@/lib/utils";
 import {
   Lightbulb,
@@ -602,41 +603,11 @@ export default function AnalyzePage() {
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 bg-white shrink-0">
-        {/* Left: Icon + Title */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center">
-            <Lightbulb className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold text-neutral-900">{t.title}</h1>
-            <p className="text-xs text-neutral-500">{t.subtitle}</p>
-          </div>
-        </div>
-
-        {/* Center: Workflow Progress */}
-        <WorkflowProgressBar size="sm" />
-
-        {/* Right: Navigation Buttons */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={goToDiscover}
-            className="border-neutral-300 text-neutral-700"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            {t.back}
-          </Button>
-          <Button
-            onClick={handleProceedToCreate}
-            disabled={!canProceedToCreate}
-            className="bg-neutral-900 text-white hover:bg-neutral-800"
-          >
-            {t.proceed}
-            <ArrowRight className="h-4 w-4 ml-2" />
-          </Button>
-        </div>
-      </div>
+      <WorkflowHeader
+        onBack={goToDiscover}
+        onNext={handleProceedToCreate}
+        canProceed={canProceedToCreate}
+      />
 
       {/* Main Content - Two Column */}
       <div className="flex-1 flex overflow-hidden">
@@ -810,6 +781,43 @@ export default function AnalyzePage() {
                   )}
                 </div>
               )}
+
+              {/* Stashed Prompts Panel */}
+              <div className="mt-4">
+                <StashedPromptsPanel
+                  currentPrompt={analyze.optimizedPrompt || analyze.selectedIdea?.optimizedPrompt || ""}
+                  currentMetadata={{
+                    // Campaign & idea
+                    campaignId: analyze.campaignId || undefined,
+                    campaignName: analyze.campaignName || undefined,
+                    selectedIdea: analyze.selectedIdea,
+                    // Hashtags & keywords
+                    hashtags: analyze.hashtags,
+                    keywords: discover.keywords,
+                    // Performance metrics
+                    performanceMetrics: discover.performanceMetrics,
+                    // Saved inspiration (thumbnails & stats only)
+                    savedInspiration: discover.savedInspiration.map((v) => ({
+                      id: v.id,
+                      thumbnailUrl: v.thumbnailUrl,
+                      stats: v.stats,
+                    })),
+                    // Target audience & goals
+                    targetAudience: analyze.targetAudience,
+                    contentGoals: analyze.contentGoals,
+                    // AI insights
+                    aiInsights: discover.aiInsights,
+                  }}
+                  source="analyze"
+                  onRestore={(prompt, metadata) => {
+                    setAnalyzeOptimizedPrompt(prompt);
+                    if (metadata.hashtags && metadata.hashtags.length > 0) {
+                      setAnalyzeHashtags(metadata.hashtags);
+                    }
+                  }}
+                  collapsed={true}
+                />
+              </div>
             </div>
           </ScrollArea>
         </div>
