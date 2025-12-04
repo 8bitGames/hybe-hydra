@@ -437,56 +437,84 @@ class VideoRenderer:
         temp_audiofile: str,
         job_id: str
     ) -> None:
-        """Render video with optimized NVENC settings for TikTok."""
-        is_mac = platform.system() == "Darwin"
+        """Render video with optimized settings for TikTok.
+
+        Tries GPU (NVENC) first, falls back to CPU (libx264) if unavailable.
+        """
         loop = asyncio.get_event_loop()
 
-        if not is_mac:
-            # GPU encoding with optimized NVENC parameters for TikTok
-            # - preset p4 (balanced speed/quality)
-            # - cq 23 (constant quality, good for social media)
-            # - b:v 8M (target bitrate for TikTok HD)
-            await loop.run_in_executor(
-                None,
-                lambda: video.write_videofile(
-                    output_path,
-                    fps=30,
-                    codec="h264_nvenc",
-                    audio_codec="aac",
-                    audio_bitrate="192k",
-                    temp_audiofile=temp_audiofile,
-                    ffmpeg_params=[
-                        "-preset", "p4",       # Fast encoding (p1=fastest, p7=slowest)
-                        "-tune", "hq",         # High quality tuning
-                        "-rc", "vbr",          # Variable bitrate
-                        "-cq", "23",           # Constant quality (18-28, lower=better)
-                        "-b:v", "8M",          # Target bitrate
-                        "-maxrate", "12M",     # Max bitrate spike
-                        "-bufsize", "16M",     # Buffer size
-                        "-profile:v", "high",  # H.264 High profile (auto level)
-                    ],
-                    logger=None
+        # Check if NVENC is available (not on Mac, and GPU accessible)
+        use_gpu = platform.system() != "Darwin" and self._check_nvenc_available()
+
+        if use_gpu:
+            try:
+                # GPU encoding with optimized NVENC parameters for TikTok
+                await loop.run_in_executor(
+                    None,
+                    lambda: video.write_videofile(
+                        output_path,
+                        fps=30,
+                        codec="h264_nvenc",
+                        audio_codec="aac",
+                        audio_bitrate="192k",
+                        temp_audiofile=temp_audiofile,
+                        ffmpeg_params=[
+                            "-preset", "p4",       # Fast encoding (p1=fastest, p7=slowest)
+                            "-tune", "hq",         # High quality tuning
+                            "-rc", "vbr",          # Variable bitrate
+                            "-cq", "23",           # Constant quality (18-28, lower=better)
+                            "-b:v", "8M",          # Target bitrate
+                            "-maxrate", "12M",     # Max bitrate spike
+                            "-bufsize", "16M",     # Buffer size
+                            "-profile:v", "high",  # H.264 High profile (auto level)
+                        ],
+                        logger=None
+                    )
                 )
+                logger.info(f"[{job_id}] Rendered with GPU (NVENC h264_nvenc, preset=p4)")
+                return
+            except Exception as e:
+                logger.warning(f"[{job_id}] NVENC failed, falling back to CPU: {e}")
+
+        # CPU encoding (fallback or default for Mac/Docker without GPU)
+        await loop.run_in_executor(
+            None,
+            lambda: video.write_videofile(
+                output_path,
+                fps=30,
+                codec="libx264",
+                audio_codec="aac",
+                audio_bitrate="192k",
+                threads=4,
+                preset="fast",
+                ffmpeg_params=["-crf", "23"],
+                temp_audiofile=temp_audiofile,
+                logger=None
             )
-            logger.info(f"[{job_id}] Rendered with GPU (NVENC h264_nvenc, preset=p4)")
-        else:
-            # macOS: CPU encoding
-            await loop.run_in_executor(
-                None,
-                lambda: video.write_videofile(
-                    output_path,
-                    fps=30,
-                    codec="libx264",
-                    audio_codec="aac",
-                    audio_bitrate="192k",
-                    threads=8,
-                    preset="fast",
-                    ffmpeg_params=["-crf", "23"],
-                    temp_audiofile=temp_audiofile,
-                    logger=None
-                )
+        )
+        logger.info(f"[{job_id}] Rendered with CPU (libx264)")
+
+    def _check_nvenc_available(self) -> bool:
+        """Check if NVENC is actually available by testing a real encode."""
+        import subprocess
+        import os
+
+        # Quick check: try to initialize NVENC encoder
+        try:
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "color=black:s=64x64:d=0.1",
+                    "-c:v", "h264_nvenc", "-f", "null", "-"
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10
             )
-            logger.info(f"[{job_id}] Rendered with CPU (libx264)")
+            # If exit code is 0, NVENC works
+            return result.returncode == 0
+        except Exception:
+            return False
 
     def _cleanup_clips(
         self,

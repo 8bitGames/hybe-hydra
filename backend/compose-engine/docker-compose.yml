@@ -6,6 +6,10 @@
 #   2. Set LOCAL_COMPOSE_URL=http://localhost:8000
 #   3. Run: cd backend/compose-engine && docker-compose up --build
 #   4. Run: npm run dev
+#
+# For GPU support (NVIDIA):
+#   1. Install NVIDIA Container Toolkit
+#   2. Use: docker-compose --profile gpu up --build
 
 services:
   compose-engine:
@@ -18,12 +22,9 @@ services:
     env_file:
       - .env
     environment:
-      # Override or add additional env vars here
       - TEMP_DIR=/tmp/compose
     volumes:
-      # Mount source for hot reload during development
       - ./app:/app/app
-      # Persistent temp directory
       - compose-temp:/tmp/compose
     restart: unless-stopped
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -32,6 +33,21 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # GPU-enabled version (requires NVIDIA Container Toolkit)
+  compose-engine-gpu:
+    extends:
+      service: compose-engine
+    container_name: hydra-compose-engine-gpu
+    profiles:
+      - gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 volumes:
   compose-temp:
