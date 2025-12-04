@@ -773,8 +773,20 @@ export default function VideoGeneratePage() {
 
   React.useEffect(() => {
     if (videosData?.items) {
-      // API now filters by generation_type, but keep client-side safety filter
-      setGenerations(videosData.items);
+      // Strictly filter - only show AI videos, exclude any COMPOSE or Compose variation
+      const aiOnly = videosData.items.filter(v => {
+        // Exclude if generation_type contains "COMPOSE" (case insensitive)
+        if (v.generation_type && v.generation_type.toUpperCase().includes("COMPOSE")) {
+          return false;
+        }
+        // Exclude if prompt contains "Compose variation"
+        if (v.prompt && v.prompt.toLowerCase().includes("compose variation")) {
+          return false;
+        }
+        // Only include if explicitly AI or no type (legacy)
+        return v.generation_type === "AI" || !v.generation_type;
+      });
+      setGenerations(aiOnly);
     }
   }, [videosData?.items]);
 
