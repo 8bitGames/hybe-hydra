@@ -403,20 +403,20 @@ class VideoRenderer:
         if audio_data.start_time or audio_data.duration:
             start = audio_data.start_time or 0
             duration = audio_data.duration or video_duration
-            trimmed = audio_clip.subclipped(start, start + min(duration, audio_clip.duration - start))
+            trimmed = audio_clip.with_subclip(start, start + min(duration, audio_clip.duration - start))
             audio_clips_to_close.append(trimmed)
             audio_clip = trimmed
 
         if audio_clip.duration > video_duration:
-            trimmed = audio_clip.subclipped(0, video_duration)
+            trimmed = audio_clip.with_subclip(0, video_duration)
             audio_clips_to_close.append(trimmed)
             audio_clip = trimmed
 
         # TikTok Hook: Calm start then beat drop
         if audio_clip.duration > HOOK_DURATION:
             from moviepy import concatenate_audioclips
-            hook_section = audio_clip.subclipped(0, HOOK_DURATION).with_volume_scaled(HOOK_CALM_FACTOR)
-            main_section = audio_clip.subclipped(HOOK_DURATION, audio_clip.duration)
+            hook_section = audio_clip.with_subclip(0, HOOK_DURATION).with_multiply_volume(HOOK_CALM_FACTOR)
+            main_section = audio_clip.with_subclip(HOOK_DURATION, audio_clip.duration)
             audio_clips_to_close.extend([hook_section, main_section])
             audio_clip = concatenate_audioclips([hook_section, main_section])
             audio_clips_to_close.append(audio_clip)
