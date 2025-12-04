@@ -56,14 +56,48 @@ export interface TrendCollectionResult {
   error?: string;
 }
 
-// Browser singleton for reuse
+// Browser singleton for reuse (note: doesn't work well in serverless, but helps in local dev)
 let browserInstance: Browser | null = null;
 
+// Check if we're in a serverless environment
+const isServerless = process.env.VERCEL === '1' ||
+                     process.env.AWS_LAMBDA_FUNCTION_NAME ||
+                     process.env.NETLIFY === 'true';
+
 async function getBrowser(): Promise<Browser> {
-  if (!browserInstance || !browserInstance.isConnected()) {
+  // In serverless, always create a new browser (singleton doesn't persist)
+  if (isServerless || !browserInstance || !browserInstance.isConnected()) {
+    console.log('[TIKTOK-TRENDS] Launching browser...', { isServerless });
+
+    // Try Chrome channel first (faster in local dev), fallback to bundled chromium
+    try {
+      // Only try chrome channel if not in serverless (Chrome not available in Vercel)
+      if (!isServerless) {
+        browserInstance = await chromium.launch({
+          headless: true,
+          channel: 'chrome',
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=site-per-process',
+            '--window-size=1920,1080',
+            '--disable-gpu',
+          ],
+        });
+        console.log('[TIKTOK-TRENDS] Browser launched with Chrome channel');
+        return browserInstance;
+      }
+    } catch {
+      console.log('[TIKTOK-TRENDS] Chrome channel not available, using bundled chromium');
+    }
+
+    // Fallback to bundled chromium (works in serverless)
     browserInstance = await chromium.launch({
-      headless: true, // Using new headless - should look more like real browser
-      channel: 'chrome', // Use actual Chrome if available
+      headless: true,
+      // NO channel option - uses bundled chromium
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -73,8 +107,11 @@ async function getBrowser(): Promise<Browser> {
         '--disable-features=site-per-process',
         '--window-size=1920,1080',
         '--disable-gpu',
+        '--single-process', // Important for serverless
+        '--disable-extensions',
       ],
     });
+    console.log('[TIKTOK-TRENDS] Browser launched with bundled chromium');
   }
   return browserInstance;
 }
@@ -845,7 +882,7 @@ export async function searchTikTok(keyword: string, limit = 20): Promise<{
             // If no description from img, try to find in parent container's sibling
             if (!description) {
               // Go up to find the card container (usually 2-3 levels up from button)
-              let cardContainer = link.closest('button')?.parentElement;
+              const cardContainer = link.closest('button')?.parentElement;
               if (cardContainer) {
                 // Find sibling elements that contain text (description div)
                 const siblings = cardContainer.querySelectorAll('div, span, p');
@@ -975,7 +1012,7 @@ export async function collectTikTokTrends(options?: {
 
   const allTrends: TikTokTrendItem[] = [];
   const seenKeywords = new Set<string>();
-  let method: 'playwright' | 'api' | 'fallback' = 'playwright';
+  const method: 'playwright' | 'api' | 'fallback' = 'playwright';
 
   try {
     // 1. Scrape explore page for trending content

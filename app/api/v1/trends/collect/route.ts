@@ -8,7 +8,122 @@ import {
   searchTikTok,
   closeBrowser,
   TikTokTrendItem,
+  HashtagVideo,
 } from "@/lib/tiktok-trends";
+
+// Modal TikTok Trends endpoint for production
+const MODAL_TIKTOK_ENDPOINT = process.env.MODAL_TIKTOK_ENDPOINT ||
+  "https://modawnai--hydra-tiktok-trends-collect-trends-endpoint.modal.run";
+
+// Use Modal in production (Vercel), local Playwright in development
+const USE_MODAL = process.env.VERCEL === "1" || process.env.USE_MODAL_TIKTOK === "true";
+
+interface ModalVideoItem {
+  id: string;
+  description: string;
+  authorId: string;
+  authorNickname: string;
+  avatarUrl?: string;
+  playCount: number;
+  likeCount: number;
+  commentCount: number;
+  shareCount: number;
+  thumbnailUrl?: string;
+  musicTitle?: string;
+  hashtags: string[];
+  createTime: number;
+  hashtag?: string;
+  videoUrl?: string;
+  searchKeyword?: string;
+}
+
+interface ModalResponse {
+  success: boolean;
+  method: string;
+  trends: TikTokTrendItem[];
+  videos: ModalVideoItem[];
+  collectedAt: string;
+  error?: string;
+  stats?: {
+    totalTrends: number;
+    totalVideos: number;
+    keywordsSearched: number;
+    hashtagsScraped: number;
+    errors: number;
+  };
+}
+
+/**
+ * Call Modal TikTok scraping function
+ */
+async function callModalScraper(
+  keywords: string[],
+  hashtags: string[],
+  includeExplore: boolean,
+  limitPerKeyword: number = 40
+): Promise<ModalResponse | null> {
+  try {
+    console.log("[TRENDS-COLLECT] Calling Modal endpoint:", MODAL_TIKTOK_ENDPOINT);
+
+    const response = await fetch(MODAL_TIKTOK_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        keywords,
+        hashtags,
+        includeExplore,
+        secret: process.env.MODAL_API_SECRET || "",
+        limitPerKeyword,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("[TRENDS-COLLECT] Modal request failed:", response.status, response.statusText);
+      return null;
+    }
+
+    const result: ModalResponse = await response.json();
+    console.log("[TRENDS-COLLECT] Modal response:", {
+      success: result.success,
+      trends: result.trends?.length || 0,
+      videos: result.videos?.length || 0,
+      method: result.method,
+    });
+
+    return result;
+  } catch (error) {
+    console.error("[TRENDS-COLLECT] Modal call error:", error);
+    return null;
+  }
+}
+
+/**
+ * Convert Modal video to HashtagVideo format
+ */
+function convertModalVideoToHashtagVideo(video: ModalVideoItem): HashtagVideo {
+  return {
+    id: video.id,
+    description: video.description,
+    author: {
+      uniqueId: video.authorId,
+      nickname: video.authorNickname,
+      avatarUrl: video.avatarUrl,
+    },
+    stats: {
+      playCount: video.playCount,
+      likeCount: video.likeCount,
+      commentCount: video.commentCount,
+      shareCount: video.shareCount,
+    },
+    videoUrl: video.videoUrl,
+    thumbnailUrl: video.thumbnailUrl,
+    musicTitle: video.musicTitle,
+    hashtags: video.hashtags,
+    createTime: video.createTime,
+  };
+}
 
 // POST /api/v1/trends/collect - Trigger trend collection (admin only)
 export async function POST(request: NextRequest) {
@@ -136,7 +251,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/v1/trends/collect/hashtag - Get details for a specific hashtag
+// GET /api/v1/trends/collect - Get details for a specific hashtag or search keyword
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get("authorization");
@@ -150,10 +265,99 @@ export async function GET(request: NextRequest) {
     const hashtag = searchParams.get("hashtag");
     const keyword = searchParams.get("keyword");
     const action = searchParams.get("action") || "hashtag";
+    const limit = parseInt(searchParams.get("limit") || "40", 10);
 
+    console.log("[TRENDS-COLLECT] GET request:", { action, hashtag, keyword, limit, USE_MODAL });
+
+    // Use Modal in production for better performance and reliability
+    if (USE_MODAL) {
+      if (action === "search" && keyword) {
+        // Search TikTok for a keyword using Modal
+        const result = await callModalScraper(
+          [keyword],  // keywords
+          [],         // hashtags
+          false,      // includeExplore
+          limit
+        );
+
+        if (!result) {
+          return NextResponse.json({
+            success: false,
+            keyword,
+            videos: [],
+            relatedHashtags: [],
+            error: "Modal scraper failed",
+          });
+        }
+
+        // Extract related hashtags from video hashtags
+        const relatedHashtags = new Set<string>();
+        result.videos.forEach(v => {
+          v.hashtags.forEach(h => relatedHashtags.add(`#${h}`));
+        });
+
+        return NextResponse.json({
+          success: result.success,
+          keyword,
+          videos: result.videos.map(convertModalVideoToHashtagVideo),
+          relatedHashtags: Array.from(relatedHashtags),
+          method: result.method,
+          stats: result.stats,
+        });
+      }
+
+      if (action === "hashtag" && hashtag) {
+        // Get hashtag details using Modal
+        const cleanHashtag = hashtag.replace(/^#/, "");
+        const result = await callModalScraper(
+          [],           // keywords
+          [cleanHashtag], // hashtags
+          false,        // includeExplore
+          limit
+        );
+
+        if (!result) {
+          return NextResponse.json({
+            success: false,
+            hashtag,
+            info: null,
+            videos: [],
+            error: "Modal scraper failed",
+          });
+        }
+
+        // Extract hashtag info from trends
+        const trendInfo = result.trends.find(t =>
+          t.keyword.toLowerCase() === cleanHashtag.toLowerCase()
+        );
+
+        return NextResponse.json({
+          success: result.success,
+          hashtag,
+          info: trendInfo ? {
+            id: cleanHashtag,
+            title: trendInfo.keyword,
+            description: trendInfo.description,
+            viewCount: trendInfo.viewCount || 0,
+            videoCount: trendInfo.videoCount || result.videos.length,
+            thumbnailUrl: trendInfo.thumbnailUrl,
+          } : null,
+          videos: result.videos.map(convertModalVideoToHashtagVideo),
+          method: result.method,
+          stats: result.stats,
+        });
+      }
+
+      return NextResponse.json(
+        { detail: "Missing required parameter: hashtag or keyword" },
+        { status: 400 }
+      );
+    }
+
+    // Fallback to local Playwright (development mode)
     if (action === "search" && keyword) {
       // Search TikTok for a keyword - fetch up to 40 videos
-      const result = await searchTikTok(keyword, 40);
+      const result = await searchTikTok(keyword, limit);
       await closeBrowser();
 
       return NextResponse.json({

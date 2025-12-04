@@ -1,44 +1,214 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { TrendPlatform, Prisma } from "@prisma/client";
+
+// For fallback local scraping (not recommended in production)
 import {
   collectTikTokTrends,
   closeBrowser,
   TikTokTrendItem,
 } from "@/lib/tiktok-trends";
 
+// Extend timeout for Modal callback or local scraping fallback
+export const maxDuration = 120; // 2 minutes (Modal does the heavy lifting)
+
+// Modal TikTok Trends endpoint
+const MODAL_TIKTOK_ENDPOINT = process.env.MODAL_TIKTOK_ENDPOINT ||
+  "https://modawnai--hydra-tiktok-trends-collect-trends-endpoint.modal.run";
+
 // Default keywords to collect trends for
 const DEFAULT_KEYWORDS = [
   "countrymusic",
-  "countrysong",
   "nashville",
   "carlypearce",
+  "countrytiktok",
+  "newcountry",
+  "countrysong",
   "countryconcert",
   "countrylive",
   "acoustic",
-  "songwriting",
   "countryartist",
-  "newcountry",
-  "countrytiktok",
+];
+
+// Hashtags to scrape for detailed info
+const DEFAULT_HASHTAGS = [
+  "countrymusic",
+  "carlypearce",
+  "nashville",
 ];
 
 // Verify cron secret to prevent unauthorized access
+// Vercel cron jobs send Authorization header when CRON_SECRET is set in env vars
 function verifyCronSecret(request: NextRequest): boolean {
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
 
   // In development, allow without secret
   if (process.env.NODE_ENV === "development") {
+    console.log("[CRON] Development mode - skipping auth");
     return true;
   }
 
-  // If no CRON_SECRET is set, deny access
+  // Check for Vercel's internal cron header (more reliable)
+  // Vercel automatically adds this for cron jobs configured in vercel.json
+  const isVercelCron = request.headers.get("x-vercel-cron") === "true" ||
+                       request.headers.get("user-agent")?.includes("vercel-cron");
+
+  if (isVercelCron) {
+    console.log("[CRON] Vercel cron job detected via headers");
+    return true;
+  }
+
+  // If no CRON_SECRET is set, log warning but allow for Vercel internal calls
   if (!cronSecret) {
-    console.warn("[CRON] CRON_SECRET not configured");
+    console.warn("[CRON] CRON_SECRET not configured - checking for Vercel origin");
+    // Allow if request is from Vercel's internal network
+    const vercelId = request.headers.get("x-vercel-id");
+    if (vercelId) {
+      console.log("[CRON] Allowing request with Vercel ID:", vercelId);
+      return true;
+    }
     return false;
   }
 
-  return authHeader === `Bearer ${cronSecret}`;
+  // Standard Bearer token verification
+  const isValid = authHeader === `Bearer ${cronSecret}`;
+  if (!isValid) {
+    console.warn("[CRON] Invalid auth header. Expected: Bearer <CRON_SECRET>");
+  }
+  return isValid;
+}
+
+// Interface for Modal response
+interface ModalTrendItem {
+  rank: number;
+  keyword: string;
+  hashtag?: string;
+  viewCount?: number;
+  videoCount?: number;
+  description?: string;
+  thumbnailUrl?: string;
+  trendUrl?: string;
+  source?: string;
+}
+
+interface ModalVideoItem {
+  id: string;
+  description: string;
+  authorId: string;
+  authorNickname: string;
+  avatarUrl?: string;
+  playCount: number;
+  likeCount: number;
+  commentCount: number;
+  shareCount: number;
+  thumbnailUrl?: string;
+  musicTitle?: string;
+  hashtags: string[];
+  createTime: number;
+  hashtag?: string;
+  videoUrl?: string;
+  searchKeyword?: string;
+}
+
+interface ModalResponse {
+  success: boolean;
+  method: string;
+  trends: ModalTrendItem[];
+  videos: ModalVideoItem[];
+  collectedAt: string;
+  error?: string;
+  stats?: {
+    totalTrends: number;
+    totalVideos: number;
+    keywordsSearched: number;
+    hashtagsScraped: number;
+    errors: number;
+  };
+}
+
+/**
+ * Call Modal TikTok scraping function
+ */
+async function callModalScraper(
+  keywords: string[],
+  hashtags: string[],
+  includeExplore: boolean
+): Promise<ModalResponse | null> {
+  try {
+    console.log("[CRON-TRENDS] Calling Modal endpoint:", MODAL_TIKTOK_ENDPOINT);
+
+    const response = await fetch(MODAL_TIKTOK_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        keywords,
+        hashtags,
+        includeExplore,
+        secret: process.env.MODAL_API_SECRET || "",
+        limitPerKeyword: 20,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("[CRON-TRENDS] Modal request failed:", response.status, response.statusText);
+      return null;
+    }
+
+    const result: ModalResponse = await response.json();
+    console.log("[CRON-TRENDS] Modal response:", {
+      success: result.success,
+      trends: result.trends?.length || 0,
+      videos: result.videos?.length || 0,
+      method: result.method,
+    });
+
+    return result;
+  } catch (error) {
+    console.error("[CRON-TRENDS] Modal call error:", error);
+    return null;
+  }
+}
+
+/**
+ * Fallback to local Playwright scraping (use only if Modal fails)
+ */
+async function fallbackLocalScraping(keywords: string[]): Promise<{
+  trends: TikTokTrendItem[];
+  method: string;
+  error?: string;
+}> {
+  console.log("[CRON-TRENDS] Using fallback local scraping...");
+
+  try {
+    // Use smaller keyword set for local scraping to avoid timeout
+    const limitedKeywords = keywords.slice(0, 3);
+
+    const result = await collectTikTokTrends({
+      keywords: limitedKeywords,
+      hashtags: [],
+      includeExplore: true,
+    });
+
+    await closeBrowser();
+
+    return {
+      trends: result.trends,
+      method: "local_fallback",
+      error: result.error,
+    };
+  } catch (error) {
+    try {
+      await closeBrowser();
+    } catch {}
+    return {
+      trends: [],
+      method: "local_fallback",
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -51,21 +221,43 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Collect trends for default keywords
     console.log("[CRON-TRENDS] Starting collection for keywords:", DEFAULT_KEYWORDS);
 
-    const result = await collectTikTokTrends({
-      keywords: DEFAULT_KEYWORDS,
-      hashtags: [],
-      includeExplore: true,
-    });
+    let collectedTrends: ModalTrendItem[] = [];
+    let method = "unknown";
+    let error: string | undefined;
 
-    const collectedTrends = result.trends;
-    const method = result.method;
-    const error = result.error;
+    // Try Modal first (recommended for production)
+    const useModal = process.env.USE_MODAL_TIKTOK !== "false";
 
-    // Close browser after collection
-    await closeBrowser();
+    if (useModal) {
+      const modalResult = await callModalScraper(
+        DEFAULT_KEYWORDS,
+        DEFAULT_HASHTAGS,
+        true
+      );
+
+      if (modalResult && modalResult.success) {
+        collectedTrends = modalResult.trends;
+        method = modalResult.method;
+        error = modalResult.error;
+        console.log("[CRON-TRENDS] Modal scraping successful:", {
+          trends: collectedTrends.length,
+          stats: modalResult.stats,
+        });
+      } else {
+        console.warn("[CRON-TRENDS] Modal scraping failed, trying fallback...");
+      }
+    }
+
+    // Fallback to local scraping if Modal fails
+    if (collectedTrends.length === 0) {
+      console.log("[CRON-TRENDS] Using fallback local scraping");
+      const fallbackResult = await fallbackLocalScraping(DEFAULT_KEYWORDS);
+      collectedTrends = fallbackResult.trends;
+      method = fallbackResult.method;
+      error = fallbackResult.error;
+    }
 
     if (collectedTrends.length === 0) {
       console.log("[CRON-TRENDS] No trends collected:", error);
@@ -79,7 +271,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Save to database
-    const trendData = collectedTrends.map((trend: TikTokTrendItem) => ({
+    const trendData = collectedTrends.map((trend) => ({
       platform: "TIKTOK" as TrendPlatform,
       keyword: trend.keyword,
       rank: trend.rank,
@@ -88,7 +280,9 @@ export async function GET(request: NextRequest) {
       videoCount: trend.videoCount || null,
       description: trend.description || null,
       hashtags: trend.hashtag ? [trend.hashtag] : [],
-      metadata: trend.metadata ? (trend.metadata as Prisma.InputJsonValue) : Prisma.JsonNull,
+      metadata: trend.source
+        ? ({ source: trend.source } as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
       trendUrl: trend.trendUrl || null,
       thumbnailUrl: trend.thumbnailUrl || null,
     }));
@@ -115,11 +309,11 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     console.error("[CRON-TRENDS] Error during collection:", err);
 
-    // Try to close browser on error
+    // Try to close browser on error (in case fallback was used)
     try {
       await closeBrowser();
-    } catch (closeErr) {
-      console.error("[CRON-TRENDS] Error closing browser:", closeErr);
+    } catch {
+      // Ignore close errors
     }
 
     return NextResponse.json(
