@@ -9,35 +9,46 @@ const prisma = new PrismaClient({ adapter });
 
 async function check() {
   try {
-    console.log("DATABASE_URL:", process.env.DATABASE_URL?.substring(0, 50) + "...");
+    console.log("=== 발행 페이지 데이터 확인 ===\n");
 
-    // Check campaigns
-    const campaigns = await prisma.campaign.findMany();
-    console.log(`\n📁 Campaigns: ${campaigns.length}`);
-    campaigns.forEach(c => console.log(`  - ${c.name} (${c.id})`));
+    // Check ScheduledPost
+    const scheduledPosts = await prisma.scheduledPost.count();
+    console.log(`📤 ScheduledPost (발행 예약): ${scheduledPosts}개`);
 
-    // Check assets for the specific campaign
-    const assets = await prisma.asset.findMany({
-      where: { campaignId: "campaign-carly-hummingbird-tour" }
-    });
-    console.log(`\n🖼️ Assets for campaign-carly-hummingbird-tour: ${assets.length}`);
-    assets.forEach(a => console.log(`  - [${a.type}] ${a.filename}`));
+    if (scheduledPosts > 0) {
+      const posts = await prisma.scheduledPost.findMany({
+        take: 5,
+        include: {
+          socialAccount: true,
+          campaign: { select: { name: true } }
+        }
+      });
+      console.log("\n샘플 ScheduledPost:");
+      posts.forEach(p => console.log(`  - ${p.status} | ${p.campaign?.name} | ${p.socialAccount?.accountName}`));
+    }
 
-    // Check all assets
-    const allAssets = await prisma.asset.findMany();
-    console.log(`\n📦 Total assets in DB: ${allAssets.length}`);
+    // Check VideoGeneration
+    const videoGenerations = await prisma.videoGeneration.count();
+    const completedVideos = await prisma.videoGeneration.count({ where: { status: "COMPLETED" } });
+    console.log(`\n🎬 VideoGeneration: ${videoGenerations}개 (완료: ${completedVideos}개)`);
 
-    // Check video generations
-    const videos = await prisma.videoGeneration.findMany();
-    console.log(`\n🎬 Total video generations: ${videos.length}`);
+    // Check SocialAccount
+    const socialAccounts = await prisma.socialAccount.count();
+    console.log(`\n👤 SocialAccount (연결된 계정): ${socialAccounts}개`);
 
-    // Check by campaign
-    const videosByCampaign = await prisma.videoGeneration.groupBy({
-      by: ['campaignId'],
-      _count: true
-    });
-    console.log("\nVideos by campaign:");
-    videosByCampaign.forEach(v => console.log(`  - ${v.campaignId}: ${v._count}`));
+    if (socialAccounts > 0) {
+      const accounts = await prisma.socialAccount.findMany({ take: 5 });
+      console.log("샘플 SocialAccount:");
+      accounts.forEach(a => console.log(`  - ${a.platform} | ${a.accountName}`));
+    }
+
+    // Summary
+    console.log("\n=== 결론 ===");
+    if (scheduledPosts === 0) {
+      console.log("⚠️  ScheduledPost 테이블에 데이터가 없습니다!");
+      console.log("→ 발행 페이지는 ScheduledPost만 표시합니다.");
+      console.log("→ VideoGeneration을 발행하려면 캠페인 > 발행 탭에서 예약해야 합니다.");
+    }
 
   } catch (error) {
     console.error("Error:", error);

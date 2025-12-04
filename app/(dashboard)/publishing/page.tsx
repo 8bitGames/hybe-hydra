@@ -28,6 +28,8 @@ import {
   Plus,
   RefreshCw,
   Settings,
+  List,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +86,11 @@ const getStatusBadge = (status: string, language: "ko" | "en") => {
         <AlertCircle className="h-3 w-3 mr-1" />
         {language === "ko" ? "실패" : "Failed"}
       </Badge>;
+    case "CANCELLED":
+      return <Badge variant="outline" className="text-muted-foreground">
+        <XCircle className="h-3 w-3 mr-1" />
+        {language === "ko" ? "취소됨" : "Cancelled"}
+      </Badge>;
     case "DRAFT":
       return <Badge variant="outline">{language === "ko" ? "초안" : "Draft"}</Badge>;
     default:
@@ -106,7 +113,7 @@ export default function PublishingPage() {
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("scheduled");
+  const [activeTab, setActiveTab] = useState("all");
 
   useEffect(() => {
     if (accessToken) {
@@ -163,6 +170,7 @@ export default function PublishingPage() {
   const scheduledPosts = posts.filter(p => p.status === "SCHEDULED");
   const publishedPosts = posts.filter(p => p.status === "PUBLISHED");
   const failedPosts = posts.filter(p => p.status === "FAILED");
+  const cancelledPosts = posts.filter(p => p.status === "CANCELLED");
 
   return (
     <div className="space-y-6 pb-8">
@@ -261,6 +269,10 @@ export default function PublishingPage() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
+          <TabsTrigger value="all" className="gap-2">
+            <List className="h-4 w-4" />
+            {language === "ko" ? "전체" : "All"} ({posts.length})
+          </TabsTrigger>
           <TabsTrigger value="scheduled" className="gap-2">
             <Clock className="h-4 w-4" />
             {language === "ko" ? "예약됨" : "Scheduled"} ({scheduledPosts.length})
@@ -275,7 +287,97 @@ export default function PublishingPage() {
               {language === "ko" ? "실패" : "Failed"} ({failedPosts.length})
             </TabsTrigger>
           )}
+          {cancelledPosts.length > 0 && (
+            <TabsTrigger value="cancelled" className="gap-2">
+              <XCircle className="h-4 w-4" />
+              {language === "ko" ? "취소됨" : "Cancelled"} ({cancelledPosts.length})
+            </TabsTrigger>
+          )}
         </TabsList>
+
+        <TabsContent value="all" className="mt-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner className="h-8 w-8" />
+            </div>
+          ) : posts.length === 0 ? (
+            <Card>
+              <CardContent className="pt-12 pb-12 text-center">
+                <List className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="font-medium mb-2">
+                  {language === "ko" ? "게시물이 없습니다" : "No posts"}
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {language === "ko"
+                    ? "캠페인의 발행 탭에서 게시물을 예약하세요"
+                    : "Schedule posts from your campaign's Publish tab"}
+                </p>
+                <Button onClick={() => router.push("/campaigns")}>
+                  {language === "ko" ? "캠페인으로 이동" : "Go to Campaigns"}
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {posts.map((post) => (
+                <Card key={post.id} className={cn(
+                  post.status === "FAILED" && "border-destructive/50",
+                  post.status === "CANCELLED" && "opacity-60"
+                )}>
+                  <CardContent className="pt-4 pb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="text-2xl">{getPlatformIcon(post.platform)}</div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{post.accountName}</span>
+                          {getStatusBadge(post.status, language)}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {post.campaignName} •{" "}
+                          {post.publishedAt
+                            ? `${language === "ko" ? "발행: " : "Published "}${new Date(post.publishedAt).toLocaleDateString()}`
+                            : post.scheduledAt
+                            ? `${language === "ko" ? "예약: " : "Scheduled "}${new Date(post.scheduledAt).toLocaleString()}`
+                            : language === "ko" ? "날짜 없음" : "No date"}
+                        </p>
+                        {post.status === "PUBLISHED" && (
+                          <div className="flex items-center gap-4 mt-2 text-sm">
+                            {post.viewCount !== null && (
+                              <span className="flex items-center gap-1">
+                                <Eye className="h-3 w-3" /> {formatNumber(post.viewCount)}
+                              </span>
+                            )}
+                            {post.likeCount !== null && (
+                              <span className="flex items-center gap-1">
+                                <Heart className="h-3 w-3" /> {formatNumber(post.likeCount)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {post.publishedUrl ? (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={post.publishedUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            {language === "ko" ? "보기" : "View"}
+                          </a>
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => router.push(`/campaigns/${post.campaignId}/publish`)}
+                        >
+                          {language === "ko" ? "보기" : "View"}
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
 
         <TabsContent value="scheduled" className="mt-6">
           {loading ? (
@@ -438,6 +540,52 @@ export default function PublishingPage() {
                         onClick={() => router.push(`/campaigns/${post.campaignId}/publish`)}
                       >
                         {language === "ko" ? "재시도" : "Retry"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="cancelled" className="mt-6">
+          {cancelledPosts.length === 0 ? (
+            <Card>
+              <CardContent className="pt-12 pb-12 text-center">
+                <CheckCircle className="h-12 w-12 mx-auto text-green-500 mb-4" />
+                <h3 className="font-medium mb-2">
+                  {language === "ko" ? "취소된 게시물이 없습니다" : "No cancelled posts"}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {language === "ko"
+                    ? "취소된 게시물이 여기에 표시됩니다"
+                    : "Cancelled posts will appear here"}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {cancelledPosts.map((post) => (
+                <Card key={post.id} className="opacity-60">
+                  <CardContent className="pt-4 pb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="text-2xl">{getPlatformIcon(post.platform)}</div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{post.accountName}</span>
+                          {getStatusBadge(post.status, language)}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {post.campaignName}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => router.push(`/campaigns/${post.campaignId}/publish`)}
+                      >
+                        {language === "ko" ? "보기" : "View"}
                       </Button>
                     </div>
                   </CardContent>
