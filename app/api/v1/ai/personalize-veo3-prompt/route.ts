@@ -855,63 +855,78 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
     }
 
     // ========================================================================
-    // STEP 2: Image Generation with Gemini 3
-    // ALWAYS generate a NEW optimized image using Gemini 3
-    // If user provides image → use as REFERENCE for Gemini to enhance/contextualize
-    // If no user image → generate purely from prompt
+    // STEP 2: Image Generation with Gemini 3 Pro
+    //
+    // Flow: veo3Prompt (already personalized) → Image Prompt → Gemini 3 Image
+    //
+    // The veo3Prompt has ALREADY been optimized via analyze + finalize steps.
+    // Now we use it to:
+    //   1. Generate an optimized IMAGE prompt (via generateImagePromptForI2V)
+    //   2. Generate a NEW image using Gemini 3 + user's reference photo
+    //   3. Use the GENERATED image (not original) for I2V video generation
     // ========================================================================
-    console.log("[GENERATE] 🖼️ Step 2: Generating optimized image with Gemini 3...");
+    console.log("[GENERATE] 🖼️ Step 2: Image Generation with Gemini 3 Pro...");
+    console.log("[GENERATE]    📝 Using personalized veo3Prompt to generate image");
 
     let generatedImageBase64: string | undefined;
     let referenceImageBase64: string | undefined;
     let imageSource: "GEMINI_WITH_REF" | "GEMINI_NO_REF" | "NONE" = "NONE";
 
-    // Check if user provided images (to use as REFERENCE)
+    // Check if user provided images (to use as REFERENCE for Gemini)
     const hasUserImages = images && images.length > 0;
     const firstImage = hasUserImages ? images[0] : null;
 
-    // Step 2a: Get user's reference image if provided
+    // ──────────────────────────────────────────────────────────────────────
+    // Step 2a: Get user's REFERENCE image (product/asset photo)
+    // This will be used as input to Gemini 3 to incorporate into the scene
+    // ──────────────────────────────────────────────────────────────────────
     if (firstImage) {
-      // PRIORITY 1: User provided base64 (local upload) → use as reference
+      console.log(`[GENERATE]    Step 2a: Fetching user's reference image...`);
+
+      // PRIORITY 1: User provided base64 (local upload)
       if (firstImage.base64 && firstImage.mimeType) {
-        console.log(`[GENERATE]    📎 Reference image source: LOCAL UPLOAD`);
-        console.log(`[GENERATE]      Size: ${Math.round(firstImage.base64.length / 1024)}KB`);
+        console.log(`[GENERATE]      📎 Source: LOCAL UPLOAD`);
+        console.log(`[GENERATE]      📎 Size: ${Math.round(firstImage.base64.length / 1024)}KB`);
         referenceImageBase64 = firstImage.base64;
       }
-      // PRIORITY 2: User provided URL (campaign asset) → fetch and use as reference
+      // PRIORITY 2: User provided URL (campaign asset)
       else if (firstImage.url) {
-        console.log(`[GENERATE]    📎 Reference image source: CAMPAIGN URL`);
-        console.log(`[GENERATE]      URL: ${firstImage.url.slice(0, 80)}...`);
+        console.log(`[GENERATE]      📎 Source: CAMPAIGN URL`);
+        console.log(`[GENERATE]      📎 URL: ${firstImage.url.slice(0, 80)}...`);
 
         try {
           const imageData = await fetchImageAsBase64(firstImage.url);
           if (imageData) {
             referenceImageBase64 = imageData.base64;
-            console.log(`[GENERATE]    ✓ Reference image fetched: ${Math.round(imageData.base64.length / 1024)}KB`);
+            console.log(`[GENERATE]      ✓ Reference fetched: ${Math.round(imageData.base64.length / 1024)}KB`);
           } else {
-            console.error("[GENERATE]    ⚠️ Failed to fetch reference image from URL");
+            console.error("[GENERATE]      ⚠️ Failed to fetch reference image");
           }
         } catch (fetchError) {
-          console.error("[GENERATE]    ⚠️ Error fetching reference image:", fetchError);
+          console.error("[GENERATE]      ⚠️ Error fetching reference:", fetchError);
         }
       }
+    } else {
+      console.log(`[GENERATE]    Step 2a: No reference image provided (text-only generation)`);
     }
 
-    // Step 2b: Generate optimized image with Gemini 3
-    // ALWAYS generate - using reference if available
-    console.log("[GENERATE]    🎨 Generating optimized image with Gemini 3...");
-    console.log(`[GENERATE]      Has reference image: ${!!referenceImageBase64}`);
+    // ──────────────────────────────────────────────────────────────────────
+    // Step 2b: Generate optimized IMAGE PROMPT from the personalized veo3Prompt
+    // The veo3Prompt was already optimized via analyze + finalize flow
+    // Now we convert it into an image-specific prompt
+    // ──────────────────────────────────────────────────────────────────────
+    console.log(`[GENERATE]    Step 2b: Creating image prompt from personalized veo3Prompt...`);
 
-    // Build image description for generation
+    // Build image description for the prompt generator
     let imageDescriptionForGen = imageDescription || "";
     if (hasUserImages && !imageDescriptionForGen) {
       const imageNames = images.map(img => img.name || "reference").join(", ");
-      imageDescriptionForGen = `Reference assets: ${imageNames}`;
+      imageDescriptionForGen = `Product/asset reference: ${imageNames}`;
     }
 
-    // Generate optimized image prompt for I2V
+    // Use the PERSONALIZED veo3Prompt to generate an image-specific prompt
     const imagePromptResult = await generateImagePromptForI2V({
-      videoPrompt: veo3Prompt,
+      videoPrompt: veo3Prompt,  // Already personalized from analyze+finalize
       imageDescription: imageDescriptionForGen,
       style: style,
       aspectRatio: aspectRatio,
@@ -921,54 +936,64 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
       ? imagePromptResult.imagePrompt
       : veo3Prompt;
 
-    console.log(`[GENERATE]      Image generation prompt: ${imagePrompt.slice(0, 100)}...`);
+    console.log(`[GENERATE]      ✓ Image prompt created: ${imagePrompt.slice(0, 100)}...`);
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Step 2c: Generate NEW image with Gemini 3 Pro
+    // Uses: imagePrompt (optimized) + referenceImage (user's photo)
+    // Output: A NEW generated image that incorporates the reference
+    // ──────────────────────────────────────────────────────────────────────
+    console.log(`[GENERATE]    Step 2c: Generating image with Gemini 3 Pro...`);
+    console.log(`[GENERATE]      Has reference image: ${!!referenceImageBase64}`);
 
     try {
-      // Generate image with Gemini 3
-      // If we have a reference image, it will be used to incorporate the product/subject
       const imageParams: ImageGenerationParams = {
         prompt: imagePrompt,
         aspectRatio: aspectRatio as "1:1" | "3:4" | "4:3" | "9:16" | "16:9" || "9:16",
         style: style,
-        // Pass reference image if available - Gemini will use it as context
+        // Pass reference image - Gemini will incorporate the product into the scene
         ...(referenceImageBase64 && {
           referenceImageBase64: referenceImageBase64,
         }),
       };
 
-      console.log(`[GENERATE]      Calling Gemini 3 image generation...`);
+      console.log(`[GENERATE]      🎨 Calling Gemini 3 Pro image generation...`);
       const imageResult = await generateImage(imageParams);
 
       if (imageResult.success && imageResult.imageBase64) {
         generatedImageBase64 = imageResult.imageBase64;
         imageSource = referenceImageBase64 ? "GEMINI_WITH_REF" : "GEMINI_NO_REF";
 
-        console.log(`[GENERATE]    ✅ Gemini 3 image generated successfully!`);
-        console.log(`[GENERATE]      Source: ${imageSource}`);
+        console.log(`[GENERATE]    ✅ Gemini 3 Pro image generated!`);
+        console.log(`[GENERATE]      Mode: ${imageSource === "GEMINI_WITH_REF" ? "Reference + Prompt" : "Prompt Only"}`);
         console.log(`[GENERATE]      Size: ${Math.round(generatedImageBase64.length / 1024)}KB`);
 
         response.steps.imageGeneration = {
           completed: true,
         };
       } else {
-        console.error("[GENERATE]    ❌ Gemini 3 image generation failed:", imageResult.error);
+        console.error("[GENERATE]    ❌ Gemini 3 Pro generation failed:", imageResult.error);
         response.steps.imageGeneration = {
           completed: false,
         };
       }
     } catch (imgError) {
-      console.error("[GENERATE]    ❌ Gemini 3 image generation error:", imgError);
+      console.error("[GENERATE]    ❌ Gemini 3 Pro error:", imgError);
       response.steps.imageGeneration = {
         completed: false,
       };
     }
 
-    console.log(`[GENERATE]    Image generation result:`);
-    console.log(`[GENERATE]      Source: ${imageSource}`);
-    console.log(`[GENERATE]      Has image for I2V: ${!!generatedImageBase64}`);
+    // Summary
+    console.log(`[GENERATE]    ════════════════════════════════════════`);
+    console.log(`[GENERATE]    Image Generation Summary:`);
+    console.log(`[GENERATE]      Reference used: ${!!referenceImageBase64}`);
+    console.log(`[GENERATE]      Generation mode: ${imageSource}`);
+    console.log(`[GENERATE]      Has generated image: ${!!generatedImageBase64}`);
     if (generatedImageBase64) {
-      console.log(`[GENERATE]      Generated image size: ${Math.round(generatedImageBase64.length / 1024)}KB`);
+      console.log(`[GENERATE]      Generated size: ${Math.round(generatedImageBase64.length / 1024)}KB`);
     }
+    console.log(`[GENERATE]    ════════════════════════════════════════`)
 
     // ========================================================================
     // STEP 2b: Generate Video Prompt with Animation Instructions

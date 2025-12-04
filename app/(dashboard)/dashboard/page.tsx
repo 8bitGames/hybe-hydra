@@ -180,7 +180,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-8 pb-8">
+    <div className="space-y-8 pb-8 px-[7%]">
       {/* Hero Section - Quick Actions */}
       <div>
         <h1 className="text-4xl font-bold tracking-tight mb-2">

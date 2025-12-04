@@ -78,7 +78,7 @@ export default function CampaignsPage() {
   const hasFilters = statusFilter || artistFilter;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-[7%] py-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
