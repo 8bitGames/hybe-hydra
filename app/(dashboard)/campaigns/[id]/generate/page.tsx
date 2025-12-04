@@ -2106,20 +2106,44 @@ export default function VideoGeneratePage() {
 
                       {/* Video Thumbnail / Preview */}
                       {gen.status === "completed" && (gen.output_url || gen.composed_output_url) && (
-                        <div className="relative rounded-lg overflow-hidden bg-muted mb-2 aspect-video">
+                        <div className="relative rounded-lg overflow-hidden bg-muted mb-2 aspect-video group cursor-pointer">
                           <video
                             src={gen.composed_output_url || gen.output_url || ""}
                             className="w-full h-full object-cover"
                             muted
+                            loop
                             playsInline
-                            onMouseEnter={(e) => e.currentTarget.play()}
+                            preload="metadata"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.play().catch(() => {});
+                            }}
                             onMouseLeave={(e) => {
                               e.currentTarget.pause();
                               e.currentTarget.currentTime = 0;
                             }}
+                            onClick={(e) => {
+                              const video = e.currentTarget;
+                              if (video.paused) {
+                                video.play().catch(() => {});
+                              } else {
+                                video.pause();
+                              }
+                            }}
                           />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 hover:opacity-100 transition-opacity">
-                            <Play className="w-8 h-8 text-white" />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition-all">
+                            <Play className="w-10 h-10 text-white drop-shadow-lg group-hover:scale-110 transition-transform" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Processing Preview Placeholder */}
+                      {(gen.status === "processing" || gen.status === "pending") && (
+                        <div className="relative rounded-lg overflow-hidden bg-muted mb-2 aspect-video flex items-center justify-center">
+                          <div className="text-center">
+                            <Spinner className="w-8 h-8 mx-auto mb-2 text-primary" />
+                            <p className="text-xs text-muted-foreground">
+                              {gen.status === "pending" ? "Queued..." : "Generating..."}
+                            </p>
                           </div>
                         </div>
                       )}
