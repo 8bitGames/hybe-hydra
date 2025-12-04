@@ -168,18 +168,48 @@ export async function POST(request: NextRequest) {
     let error: string | undefined;
 
     if (platform === "TIKTOK") {
-      const result = await collectTikTokTrends({
-        keywords,
-        hashtags,
-        includeExplore,
-      });
+      // Use Modal in production (Vercel), local Playwright in development
+      if (USE_MODAL) {
+        console.log("[TRENDS-COLLECT] Using Modal for collection");
+        const result = await callModalScraper(
+          keywords,
+          hashtags,
+          includeExplore,
+          40 // limitPerKeyword
+        );
 
-      collectedTrends = result.trends;
-      method = result.method;
-      error = result.error;
+        if (result) {
+          // Convert Modal trends format to local format
+          collectedTrends = result.trends.map((t) => ({
+            rank: t.rank,
+            keyword: t.keyword,
+            hashtag: t.hashtag,
+            viewCount: t.viewCount,
+            videoCount: t.videoCount,
+            description: t.description,
+            thumbnailUrl: t.thumbnailUrl,
+            trendUrl: t.trendUrl,
+          }));
+          method = result.method;
+          error = result.error || undefined;
+        } else {
+          error = "Modal scraper failed - no response";
+        }
+      } else {
+        console.log("[TRENDS-COLLECT] Using local Playwright for collection");
+        const result = await collectTikTokTrends({
+          keywords,
+          hashtags,
+          includeExplore,
+        });
 
-      // Close browser after collection
-      await closeBrowser();
+        collectedTrends = result.trends;
+        method = result.method;
+        error = result.error;
+
+        // Close browser after collection
+        await closeBrowser();
+      }
     } else {
       return NextResponse.json(
         { detail: `Platform ${platform} collection not yet implemented` },

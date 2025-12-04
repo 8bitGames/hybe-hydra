@@ -712,7 +712,8 @@ def _parse_count(value) -> Optional[int]:
 
 @app.function(
     image=tiktok_image,
-    timeout=30,
+    timeout=600,  # 10 minutes - same as scrape function
+    memory=2048,
 )
 @modal.fastapi_endpoint(method="POST")
 def collect_trends_endpoint(data: Dict[str, Any]) -> Dict[str, Any]:
