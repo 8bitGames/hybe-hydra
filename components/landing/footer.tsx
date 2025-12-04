@@ -205,7 +205,7 @@ export function Footer({ lang, onLanguageChange }: FooterProps) {
               사업자등록번호 : 440-81-02170
             </p>
             <p>
-              주소 : 서울특별시 강남구 봉은사로22길 45-9, 제44호실 (역삼동, 논스1호점)
+              주소 : 서울시 서초구 강남대로 53길8 6-162호
             </p>
           </div>
         </motion.div>

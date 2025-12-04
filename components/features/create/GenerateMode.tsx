@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import {
   Card,
@@ -85,12 +85,21 @@ interface GenerateModeProps {
  */
 export function GenerateMode({ className }: GenerateModeProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { language } = useI18n();
 
   const [selectedCampaign, setSelectedCampaign] = useState<string>("");
 
   // TikTok analysis state
   const [tiktokUrl, setTiktokUrl] = useState("");
+
+  // Pre-fill TikTok URL from query param (from dashboard trending click)
+  useEffect(() => {
+    const urlParam = searchParams.get("tiktok_url");
+    if (urlParam) {
+      setTiktokUrl(decodeURIComponent(urlParam));
+    }
+  }, [searchParams]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<VideoAnalysisResult | null>(null);
   const [analysisError, setAnalysisError] = useState("");

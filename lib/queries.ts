@@ -56,6 +56,7 @@ export const queryKeys = {
   trendsList: ["trends", "list"] as const,
   savedTrends: ["trends", "saved"] as const,
   trendingVideos: (hashtags?: string[]) => ["trends", "trending", hashtags] as const,
+  liveTrending: (keywords?: string[]) => ["trends", "live", keywords] as const,
 };
 
 // Dashboard Stats
@@ -615,6 +616,24 @@ export interface TrendingVideosResponse {
   total: number;
 }
 
+export interface LiveTrendingResponse {
+  success: boolean;
+  videos: TrendingVideo[];
+  availableHashtags: Array<{
+    query: string;
+    videoCount: number;
+    totalPlayCount: number;
+    lastUpdated: string | null;
+  }>;
+  total: number;
+  cache: {
+    ageHours: number;
+    maxAgeHours: number;
+    refreshed: boolean;
+    keywords: string[];
+  };
+}
+
 export function useTrendingVideos(params?: {
   hashtags?: string[];
   limit?: number;
@@ -643,6 +662,40 @@ export function useTrendingVideos(params?: {
   });
 }
 
+// Live Trending - fetches fresh data from RapidAPI with 24h cache
+export function useLiveTrending(params?: {
+  keywords?: string[];
+  limit?: number;
+  forceRefresh?: boolean;
+}) {
+  return useQuery({
+    queryKey: queryKeys.liveTrending(params?.keywords),
+    queryFn: async (): Promise<LiveTrendingResponse> => {
+      const searchParams = new URLSearchParams();
+      if (params?.limit) searchParams.set("limit", params.limit.toString());
+      if (params?.keywords && params.keywords.length > 0) {
+        searchParams.set("keywords", params.keywords.join(","));
+      }
+      if (params?.forceRefresh) {
+        searchParams.set("refresh", "true");
+      }
+
+      const query = searchParams.toString();
+      const response = await api.get<LiveTrendingResponse>(
+        `/api/v1/trends/live${query ? `?${query}` : ""}`
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours - matches API cache
+    gcTime: 25 * 60 * 60 * 1000, // 25 hours garbage collection
+  });
+}
+
 // Invalidation helpers
 export function useInvalidateQueries() {
   const queryClient = useQueryClient();
@@ -666,6 +719,8 @@ export function useInvalidateQueries() {
       queryClient.invalidateQueries({ queryKey: queryKeys.trends }),
     invalidateTrendingVideos: () =>
       queryClient.invalidateQueries({ queryKey: ["trends", "trending"] }),
+    invalidateLiveTrending: () =>
+      queryClient.invalidateQueries({ queryKey: ["trends", "live"] }),
     invalidateAll: () => queryClient.invalidateQueries(),
   };
 }

@@ -400,7 +400,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Trending Videos from TikTok */}
-      <TrendingVideosTile maxVideos={15} showHashtagFilter={true} />
+      <TrendingVideosTile maxVideos={15} />
 
       {/* Workflow Pipeline */}
       <Card>
