@@ -193,26 +193,26 @@ export function HeroSection({ lang }: HeroSectionProps) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.8 }}
-          className="mt-10 flex items-center gap-8 lg:gap-12"
+          className="mt-10 grid grid-cols-2 gap-6 sm:flex sm:items-center sm:gap-8 lg:gap-12"
         >
           <div className="text-center">
-            <div className="text-3xl lg:text-4xl font-bold text-white">{lang === "ko" ? "5분" : "5min"}</div>
-            <div className="text-sm text-zinc-500">{lang === "ko" ? "트렌드→발행" : "Trend to Post"}</div>
+            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white">{lang === "ko" ? "5분" : "5min"}</div>
+            <div className="text-xs sm:text-sm text-zinc-500">{lang === "ko" ? "트렌드→발행" : "Trend to Post"}</div>
           </div>
-          <div className="w-px h-12 bg-zinc-800" />
+          <div className="hidden sm:block w-px h-12 bg-zinc-800" />
           <div className="text-center">
-            <div className="text-3xl lg:text-4xl font-bold text-white">100+</div>
-            <div className="text-sm text-zinc-500">{lang === "ko" ? "변형 생성" : "Variations"}</div>
+            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white">100+</div>
+            <div className="text-xs sm:text-sm text-zinc-500">{lang === "ko" ? "변형 생성" : "Variations"}</div>
           </div>
-          <div className="w-px h-12 bg-zinc-800" />
+          <div className="hidden sm:block w-px h-12 bg-zinc-800" />
           <div className="text-center">
-            <div className="text-3xl lg:text-4xl font-bold text-white">AEO/GEO</div>
-            <div className="text-sm text-zinc-500">{lang === "ko" ? "최적화" : "Optimized"}</div>
+            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white">AEO/GEO</div>
+            <div className="text-xs sm:text-sm text-zinc-500">{lang === "ko" ? "최적화" : "Optimized"}</div>
           </div>
-          <div className="w-px h-12 bg-zinc-800" />
+          <div className="hidden sm:block w-px h-12 bg-zinc-800" />
           <div className="text-center">
-            <div className="text-3xl lg:text-4xl font-bold text-white">24/7</div>
-            <div className="text-sm text-zinc-500">{lang === "ko" ? "자동 생성" : "Auto Production"}</div>
+            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white">24/7</div>
+            <div className="text-xs sm:text-sm text-zinc-500">{lang === "ko" ? "자동 생성" : "Auto Production"}</div>
           </div>
         </motion.div>
 
