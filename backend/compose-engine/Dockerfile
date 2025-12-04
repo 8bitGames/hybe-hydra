@@ -90,6 +90,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglew-dev \
     libglfw3-dev \
     mesa-utils \
+    # OSMesa for headless GL rendering (software)
+    libosmesa6 \
+    libosmesa6-dev \
     # ImageMagick for MoviePy text
     imagemagick \
     libmagic1 \
@@ -150,6 +153,11 @@ RUN pip3 install --no-cache-dir \
 # Cache
 RUN pip3 install --no-cache-dir \
     redis==5.0.1
+
+# PyOpenGL for GL Transitions (with OSMesa backend for headless rendering)
+RUN pip3 install --no-cache-dir \
+    PyOpenGL==3.1.7
+ENV PYOPENGL_PLATFORM=osmesa
 
 # =============================================================================
 # STEP 5: Verify all installations work together

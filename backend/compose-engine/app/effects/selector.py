@@ -5,7 +5,7 @@ import random
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 
-from .registry import get_registry, EffectMetadata, EffectType, EffectSource, Intensity
+from .registry import get_registry, EffectMetadata, EffectType, EffectSource, Intensity, BLACKLISTED_EFFECTS
 
 # Visual Category Mapping for Transition Effects
 # This ensures visual diversity - each transition should LOOK different, not just have different IDs
@@ -262,12 +262,21 @@ class EffectSelector:
             max_duration=config.max_transition_duration if effect_type == "transition" else None,
         )
 
+        # Filter out blacklisted effects at SELECTION time
+        # These effects cause visual corruption (invisible images, stripes, etc.)
+        original_count = len(candidates)
+        candidates = [c for c in candidates if c.id not in BLACKLISTED_EFFECTS]
+        if original_count != len(candidates):
+            logger.info(f"Filtered {original_count - len(candidates)} blacklisted effects from candidates")
+
         # If not enough candidates for diversity, get ALL of that type
         # This ensures we can select diverse effects even when mood/genre filtering is too strict
         if len(candidates) < count:
             all_of_type = self.registry.by_type(effect_type)
             if not config.gpu_available:
                 all_of_type = [c for c in all_of_type if not c.gpu_required]
+            # Filter blacklisted effects from the expanded pool too
+            all_of_type = [c for c in all_of_type if c.id not in BLACKLISTED_EFFECTS]
             # Add effects not already in candidates
             existing_ids = {c.id for c in candidates}
             for effect in all_of_type:

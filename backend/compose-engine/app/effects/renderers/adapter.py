@@ -13,6 +13,14 @@ from moviepy import ImageClip, CompositeVideoClip, concatenate_videoclips
 from .xfade_renderer import XfadeRenderer, ClipSegment, XFADE_TRANSITIONS
 from ..registry import get_registry, EffectMetadata, BLACKLISTED_EFFECTS
 
+# Try to import GL renderer
+try:
+    from .gl_renderer import get_gl_renderer, is_gl_available, GL_TRANSITIONS
+    GL_RENDERER_AVAILABLE = True
+except ImportError:
+    GL_RENDERER_AVAILABLE = False
+    GL_TRANSITIONS = {}
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,13 +65,26 @@ class RendererAdapter:
 
         # Initialize renderers
         self.xfade_renderer = XfadeRenderer()
+        self._gl_renderer = None
         self._gl_available = self._check_gl_transitions()
 
     def _check_gl_transitions(self) -> bool:
         """Check if GL Transitions are available."""
-        # GL Transitions require ffmpeg-gl-transition build
-        # For now, we'll mark as unavailable and use xfade fallback
-        # TODO: Implement GL Transitions check when available
+        if not GL_RENDERER_AVAILABLE:
+            logger.info("GL renderer module not available")
+            return False
+
+        try:
+            if is_gl_available():
+                self._gl_renderer = get_gl_renderer()
+                if self._gl_renderer:
+                    logger.info("GL Transitions enabled (OSMesa software rendering)")
+                    print("[ADAPTER] GL Transitions ENABLED via OSMesa!")
+                    return True
+        except Exception as e:
+            logger.warning(f"GL renderer check failed: {e}")
+
+        logger.info("GL Transitions not available, using xfade fallback")
         return False
 
     def get_renderer_for_effect(self, effect_id: str) -> RendererType:

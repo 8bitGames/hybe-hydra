@@ -169,6 +169,7 @@ class XfadeRenderer:
         transitions: List[str],
         transition_duration: float = 0.5,
         use_gpu: bool = True,
+        target_size: Optional[Tuple[int, int]] = None,
     ) -> bool:
         """
         Render a sequence of clips with transitions.
@@ -183,6 +184,21 @@ class XfadeRenderer:
         Returns:
             True if successful
         """
+        # Determine target size - CRITICAL for Ken Burns motion clips
+        # Ken Burns effects (zoom_in, zoom_out, pan) change clip dimensions
+        # xfade requires ALL inputs to have identical dimensions
+        if target_size is None:
+            first_size = self._get_video_size(clips[0].path)
+            if first_size:
+                target_size = first_size
+                print(f"[XFADE_RENDERER] Auto-detected target size from first clip: {target_size}")
+            else:
+                target_size = (1080, 1920)  # Default to 9:16 vertical
+                print(f"[XFADE_RENDERER] Using default target size: {target_size}")
+
+        target_w, target_h = target_size
+        print(f"[XFADE_RENDERER] Normalizing all clips to {target_w}x{target_h}")
+
         if len(clips) < 2:
             logger.warning("Need at least 2 clips for transitions")
             return False
@@ -202,13 +218,27 @@ class XfadeRenderer:
             # FFmpeg xfade chains: each xfade operates on the OUTPUT of the previous one
             # So offsets must be calculated relative to accumulated duration
             filter_parts = []
-            current_label = "[0:v]"
+
+            # CRITICAL: Add scale filters for EACH input to normalize dimensions
+            # Ken Burns motion effects change clip sizes, causing xfade to fail
+            # Scale filter: normalize → pad to exact size → reset SAR → ensure pixel format
+            for i in range(len(clips)):
+                scale_filter = (
+                    f"[{i}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,"
+                    f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[s{i}]"
+                )
+                filter_parts.append(scale_filter)
+
+            print(f"[XFADE_RENDERER] Added {len(clips)} scale filters for dimension normalization")
+
+            # Use scaled inputs [s0], [s1], etc. instead of raw [0:v], [1:v]
+            current_label = "[s0]"
 
             # Start with first clip's duration
             accumulated_duration = clips[0].duration
 
             for i, transition in enumerate(transitions):
-                next_input = f"[{i + 1}:v]"
+                next_input = f"[s{i + 1}]"  # Use scaled input, not raw
 
                 # Offset is where in the accumulated stream the transition starts
                 # It should be: accumulated_duration - transition_duration
@@ -370,6 +400,34 @@ class XfadeRenderer:
         except Exception as e:
             logger.error(f"Failed to get duration: {e}")
             return 0.0
+
+    def _get_video_size(self, video_path: str) -> Optional[Tuple[int, int]]:
+        """Get video dimensions (width, height) using ffprobe."""
+        try:
+            ffprobe_path = self.ffmpeg_path.replace("ffmpeg", "ffprobe")
+            cmd = [
+                ffprobe_path,
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-of", "csv=s=x:p=0",
+                video_path
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0 and result.stdout.strip():
+                parts = result.stdout.strip().split("x")
+                if len(parts) == 2:
+                    width, height = int(parts[0]), int(parts[1])
+                    print(f"[XFADE_RENDERER] Got video size: {width}x{height} from {video_path}")
+                    return (width, height)
+
+            logger.warning(f"Could not get video size from {video_path}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to get video size: {e}")
+            return None
 
     def _check_nvenc(self) -> bool:
         """Check if NVENC is actually available by testing a real encode."""
