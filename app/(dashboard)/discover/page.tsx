@@ -870,7 +870,7 @@ export default function DiscoverPage() {
     if (!analysisData) return;
 
     const apiAnalysis = analysisData.analyses.find((a) => a.keyword === activeTab);
-    if (!apiAnalysis) return;
+    if (!apiAnalysis || !apiAnalysis.aggregateStats) return;
 
     setDiscoverPerformanceMetrics({
       avgViews: apiAnalysis.aggregateStats.avgViews,

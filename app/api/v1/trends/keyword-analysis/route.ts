@@ -756,6 +756,15 @@ export async function GET(request: NextRequest) {
 
     console.log(`[KEYWORD-ANALYSIS] Analyzing keywords: ${keywords.join(", ")}, limit: ${limit}, forceRefresh: ${forceRefresh}`);
 
+    // Verify Prisma client is properly initialized
+    if (!prisma || !prisma.keywordAnalysis) {
+      console.error("[KEYWORD-ANALYSIS] Prisma client not properly initialized");
+      return NextResponse.json(
+        { detail: "Database client not initialized. Please run 'npx prisma generate'." },
+        { status: 500 }
+      );
+    }
+
     // Check cache for each keyword
     const cacheThreshold = new Date(Date.now() - CACHE_DURATION_HOURS * 60 * 60 * 1000);
 
