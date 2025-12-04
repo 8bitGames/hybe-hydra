@@ -5,6 +5,15 @@ import { submitRenderToModal, ModalRenderRequest } from '@/lib/modal/client';
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
+// AI Effect Selection types
+interface AIEffectSelection {
+  transitions?: string[];
+  motions?: string[];
+  filters?: string[];
+  text_animations?: string[];
+  analysis?: Record<string, unknown>;
+}
+
 interface RenderRequest {
   generationId: string;
   campaignId: string;
@@ -48,6 +57,10 @@ interface RenderRequest {
     searchIntent?: string;
     suggestedPostingTimes?: string[];
   };
+  // AI Effect Selection System
+  useAiEffects?: boolean;
+  aiPrompt?: string;
+  aiEffects?: AIEffectSelection;
 }
 
 export async function POST(request: NextRequest) {
@@ -76,6 +89,10 @@ export async function POST(request: NextRequest) {
       prompt = 'Compose video generation',
       searchKeywords = [],
       tiktokSEO,
+      // AI Effect Selection
+      useAiEffects = true,
+      aiPrompt,
+      aiEffects,
     } = body;
 
     // Get audio asset URL
@@ -92,7 +109,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Build composeData to store all compose settings for variations
-    const composeData = {
+    // Use JSON.parse(JSON.stringify()) to ensure Prisma JSON compatibility
+    const composeData = JSON.parse(JSON.stringify({
       script: script?.lines || [],
       searchKeywords,
       vibe,
@@ -104,7 +122,11 @@ export async function POST(request: NextRequest) {
       originalPrompt: prompt,
       tiktokSEO,
       imageCount: images.length,
-    };
+      // AI Effect Selection
+      useAiEffects,
+      aiPrompt: aiPrompt || prompt,  // Default to main prompt
+      aiEffects,
+    }));
 
     // Create or update VideoGeneration record with composeData
     await prisma.videoGeneration.upsert({
@@ -156,7 +178,11 @@ export async function POST(request: NextRequest) {
         aspect_ratio: aspectRatio,
         target_duration: targetDuration,  // 0 = auto-calculate
         text_style: textStyle,
-        color_grade: colorGrade
+        color_grade: colorGrade,
+        // AI Effect Selection System
+        use_ai_effects: useAiEffects,
+        ai_prompt: aiPrompt || prompt,
+        ai_effects: aiEffects,
       },
       output: {
         s3_bucket: S3_BUCKET,
@@ -172,6 +198,9 @@ export async function POST(request: NextRequest) {
       vibe,
       target_duration: targetDuration,
       audio_start_time: audioStartTime,
+      // AI Effects
+      use_ai_effects: useAiEffects,
+      has_ai_effects: !!aiEffects,
     }));
 
     // Submit to Modal (CPU rendering with libx264)
