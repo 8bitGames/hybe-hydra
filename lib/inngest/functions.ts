@@ -13,6 +13,8 @@
 import { inngest } from "./client";
 import { prisma } from "@/lib/db/prisma";
 import { generateVideo as generateVideoWithVeo, VeoGenerationParams } from "@/lib/veo";
+import { generateImage, convertAspectRatioForImagen } from "@/lib/imagen";
+import { generateImagePromptForI2V, generateVideoPromptForI2V } from "@/lib/gemini-prompt";
 import {
   publishVideoToTikTok,
   refreshAccessToken,
@@ -123,7 +125,7 @@ export const generateVideo = inngest.createFunction(
       });
     });
 
-    // Step 2: MANDATORY - Get reference image for I2V mode
+    // Step 2: MANDATORY - Get reference image URL for I2V mode
     const referenceImageUrl = await step.run("get-reference-image", async () => {
       if (options?.referenceImageAssetId) {
         const asset = await prisma.asset.findUnique({
@@ -142,32 +144,95 @@ export const generateVideo = inngest.createFunction(
       throw new Error("Reference image is required for I2V video generation. Please provide referenceImageAssetId or referenceImageUrl.");
     });
 
-    // Step 3: Call Veo 3 API with MANDATORY I2V
+    // Step 3: Generate NEW image with Gemini 3 Pro (using prompt + reference)
+    // The generated image will be used for Veo3 I2V, NOT the original reference
+    const generatedImageBase64 = await step.run("generate-image-with-gemini", async () => {
+      console.log(`[Inngest] Step 3: Generating image with Gemini 3 Pro...`);
+      console.log(`[Inngest]    Reference image: ${referenceImageUrl.slice(0, 80)}...`);
+
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: { progress: 15 },
+      });
+
+      // Generate optimized image prompt from the video prompt
+      const imagePromptResult = await generateImagePromptForI2V({
+        videoPrompt: prompt,
+        imageDescription: options?.imageDescription || prompt,
+        style: options?.stylePreset,
+        aspectRatio: options?.aspectRatio,
+      });
+
+      const imagePrompt = imagePromptResult.success && imagePromptResult.imagePrompt
+        ? imagePromptResult.imagePrompt
+        : prompt;
+
+      console.log(`[Inngest]    Image prompt: ${imagePrompt.slice(0, 100)}...`);
+
+      // Generate new image with Gemini 3 Pro using reference
+      const imageResult = await generateImage({
+        prompt: imagePrompt,
+        aspectRatio: convertAspectRatioForImagen(options?.aspectRatio || "16:9"),
+        style: options?.stylePreset,
+        referenceImageUrl: referenceImageUrl, // Use reference for product incorporation
+      });
+
+      if (!imageResult.success || !imageResult.imageBase64) {
+        throw new Error(`Image generation failed: ${imageResult.error}`);
+      }
+
+      console.log(`[Inngest]    ✓ Image generated (${Math.round(imageResult.imageBase64.length / 1024)}KB)`);
+
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: { progress: 30 },
+      });
+
+      return imageResult.imageBase64;
+    });
+
+    // Step 4: Generate video prompt with animation instructions
+    const finalVideoPrompt = await step.run("generate-video-prompt", async () => {
+      const videoPromptResult = await generateVideoPromptForI2V(
+        {
+          videoPrompt: prompt,
+          imageDescription: options?.imageDescription || prompt,
+          style: options?.stylePreset,
+          aspectRatio: options?.aspectRatio,
+        },
+        "Generated image ready for animation"
+      );
+
+      return videoPromptResult.success && videoPromptResult.videoPrompt
+        ? videoPromptResult.videoPrompt
+        : prompt;
+    });
+
+    // Step 5: Call Veo 3 API with the GENERATED image (not reference)
     const result = await step.run("call-veo-api", async () => {
       const veoParams: VeoGenerationParams = {
-        prompt,
+        prompt: finalVideoPrompt,
         negativePrompt: options?.negativePrompt,
         durationSeconds: options?.duration || 8,
         aspectRatio: (options?.aspectRatio as "16:9" | "9:16" | "1:1") || "16:9",
         style: options?.stylePreset,
         model: (options?.model as VeoGenerationParams["model"]) || "veo-3.1-generate-preview",
         resolution: (options?.resolution as "720p" | "1080p") || "720p",
-        // MANDATORY I2V: Always use reference image
-        referenceImageUrl: referenceImageUrl,
+        // MANDATORY I2V: Use the AI-GENERATED image (not the original reference)
+        referenceImageBase64: generatedImageBase64,
       };
 
-      console.log(`[Inngest] Starting Veo 3 generation: MANDATORY I2V mode with image: ${referenceImageUrl.slice(0, 80)}...`);
+      console.log(`[Inngest] Starting Veo 3 generation: I2V mode with GENERATED image (${Math.round(generatedImageBase64.length / 1024)}KB)`);
 
-      // Update progress
       await prisma.videoGeneration.update({
         where: { id: generationId },
-        data: { progress: 20 },
+        data: { progress: 40 },
       });
 
       return await generateVideoWithVeo(veoParams, campaignId);
     });
 
-    // Step 4: Update database with result
+    // Step 6: Update database with result
     await step.run("update-database", async () => {
       if (result.success && result.videoUrl) {
         const existingGen = await prisma.videoGeneration.findUnique({
