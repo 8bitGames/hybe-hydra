@@ -331,33 +331,72 @@ class VideoRenderer:
         beat_times: List[float],
         job_id: str
     ) -> List[ImageClip]:
-        """Create image clips (parallelized for large batches)."""
+        """Create image clips (parallelized for large batches).
+
+        IMPORTANT: Motion styles are now VARIED per clip for visual diversity.
+        Each clip gets a different motion effect (zoom_in, zoom_out, pan) in rotation.
+        """
         loop = asyncio.get_event_loop()
 
-        def create_one(img_path: str, start: float, end: float) -> ImageClip:
+        # Define motion style rotation for diversity
+        # Alternating between zoom_in and zoom_out creates visual rhythm
+        # First and last clips get special treatment
+        MOTION_STYLES = ["zoom_in", "zoom_out", "pan", "zoom_in", "zoom_out"]
+
+        def get_motion_style(index: int, total: int, base_style: str) -> str:
+            """Get diverse motion style for each clip.
+
+            Strategy:
+            - First clip: zoom_in (opening feel)
+            - Last clip: zoom_out (closing feel)
+            - Middle clips: alternate between styles for variety
+            - If base_style is 'static', keep it static
+            """
+            if base_style == "static":
+                return "static"
+
+            if index == 0:
+                return "zoom_in"  # Opening: zoom in
+            elif index == total - 1:
+                return "zoom_out"  # Closing: zoom out
+            else:
+                # Middle clips: rotate through styles
+                return MOTION_STYLES[index % len(MOTION_STYLES)]
+
+        def create_one(img_path: str, start: float, end: float, clip_index: int, total_clips: int) -> ImageClip:
             duration = end - start
             clip = ImageClip(img_path).with_duration(duration)
+
+            # Get diverse motion style for this clip
+            motion_style = get_motion_style(clip_index, total_clips, preset.motion_style)
+
             clip = motion.apply_ken_burns(
                 clip,
-                style=preset.motion_style,
+                style=motion_style,
                 beat_times=[t - start for t in beat_times if start <= t < end]
             )
             return clip.with_start(start)
 
+        total_clips = len(processed_paths)
+
+        # Log motion diversity
+        styles_to_apply = [get_motion_style(i, total_clips, preset.motion_style) for i in range(total_clips)]
+        logger.info(f"[{job_id}] Applying diverse motion styles: {styles_to_apply}")
+
         # For small batches, just create sequentially (overhead of parallelization not worth it)
         if len(processed_paths) <= 4:
             return [
-                create_one(img_path, start, end)
-                for img_path, (start, end) in zip(processed_paths, cut_times)
+                create_one(img_path, start, end, idx, total_clips)
+                for idx, (img_path, (start, end)) in enumerate(zip(processed_paths, cut_times))
             ]
 
         # For larger batches, use parallel processing
         tasks = [
             loop.run_in_executor(
                 get_cpu_executor(),
-                lambda p=img_path, s=start, e=end: create_one(p, s, e)
+                lambda p=img_path, s=start, e=end, i=idx: create_one(p, s, e, i, total_clips)
             )
-            for img_path, (start, end) in zip(processed_paths, cut_times)
+            for idx, (img_path, (start, end)) in enumerate(zip(processed_paths, cut_times))
         ]
 
         return await asyncio.gather(*tasks)

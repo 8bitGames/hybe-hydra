@@ -189,20 +189,20 @@ class RendererAdapter:
                     start_time=clip.start if hasattr(clip, 'start') else 0
                 ))
 
-            # Get xfade transition names
+            # Get xfade transition names with blacklist filtering
             xfade_names = []
             for t in transitions:
-                if t.effect_id in XFADE_TRANSITIONS:
+                # ALWAYS check blacklist FIRST, regardless of source
+                if t.effect_id in BLACKLISTED_EFFECTS:
+                    logger.warning(f"[{job_id}] Replacing blacklisted {t.effect_id} with fade")
+                    xfade_names.append("fade")
+                elif t.effect_id in XFADE_TRANSITIONS:
                     xfade_names.append(XFADE_TRANSITIONS[t.effect_id])
                 elif t.effect_id.startswith("xfade_"):
                     xfade_name = t.effect_id.replace("xfade_", "")
-                    # Check if this is a blacklisted effect
-                    if t.effect_id in BLACKLISTED_EFFECTS:
-                        logger.warning(f"[{job_id}] Replacing blacklisted {t.effect_id} with fade")
-                        xfade_name = "fade"
                     xfade_names.append(xfade_name)
                 else:
-                    # Map GL transition to similar xfade
+                    # Map GL transition to similar xfade with diversity
                     xfade_names.append(self._map_to_xfade(t.effect_id))
 
             print(f"[ADAPTER][{job_id}] xfade effects to apply: {xfade_names}")
@@ -250,52 +250,84 @@ class RendererAdapter:
         """Map a GL Transition or other effect to similar xfade transition.
 
         IMPORTANT: Never map to blacklisted effects that cause visual corruption.
+        DIVERSITY: Each GL effect maps to a UNIQUE xfade effect for variety.
         """
         # Mapping from GL Transitions to xfade equivalents
         # NOTE: Avoid mapping to blacklisted effects (hlslice, hrslice, vuslice, vdslice, hblur)
+        # DIVERSITY: Spread effects across ALL available safe xfade transitions
         gl_to_xfade = {
-            # Direct mappings - safe effects only
+            # Direct mappings - safe effects with DIVERSITY
             "gl_fade": "fade",
             "gl_fadecolor": "fadeblack",
             "gl_fadegrayscale": "fadegrays",
             "gl_crosswarp": "dissolve",
-            "gl_dreamy": "dissolve",         # Changed from hblur (BLACKLISTED)
+            "gl_dreamy": "smoothleft",       # Smooth transition (diverse)
             "gl_pixelize": "pixelize",
             "gl_circleopen": "circleopen",
             "gl_directionalwipe": "wipeleft",
             "gl_cube": "diagtl",
             "gl_doorway": "vertopen",
-            "gl_linearblur": "dissolve",     # Changed from hblur (BLACKLISTED)
+            "gl_linearblur": "smoothright",  # Smooth transition (diverse)
             "gl_radial": "radial",
-            "gl_windowslice": "wipeleft",    # Changed from hlslice (BLACKLISTED)
+            "gl_windowslice": "wiperight",   # Wipe variant (diverse)
             "gl_squeeze": "squeezeh",
             "gl_crosszoom": "zoomin",
             "gl_swap": "slideright",
-            "gl_mosaic": "pixelize",
+            "gl_mosaic": "rectcrop",         # Different crop effect (diverse)
             "gl_burn": "fadeblack",
             "gl_colorphase": "fadegrays",
-            "gl_glitchdisplace": "pixelize",
+            "gl_glitchdisplace": "circlecrop", # Circle crop (diverse)
             "gl_hexagonalize": "pixelize",
             "gl_kaleidoscope": "radial",
-            "gl_morph": "dissolve",
-            "gl_perlin": "dissolve",
-            "gl_polkadotscurtain": "circleopen",
-            "gl_ripple": "dissolve",
+            "gl_morph": "distance",          # Distance blend (diverse)
+            "gl_perlin": "smoothup",         # Smooth variant (diverse)
+            "gl_polkadotscurtain": "circleclose", # Circle variant (diverse)
+            "gl_ripple": "smoothdown",       # Smooth variant (diverse)
             "gl_rotate_scale_fade": "zoomin",
-            "gl_swirl": "radial",
+            "gl_swirl": "diagtr",            # Diagonal variant (diverse)
             "gl_wind": "slideleft",
-            "gl_windowblinds": "wipeleft",   # Changed from hlslice (BLACKLISTED)
-            # Additional mappings for common GL effects
-            "gl_displacement": "dissolve",   # Displacement -> dissolve (smooth)
-            "gl_flyeye": "pixelize",         # Fly eye -> pixelize (similar look)
-            "gl_heart": "circleopen",        # Heart -> circle open
-            "gl_powerKaleido": "radial",     # Power kaleido -> radial
-            "gl_static": "pixelize",         # Static -> pixelize
-            "gl_undulating": "dissolve",     # Undulating -> dissolve
-            "gl_simpleZoom": "zoomin",       # Simple zoom -> zoomin
-            "gl_directional": "wipeleft",    # Directional -> wipe left
-            "gl_bowTie": "vertopen",         # Bow tie -> vert open
-            "gl_colorphaseRotate": "radial", # Color phase rotate -> radial
+            "gl_windowblinds": "horzopen",   # Horizontal open (diverse)
+            # Additional mappings for common GL effects - DIVERSE
+            "gl_displacement": "wipeup",     # Wipe variant (diverse)
+            "gl_flyeye": "squeezev",         # Squeeze variant (diverse)
+            "gl_heart": "circleopen",
+            "gl_powerKaleido": "diagbl",     # Diagonal variant (diverse)
+            "gl_static": "fadewhite",        # Fade variant (diverse)
+            "gl_undulating": "wipedown",     # Wipe variant (diverse)
+            "gl_simpleZoom": "zoomin",
+            "gl_directional": "slideup",     # Slide variant (diverse)
+            "gl_bowTie": "vertclose",        # Vert variant (diverse)
+            "gl_colorphaseRotate": "diagbr", # Diagonal variant (diverse)
+            # Additional diverse mappings for more GL effects
+            "gl_angular": "wipetl",
+            "gl_bounce": "slidedown",
+            "gl_butterflywavescrawler": "horzclose",
+            "gl_circle": "circleopen",
+            "gl_colordistance": "distance",
+            "gl_crosshatch": "rectcrop",
+            "gl_directionalscaled": "wipetr",
+            "gl_directionalwarp": "wipebl",
+            "gl_doomscreenmelt": "smoothdown",
+            "gl_dreamy_zoom": "zoomin",
+            "gl_film_burn": "fadeblack",
+            "gl_gridflip": "diagtl",
+            "gl_inverted_page_curl": "wipebr",
+            "gl_leftright": "slideright",
+            "gl_luminance_melt": "fadegrays",
+            "gl_multiply_blend": "dissolve",
+            "gl_overexposure": "fadewhite",
+            "gl_pinwheel": "radial",
+            "gl_polar_function": "circleclose",
+            "gl_randomsquares": "pixelize",
+            "gl_rotate": "radial",
+            "gl_squareswipe": "rectcrop",
+            "gl_stereo_viewer": "horzopen",
+            "gl_waterdrop": "circlecrop",
+            "gl_wipedown": "wipedown",
+            "gl_wipeleft": "wipeleft",
+            "gl_wiperight": "wiperight",
+            "gl_wipeup": "wipeup",
+            "gl_zoomincircles": "circleopen",
         }
 
         # Try direct mapping
@@ -308,27 +340,56 @@ class RendererAdapter:
                 return "fade"
             return mapped
 
-        # Try partial match - use safe alternatives
+        # Try partial match - use DIVERSE safe alternatives based on hash
         effect_lower = effect_id.lower()
+
+        # Keyword-based mapping with diversity using hash for variation
         if "fade" in effect_lower:
-            return "fade"
+            variants = ["fade", "fadeblack", "fadewhite", "fadegrays"]
+            return variants[hash(effect_id) % len(variants)]
         elif "wipe" in effect_lower:
-            return "wipeleft"
+            variants = ["wipeleft", "wiperight", "wipeup", "wipedown", "wipetl", "wipetr", "wipebl", "wipebr"]
+            return variants[hash(effect_id) % len(variants)]
         elif "slide" in effect_lower:
-            return "slideleft"
+            variants = ["slideleft", "slideright", "slideup", "slidedown"]
+            return variants[hash(effect_id) % len(variants)]
         elif "zoom" in effect_lower:
             return "zoomin"
         elif "blur" in effect_lower:
-            return "dissolve"  # Changed from hblur (BLACKLISTED)
+            variants = ["smoothleft", "smoothright", "smoothup", "smoothdown", "dissolve"]
+            return variants[hash(effect_id) % len(variants)]
         elif "circle" in effect_lower:
-            return "circleopen"
+            variants = ["circleopen", "circleclose", "circlecrop"]
+            return variants[hash(effect_id) % len(variants)]
         elif "pixel" in effect_lower:
-            return "pixelize"
+            variants = ["pixelize", "rectcrop"]
+            return variants[hash(effect_id) % len(variants)]
         elif "slice" in effect_lower:
-            return "wipeleft"  # Changed from any slice (BLACKLISTED)
+            variants = ["wipeleft", "wiperight", "horzopen", "vertopen"]
+            return variants[hash(effect_id) % len(variants)]
+        elif "diag" in effect_lower:
+            variants = ["diagtl", "diagtr", "diagbl", "diagbr"]
+            return variants[hash(effect_id) % len(variants)]
+        elif "smooth" in effect_lower:
+            variants = ["smoothleft", "smoothright", "smoothup", "smoothdown"]
+            return variants[hash(effect_id) % len(variants)]
+        elif "squeeze" in effect_lower:
+            variants = ["squeezev", "squeezeh"]
+            return variants[hash(effect_id) % len(variants)]
+        elif "vert" in effect_lower:
+            variants = ["vertopen", "vertclose"]
+            return variants[hash(effect_id) % len(variants)]
+        elif "horz" in effect_lower:
+            variants = ["horzopen", "horzclose"]
+            return variants[hash(effect_id) % len(variants)]
 
-        # Default fallback
-        return "fade"
+        # Default fallback with diversity based on effect_id hash
+        fallback_effects = [
+            "fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideright",
+            "circleopen", "vertopen", "horzopen", "diagtl", "smoothleft", "smoothright",
+            "fadeblack", "fadegrays", "pixelize", "radial", "zoomin", "distance"
+        ]
+        return fallback_effects[hash(effect_id) % len(fallback_effects)]
 
     def _apply_moviepy_transitions(
         self,

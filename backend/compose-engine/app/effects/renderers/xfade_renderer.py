@@ -14,6 +14,8 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 # FFmpeg xfade transition names
+# NOTE: Blacklisted effects (hlslice, hrslice, vuslice, vdslice, hblur) are excluded
+# These cause visual corruption or make images invisible
 XFADE_TRANSITIONS = {
     "xfade_fade": "fade",
     "xfade_fadeblack": "fadeblack",
@@ -45,11 +47,8 @@ XFADE_TRANSITIONS = {
     "xfade_diagtr": "diagtr",
     "xfade_diagbl": "diagbl",
     "xfade_diagbr": "diagbr",
-    "xfade_hlslice": "hlslice",
-    "xfade_hrslice": "hrslice",
-    "xfade_vuslice": "vuslice",
-    "xfade_vdslice": "vdslice",
-    "xfade_hblur": "hblur",
+    # BLACKLISTED effects removed: hlslice, hrslice, vuslice, vdslice, hblur
+    # These cause visual corruption or make images invisible
     "xfade_fadegrays": "fadegrays",
     "xfade_squeezev": "squeezev",
     "xfade_squeezeh": "squeezeh",

@@ -7,6 +7,95 @@ from dataclasses import dataclass, field
 
 from .registry import get_registry, EffectMetadata, EffectType, EffectSource, Intensity
 
+# Visual Category Mapping for Transition Effects
+# This ensures visual diversity - each transition should LOOK different, not just have different IDs
+# Categories are based on the visual motion/appearance of the effect
+VISUAL_CATEGORIES = {
+    # FADE family - gradual opacity/color changes
+    "fade": ["fade", "dissolve", "fadeblack", "fadewhite", "fadegrayscale",
+             "gl_fade", "gl_crossfade", "gl_dreamy", "gl_luminance_melt"],
+
+    # WIPE HORIZONTAL - left/right directional wipes
+    "wipe_horizontal": ["wipeleft", "wiperight", "smoothleft", "smoothright",
+                        "slideleft", "slideright", "gl_directional_wipe",
+                        "gl_windowslice", "gl_crosswarp"],
+
+    # WIPE VERTICAL - up/down directional wipes
+    "wipe_vertical": ["wipeup", "wipedown", "smoothup", "smoothdown",
+                      "slideup", "slidedown", "gl_windowblinds"],
+
+    # ZOOM/RADIAL - circular or zoom-based
+    "zoom_radial": ["zoomin", "circleopen", "circleclose", "radial",
+                    "gl_circle", "gl_directional", "gl_pinwheel",
+                    "gl_radial", "gl_swirl", "gl_zoomincircles",
+                    "gl_angular", "gl_rotate_scale_fade"],
+
+    # GEOMETRIC - diagonal or shaped transitions
+    "geometric": ["diagtl", "diagtr", "diagbl", "diagbr",
+                  "horzopen", "horzclose", "vertopen", "vertclose",
+                  "diagbox", "wipetl", "wipebr", "wipetr", "wipebl",
+                  "gl_cube", "gl_doorway", "gl_heart"],
+
+    # DISTORTION - pixel/squeeze effects
+    "distortion": ["pixelize", "squeezeh", "squeezev", "reveal", "distance",
+                   "gl_pixelize", "gl_morph", "gl_ripple", "gl_perlin",
+                   "gl_flyeye", "gl_burn", "gl_colorphase",
+                   "xfade_pixelize", "gl_directionalwarp", "gl_displacement"],
+
+    # GLITCH/MODERN - trendy, dynamic effects
+    "glitch_modern": ["gl_glitchdisplace", "gl_glitch_memories",
+                      "gl_kaleidoscope", "gl_polkadotscurtain",
+                      "gl_static_fade", "gl_randomsquares", "gl_mosaic"],
+
+    # BLUR/SOFT - soft transition effects
+    "blur_soft": ["gl_linearblur", "gl_bounce", "gl_bowtiehorizontal",
+                  "gl_bowtievertical", "gl_cannabisleaf", "gl_waterdrop",
+                  "gl_dreamyzoom", "gl_crosszoom"],
+}
+
+# Reverse mapping: effect_id -> category
+EFFECT_TO_CATEGORY = {}
+for category, effects in VISUAL_CATEGORIES.items():
+    for effect in effects:
+        EFFECT_TO_CATEGORY[effect] = category
+        # Also map lowercase versions
+        EFFECT_TO_CATEGORY[effect.lower()] = category
+
+
+def get_visual_category(effect_id: str) -> str:
+    """Get the visual category for an effect.
+
+    Returns the category name or 'unknown' if not mapped.
+    Effects in different categories look visually distinct.
+    """
+    effect_lower = effect_id.lower()
+
+    # Direct lookup
+    if effect_lower in EFFECT_TO_CATEGORY:
+        return EFFECT_TO_CATEGORY[effect_lower]
+
+    # Keyword-based fallback
+    if "fade" in effect_lower or "dissolve" in effect_lower:
+        return "fade"
+    if "wipe" in effect_lower or "slide" in effect_lower or "smooth" in effect_lower:
+        if any(d in effect_lower for d in ["left", "right"]):
+            return "wipe_horizontal"
+        if any(d in effect_lower for d in ["up", "down"]):
+            return "wipe_vertical"
+    if "zoom" in effect_lower or "circle" in effect_lower or "radial" in effect_lower:
+        return "zoom_radial"
+    if "diag" in effect_lower or "horz" in effect_lower or "vert" in effect_lower:
+        return "geometric"
+    if "pixel" in effect_lower or "squeeze" in effect_lower or "morph" in effect_lower:
+        return "distortion"
+    if "glitch" in effect_lower or "random" in effect_lower:
+        return "glitch_modern"
+    if "blur" in effect_lower or "bounce" in effect_lower:
+        return "blur_soft"
+
+    return "unknown"
+
+
 # Try to import PromptAnalysis, or use a stub if analyzer not available
 try:
     from .analyzer import PromptAnalysis
@@ -77,7 +166,8 @@ class SelectionConfig:
     exclude_sources: Optional[List[EffectSource]] = None  # Sources to exclude
 
     gpu_available: bool = True  # Whether GPU is available
-    diversity_weight: float = 0.3  # Weight for diversity vs score (0-1)
+    diversity_weight: float = 0.6  # Weight for VISUAL diversity vs score (0-1)
+    # Higher value = more visually distinct transitions (recommended: 0.5-0.7)
 
     min_transition_duration: Optional[float] = None
     max_transition_duration: Optional[float] = None
@@ -222,61 +312,78 @@ class EffectSelector:
         diversity_weight: float,
     ) -> List[EffectMetadata]:
         """
-        Select effects balancing score and diversity.
+        Select effects balancing score and VISUAL diversity.
 
-        Uses a mix of top-scored effects and random sampling to ensure variety.
+        IMPORTANT: Uses VISUAL CATEGORY diversity, not just source diversity.
+        This ensures each transition LOOKS different (fade vs wipe vs zoom vs glitch).
+
+        Algorithm:
+        1. First pick = highest scored effect
+        2. Subsequent picks = prefer effects from DIFFERENT visual categories
+        3. This guarantees visually distinct transitions even with same mood/genre
         """
         if not scored_effects:
             return []
 
         count = min(count, len(scored_effects))
-
-        # Number of top picks vs diverse picks
-        top_count = max(1, int(count * (1 - diversity_weight)))
-        diverse_count = count - top_count
-
         selected = []
+        used_categories: Dict[str, int] = {}  # Track visual category usage
 
-        # Take top scored
-        for effect, score in scored_effects[:top_count]:
-            selected.append(effect)
+        # Available effects (make a copy to modify)
+        available = list(scored_effects)
 
-        # Take diverse picks from remaining
-        remaining = [e for e, s in scored_effects[top_count:]]
-        if remaining and diverse_count > 0:
-            # Weight by source diversity
-            source_counts: Dict[EffectSource, int] = {}
-            for e in selected:
-                source_counts[e.source] = source_counts.get(e.source, 0) + 1
+        for pick_num in range(count):
+            if not available:
+                break
 
-            # Prefer underrepresented sources
-            diverse_picks = []
-            for _ in range(min(diverse_count, len(remaining))):
-                # Score remaining by inverse source count
-                candidates_with_diversity = []
-                for e in remaining:
-                    if e not in diverse_picks:
-                        source_penalty = source_counts.get(e.source, 0)
-                        diversity_score = 1.0 / (1 + source_penalty)
-                        candidates_with_diversity.append((e, diversity_score))
+            if pick_num == 0:
+                # First pick: just take highest scored
+                best_effect, best_score = available[0]
+                selected.append(best_effect)
+                available.pop(0)
+                category = get_visual_category(best_effect.id)
+                used_categories[category] = used_categories.get(category, 0) + 1
+                logger.debug(f"Pick {pick_num}: {best_effect.id} (category: {category}, score: {best_score:.2f})")
+            else:
+                # Subsequent picks: balance score with visual diversity
+                best_candidate = None
+                best_combined_score = -1
 
-                if not candidates_with_diversity:
-                    break
+                for effect, score in available:
+                    category = get_visual_category(effect.id)
+                    category_count = used_categories.get(category, 0)
 
-                # Weighted random selection
-                total = sum(s for _, s in candidates_with_diversity)
-                r = random.random() * total
-                cumulative = 0
-                for e, s in candidates_with_diversity:
-                    cumulative += s
-                    if cumulative >= r:
-                        diverse_picks.append(e)
-                        source_counts[e.source] = source_counts.get(e.source, 0) + 1
-                        break
+                    # STRONG penalty for reusing same visual category
+                    # category_count=0 → multiplier=1.0 (no penalty)
+                    # category_count=1 → multiplier=0.25 (75% penalty)
+                    # category_count=2 → multiplier=0.1 (90% penalty)
+                    diversity_multiplier = 1.0 / (1 + category_count * 3)
 
-            selected.extend(diverse_picks)
+                    # Combined score: original score * diversity boost
+                    # diversity_weight controls how much we care about diversity
+                    combined_score = score * (
+                        (1 - diversity_weight) + diversity_weight * diversity_multiplier
+                    )
 
-        return selected[:count]
+                    if combined_score > best_combined_score:
+                        best_combined_score = combined_score
+                        best_candidate = (effect, score, category)
+
+                if best_candidate:
+                    effect, orig_score, category = best_candidate
+                    selected.append(effect)
+                    available = [(e, s) for e, s in available if e.id != effect.id]
+                    used_categories[category] = used_categories.get(category, 0) + 1
+                    logger.debug(
+                        f"Pick {pick_num}: {effect.id} (category: {category}, "
+                        f"orig_score: {orig_score:.2f}, combined: {best_combined_score:.2f})"
+                    )
+
+        # Log final selection summary
+        category_summary = {cat: count for cat, count in used_categories.items()}
+        logger.info(f"Selected {len(selected)} effects with visual categories: {category_summary}")
+
+        return selected
 
     def _resolve_conflicts(self, selected: SelectedEffects) -> SelectedEffects:
         """Remove conflicting effects."""
