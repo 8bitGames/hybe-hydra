@@ -45,6 +45,15 @@ interface StashedPromptsPanelProps {
     ideaTitle?: string;
     campaignName?: string;
     hashtags?: string[];
+    // Extended metadata from analyze/create pages
+    campaignId?: string;
+    selectedIdea?: unknown;
+    keywords?: string[];
+    performanceMetrics?: unknown;
+    savedInspiration?: Array<{ id: string; thumbnailUrl?: string | null; stats?: unknown }>;
+    targetAudience?: string | string[];
+    contentGoals?: string[];
+    aiInsights?: unknown;
   };
   source: "analyze" | "create" | "personalize";
   onRestore?: (prompt: string, metadata: StashedPrompt["metadata"]) => void;
@@ -132,7 +141,7 @@ export function StashedPromptsPanel({
       prompt: currentPrompt,
       title,
       source,
-      metadata: currentMetadata || {},
+      metadata: (currentMetadata || {}) as StashedPrompt["metadata"],
     });
   }, [currentPrompt, currentMetadata, source, stashPrompt]);
 
@@ -360,7 +369,7 @@ export function StashedPromptsInline({
       prompt: currentPrompt,
       title,
       source,
-      metadata: currentMetadata || {},
+      metadata: (currentMetadata || {}) as StashedPrompt["metadata"],
     });
   }, [currentPrompt, currentMetadata, source, stashPrompt]);
 

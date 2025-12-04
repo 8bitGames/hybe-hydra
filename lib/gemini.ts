@@ -3,6 +3,10 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/ge
 // Initialize Gemini client
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
+// Model constants per CLAUDE.md requirements
+const TEXT_MODEL = "gemini-flash-lite-latest";
+const IMAGE_MODEL = "gemini-2.0-flash-preview-image-generation"; // For image generation if needed
+
 // Safety settings for content generation
 const safetySettings = [
   {
@@ -23,10 +27,10 @@ const safetySettings = [
   },
 ];
 
-// Get Gemini Pro model for text generation
+// Get Gemini model for text generation (using gemini-flash-lite-latest per CLAUDE.md)
 export function getGeminiProModel() {
   return genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: TEXT_MODEL,
     safetySettings,
     generationConfig: {
       temperature: 0.7,
@@ -37,10 +41,10 @@ export function getGeminiProModel() {
   });
 }
 
-// Get Gemini Pro Vision model for image analysis
+// Get Gemini Vision model for image analysis
 export function getGeminiVisionModel() {
   return genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: TEXT_MODEL, // flash-lite also supports vision
     safetySettings,
   });
 }
@@ -55,7 +59,7 @@ export async function generateText(prompt: string): Promise<string> {
 // JSON generation with structured output
 export async function generateJSON<T>(prompt: string): Promise<T> {
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: TEXT_MODEL,
     safetySettings,
     generationConfig: {
       temperature: 0.3,

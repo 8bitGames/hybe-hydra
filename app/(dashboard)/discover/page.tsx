@@ -41,6 +41,7 @@ import {
   BookmarkCheck,
   History,
   Clock,
+  Trash2,
 } from "lucide-react";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 
@@ -71,6 +72,8 @@ interface VideoCardProps {
 }
 
 function VideoCard({ video, onSaveInspiration, isSaved, showRank = false }: VideoCardProps) {
+  const [imageError, setImageError] = useState(false);
+
   const handleViewVideo = (e: React.MouseEvent) => {
     e.stopPropagation();
     window.open(video.videoUrl, "_blank", "noopener,noreferrer");
@@ -84,12 +87,17 @@ function VideoCard({ video, onSaveInspiration, isSaved, showRank = false }: Vide
   return (
     <div className="group">
       <div className="relative aspect-[9/16] rounded-lg overflow-hidden bg-neutral-100 mb-2">
-        {video.thumbnailUrl && (
+        {video.thumbnailUrl && !imageError ? (
           <img
             src={video.thumbnailUrl}
             alt=""
             className="w-full h-full object-cover transition-transform group-hover:scale-105"
+            onError={() => setImageError(true)}
           />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-neutral-200">
+            <Play className="h-8 w-8 text-neutral-400" />
+          </div>
         )}
         {/* Play overlay */}
         <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -490,6 +498,28 @@ function AnalysisResults({
 // Saved Inspiration Panel
 // ============================================================================
 
+// Small thumbnail with error handling
+function SmallThumbnail({ url }: { url: string | null }) {
+  const [error, setError] = useState(false);
+
+  if (!url || error) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-neutral-200">
+        <Play className="h-4 w-4 text-neutral-400" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt=""
+      className="w-full h-full object-cover"
+      onError={() => setError(true)}
+    />
+  );
+}
+
 function SavedInspirationPanel({
   savedVideos,
   onRemove,
@@ -513,13 +543,7 @@ function SavedInspirationPanel({
         {savedVideos.map((video) => (
           <div key={video.id} className="relative flex-shrink-0 w-16">
             <div className="aspect-[9/16] rounded overflow-hidden bg-neutral-100">
-              {video.thumbnailUrl && (
-                <img
-                  src={video.thumbnailUrl}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-              )}
+              <SmallThumbnail url={video.thumbnailUrl} />
             </div>
             <button
               onClick={() => onRemove(video.id)}
@@ -689,6 +713,7 @@ export default function DiscoverPage() {
     keywords,
     selectedHashtags,
     savedInspiration,
+    trendAnalysis,
     setDiscoverKeywords,
     addDiscoverKeyword,
     removeDiscoverKeyword,
@@ -698,11 +723,13 @@ export default function DiscoverPage() {
     setDiscoverPerformanceMetrics,
     setDiscoverAiInsights,
     setDiscoverTrendAnalysis,
+    clearDiscoverAnalysis,
   } = useWorkflowStore(
     useShallow((state) => ({
       keywords: state.discover.keywords,
       selectedHashtags: state.discover.selectedHashtags,
       savedInspiration: state.discover.savedInspiration,
+      trendAnalysis: state.discover.trendAnalysis,
       setDiscoverKeywords: state.setDiscoverKeywords,
       addDiscoverKeyword: state.addDiscoverKeyword,
       removeDiscoverKeyword: state.removeDiscoverKeyword,
@@ -712,19 +739,27 @@ export default function DiscoverPage() {
       setDiscoverPerformanceMetrics: state.setDiscoverPerformanceMetrics,
       setDiscoverAiInsights: state.setDiscoverAiInsights,
       setDiscoverTrendAnalysis: state.setDiscoverTrendAnalysis,
+      clearDiscoverAnalysis: state.clearDiscoverAnalysis,
     }))
   );
 
-  // Local state
+  // Local state - initialize based on persisted data
   const [inputValue, setInputValue] = useState("");
-  const [activeTab, setActiveTab] = useState<string>("trending");
-  const [isSearching, setIsSearching] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    // If we have persisted trend analysis, start on that keyword tab
+    if (trendAnalysis?.keyword) return trendAnalysis.keyword;
+    if (keywords.length > 0) return keywords[0];
+    return "trending";
+  });
+  // If there's persisted analysis, we're already in "searched" state
+  const [isSearching, setIsSearching] = useState(() => !!trendAnalysis);
 
-  // Fetch keyword analysis
+  // Fetch keyword analysis - only when explicitly searching (not on initial load with persisted data)
   const { data: analysisData, isLoading: analysisLoading, refetch } = useKeywordAnalysis({
     keywords,
     limit: 30,
-    enabled: isSearching && keywords.length > 0,
+    // Don't auto-fetch if we already have persisted analysis for the same keyword
+    enabled: isSearching && keywords.length > 0 && !trendAnalysis,
   });
 
   // Saved video IDs for quick lookup
@@ -733,40 +768,134 @@ export default function DiscoverPage() {
     [savedInspiration]
   );
 
-  // Current analysis
+  // Current analysis - check API data first, then persisted data
   const currentAnalysis = useMemo(() => {
-    if (!analysisData || activeTab === "trending") return null;
-    return analysisData.analyses.find((a) => a.keyword === activeTab) || null;
-  }, [analysisData, activeTab]);
+    if (activeTab === "trending") return null;
 
-  // Update workflow store when analysis completes
-  React.useEffect(() => {
-    if (currentAnalysis) {
-      setDiscoverPerformanceMetrics({
-        avgViews: currentAnalysis.aggregateStats.avgViews,
-        avgEngagement: currentAnalysis.aggregateStats.avgEngagementRate,
-        viralBenchmark: currentAnalysis.aggregateStats.medianViews * 10,
-      });
-      if (currentAnalysis.aiInsights) {
-        setDiscoverAiInsights([
-          currentAnalysis.aiInsights.summary,
-          ...currentAnalysis.aiInsights.contentStrategy,
-        ]);
-      }
-      setDiscoverTrendAnalysis({
-        keyword: currentAnalysis.keyword,
-        totalVideos: currentAnalysis.totalVideos,
-        viralVideos: currentAnalysis.performanceTiers.viral.map((v) => ({
-          ...v,
-          engagementRate: v.engagementRate,
-        })),
-        highPerformingVideos: currentAnalysis.performanceTiers.highPerforming.map((v) => ({
-          ...v,
-          engagementRate: v.engagementRate,
-        })),
-      });
+    // First check if we have fresh data from API
+    if (analysisData) {
+      const apiAnalysis = analysisData.analyses.find((a) => a.keyword === activeTab);
+      if (apiAnalysis) return apiAnalysis;
     }
-  }, [currentAnalysis, setDiscoverPerformanceMetrics, setDiscoverAiInsights, setDiscoverTrendAnalysis]);
+
+    // Fall back to persisted trend analysis if keyword matches
+    if (trendAnalysis && trendAnalysis.keyword === activeTab) {
+      // Convert persisted TrendAnalysis to KeywordAnalysis format
+      // Note: We use the persisted performanceMetrics and aiInsights directly from the store
+      // without adding them to dependencies to avoid infinite loops
+      const store = useWorkflowStore.getState();
+      const persistedMetrics = store.discover.performanceMetrics;
+      const persistedInsights = store.discover.aiInsights;
+
+      return {
+        keyword: trendAnalysis.keyword,
+        totalVideos: trendAnalysis.totalVideos,
+        analyzedAt: new Date().toISOString(),
+        videos: [...trendAnalysis.viralVideos, ...trendAnalysis.highPerformingVideos].map((v) => ({
+          ...v,
+          likeToViewRatio: v.stats.playCount > 0 ? v.stats.likeCount / v.stats.playCount : 0,
+          rank: 0,
+        })),
+        aggregateStats: {
+          totalViews: 0,
+          totalLikes: 0,
+          totalComments: 0,
+          totalShares: 0,
+          avgViews: persistedMetrics?.avgViews || 0,
+          avgLikes: 0,
+          avgComments: 0,
+          avgShares: 0,
+          avgEngagementRate: persistedMetrics?.avgEngagement || 0,
+          medianViews: 0,
+          medianEngagementRate: 0,
+        },
+        performanceTiers: {
+          viral: trendAnalysis.viralVideos.map((v) => ({
+            ...v,
+            likeToViewRatio: v.stats.playCount > 0 ? v.stats.likeCount / v.stats.playCount : 0,
+            rank: 0,
+          })) as KeywordAnalysis["videos"],
+          highPerforming: trendAnalysis.highPerformingVideos.map((v) => ({
+            ...v,
+            likeToViewRatio: v.stats.playCount > 0 ? v.stats.likeCount / v.stats.playCount : 0,
+            rank: 0,
+          })) as KeywordAnalysis["videos"],
+          average: [],
+          belowAverage: [],
+        },
+        hashtagInsights: {
+          topHashtags: [],
+          hashtagCombos: [],
+          recommendedHashtags: selectedHashtags,
+        },
+        contentPatterns: {
+          avgDescriptionLength: 0,
+          commonPhrases: [],
+          callToActions: [],
+          emojiUsage: [],
+        },
+        creatorInsights: {
+          topCreators: [],
+          uniqueCreators: 0,
+        },
+        recommendations: {
+          optimalHashtagCount: 5,
+          suggestedHashtags: selectedHashtags,
+          contentTips: persistedInsights || [],
+          engagementBenchmarks: {
+            toGoViral: ">10%",
+            toBeHighPerforming: ">5%",
+            averagePerformance: ">2%",
+          },
+        },
+        aiInsights: persistedInsights && persistedInsights.length > 0 ? {
+          summary: persistedInsights[0],
+          contentStrategy: persistedInsights.slice(1),
+          hashtagStrategy: [],
+          captionTemplates: [],
+          videoIdeas: [],
+          bestPostingAdvice: "",
+          audienceInsights: "",
+          trendPrediction: "",
+        } : undefined,
+      } satisfies KeywordAnalysis;
+    }
+
+    return null;
+  }, [analysisData, activeTab, trendAnalysis, selectedHashtags]);
+
+  // Update workflow store when NEW API analysis data comes in (not persisted data)
+  React.useEffect(() => {
+    // Only update when we have fresh API data, not when loading from persisted state
+    if (!analysisData) return;
+
+    const apiAnalysis = analysisData.analyses.find((a) => a.keyword === activeTab);
+    if (!apiAnalysis) return;
+
+    setDiscoverPerformanceMetrics({
+      avgViews: apiAnalysis.aggregateStats.avgViews,
+      avgEngagement: apiAnalysis.aggregateStats.avgEngagementRate,
+      viralBenchmark: apiAnalysis.aggregateStats.medianViews * 10,
+    });
+    if (apiAnalysis.aiInsights) {
+      setDiscoverAiInsights([
+        apiAnalysis.aiInsights.summary,
+        ...apiAnalysis.aiInsights.contentStrategy,
+      ]);
+    }
+    setDiscoverTrendAnalysis({
+      keyword: apiAnalysis.keyword,
+      totalVideos: apiAnalysis.totalVideos,
+      viralVideos: apiAnalysis.performanceTiers.viral.map((v) => ({
+        ...v,
+        engagementRate: v.engagementRate,
+      })),
+      highPerformingVideos: apiAnalysis.performanceTiers.highPerforming.map((v) => ({
+        ...v,
+        engagementRate: v.engagementRate,
+      })),
+    });
+  }, [analysisData, activeTab, setDiscoverPerformanceMetrics, setDiscoverAiInsights, setDiscoverTrendAnalysis]);
 
   // Handlers
   const handleAddKeyword = useCallback(() => {
@@ -795,10 +924,23 @@ export default function DiscoverPage() {
 
   const handleSearch = useCallback(async () => {
     if (keywords.length === 0) return;
+    // Clear old persisted analysis to fetch fresh data
+    setDiscoverTrendAnalysis(null);
     setIsSearching(true);
     setActiveTab(keywords[0]);
     await refetch();
-  }, [keywords, refetch]);
+  }, [keywords, refetch, setDiscoverTrendAnalysis]);
+
+  // Handle clear analysis
+  const handleClearAnalysis = useCallback(() => {
+    clearDiscoverAnalysis();
+    setIsSearching(false);
+    setActiveTab("trending");
+    toast.success(
+      language === "ko" ? "초기화됨" : "Cleared",
+      language === "ko" ? "분석 데이터가 초기화되었습니다" : "Analysis data has been cleared"
+    );
+  }, [clearDiscoverAnalysis, language, toast]);
 
   const handleSelectHashtag = useCallback(
     (tag: string) => {
@@ -900,7 +1042,7 @@ export default function DiscoverPage() {
       />
 
       {/* Search Row */}
-      <div className="flex items-center gap-4 px-4 py-3 border-b border-neutral-100 bg-white shrink-0">
+      <div className="flex items-center gap-4 px-[7%] py-3 border-b border-neutral-100 bg-white shrink-0">
         {/* Search Input */}
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
@@ -965,10 +1107,23 @@ export default function DiscoverPage() {
             ))}
           </div>
         )}
+
+        {/* Clear Analysis Button */}
+        {(keywords.length > 0 || selectedHashtags.length > 0 || trendAnalysis) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClearAnalysis}
+            className="h-9 px-3 text-neutral-500 hover:text-red-600 hover:bg-red-50"
+            title={language === "ko" ? "분석 초기화" : "Clear Analysis"}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       {/* Tabs */}
-      <div className="px-4 py-2 border-b border-neutral-100 bg-white shrink-0">
+      <div className="px-[7%] py-2 border-b border-neutral-100 bg-white shrink-0">
         <TabsList className="bg-neutral-100 border border-neutral-200">
           <TabsTrigger
             value="trending"
@@ -977,9 +1132,11 @@ export default function DiscoverPage() {
             <TrendingUp className="h-3 w-3 mr-1" />
             {t.trending}
           </TabsTrigger>
-          {/* Show keyword tabs - either from analysis data or as placeholders */}
+          {/* Show keyword tabs - either from analysis data, persisted data, or as placeholders */}
           {keywords.map((keyword) => {
             const analysis = analysisData?.analyses.find((a) => a.keyword === keyword);
+            const persistedAnalysis = trendAnalysis?.keyword === keyword ? trendAnalysis : null;
+            const totalVideos = analysis?.totalVideos ?? persistedAnalysis?.totalVideos;
             return (
               <TabsTrigger
                 key={keyword}
@@ -987,8 +1144,8 @@ export default function DiscoverPage() {
                 className="text-xs data-[state=active]:bg-black data-[state=active]:text-white"
               >
                 #{keyword}
-                {analysis ? (
-                  <span className="ml-1 text-neutral-400">({analysis.totalVideos})</span>
+                {totalVideos !== undefined ? (
+                  <span className="ml-1 text-neutral-400">({totalVideos})</span>
                 ) : analysisLoading ? (
                   <Spinner className="ml-1 h-3 w-3" />
                 ) : null}
@@ -999,7 +1156,7 @@ export default function DiscoverPage() {
       </div>
 
       {/* Main Content - Full Width, Scrollable */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto px-[7%] py-4">
         {/* Live Trending Tab */}
         <TabsContent value="trending" className="mt-0">
           <LiveTrendingSection
@@ -1010,10 +1167,17 @@ export default function DiscoverPage() {
 
         {/* Keyword Analysis Tabs */}
         {keywords.map((keyword) => {
+          // Check both API data and persisted data
           const analysis = analysisData?.analyses.find((a) => a.keyword === keyword);
+          const persistedAnalysis = trendAnalysis?.keyword === keyword ? trendAnalysis : null;
+          const hasAnalysis = analysis || persistedAnalysis;
+
+          // Use currentAnalysis when this keyword is active (handles both sources)
+          const displayAnalysis = activeTab === keyword ? currentAnalysis : analysis;
+
           return (
             <TabsContent key={keyword} value={keyword} className="mt-0">
-              {analysisLoading ? (
+              {analysisLoading && !persistedAnalysis ? (
                 <div className="space-y-4">
                   <div className="h-20 bg-neutral-200 rounded-lg animate-pulse" />
                   <div className="grid grid-cols-4 gap-2">
@@ -1030,9 +1194,9 @@ export default function DiscoverPage() {
                     ))}
                   </div>
                 </div>
-              ) : analysis ? (
+              ) : displayAnalysis ? (
                 <AnalysisResults
-                  analysis={analysis}
+                  analysis={displayAnalysis}
                   selectedHashtags={selectedHashtags}
                   onSelectHashtag={handleSelectHashtag}
                   onSaveInspiration={handleSaveInspiration}

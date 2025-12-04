@@ -6,7 +6,7 @@ import { useCampaigns } from "@/lib/queries";
 import { videoApi, VideoGeneration } from "@/lib/video-api";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkflowSync, useWorkflowNavigation } from "@/lib/hooks/useWorkflowNavigation";
-import { useWorkflowStore, ProcessingVideo, selectCanProceedToPublish } from "@/lib/stores/workflow-store";
+import { useWorkflowStore, ProcessingVideo, useWorkflowHydrated } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -755,6 +755,9 @@ export default function ProcessingPage() {
   const { language } = useI18n();
   const isKorean = language === "ko";
 
+  // Wait for store hydration
+  const isHydrated = useWorkflowHydrated();
+
   // Sync workflow stage
   useWorkflowSync("processing");
   const { goToCreate, goToPublish, proceedToPublish } = useWorkflowNavigation();
@@ -839,13 +842,27 @@ export default function ProcessingPage() {
   // Use a ref to track approved/rejected statuses to avoid infinite loop
   const approvedRejectedRef = React.useRef<Map<string, "approved" | "rejected">>(new Map());
 
-  // Update the ref when videos change
+  // Track if we've initialized the ref from persisted state
+  const refInitializedRef = React.useRef(false);
+
+  // Initialize ref from persisted store state on first render and update on changes
   useEffect(() => {
-    videos.forEach((v) => {
-      if (v.status === "approved" || v.status === "rejected") {
-        approvedRejectedRef.current.set(v.id, v.status);
-      }
-    });
+    // On first run, populate from persisted videos (this preserves approved/rejected status)
+    if (!refInitializedRef.current && videos.length > 0) {
+      videos.forEach((v) => {
+        if (v.status === "approved" || v.status === "rejected") {
+          approvedRejectedRef.current.set(v.id, v.status);
+        }
+      });
+      refInitializedRef.current = true;
+    } else {
+      // On subsequent updates, just add new approved/rejected statuses
+      videos.forEach((v) => {
+        if (v.status === "approved" || v.status === "rejected") {
+          approvedRejectedRef.current.set(v.id, v.status);
+        }
+      });
+    }
   }, [videos]);
 
   useEffect(() => {
@@ -929,7 +946,7 @@ export default function ProcessingPage() {
     }
   }, [allGenerations, setProcessingVideos, campaignNames]);
 
-  const loading = campaignsLoading || generationsLoading;
+  const loading = !isHydrated || campaignsLoading || generationsLoading;
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVideo, setSelectedVideo] = useState<ProcessingVideo | null>(null);
@@ -1098,7 +1115,7 @@ export default function ProcessingPage() {
       />
 
       {/* Stats Dashboard */}
-      <div className="px-6 py-4 border-b border-neutral-200 bg-neutral-50">
+      <div className="px-[7%] py-4 border-b border-neutral-200 bg-neutral-50">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-white border border-neutral-200 flex items-center justify-center">
@@ -1158,7 +1175,7 @@ export default function ProcessingPage() {
       </div>
 
       {/* Filter Bar */}
-      <div className="px-6 py-3 border-b border-neutral-200 bg-white">
+      <div className="px-[7%] py-3 border-b border-neutral-200 bg-white">
         <div className="flex items-center gap-3">
           {/* Select All Checkbox */}
           {selectableVideos.length > 0 && (
@@ -1248,7 +1265,7 @@ export default function ProcessingPage() {
       </div>
 
       {/* Videos Grid/List */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto px-[7%] py-6">
         {filteredVideos.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-center">
             <Video className="w-12 h-12 text-neutral-300 mb-4" />
@@ -1456,8 +1473,7 @@ export default function ProcessingPage() {
             <Button
               size="sm"
               onClick={handleProceedToPublish}
-              disabled={!canProceedToPublish}
-              className="bg-white text-neutral-900 hover:bg-neutral-100 disabled:bg-neutral-700 disabled:text-neutral-500"
+              className="bg-white text-neutral-900 hover:bg-neutral-100"
             >
               <Send className="h-4 w-4 mr-2" />
               {isKorean ? "발행" : "Publish"}

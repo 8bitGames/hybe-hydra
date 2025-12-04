@@ -58,7 +58,7 @@ export function WorkflowHeader({
   const Icon = currentStage.icon;
 
   return (
-    <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 bg-white shrink-0">
+    <div className="flex items-center justify-between px-[7%] py-4 border-b border-neutral-200 bg-white shrink-0">
       {/* Left: Icon + Title */}
       <div className="flex items-center gap-3 min-w-[200px]">
         <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center">

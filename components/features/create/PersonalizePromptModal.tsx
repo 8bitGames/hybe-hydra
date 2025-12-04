@@ -74,6 +74,34 @@ interface PromptVariation {
   confidence: "high" | "medium" | "low";
 }
 
+// Helper function to convert blob URL to base64
+async function blobUrlToBase64(blobUrl: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    const response = await fetch(blobUrl);
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        // Extract base64 data from data URL (format: data:mime/type;base64,XXXXX)
+        const base64Match = result.match(/^data:([^;]+);base64,(.+)$/);
+        if (base64Match) {
+          resolve({
+            mimeType: base64Match[1],
+            base64: base64Match[2],
+          });
+        } else {
+          resolve(null);
+        }
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 interface ImageAnalysis {
   summary: string;
   detectedElements: string[];
@@ -740,12 +768,22 @@ export function PersonalizePromptModal({
 
       const data = await response.json();
 
+      console.log("[PERSONALIZE] Finalize response:", JSON.stringify(data, null, 2));
+
       if (!data.success) {
         throw new Error(data.error || "Finalization failed");
       }
 
-      setFinalPrompt(data.finalPrompt);
-      setMetadata(data.metadata);
+      // API returns veo3Prompt, not finalPrompt
+      console.log("[PERSONALIZE] veo3Prompt value:", data.veo3Prompt);
+      console.log("[PERSONALIZE] veo3Prompt type:", typeof data.veo3Prompt);
+      console.log("[PERSONALIZE] veo3Prompt length:", data.veo3Prompt?.length);
+      console.log("[PERSONALIZE] metadata:", JSON.stringify(data.metadata));
+
+      const promptValue = data.veo3Prompt || "";
+      console.log("[PERSONALIZE] Setting finalPrompt to:", promptValue.slice(0, 100));
+      setFinalPrompt(promptValue);
+      setMetadata(data.metadata || { duration: "8s", aspectRatio: "9:16", style: "cinematic", recommendedSettings: { fps: 30, resolution: "1080p" } });
     } catch (err) {
       console.error("Finalization error:", err);
       setError(err instanceof Error ? err.message : "Failed to create prompt");
@@ -768,6 +806,10 @@ export function PersonalizePromptModal({
 
   // Handle complete
   const handleComplete = useCallback(() => {
+    console.log("[PERSONALIZE] handleComplete called with:", {
+      finalPrompt: finalPrompt?.slice(0, 100),
+      metadata,
+    });
     onComplete(finalPrompt, {
       duration: metadata.duration,
       aspectRatio: metadata.aspectRatio,

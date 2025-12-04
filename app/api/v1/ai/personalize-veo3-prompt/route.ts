@@ -4,6 +4,16 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { v4 as uuidv4 } from "uuid";
 import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/db/prisma";
+import { Prisma } from "@prisma/client";
+
+// Import the full Veo3 pipeline functions
+import { analyzeAudio, type AudioAnalysis } from "@/lib/audio-analyzer";
+import { generateImage, type ImageGenerationParams } from "@/lib/imagen";
+import { generateVideo, type VeoGenerationParams } from "@/lib/veo";
+import { generateImagePromptForI2V, generateVideoPromptForI2V } from "@/lib/gemini-prompt";
+// Use Modal for audio composition (GPU-accelerated)
+import { composeVideoWithAudioModal, type AudioComposeRequest } from "@/lib/modal/client";
+import { generateS3Key } from "@/lib/storage";
 
 // S3 Client
 const s3Client = new S3Client({
@@ -63,6 +73,11 @@ async function callGemini(
     }
 
     console.log(`[PERSONALIZE] Gemini response: ${fullText.length} chars in ${Date.now() - startTime}ms`);
+
+    if (!fullText || fullText.trim() === "") {
+      console.error("[PERSONALIZE] Warning: Gemini returned empty response");
+    }
+
     return fullText;
   } catch (error) {
     console.error(`[PERSONALIZE] Gemini SDK error:`, error);
@@ -199,6 +214,56 @@ interface UpdateStashRequest {
   };
 }
 
+// ============================================================================
+// NEW: Generate Request - Full Veo3 Pipeline
+// ============================================================================
+interface GenerateRequest {
+  action: "generate";
+  // The finalized Veo3 prompt from the personalize flow
+  veo3Prompt: string;
+  // Campaign and asset info
+  campaignId: string;
+  audioAssetId: string;  // Required: audio track for composition
+  // Reference images from assets (up to 3)
+  images: ImageData[];
+  // Video settings
+  aspectRatio?: string;  // Default: 9:16
+  durationSeconds?: number;  // Default: 5
+  style?: string;
+  // Context for prompt optimization
+  context?: ContextData;
+  // Image description for I2V (if images provided)
+  imageDescription?: string;
+}
+
+interface GenerateResponse {
+  success: boolean;
+  generationId?: string;
+  status?: string;
+  steps: {
+    audioAnalysis?: {
+      completed: boolean;
+      bpm?: number;
+      best15sStart?: number;
+      duration?: number;
+    };
+    imageGeneration?: {
+      completed: boolean;
+      imageUrl?: string;
+    };
+    videoGeneration?: {
+      completed: boolean;
+      rawVideoUrl?: string;
+      operationId?: string;
+    };
+    audioComposition?: {
+      completed: boolean;
+      finalVideoUrl?: string;
+    };
+  };
+  error?: string;
+}
+
 type RequestBody =
   | AnalyzeRequest
   | FinalizeRequest
@@ -206,7 +271,8 @@ type RequestBody =
   | ListStashRequest
   | GetStashRequest
   | DeleteStashRequest
-  | UpdateStashRequest;
+  | UpdateStashRequest
+  | GenerateRequest;
 
 interface AnalyzeResponse {
   success: boolean;
@@ -355,6 +421,8 @@ export async function POST(request: NextRequest) {
         return await handleAnalyze(body);
       case "finalize":
         return await handleFinalize(body);
+      case "generate":
+        return await handleGenerate(body);
       case "stash":
         return await handleStash(body);
       case "list-stash":
@@ -367,7 +435,7 @@ export async function POST(request: NextRequest) {
         return await handleUpdateStash(body);
       default:
         return NextResponse.json(
-          { success: false, error: "Invalid action. Use 'analyze', 'finalize', 'stash', 'list-stash', 'get-stash', 'delete-stash', or 'update-stash'." },
+          { success: false, error: "Invalid action. Use 'analyze', 'finalize', 'generate', 'stash', 'list-stash', 'get-stash', 'delete-stash', or 'update-stash'." },
           { status: 400 }
         );
     }
@@ -650,9 +718,12 @@ Return ONLY the JSON object, no markdown or extra text.`;
 
     // Call Gemini SDK
     const responseText = await callGemini(contents);
+    console.log("[PERSONALIZE] Gemini finalize raw response:", responseText.slice(0, 500));
 
     // Parse response
     const parsed = parseFinalizeResponse(responseText);
+    console.log("[PERSONALIZE] Parsed finalPrompt:", parsed.finalPrompt?.slice(0, 100));
+    console.log("[PERSONALIZE] Parsed metadata:", JSON.stringify(parsed.metadata));
 
     return NextResponse.json({
       success: true,
@@ -663,6 +734,430 @@ Return ONLY the JSON object, no markdown or extra text.`;
   } catch (error) {
     console.error("[PERSONALIZE] Finalization error:", error);
     throw error;
+  }
+}
+
+// ============================================================================
+// Step 3: GENERATE - Full Veo3 Pipeline
+// Audio Analysis → Image Handling → Video Generation → Audio Composition
+// ============================================================================
+
+async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
+  const {
+    veo3Prompt,
+    campaignId,
+    audioAssetId,
+    images,
+    aspectRatio = "9:16",
+    durationSeconds = 5,
+    style,
+    context,
+    imageDescription,
+  } = request;
+
+  console.log("=".repeat(60));
+  console.log("[GENERATE] 🚀 Starting full Veo3 pipeline");
+  console.log(`[GENERATE]    Campaign: ${campaignId}`);
+  console.log(`[GENERATE]    Audio Asset: ${audioAssetId}`);
+  console.log(`[GENERATE]    Images: ${images?.length || 0}`);
+  console.log(`[GENERATE]    Prompt: ${veo3Prompt.slice(0, 100)}...`);
+
+  // Log image details
+  if (images && images.length > 0) {
+    images.forEach((img, idx) => {
+      console.log(`[GENERATE]    Image ${idx + 1}: ${img.name || "unnamed"}`);
+      console.log(`[GENERATE]      - Has base64: ${!!img.base64} (${img.base64?.length || 0} chars)`);
+      console.log(`[GENERATE]      - Has URL: ${!!img.url} (${img.url?.slice(0, 50) || "none"}...)`);
+      console.log(`[GENERATE]      - Type: ${img.type || "unknown"}`);
+    });
+  }
+
+  // Validate required fields
+  if (!veo3Prompt) {
+    return NextResponse.json(
+      { success: false, error: "veo3Prompt is required" },
+      { status: 400 }
+    );
+  }
+
+  if (!campaignId) {
+    return NextResponse.json(
+      { success: false, error: "campaignId is required" },
+      { status: 400 }
+    );
+  }
+
+  if (!audioAssetId) {
+    return NextResponse.json(
+      { success: false, error: "audioAssetId is required for video generation" },
+      { status: 400 }
+    );
+  }
+
+  const response: GenerateResponse = {
+    success: false,
+    steps: {},
+  };
+
+  try {
+    // ========================================================================
+    // STEP 0: Get Audio Asset URL from database
+    // ========================================================================
+    console.log("[GENERATE] 📁 Step 0: Fetching audio asset...");
+    const audioAsset = await prisma.asset.findUnique({
+      where: { id: audioAssetId },
+      select: { id: true, s3Url: true, originalFilename: true },
+    });
+
+    if (!audioAsset || !audioAsset.s3Url) {
+      return NextResponse.json(
+        { success: false, error: `Audio asset not found: ${audioAssetId}` },
+        { status: 404 }
+      );
+    }
+
+    console.log(`[GENERATE]    Audio: ${audioAsset.originalFilename}`);
+    const audioUrl = audioAsset.s3Url;
+
+    // ========================================================================
+    // STEP 1: Audio Analysis
+    // ========================================================================
+    console.log("[GENERATE] 🎵 Step 1: Analyzing audio...");
+    let audioAnalysis;
+    try {
+      audioAnalysis = await analyzeAudio(audioUrl);
+      console.log(`[GENERATE]    BPM: ${audioAnalysis.bpm}`);
+      console.log(`[GENERATE]    Duration: ${audioAnalysis.duration}s`);
+      console.log(`[GENERATE]    Best 15s start: ${audioAnalysis.best_15s_start}s`);
+
+      response.steps.audioAnalysis = {
+        completed: true,
+        bpm: audioAnalysis.bpm,
+        best15sStart: audioAnalysis.best_15s_start,
+        duration: audioAnalysis.duration,
+      };
+    } catch (audioError) {
+      console.error("[GENERATE] ❌ Audio analysis failed:", audioError);
+      // Continue without audio analysis - use defaults
+      audioAnalysis = {
+        bpm: 120,
+        duration: 60,
+        best_15s_start: 0,
+        energy_curve: [],
+        segments: [],
+        peak_energy: 0.8,
+        avg_energy: 0.5,
+        best_15s_energy: 0.8,
+      };
+      response.steps.audioAnalysis = {
+        completed: false,
+      };
+    }
+
+    // ========================================================================
+    // STEP 2: Image Generation with Gemini 3
+    // ALWAYS generate a NEW optimized image using Gemini 3
+    // If user provides image → use as REFERENCE for Gemini to enhance/contextualize
+    // If no user image → generate purely from prompt
+    // ========================================================================
+    console.log("[GENERATE] 🖼️ Step 2: Generating optimized image with Gemini 3...");
+
+    let generatedImageBase64: string | undefined;
+    let referenceImageBase64: string | undefined;
+    let imageSource: "GEMINI_WITH_REF" | "GEMINI_NO_REF" | "NONE" = "NONE";
+
+    // Check if user provided images (to use as REFERENCE)
+    const hasUserImages = images && images.length > 0;
+    const firstImage = hasUserImages ? images[0] : null;
+
+    // Step 2a: Get user's reference image if provided
+    if (firstImage) {
+      // PRIORITY 1: User provided base64 (local upload) → use as reference
+      if (firstImage.base64 && firstImage.mimeType) {
+        console.log(`[GENERATE]    📎 Reference image source: LOCAL UPLOAD`);
+        console.log(`[GENERATE]      Size: ${Math.round(firstImage.base64.length / 1024)}KB`);
+        referenceImageBase64 = firstImage.base64;
+      }
+      // PRIORITY 2: User provided URL (campaign asset) → fetch and use as reference
+      else if (firstImage.url) {
+        console.log(`[GENERATE]    📎 Reference image source: CAMPAIGN URL`);
+        console.log(`[GENERATE]      URL: ${firstImage.url.slice(0, 80)}...`);
+
+        try {
+          const imageData = await fetchImageAsBase64(firstImage.url);
+          if (imageData) {
+            referenceImageBase64 = imageData.base64;
+            console.log(`[GENERATE]    ✓ Reference image fetched: ${Math.round(imageData.base64.length / 1024)}KB`);
+          } else {
+            console.error("[GENERATE]    ⚠️ Failed to fetch reference image from URL");
+          }
+        } catch (fetchError) {
+          console.error("[GENERATE]    ⚠️ Error fetching reference image:", fetchError);
+        }
+      }
+    }
+
+    // Step 2b: Generate optimized image with Gemini 3
+    // ALWAYS generate - using reference if available
+    console.log("[GENERATE]    🎨 Generating optimized image with Gemini 3...");
+    console.log(`[GENERATE]      Has reference image: ${!!referenceImageBase64}`);
+
+    // Build image description for generation
+    let imageDescriptionForGen = imageDescription || "";
+    if (hasUserImages && !imageDescriptionForGen) {
+      const imageNames = images.map(img => img.name || "reference").join(", ");
+      imageDescriptionForGen = `Reference assets: ${imageNames}`;
+    }
+
+    // Generate optimized image prompt for I2V
+    const imagePromptResult = await generateImagePromptForI2V({
+      videoPrompt: veo3Prompt,
+      imageDescription: imageDescriptionForGen,
+      style: style,
+      aspectRatio: aspectRatio,
+    });
+
+    const imagePrompt = imagePromptResult.success && imagePromptResult.imagePrompt
+      ? imagePromptResult.imagePrompt
+      : veo3Prompt;
+
+    console.log(`[GENERATE]      Image generation prompt: ${imagePrompt.slice(0, 100)}...`);
+
+    try {
+      // Generate image with Gemini 3
+      // If we have a reference image, it will be used to incorporate the product/subject
+      const imageParams: ImageGenerationParams = {
+        prompt: imagePrompt,
+        aspectRatio: aspectRatio as "1:1" | "3:4" | "4:3" | "9:16" | "16:9" || "9:16",
+        style: style,
+        // Pass reference image if available - Gemini will use it as context
+        ...(referenceImageBase64 && {
+          referenceImageBase64: referenceImageBase64,
+        }),
+      };
+
+      console.log(`[GENERATE]      Calling Gemini 3 image generation...`);
+      const imageResult = await generateImage(imageParams);
+
+      if (imageResult.success && imageResult.imageBase64) {
+        generatedImageBase64 = imageResult.imageBase64;
+        imageSource = referenceImageBase64 ? "GEMINI_WITH_REF" : "GEMINI_NO_REF";
+
+        console.log(`[GENERATE]    ✅ Gemini 3 image generated successfully!`);
+        console.log(`[GENERATE]      Source: ${imageSource}`);
+        console.log(`[GENERATE]      Size: ${Math.round(generatedImageBase64.length / 1024)}KB`);
+
+        response.steps.imageGeneration = {
+          completed: true,
+        };
+      } else {
+        console.error("[GENERATE]    ❌ Gemini 3 image generation failed:", imageResult.error);
+        response.steps.imageGeneration = {
+          completed: false,
+        };
+      }
+    } catch (imgError) {
+      console.error("[GENERATE]    ❌ Gemini 3 image generation error:", imgError);
+      response.steps.imageGeneration = {
+        completed: false,
+      };
+    }
+
+    console.log(`[GENERATE]    Image generation result:`);
+    console.log(`[GENERATE]      Source: ${imageSource}`);
+    console.log(`[GENERATE]      Has image for I2V: ${!!generatedImageBase64}`);
+    if (generatedImageBase64) {
+      console.log(`[GENERATE]      Generated image size: ${Math.round(generatedImageBase64.length / 1024)}KB`);
+    }
+
+    // ========================================================================
+    // STEP 2b: Generate Video Prompt with Animation Instructions
+    // ========================================================================
+    console.log("[GENERATE] 🎬 Step 2b: Generating video prompt with animation...");
+
+    // Build image description for video prompt
+    const videoImageDescription = imageDescription ||
+      (hasUserImages ? `Reference: ${images.map(img => img.name || "image").join(", ")}` : "");
+
+    const videoPromptResult = await generateVideoPromptForI2V(
+      {
+        videoPrompt: veo3Prompt,
+        imageDescription: videoImageDescription,
+        style: style,
+        aspectRatio: aspectRatio,
+      },
+      generatedImageBase64 ? "Image ready for animation" : undefined
+    );
+
+    const finalVideoPrompt = videoPromptResult.success && videoPromptResult.videoPrompt
+      ? videoPromptResult.videoPrompt
+      : veo3Prompt;
+
+    console.log(`[GENERATE]    Video prompt: ${finalVideoPrompt.slice(0, 80)}...`);
+
+    // ========================================================================
+    // STEP 3: Video Generation with Veo3
+    // ========================================================================
+    console.log("[GENERATE] 🎥 Step 3: Generating video with Veo3...");
+
+    let rawVideoUrl: string | undefined;
+
+    try {
+      // Start video generation with I2V (if image available) or T2V
+      // generateVideo handles polling internally and returns the final videoUrl
+      const videoGenParams: VeoGenerationParams = {
+        prompt: finalVideoPrompt,
+        aspectRatio: aspectRatio as "16:9" | "9:16",
+        durationSeconds: durationSeconds,
+        // Use referenceImageBase64 for I2V mode
+        ...(generatedImageBase64 && {
+          referenceImageBase64: generatedImageBase64,
+        }),
+      };
+
+      const videoResult = await generateVideo(videoGenParams);
+
+      if (!videoResult.success || !videoResult.videoUrl) {
+        throw new Error(videoResult.error || "Video generation failed");
+      }
+
+      rawVideoUrl = videoResult.videoUrl;
+      console.log(`[GENERATE]    ✅ Video generated: ${rawVideoUrl.slice(0, 80)}...`);
+
+      response.steps.videoGeneration = {
+        completed: true,
+        rawVideoUrl: rawVideoUrl,
+        operationId: videoResult.operationName,
+      };
+    } catch (videoError) {
+      console.error("[GENERATE] ❌ Video generation failed:", videoError);
+      response.steps.videoGeneration = {
+        completed: false,
+      };
+      // Can't continue without video
+      response.error = `Video generation failed: ${videoError instanceof Error ? videoError.message : "Unknown error"}`;
+      return NextResponse.json(response, { status: 500 });
+    }
+
+    // ========================================================================
+    // STEP 4: Audio Composition (via Modal GPU)
+    // ========================================================================
+    console.log("[GENERATE] 🔊 Step 4: Composing video with audio via Modal...");
+
+    try {
+      // Use Modal for GPU-accelerated audio composition
+      const s3Bucket = process.env.S3_BUCKET || "hydra-media";
+      const s3Key = generateS3Key(campaignId, "composed_video.mp4");
+
+      const composeRequest: AudioComposeRequest = {
+        job_id: uuidv4(),
+        video_url: rawVideoUrl!,
+        audio_url: audioUrl,
+        audio_start_time: audioAnalysis.best_15s_start || 0,
+        audio_volume: 1.0,
+        fade_in: 0.5,
+        fade_out: 1.0,
+        mix_original_audio: false,
+        output_s3_bucket: s3Bucket,
+        output_s3_key: s3Key,
+      };
+
+      console.log(`[GENERATE]    Modal compose request:`, {
+        video_url: rawVideoUrl?.slice(0, 60) + "...",
+        audio_start_time: composeRequest.audio_start_time,
+        output_key: s3Key,
+      });
+
+      const composeResult = await composeVideoWithAudioModal({
+        ...composeRequest,
+        pollInterval: 3000,  // Poll every 3 seconds
+        maxWaitTime: 300000, // Max 5 minutes
+        onProgress: (status) => {
+          console.log(`[GENERATE]    Modal compose status: ${status.status}`);
+        },
+      });
+
+      if (composeResult.status === "completed" && composeResult.output_url) {
+        console.log(`[GENERATE]    ✅ Composed via Modal: ${composeResult.output_url.slice(0, 80)}...`);
+
+        response.steps.audioComposition = {
+          completed: true,
+          finalVideoUrl: composeResult.output_url,
+        };
+
+        // ====================================================================
+        // STEP 5: Save to Database
+        // ====================================================================
+        console.log("[GENERATE] 💾 Step 5: Saving generation to database...");
+
+        const generation = await prisma.videoGeneration.create({
+          data: {
+            id: uuidv4(),
+            campaignId: campaignId,
+            prompt: veo3Prompt,
+            durationSeconds: durationSeconds,
+            aspectRatio: aspectRatio,
+            audioAssetId: audioAssetId,
+            audioAnalysis: audioAnalysis as object,
+            audioStartTime: audioAnalysis.best_15s_start,
+            audioDuration: 15,
+            status: "COMPLETED",
+            progress: 100,
+            outputUrl: rawVideoUrl,
+            composedOutputUrl: composeResult.output_url,
+            generationType: "AI",
+            createdBy: "system",
+          },
+        });
+
+        response.success = true;
+        response.generationId = generation.id;
+        response.status = "completed";
+
+        console.log(`[GENERATE]    ✅ Saved: ${generation.id}`);
+      } else {
+        throw new Error(composeResult.error || "Audio composition failed");
+      }
+    } catch (composeError) {
+      console.error("[GENERATE] ❌ Audio composition failed:", composeError);
+      response.steps.audioComposition = {
+        completed: false,
+      };
+
+      // Save the raw video anyway
+      const generation = await prisma.videoGeneration.create({
+        data: {
+          id: uuidv4(),
+          campaignId: campaignId,
+          prompt: veo3Prompt,
+          durationSeconds: durationSeconds,
+          aspectRatio: aspectRatio,
+          audioAssetId: audioAssetId,
+          audioAnalysis: audioAnalysis as object,
+          status: "COMPLETED",
+          progress: 100,
+          outputUrl: rawVideoUrl,
+          // No composedOutputUrl since composition failed
+          generationType: "AI",
+          createdBy: "system",
+          errorMessage: `Audio composition failed: ${composeError instanceof Error ? composeError.message : "Unknown error"}`,
+        },
+      });
+
+      response.success = true; // Partially successful
+      response.generationId = generation.id;
+      response.status = "completed_without_audio";
+    }
+
+    console.log("=".repeat(60));
+    console.log(`[GENERATE] ✅ Pipeline complete! Generation ID: ${response.generationId}`);
+    console.log("=".repeat(60));
+
+    return NextResponse.json(response);
+  } catch (error) {
+    console.error("[GENERATE] ❌ Pipeline error:", error);
+    response.error = error instanceof Error ? error.message : "Pipeline failed";
+    return NextResponse.json(response, { status: 500 });
   }
 }
 
@@ -820,25 +1315,46 @@ function parseFinalizeResponse(responseText: string): {
   };
 } {
   try {
+    console.log("[PERSONALIZE] parseFinalizeResponse input length:", responseText?.length);
+
+    // Handle empty or undefined response
+    if (!responseText || responseText.trim() === "") {
+      console.error("[PERSONALIZE] Empty response from Gemini");
+      throw new Error("Empty response");
+    }
+
     // Extract JSON from response
     let jsonStr = responseText;
 
     // Remove markdown code blocks if present
     const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (jsonMatch) {
+      console.log("[PERSONALIZE] Found markdown code block, extracting JSON");
       jsonStr = jsonMatch[1];
     }
 
     // Try to find JSON object
     const jsonObjectMatch = jsonStr.match(/\{[\s\S]*\}/);
     if (jsonObjectMatch) {
+      console.log("[PERSONALIZE] Found JSON object in response");
       jsonStr = jsonObjectMatch[0];
     }
 
+    console.log("[PERSONALIZE] JSON to parse:", jsonStr.slice(0, 300));
     const parsed = JSON.parse(jsonStr);
+    console.log("[PERSONALIZE] Parsed object keys:", Object.keys(parsed));
+    console.log("[PERSONALIZE] parsed.finalPrompt:", parsed.finalPrompt?.slice(0, 100));
+    console.log("[PERSONALIZE] parsed.prompt:", parsed.prompt?.slice(0, 100));
+    console.log("[PERSONALIZE] parsed.veo3Prompt:", parsed.veo3Prompt?.slice(0, 100));
+    console.log("[PERSONALIZE] Full parsed object:", JSON.stringify(parsed).slice(0, 500));
+
+    // Check for alternative field names that Gemini might use
+    const finalPrompt = parsed.finalPrompt || parsed.prompt || parsed.veo3Prompt || parsed.videoPrompt || parsed.veoPrompt || parsed.final_prompt || parsed.video_prompt;
+
+    console.log("[PERSONALIZE] Final prompt found:", !!finalPrompt, finalPrompt?.slice(0, 100));
 
     return {
-      finalPrompt: parsed.finalPrompt || "A cinematic video with professional quality.",
+      finalPrompt: finalPrompt || "A cinematic video with professional quality.",
       metadata: parsed.metadata || {
         duration: "8s",
         aspectRatio: "9:16",
@@ -850,8 +1366,8 @@ function parseFinalizeResponse(responseText: string): {
       },
     };
   } catch (error) {
-    console.error("Failed to parse finalize response:", error);
-    console.error("Response text:", responseText.slice(0, 500));
+    console.error("[PERSONALIZE] Failed to parse finalize response:", error);
+    console.error("[PERSONALIZE] Response text:", responseText?.slice(0, 500));
 
     // Return fallback
     return {
@@ -929,7 +1445,7 @@ async function handleStash(request: StashRequest): Promise<NextResponse> {
         finalizePromptUsed: finalizePromptUsed || null,
         selectedVariationId: selectedVariationId || null,
         veo3Prompt: veo3Prompt || null,
-        finalMetadata: finalMetadata ? (finalMetadata as object) : null,
+        finalMetadata: finalMetadata ? (finalMetadata as Prisma.InputJsonValue) : Prisma.JsonNull,
         tags: tags || [],
         createdBy: DEFAULT_USER_ID,
       },

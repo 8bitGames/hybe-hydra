@@ -181,33 +181,7 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
   if (mobile) {
     return (
       <nav className={cn("flex flex-col gap-1", className)}>
-        {/* Workflow Section */}
-        <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          {isKorean ? "워크플로우" : "Workflow"}
-        </div>
-        <div className="flex flex-col gap-1 mb-4">
-          {workflowItems.map((item, index) => (
-            <div key={isKorean ? item.name.ko : item.name.en} className="flex items-center">
-              <Link href={item.href!} className="flex-1">
-                <Button
-                  variant={isActive(item.href) ? "secondary" : "ghost"}
-                  className={cn(
-                    "w-full justify-start gap-2 text-base font-semibold",
-                    isActive(item.href) && "bg-zinc-100 dark:bg-zinc-800"
-                  )}
-                >
-                  <item.icon className="h-5 w-5" />
-                  {isKorean ? item.name.ko : item.name.en}
-                </Button>
-              </Link>
-              {index < workflowItems.length - 1 && (
-                <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Secondary Section */}
+        {/* Secondary Section - First (대시보드, 캠페인, 라이브러리) */}
         <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
           {isKorean ? "메뉴" : "Menu"}
         </div>
@@ -246,47 +220,39 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
             )}
           </div>
         ))}
+
+        {/* Workflow Section - Second (발견, 분석, 생성, 프로세싱, 발행) */}
+        <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-4">
+          {isKorean ? "워크플로우" : "Workflow"}
+        </div>
+        <div className="flex flex-col gap-1 mb-4">
+          {workflowItems.map((item, index) => (
+            <div key={isKorean ? item.name.ko : item.name.en} className="flex items-center">
+              <Link href={item.href!} className="flex-1">
+                <Button
+                  variant={isActive(item.href) ? "secondary" : "ghost"}
+                  className={cn(
+                    "w-full justify-start gap-2 text-base font-semibold",
+                    isActive(item.href) && "bg-zinc-100 dark:bg-zinc-800"
+                  )}
+                >
+                  <item.icon className="h-5 w-5" />
+                  {isKorean ? item.name.ko : item.name.en}
+                </Button>
+              </Link>
+              {index < workflowItems.length - 1 && (
+                <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />
+              )}
+            </div>
+          ))}
+        </div>
       </nav>
     );
   }
 
   return (
     <nav className={cn("flex items-center gap-1", className)}>
-      {/* Workflow Navigation - Primary */}
-      <div className={cn(
-        "flex items-center gap-0.5 px-2 py-1 rounded-lg",
-        isInWorkflow ? "bg-zinc-100 dark:bg-zinc-900" : "bg-transparent"
-      )}>
-        {workflowItems.map((item, index) => (
-          <div key={isKorean ? item.name.ko : item.name.en} className="flex items-center">
-            <Link href={item.href!}>
-              <Button
-                variant={isActive(item.href) ? "secondary" : "ghost"}
-                size="sm"
-                className={cn(
-                  "gap-1.5 text-sm font-medium h-8",
-                  isActive(item.href) && "bg-white dark:bg-zinc-800 shadow-sm",
-                  !isInWorkflow && "text-muted-foreground"
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {isKorean ? item.name.ko : item.name.en}
-              </Button>
-            </Link>
-            {index < workflowItems.length - 1 && (
-              <ArrowRight className={cn(
-                "h-3 w-3 mx-0.5",
-                isInWorkflow ? "text-muted-foreground" : "text-muted-foreground/50"
-              )} />
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Divider */}
-      <div className="h-6 w-px bg-border mx-2" />
-
-      {/* Secondary Navigation */}
+      {/* Secondary Navigation - First (대시보드, 캠페인, 라이브러리) */}
       {secondaryItems.map((item) => {
         if (item.href) {
           return (
@@ -343,6 +309,40 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
           </DropdownMenu>
         );
       })}
+
+      {/* Divider */}
+      <div className="h-6 w-px bg-border mx-2" />
+
+      {/* Workflow Navigation - Second (발견, 분석, 생성, 프로세싱, 발행) */}
+      <div className={cn(
+        "flex items-center gap-0.5 px-2 py-1 rounded-lg",
+        isInWorkflow ? "bg-zinc-100 dark:bg-zinc-900" : "bg-transparent"
+      )}>
+        {workflowItems.map((item, index) => (
+          <div key={isKorean ? item.name.ko : item.name.en} className="flex items-center">
+            <Link href={item.href!}>
+              <Button
+                variant={isActive(item.href) ? "secondary" : "ghost"}
+                size="sm"
+                className={cn(
+                  "gap-1.5 text-sm font-medium h-8",
+                  isActive(item.href) && "bg-white dark:bg-zinc-800 shadow-sm",
+                  !isInWorkflow && "text-muted-foreground"
+                )}
+              >
+                <item.icon className="h-4 w-4" />
+                {isKorean ? item.name.ko : item.name.en}
+              </Button>
+            </Link>
+            {index < workflowItems.length - 1 && (
+              <ArrowRight className={cn(
+                "h-3 w-3 mx-0.5",
+                isInWorkflow ? "text-muted-foreground" : "text-muted-foreground/50"
+              )} />
+            )}
+          </div>
+        ))}
+      </div>
     </nav>
   );
 }

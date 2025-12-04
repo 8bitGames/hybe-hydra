@@ -6,6 +6,7 @@
 
 import crypto from 'crypto';
 import { prisma } from '@/lib/db/prisma';
+import { Prisma } from '@prisma/client';
 
 // =====================================================
 // CACHE KEY GENERATION
@@ -113,7 +114,7 @@ export async function getCachedSearchResults(
         .catch(() => {}); // Ignore errors
 
       console.log(`[Image Cache] Search cache HIT for key: ${cacheKey.slice(0, 8)}...`);
-      return cached.results as SearchCacheResult;
+      return cached.results as unknown as SearchCacheResult;
     }
 
     console.log(`[Image Cache] Search cache MISS for key: ${cacheKey.slice(0, 8)}...`);
@@ -144,15 +145,15 @@ export async function setCachedSearchResults(
       create: {
         cacheKey,
         keywords,
-        results: results as unknown as Record<string, unknown>,
+        results: results as unknown as Prisma.InputJsonValue,
         totalResults: results.totalFound,
-        searchParams,
+        searchParams: searchParams as Prisma.InputJsonValue,
         expiresAt,
       },
       update: {
-        results: results as unknown as Record<string, unknown>,
+        results: results as unknown as Prisma.InputJsonValue,
         totalResults: results.totalFound,
-        searchParams,
+        searchParams: searchParams as Prisma.InputJsonValue,
         expiresAt,
         hitCount: 0, // Reset hit count on refresh
       },

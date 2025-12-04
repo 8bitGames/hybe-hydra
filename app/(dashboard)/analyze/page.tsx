@@ -356,26 +356,42 @@ function IdeaCard({
   idea,
   isSelected,
   onSelect,
+  onDelete,
 }: {
   idea: ContentIdea;
   isSelected: boolean;
   onSelect: () => void;
+  onDelete: () => void;
 }) {
   const { language } = useI18n();
 
   const typeIcon = idea.type === "ai_video" ? Video : ImageIcon;
   const TypeIcon = typeIcon;
 
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete();
+  };
+
   return (
-    <button
+    <div
       onClick={onSelect}
       className={cn(
-        "w-full text-left p-4 rounded-lg border transition-all",
+        "w-full text-left p-4 rounded-lg border transition-all cursor-pointer group relative",
         isSelected
           ? "border-neutral-900 bg-white"
           : "border-neutral-200 hover:border-neutral-300 bg-white"
       )}
     >
+      {/* Delete button */}
+      <button
+        onClick={handleDelete}
+        className="absolute top-2 right-2 w-6 h-6 rounded-full bg-neutral-100 hover:bg-red-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+        title={language === "ko" ? "삭제" : "Delete"}
+      >
+        <X className="h-3.5 w-3.5 text-neutral-500 hover:text-red-600" />
+      </button>
+
       <div className="flex items-start gap-3">
         <div
           className={cn(
@@ -438,7 +454,7 @@ function IdeaCard({
           </div>
         )}
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -462,6 +478,7 @@ export default function AnalyzePage() {
   const setAnalyzeTargetAudience = useWorkflowStore((state) => state.setAnalyzeTargetAudience);
   const setAnalyzeContentGoals = useWorkflowStore((state) => state.setAnalyzeContentGoals);
   const setAnalyzeAiIdeas = useWorkflowStore((state) => state.setAnalyzeAiIdeas);
+  const removeAnalyzeIdea = useWorkflowStore((state) => state.removeAnalyzeIdea);
   const selectAnalyzeIdea = useWorkflowStore((state) => state.selectAnalyzeIdea);
   const setAnalyzeOptimizedPrompt = useWorkflowStore((state) => state.setAnalyzeOptimizedPrompt);
   const setAnalyzeHashtags = useWorkflowStore((state) => state.setAnalyzeHashtags);
@@ -610,7 +627,7 @@ export default function AnalyzePage() {
       />
 
       {/* Main Content - Two Column */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden px-[7%]">
         {/* Left Column - Input */}
         <div className="w-1/2 border-r border-neutral-200 flex flex-col">
           <ScrollArea className="flex-1">
@@ -749,6 +766,7 @@ export default function AnalyzePage() {
                       idea={idea}
                       isSelected={analyze.selectedIdea?.id === idea.id}
                       onSelect={() => handleSelectIdea(idea)}
+                      onDelete={() => removeAnalyzeIdea(idea.id)}
                     />
                   ))}
                 </div>

@@ -2,7 +2,7 @@
  * Google Gemini Image Generation Service
  *
  * Generates images using Google's Gemini model for use in I2V video generation.
- * Uses the gemini-3-pro-image-preview model for image generation.
+ * Uses the models/gemini-3-pro-image-preview model for image generation.
  */
 
 import { GoogleGenAI } from "@google/genai";
@@ -80,7 +80,7 @@ export async function generateImage(
 
   try {
     const ai = getClient();
-    const model = "gemini-2.5-flash-image"; // Gemini 2.5 Flash image generation model
+    const model = "gemini-3-pro-image-preview"; // Gemini 3 Pro image generation model
 
     console.log(`[GEMINI-IMAGE] Starting image generation with model: ${model}`);
     console.log(`[GEMINI-IMAGE] Prompt: ${params.prompt.slice(0, 100)}...`);
@@ -317,7 +317,7 @@ export async function generateTwoStepComposition(
 
   try {
     const ai = getClient();
-    const model = "gemini-2.5-flash-image";  // Gemini 2.5 Flash image generation model
+    const model = "gemini-3-pro-image-preview";  // Gemini 3 Pro image generation model
 
     // ============ STEP 1: Generate scene with placeholder ============
     console.log(`[GEMINI-IMAGE] Step 1: Generating scene with placeholder using model: ${model}...`);

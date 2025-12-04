@@ -43,7 +43,6 @@ import {
   Play,
   ExternalLink,
   FolderOpen,
-  Layers,
   Check,
   Library,
 } from "lucide-react";
@@ -61,6 +60,129 @@ function formatCount(num: number | null | undefined): string {
 
 function formatPercent(num: number): string {
   return `${num.toFixed(1)}%`;
+}
+
+// ============================================================================
+// Step Progress Indicator
+// ============================================================================
+
+interface StepStatus {
+  campaignSelected: boolean;
+  methodSelected: boolean;
+  musicSelected: boolean;
+}
+
+function StepProgressIndicator({
+  status,
+  selectedMethod,
+}: {
+  status: StepStatus;
+  selectedMethod: "ai" | "compose" | null;
+}) {
+  const { language } = useI18n();
+  const isKorean = language === "ko";
+
+  // Determine current step and next action
+  const getCurrentStep = (): number => {
+    if (!status.campaignSelected) return 1;
+    if (!status.methodSelected) return 2;
+    if (!status.musicSelected) return 3;
+    return 4; // All done
+  };
+
+  const currentStep = getCurrentStep();
+
+  const getNextActionMessage = (): string => {
+    if (!status.campaignSelected) {
+      return isKorean
+        ? "영상을 저장할 캠페인을 선택하세요"
+        : "Select a campaign to save your video";
+    }
+    if (!status.methodSelected) {
+      return isKorean
+        ? "AI 생성 또는 컴포즈 중 생성 방식을 선택하세요"
+        : "Choose between AI Generated or Compose video";
+    }
+    if (!status.musicSelected) {
+      return isKorean
+        ? "영상에 사용할 음악을 추가하세요"
+        : "Add music for your video";
+    }
+    // All complete
+    if (selectedMethod === "ai") {
+      return isKorean
+        ? "준비 완료! 'Veo3로 생성하기' 버튼을 클릭하세요"
+        : "Ready! Click 'Generate with Veo3' to create";
+    }
+    return isKorean
+      ? "준비 완료! '컴포즈 시작' 버튼을 클릭하세요"
+      : "Ready! Click 'Start Compose' to create";
+  };
+
+  const steps = [
+    {
+      num: 1,
+      label: isKorean ? "캠페인" : "Campaign",
+      done: status.campaignSelected,
+    },
+    {
+      num: 2,
+      label: isKorean ? "생성 방식" : "Method",
+      done: status.methodSelected,
+    },
+    {
+      num: 3,
+      label: isKorean ? "음악" : "Music",
+      done: status.musicSelected,
+    },
+  ];
+
+  return (
+    <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 mb-6">
+      {/* Next Action Message */}
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-5 h-5 rounded-full bg-neutral-900 flex items-center justify-center">
+          <ArrowRight className="h-3 w-3 text-white" />
+        </div>
+        <span className="text-sm font-medium text-neutral-900">
+          {getNextActionMessage()}
+        </span>
+      </div>
+
+      {/* Step Indicators */}
+      <div className="flex items-center gap-2">
+        {steps.map((step, index) => (
+          <div key={step.num} className="flex items-center">
+            <div
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all",
+                step.done
+                  ? "bg-neutral-900 text-white"
+                  : currentStep === step.num
+                  ? "bg-neutral-200 text-neutral-900 ring-2 ring-neutral-400 ring-offset-1"
+                  : "bg-neutral-100 text-neutral-400"
+              )}
+            >
+              {step.done ? (
+                <Check className="h-3 w-3" />
+              ) : (
+                <span className="w-3 text-center">{step.num}</span>
+              )}
+              <span>{step.label}</span>
+            </div>
+            {index < steps.length - 1 && (
+              <div
+                className={cn(
+                  "w-4 h-0.5 mx-1",
+                  step.done ? "bg-neutral-400" : "bg-neutral-200"
+                )}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ============================================================================
@@ -565,10 +687,6 @@ function AssetUploadSection({
         </div>
       )}
 
-      <h3 className="text-sm font-semibold text-neutral-700">
-        {language === "ko" ? "에셋 선택" : "Select Assets"}
-      </h3>
-
       {/* Music Section */}
       <div>
         <Label className="text-xs text-neutral-500 mb-2 flex items-center gap-1">
@@ -916,16 +1034,12 @@ function AssetUploadSection({
 function CreateMethodCards({
   selectedMethod,
   onSelectMethod,
-  composeBatchMode,
-  onComposeBatchModeChange,
   onGenerate,
   onCompose,
   isGenerating,
 }: {
   selectedMethod: "ai" | "compose" | null;
   onSelectMethod: (method: "ai" | "compose") => void;
-  composeBatchMode: boolean;
-  onComposeBatchModeChange: (batch: boolean) => void;
   onGenerate: () => void;
   onCompose: () => void;
   isGenerating: boolean;
@@ -938,10 +1052,6 @@ function CreateMethodCards({
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-neutral-700">
-        {language === "ko" ? "생성 방식 선택" : "Choose Creation Method"}
-      </h3>
-
       {/* AI Generated Video */}
       <div
         onClick={() => onSelectMethod("ai")}
@@ -1064,52 +1174,12 @@ function CreateMethodCards({
         </div>
 
         {selectedMethod === "compose" && (
-          <div className="mt-4 pt-4 border-t border-neutral-200 space-y-3">
-            {/* Single vs Batch Toggle */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onComposeBatchModeChange(false);
-                }}
-                className={cn(
-                  "p-3 rounded-lg border text-left transition-all",
-                  !composeBatchMode
-                    ? "border-neutral-900 bg-white"
-                    : "border-neutral-200 hover:border-neutral-300"
-                )}
-              >
-                <div className="text-xs font-medium text-neutral-900 mb-0.5">
-                  {language === "ko" ? "단일 영상" : "Single Video"}
-                </div>
-                <div className="text-[10px] text-neutral-500">
-                  {language === "ko" ? "1개의 영상 생성" : "Create 1 video"}
-                </div>
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onComposeBatchModeChange(true);
-                }}
-                className={cn(
-                  "p-3 rounded-lg border text-left transition-all",
-                  composeBatchMode
-                    ? "border-neutral-900 bg-white"
-                    : "border-neutral-200 hover:border-neutral-300"
-                )}
-              >
-                <div className="text-xs font-medium text-neutral-900 mb-0.5 flex items-center gap-1">
-                  <Layers className="h-3 w-3" />
-                  {language === "ko" ? "배치 프로세스" : "Batch Process"}
-                </div>
-                <div className="text-[10px] text-neutral-500">
-                  {language === "ko" ? "3-10개 변형 생성" : "Create 3-10 variations"}
-                </div>
-              </button>
-            </div>
-
+          <div className="mt-4 pt-4 border-t border-neutral-200">
             <Button
-              onClick={onCompose}
+              onClick={(e) => {
+                e.stopPropagation();
+                onCompose();
+              }}
               disabled={isGenerating}
               className="w-full bg-neutral-900 text-white hover:bg-neutral-800"
             >
@@ -1121,13 +1191,7 @@ function CreateMethodCards({
               ) : (
                 <>
                   <Images className="h-4 w-4 mr-2" />
-                  {composeBatchMode
-                    ? language === "ko"
-                      ? "배치 컴포즈 시작"
-                      : "Start Batch Compose"
-                    : language === "ko"
-                    ? "컴포즈 시작"
-                    : "Start Compose"}
+                  {language === "ko" ? "컴포즈 시작" : "Start Compose"}
                 </>
               )}
             </Button>
@@ -1216,7 +1280,6 @@ export default function CreatePage() {
 
   // Local state
   const [selectedMethod, setSelectedMethod] = useState<"ai" | "compose" | null>(null);
-  const [composeBatchMode, setComposeBatchMode] = useState(false);
   const [audioAsset, setAudioAsset] = useState<UploadedAsset | null>(null);
   const [imageAssets, setImageAssets] = useState<UploadedAsset[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -1354,7 +1417,10 @@ export default function CreatePage() {
       setIsGenerating(true);
 
       try {
+        console.log("[Veo3] ═══════════════════════════════════════════════════════");
         console.log("[Veo3] Starting video generation via API...");
+        console.log("[Veo3] Total image assets:", imageAssets.length);
+
         // Get first image for I2V if available
         const firstImage = imageAssets[0];
 
@@ -1363,21 +1429,55 @@ export default function CreatePage() {
         let previewImageUrl: string | undefined;
 
         if (firstImage) {
+          console.log("[Veo3] First image details:", {
+            id: firstImage.id,
+            name: firstImage.name,
+            fromCampaign: firstImage.fromCampaign,
+            hasFile: !!firstImage.file,
+            hasUrl: !!firstImage.url,
+            urlPreview: firstImage.url?.slice(0, 60),
+          });
+
           if (firstImage.fromCampaign) {
             // Campaign asset - use the S3 URL directly
             previewImageUrl = firstImage.url;
-            console.log("[Veo3] Using campaign image URL:", previewImageUrl.slice(0, 80) + "...");
+            console.log("[Veo3] ✓ Using CAMPAIGN image URL:", previewImageUrl.slice(0, 80) + "...");
           } else if (firstImage.file) {
             // Local upload - convert to base64
-            console.log("[Veo3] Converting local image to base64...");
+            console.log("[Veo3] Converting LOCAL upload to base64...");
             previewImageBase64 = await fileToBase64(firstImage.file);
-            console.log("[Veo3] Base64 image ready:", Math.round(previewImageBase64.length / 1024) + "KB");
+            console.log("[Veo3] ✓ Base64 image ready:", Math.round(previewImageBase64.length / 1024) + "KB");
           } else if (firstImage.url && !firstImage.url.startsWith("blob:")) {
             // External URL that's not a blob
             previewImageUrl = firstImage.url;
-            console.log("[Veo3] Using external image URL:", previewImageUrl.slice(0, 80) + "...");
+            console.log("[Veo3] ✓ Using EXTERNAL image URL:", previewImageUrl.slice(0, 80) + "...");
+          } else {
+            console.log("[Veo3] ⚠ Could not process first image - no valid source");
           }
+        } else {
+          console.log("[Veo3] No images provided - will use T2V mode");
         }
+
+        console.log("[Veo3] Image mode summary:", {
+          hasBase64: !!previewImageBase64,
+          hasUrl: !!previewImageUrl,
+          mode: previewImageBase64 ? "LOCAL_UPLOAD" : previewImageUrl ? "CAMPAIGN_URL" : "TEXT_ONLY",
+        });
+
+        const apiParams = {
+          prompt: prompt.slice(0, 100) + "...",
+          audio_asset_id: audioAsset.id,
+          aspect_ratio: metadata.aspectRatio,
+          duration_seconds: parseInt(metadata.duration) || 5,
+          reference_style: metadata.style || undefined,
+          enable_i2v: !!(previewImageBase64 || previewImageUrl),
+          image_description: firstImage ? `Reference image for video generation` : undefined,
+          has_preview_image_base64: !!previewImageBase64,
+          has_preview_image_url: !!previewImageUrl,
+          preview_image_url_preview: previewImageUrl?.slice(0, 60),
+          reference_image_id: firstImage?.fromCampaign ? firstImage.id : undefined,
+        };
+        console.log("[Veo3] API request params:", apiParams);
 
         const response = await videoApi.create(selectedCampaignId, {
           prompt,
@@ -1447,12 +1547,9 @@ export default function CreatePage() {
     }
 
     setIsGenerating(true);
-    // Navigate to campaign compose page with batch mode flag
-    const url = composeBatchMode
-      ? `/campaigns/${selectedCampaignId}/compose?batch=true&from_workflow=true`
-      : `/campaigns/${selectedCampaignId}/compose?from_workflow=true`;
-    router.push(url);
-  }, [selectedCampaignId, composeBatchMode, router, language, toast]);
+    // Navigate to campaign compose page
+    router.push(`/campaigns/${selectedCampaignId}/compose?from_workflow=true`);
+  }, [selectedCampaignId, router, language, toast]);
 
   // Translations
   const t = {
@@ -1474,7 +1571,7 @@ export default function CreatePage() {
       />
 
       {/* Main Content - Two Columns */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden px-[7%]">
         {/* Left Column - Context */}
         <div className="w-2/5 border-r border-neutral-200 bg-neutral-50">
           <ContextPanel />
@@ -1483,28 +1580,39 @@ export default function CreatePage() {
         {/* Right Column - Campaign, Assets & Methods */}
         <div className="w-3/5 overflow-auto">
           <div className="p-6 space-y-6">
-            {/* Create Methods - At the top */}
-            <CreateMethodCards
+            {/* Step Progress Indicator */}
+            <StepProgressIndicator
+              status={{
+                campaignSelected: !!selectedCampaignId,
+                methodSelected: !!selectedMethod,
+                musicSelected: !!audioAsset,
+              }}
               selectedMethod={selectedMethod}
-              onSelectMethod={setSelectedMethod}
-              composeBatchMode={composeBatchMode}
-              onComposeBatchModeChange={setComposeBatchMode}
-              onGenerate={handleGenerate}
-              onCompose={handleCompose}
-              isGenerating={isGenerating}
             />
 
-            {/* Campaign Selector */}
+            {/* Step 1: Campaign Selector */}
             <div className="space-y-2">
-              <Label className="text-xs text-neutral-500 flex items-center gap-1">
-                <FolderOpen className="h-3 w-3" />
-                {t.selectCampaign}
-              </Label>
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  "w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
+                  selectedCampaignId
+                    ? "bg-neutral-900 text-white"
+                    : "bg-neutral-200 text-neutral-600"
+                )}>
+                  {selectedCampaignId ? <Check className="h-3 w-3" /> : "1"}
+                </div>
+                <Label className="text-sm font-medium text-neutral-700">
+                  {t.selectCampaign}
+                </Label>
+              </div>
               <Select
                 value={selectedCampaignId}
                 onValueChange={handleCampaignChange}
               >
-                <SelectTrigger className="w-full border-neutral-200">
+                <SelectTrigger className={cn(
+                  "w-full",
+                  !selectedCampaignId && "border-neutral-300 ring-1 ring-neutral-200"
+                )}>
                   <SelectValue placeholder={t.selectCampaign} />
                 </SelectTrigger>
                 <SelectContent>
@@ -1531,17 +1639,59 @@ export default function CreatePage() {
               )}
             </div>
 
-            {/* Asset Upload */}
-            <AssetUploadSection
-              audioAsset={audioAsset}
-              imageAssets={imageAssets}
-              onAudioChange={setAudioAsset}
-              onImagesChange={setImageAssets}
-              campaignAssets={campaignAssets}
-              isLoadingAssets={isLoadingAssets}
-              merchandiseItems={merchandiseItems}
-              isLoadingMerchandise={isLoadingMerchandise}
-            />
+            {/* Step 2: Create Methods */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  "w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
+                  selectedMethod
+                    ? "bg-neutral-900 text-white"
+                    : "bg-neutral-200 text-neutral-600"
+                )}>
+                  {selectedMethod ? <Check className="h-3 w-3" /> : "2"}
+                </div>
+                <Label className="text-sm font-medium text-neutral-700">
+                  {language === "ko" ? "생성 방식 선택" : "Choose Creation Method"}
+                </Label>
+              </div>
+              <CreateMethodCards
+                selectedMethod={selectedMethod}
+                onSelectMethod={setSelectedMethod}
+                onGenerate={handleGenerate}
+                onCompose={handleCompose}
+                isGenerating={isGenerating}
+              />
+            </div>
+
+            {/* Step 3: Asset Upload */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  "w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
+                  audioAsset
+                    ? "bg-neutral-900 text-white"
+                    : "bg-neutral-200 text-neutral-600"
+                )}>
+                  {audioAsset ? <Check className="h-3 w-3" /> : "3"}
+                </div>
+                <Label className="text-sm font-medium text-neutral-700">
+                  {language === "ko" ? "에셋 선택" : "Select Assets"}
+                </Label>
+                <span className="text-xs text-neutral-400">
+                  ({language === "ko" ? "음악 필수" : "Music required"})
+                </span>
+              </div>
+              <AssetUploadSection
+                audioAsset={audioAsset}
+                imageAssets={imageAssets}
+                onAudioChange={setAudioAsset}
+                onImagesChange={setImageAssets}
+                campaignAssets={campaignAssets}
+                isLoadingAssets={isLoadingAssets}
+                merchandiseItems={merchandiseItems}
+                isLoadingMerchandise={isLoadingMerchandise}
+              />
+            </div>
           </div>
         </div>
       </div>

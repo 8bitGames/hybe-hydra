@@ -259,6 +259,7 @@ interface WorkflowState {
   setDiscoverPerformanceMetrics: (metrics: DiscoverData["performanceMetrics"]) => void;
   setDiscoverAiInsights: (insights: string[]) => void;
   setDiscoverTrendAnalysis: (analysis: DiscoverData["trendAnalysis"]) => void;
+  clearDiscoverAnalysis: () => void;
 
   // Actions - Analyze
   setAnalyzeCampaign: (id: string | null, name: string | null) => void;
@@ -266,6 +267,7 @@ interface WorkflowState {
   setAnalyzeTargetAudience: (audience: string[]) => void;
   setAnalyzeContentGoals: (goals: string[]) => void;
   setAnalyzeAiIdeas: (ideas: ContentIdea[]) => void;
+  removeAnalyzeIdea: (ideaId: string) => void;
   selectAnalyzeIdea: (idea: ContentIdea | null) => void;
   setAnalyzeAssets: (assets: AnalyzeData["assets"]) => void;
   addAnalyzeAsset: (asset: AnalyzeData["assets"][0]) => void;
@@ -484,6 +486,19 @@ export const useWorkflowStore = create<WorkflowState>()(
             discover: { ...state.discover, trendAnalysis: analysis },
           })),
 
+        clearDiscoverAnalysis: () =>
+          set((state) => ({
+            discover: {
+              ...state.discover,
+              keywords: [],
+              selectedHashtags: [],
+              performanceMetrics: null,
+              aiInsights: [],
+              trendAnalysis: null,
+              // Keep savedInspiration as user may want to keep that
+            },
+          })),
+
         // Analyze Actions
         setAnalyzeCampaign: (id, name) =>
           set((state) => ({
@@ -508,6 +523,16 @@ export const useWorkflowStore = create<WorkflowState>()(
         setAnalyzeAiIdeas: (ideas) =>
           set((state) => ({
             analyze: { ...state.analyze, aiGeneratedIdeas: ideas },
+          })),
+
+        removeAnalyzeIdea: (ideaId) =>
+          set((state) => ({
+            analyze: {
+              ...state.analyze,
+              aiGeneratedIdeas: state.analyze.aiGeneratedIdeas.filter((idea) => idea.id !== ideaId),
+              // If the removed idea was selected, clear the selection
+              selectedIdea: state.analyze.selectedIdea?.id === ideaId ? null : state.analyze.selectedIdea,
+            },
           })),
 
         selectAnalyzeIdea: (idea) =>
@@ -896,8 +921,9 @@ export const useWorkflowStore = create<WorkflowState>()(
           completedStages: state.completedStages,
           discover: state.discover,
           analyze: state.analyze,
+          processing: state.processing, // Persist processing so approved videos remain available in publish
+          publish: state.publish, // Persist publish state (caption, hashtags, etc.)
           stashedPrompts: state.stashedPrompts,
-          // Don't persist create and publish - they have transient data
         }),
         onRehydrateStorage: () => (state) => {
           if (state) {

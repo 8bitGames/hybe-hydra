@@ -29,7 +29,8 @@ async function startVideoGeneration(
     enableI2V?: boolean;  // Enable AI image generation first
     imageDescription?: string;  // How the image should be used in video
     // Pre-generated preview image (from two-step workflow)
-    previewImageBase64?: string;  // Skip image generation if provided
+    previewImageBase64?: string;  // Skip image generation if provided (local uploads)
+    previewImageUrl?: string;     // Skip image generation if provided (S3/external URLs)
   }
 ) {
   // Don't await - let it run in background
@@ -66,9 +67,29 @@ async function startVideoGeneration(
 
       if (params.enableI2V && params.imageDescription) {
         // Check if we have a pre-generated preview image (two-step workflow)
-        if (params.previewImageBase64) {
-          console.log(`[Generation ${generationId}] I2V mode with pre-generated preview image - skipping image generation`);
-          generatedImageBase64 = params.previewImageBase64;
+        // Priority: base64 > URL > generate new
+        if (params.previewImageBase64 || params.previewImageUrl) {
+          console.log(`[Generation ${generationId}] I2V mode with user-provided image - skipping AI image generation`);
+
+          // Use base64 directly, or fetch URL and convert to base64
+          if (params.previewImageBase64) {
+            console.log(`[Generation ${generationId}] Using pre-uploaded base64 image`);
+            generatedImageBase64 = params.previewImageBase64;
+          } else if (params.previewImageUrl) {
+            console.log(`[Generation ${generationId}] Fetching image from URL: ${params.previewImageUrl.slice(0, 80)}...`);
+            try {
+              const imageResponse = await fetch(params.previewImageUrl);
+              if (imageResponse.ok) {
+                const arrayBuffer = await imageResponse.arrayBuffer();
+                generatedImageBase64 = Buffer.from(arrayBuffer).toString("base64");
+                console.log(`[Generation ${generationId}] Image fetched and converted: ${Math.round(arrayBuffer.byteLength / 1024)}KB`);
+              } else {
+                console.error(`[Generation ${generationId}] Failed to fetch image: ${imageResponse.status}`);
+              }
+            } catch (fetchError) {
+              console.error(`[Generation ${generationId}] Error fetching image URL:`, fetchError);
+            }
+          }
 
           await prisma.videoGeneration.update({
             where: { id: generationId },
@@ -181,22 +202,31 @@ async function startVideoGeneration(
       }
 
       // Step 3: Generate video with VEO
+      console.log(`[Generation ${generationId}] ═══════════════════════════════════════════════════════`);
       console.log(`[Generation ${generationId}] Step 3: Generating video with VEO...`);
 
       // Determine generation mode and prompt to use
       let finalVideoPrompt = params.prompt;  // Default to original prompt
 
+      // Determine image source for logging
+      const imageSource = params.previewImageBase64 ? "USER_UPLOAD_BASE64" :
+                         params.previewImageUrl ? "CAMPAIGN_URL" :
+                         generatedImageBase64 ? "AI_GENERATED" : "NONE";
+
+      console.log(`[Generation ${generationId}] Image source: ${imageSource}`);
+      console.log(`[Generation ${generationId}] Has image for I2V: ${!!generatedImageBase64}`);
+
       if (generatedImageBase64) {
-        console.log(`[Generation ${generationId}] I2V mode with AI-generated image`);
+        console.log(`[Generation ${generationId}] ✓ I2V mode - Image ready (${Math.round(generatedImageBase64.length / 1024)}KB)`);
         // Use Gemini's video prompt if available (includes animation instructions)
         if (geminiVideoPrompt) {
           finalVideoPrompt = geminiVideoPrompt;
-          console.log(`[Generation ${generationId}] Using Gemini-generated video prompt with animation instructions`);
+          console.log(`[Generation ${generationId}] ✓ Using Gemini-generated video prompt with animation instructions`);
         }
       } else if (params.referenceImageUrl) {
-        console.log(`[Generation ${generationId}] I2V mode with existing image: ${params.referenceImageUrl}`);
+        console.log(`[Generation ${generationId}] I2V mode with existing reference image: ${params.referenceImageUrl.slice(0, 80)}...`);
       } else {
-        console.log(`[Generation ${generationId}] T2V mode (text only)`);
+        console.log(`[Generation ${generationId}] T2V mode (text only - no image provided)`);
       }
 
       const veoParams: VeoGenerationParams = {
@@ -587,6 +617,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Start async video generation
+    console.log(`[Generation] Starting video generation with params:`, {
+      hasPreviewBase64: !!preview_image_base64,
+      hasPreviewUrl: !!preview_image_url,
+      enableI2V: enable_i2v,
+      hasImageDescription: !!image_description,
+    });
+
     startVideoGeneration(generation.id, campaignId, {
       prompt,
       negativePrompt: negative_prompt,
@@ -600,6 +637,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       imageDescription: image_description,
       // Pre-generated preview image (skip image generation step)
       previewImageBase64: preview_image_base64,
+      previewImageUrl: preview_image_url,  // NEW: Pass URL for campaign assets
     });
 
     return NextResponse.json(
