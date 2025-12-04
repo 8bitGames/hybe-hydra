@@ -5,6 +5,7 @@ import { type Language } from "@/lib/i18n/landing";
 import { Navigation } from "@/components/landing/navigation";
 import { HeroSection } from "@/components/landing/hero-section";
 import { ProblemSection } from "@/components/landing/problem-section";
+import { PoweredBySection } from "@/components/landing/powered-by-section";
 import { FeaturesSection } from "@/components/landing/features-section";
 import { HowItWorksSection } from "@/components/landing/how-it-works";
 import { UseCasesSection } from "@/components/landing/use-cases";
@@ -20,6 +21,7 @@ export default function Home() {
       <Navigation lang={lang} onLanguageChange={setLang} />
       <HeroSection lang={lang} />
       <ProblemSection lang={lang} />
+      <PoweredBySection />
       <FeaturesSection lang={lang} />
       <HowItWorksSection lang={lang} />
       <UseCasesSection lang={lang} />
