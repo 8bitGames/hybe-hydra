@@ -86,6 +86,37 @@ export interface AssetStats {
   total: number;
 }
 
+// Merchandise Types
+export interface MerchandiseItem {
+  id: string;
+  name: string;
+  name_ko: string | null;
+  artist_id: string | null;
+  artist: {
+    id: string;
+    name: string;
+    stage_name: string | null;
+    group_name: string | null;
+  } | null;
+  type: "album" | "photocard" | "lightstick" | "apparel" | "accessory" | "other";
+  description: string | null;
+  s3_url: string;
+  thumbnail_url: string | null;
+  file_size: number | null;
+  release_date: string | null;
+  metadata: Record<string, unknown> | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface MerchandiseList {
+  items: MerchandiseItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
 // Artists API
 export const artistsApi = {
   getAll: () => api.get<Artist[]>("/api/v1/artists"),
@@ -205,4 +236,29 @@ export const assetsApi = {
   },
 
   delete: (id: string) => api.delete(`/api/v1/assets/${id}`),
+};
+
+// Merchandise API
+export const merchandiseApi = {
+  getAll: (params?: {
+    page?: number;
+    page_size?: number;
+    artist_id?: string;
+    type?: string;
+    search?: string;
+    active_only?: boolean;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set("page", params.page.toString());
+    if (params?.page_size) searchParams.set("page_size", params.page_size.toString());
+    if (params?.artist_id) searchParams.set("artist_id", params.artist_id);
+    if (params?.type) searchParams.set("type", params.type);
+    if (params?.search) searchParams.set("search", params.search);
+    if (params?.active_only !== undefined) searchParams.set("active_only", params.active_only.toString());
+
+    const query = searchParams.toString();
+    return api.get<MerchandiseList>(`/api/v1/merchandise${query ? `?${query}` : ""}`);
+  },
+
+  getById: (id: string) => api.get<MerchandiseItem>(`/api/v1/merchandise/${id}`),
 };

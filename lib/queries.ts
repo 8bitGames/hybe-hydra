@@ -6,11 +6,14 @@ import {
   campaignsApi,
   artistsApi,
   assetsApi,
+  merchandiseApi,
   Campaign,
   CampaignList,
   Artist,
   AssetList,
   AssetStats,
+  MerchandiseList,
+  MerchandiseItem,
 } from "./campaigns-api";
 import { videoApi, VideoGeneration, VideoGenerationList, VideoGenerationStatus, VideoGenerationType } from "./video-api";
 import { pipelineApi, PipelineItem, PipelineListResponse } from "./pipeline-api";
@@ -56,7 +59,15 @@ export const queryKeys = {
   trendsList: ["trends", "list"] as const,
   savedTrends: ["trends", "saved"] as const,
   trendingVideos: (hashtags?: string[]) => ["trends", "trending", hashtags] as const,
-  liveTrending: (keywords?: string[]) => ["trends", "live", keywords] as const,
+  liveTrending: () => ["trends", "live"] as const,
+  keywordAnalysis: (keywords: string[]) => ["trends", "keyword-analysis", keywords] as const,
+  keywordHistory: (params?: { limit?: number; offset?: number }) => ["trends", "keyword-history", params] as const,
+
+  // Merchandise
+  merchandise: ["merchandise"] as const,
+  merchandiseList: (params?: { artist_id?: string; type?: string }) =>
+    ["merchandise", "list", params] as const,
+  merchandiseItem: (id: string) => ["merchandise", id] as const,
 };
 
 // Dashboard Stats
@@ -312,6 +323,43 @@ export function useDeleteAsset() {
       queryClient.invalidateQueries({ queryKey: queryKeys.assets(variables.campaignId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.assetsStats(variables.campaignId) });
     },
+  });
+}
+
+// Merchandise
+export function useMerchandise(params?: {
+  artist_id?: string;
+  type?: string;
+  page?: number;
+  page_size?: number;
+  search?: string;
+  active_only?: boolean;
+}) {
+  return useQuery({
+    queryKey: queryKeys.merchandiseList({ artist_id: params?.artist_id, type: params?.type }),
+    queryFn: async () => {
+      const response = await merchandiseApi.getAll(params);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data!;
+    },
+    enabled: !!params?.artist_id, // Only fetch when artist_id is provided
+    staleTime: 5 * 60 * 1000, // 5 minutes - merchandise doesn't change often
+  });
+}
+
+export function useMerchandiseItem(id: string) {
+  return useQuery({
+    queryKey: queryKeys.merchandiseItem(id),
+    queryFn: async () => {
+      const response = await merchandiseApi.getById(id);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data!;
+    },
+    enabled: !!id,
   });
 }
 
@@ -619,18 +667,11 @@ export interface TrendingVideosResponse {
 export interface LiveTrendingResponse {
   success: boolean;
   videos: TrendingVideo[];
-  availableHashtags: Array<{
-    query: string;
-    videoCount: number;
-    totalPlayCount: number;
-    lastUpdated: string | null;
-  }>;
   total: number;
   cache: {
     ageHours: number;
     maxAgeHours: number;
     refreshed: boolean;
-    keywords: string[];
   };
 }
 
@@ -664,18 +705,14 @@ export function useTrendingVideos(params?: {
 
 // Live Trending - fetches fresh data from RapidAPI with 24h cache
 export function useLiveTrending(params?: {
-  keywords?: string[];
   limit?: number;
   forceRefresh?: boolean;
 }) {
   return useQuery({
-    queryKey: queryKeys.liveTrending(params?.keywords),
+    queryKey: queryKeys.liveTrending(),
     queryFn: async (): Promise<LiveTrendingResponse> => {
       const searchParams = new URLSearchParams();
       if (params?.limit) searchParams.set("limit", params.limit.toString());
-      if (params?.keywords && params.keywords.length > 0) {
-        searchParams.set("keywords", params.keywords.join(","));
-      }
       if (params?.forceRefresh) {
         searchParams.set("refresh", "true");
       }
@@ -693,6 +730,202 @@ export function useLiveTrending(params?: {
     },
     staleTime: 24 * 60 * 60 * 1000, // 24 hours - matches API cache
     gcTime: 25 * 60 * 60 * 1000, // 25 hours garbage collection
+  });
+}
+
+// Keyword Analysis Types
+interface AnalyzedVideo {
+  id: string;
+  videoUrl: string;
+  thumbnailUrl: string | null;
+  description: string;
+  author: {
+    id: string;
+    name: string;
+    avatar?: string;
+  };
+  stats: {
+    playCount: number;
+    likeCount: number;
+    commentCount: number;
+    shareCount: number;
+  };
+  hashtags: string[];
+  engagementRate: number;
+  likeToViewRatio: number;
+  rank: number;
+}
+
+interface HashtagInsight {
+  tag: string;
+  count: number;
+  avgEngagement: number;
+  avgViews: number;
+  topVideoId: string;
+}
+
+interface ContentPattern {
+  pattern: string;
+  count: number;
+  examples: string[];
+}
+
+export interface KeywordAnalysis {
+  keyword: string;
+  totalVideos: number;
+  analyzedAt: string;
+  error?: string;
+  aggregateStats: {
+    totalViews: number;
+    totalLikes: number;
+    totalComments: number;
+    totalShares: number;
+    avgViews: number;
+    avgLikes: number;
+    avgComments: number;
+    avgShares: number;
+    avgEngagementRate: number;
+    medianViews: number;
+    medianEngagementRate: number;
+  };
+  performanceTiers: {
+    viral: AnalyzedVideo[];
+    highPerforming: AnalyzedVideo[];
+    average: AnalyzedVideo[];
+    belowAverage: AnalyzedVideo[];
+  };
+  hashtagInsights: {
+    topHashtags: HashtagInsight[];
+    hashtagCombos: { combo: string[]; count: number; avgEngagement: number }[];
+    recommendedHashtags: string[];
+  };
+  contentPatterns: {
+    avgDescriptionLength: number;
+    commonPhrases: ContentPattern[];
+    callToActions: ContentPattern[];
+    emojiUsage: { emoji: string; count: number }[];
+  };
+  creatorInsights: {
+    topCreators: {
+      id: string;
+      name: string;
+      videoCount: number;
+      avgEngagement: number;
+      totalViews: number;
+    }[];
+    uniqueCreators: number;
+  };
+  recommendations: {
+    optimalHashtagCount: number;
+    suggestedHashtags: string[];
+    contentTips: string[];
+    engagementBenchmarks: {
+      toGoViral: string;
+      toBeHighPerforming: string;
+      averagePerformance: string;
+    };
+  };
+  aiInsights?: {
+    summary: string;
+    contentStrategy: string[];
+    hashtagStrategy: string[];
+    captionTemplates: string[];
+    videoIdeas: string[];
+    bestPostingAdvice: string;
+    audienceInsights: string;
+    trendPrediction: string;
+  };
+  videos: AnalyzedVideo[];
+}
+
+export interface KeywordAnalysisResponse {
+  success: boolean;
+  keywords: string[];
+  analyses: KeywordAnalysis[];
+  analyzedAt: string;
+}
+
+// Keyword Analysis Hook - fetches and analyzes trending videos for keywords
+export function useKeywordAnalysis(params: {
+  keywords: string[];
+  limit?: number;
+  enabled?: boolean;
+}) {
+  return useQuery({
+    queryKey: queryKeys.keywordAnalysis(params.keywords),
+    queryFn: async (): Promise<KeywordAnalysisResponse> => {
+      const searchParams = new URLSearchParams();
+      searchParams.set("keywords", params.keywords.join(","));
+      if (params.limit) searchParams.set("limit", params.limit.toString());
+
+      const response = await api.get<KeywordAnalysisResponse>(
+        `/api/v1/trends/keyword-analysis?${searchParams.toString()}`
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    enabled: params.enabled !== false && params.keywords.length > 0,
+    staleTime: 30 * 60 * 1000, // 30 minutes
+    gcTime: 60 * 60 * 1000, // 1 hour
+  });
+}
+
+// Keyword History Types
+export interface KeywordHistoryItem {
+  id: string;
+  keyword: string;
+  platform: string;
+  totalVideos: number;
+  avgViews: number;
+  avgEngagementRate: number;
+  recommendedHashtags: string[];
+  analyzedAt: string;
+  expiresAt: string;
+  isExpired: boolean;
+  aiSummary: string | null;
+}
+
+export interface KeywordHistoryResponse {
+  success: boolean;
+  history: KeywordHistoryItem[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
+// Keyword History Hook - fetches past keyword analyses
+export function useKeywordHistory(params?: {
+  limit?: number;
+  offset?: number;
+  enabled?: boolean;
+}) {
+  return useQuery({
+    queryKey: queryKeys.keywordHistory(params),
+    queryFn: async (): Promise<KeywordHistoryResponse> => {
+      const searchParams = new URLSearchParams();
+      if (params?.limit) searchParams.set("limit", params.limit.toString());
+      if (params?.offset) searchParams.set("offset", params.offset.toString());
+
+      const query = searchParams.toString();
+      const response = await api.get<KeywordHistoryResponse>(
+        `/api/v1/trends/keyword-history${query ? `?${query}` : ""}`
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    enabled: params?.enabled !== false,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
 
@@ -721,6 +954,10 @@ export function useInvalidateQueries() {
       queryClient.invalidateQueries({ queryKey: ["trends", "trending"] }),
     invalidateLiveTrending: () =>
       queryClient.invalidateQueries({ queryKey: ["trends", "live"] }),
+    invalidateKeywordAnalysis: () =>
+      queryClient.invalidateQueries({ queryKey: ["trends", "keyword-analysis"] }),
+    invalidateKeywordHistory: () =>
+      queryClient.invalidateQueries({ queryKey: ["trends", "keyword-history"] }),
     invalidateAll: () => queryClient.invalidateQueries(),
   };
 }

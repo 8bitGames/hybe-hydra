@@ -391,7 +391,6 @@ export async function generateVideoWithVertexAI(
     }
 
     const gcsUri = videos[0].gcsUri;
-    let videoUrl = gcsUri;
 
     // If it's a GCS URI and we have a campaign, download and re-upload to our S3
     if (gcsUri.startsWith("gs://") && campaignId) {
@@ -402,7 +401,7 @@ export async function generateVideoWithVertexAI(
 
     return {
       success: true,
-      videoUrl,
+      videoUrl: gcsUri,
       operationName,
       metadata: {
         duration: params.durationSeconds || 8,

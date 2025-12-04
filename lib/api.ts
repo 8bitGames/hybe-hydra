@@ -192,9 +192,9 @@ class ApiClient {
   }
 
   // POST request
-  async post<T>(
+  async post<T, B = Record<string, unknown>>(
     endpoint: string,
-    body?: Record<string, unknown>
+    body?: B
   ): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: "POST",

@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
 import {
   LayoutGrid,
   Sparkles,
@@ -27,15 +28,21 @@ import {
   Image,
   Library,
   Film,
+  Search,
+  Lightbulb,
+  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { useWorkflowStore } from "@/lib/stores/workflow-store";
 
 interface NavItem {
   name: { ko: string; en: string };
   href?: string;
   icon: React.ComponentType<{ className?: string }>;
   description?: { ko: string; en: string };
+  badge?: { ko: string; en: string };
+  isWorkflow?: boolean;
   items?: {
     name: { ko: string; en: string };
     href: string;
@@ -44,7 +51,40 @@ interface NavItem {
   }[];
 }
 
-const navigationItems: NavItem[] = [
+// Workflow items - main 4-stage flow
+const workflowItems: NavItem[] = [
+  {
+    name: { ko: "발견", en: "Discover" },
+    href: "/discover",
+    icon: Search,
+    description: { ko: "트렌드 검색 및 영감 수집", en: "Search trends and gather inspiration" },
+    isWorkflow: true,
+  },
+  {
+    name: { ko: "분석", en: "Analyze" },
+    href: "/analyze",
+    icon: Lightbulb,
+    description: { ko: "아이디어 정리 및 AI 브리프 생성", en: "Organize ideas and AI brief" },
+    isWorkflow: true,
+  },
+  {
+    name: { ko: "생성", en: "Create" },
+    href: "/create",
+    icon: Sparkles,
+    description: { ko: "AI 영상 또는 컴포즈 영상 생성", en: "Generate AI or compose videos" },
+    isWorkflow: true,
+  },
+  {
+    name: { ko: "발행", en: "Publish" },
+    href: "/publish",
+    icon: Send,
+    description: { ko: "SNS 채널에 스케줄 발행", en: "Schedule and publish to SNS" },
+    isWorkflow: true,
+  },
+];
+
+// Secondary navigation items
+const secondaryItems: NavItem[] = [
   {
     name: { ko: "대시보드", en: "Dashboard" },
     href: "/dashboard",
@@ -54,30 +94,6 @@ const navigationItems: NavItem[] = [
     name: { ko: "캠페인", en: "Campaigns" },
     href: "/campaigns",
     icon: FolderOpen,
-  },
-  {
-    name: { ko: "만들기", en: "Create" },
-    icon: Sparkles,
-    items: [
-      {
-        name: { ko: "빠른 생성", en: "Quick Create" },
-        href: "/create?mode=quick",
-        icon: Zap,
-        description: { ko: "1클릭 빠른 영상 생성", en: "One-click fast video creation" },
-      },
-      {
-        name: { ko: "AI 영상", en: "AI Video" },
-        href: "/create?mode=generate",
-        icon: Bot,
-        description: { ko: "텍스트로 AI 영상 생성", en: "Generate AI videos from text" },
-      },
-      {
-        name: { ko: "컴포즈 영상", en: "Compose Video" },
-        href: "/create?mode=compose",
-        icon: Wand2,
-        description: { ko: "이미지와 음악으로 제작", en: "Create with images & music" },
-      },
-    ],
   },
   {
     name: { ko: "라이브러리", en: "Library" },
@@ -101,22 +117,13 @@ const navigationItems: NavItem[] = [
         icon: Image,
         description: { ko: "업로드된 이미지 및 파일", en: "Uploaded images and files" },
       },
+      {
+        name: { ko: "파이프라인", en: "Pipeline" },
+        href: "/pipeline",
+        icon: Layers,
+        description: { ko: "생성 작업 현황", en: "Generation job status" },
+      },
     ],
-  },
-  {
-    name: { ko: "트렌드", en: "Trends" },
-    href: "/trends",
-    icon: TrendingUp,
-  },
-  {
-    name: { ko: "파이프라인", en: "Pipeline" },
-    href: "/pipeline",
-    icon: Layers,
-  },
-  {
-    name: { ko: "발행", en: "Publishing" },
-    href: "/publishing",
-    icon: Send,
   },
 ];
 
@@ -129,6 +136,7 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
   const pathname = usePathname();
   const { language } = useI18n();
   const isKorean = language === "ko";
+  const currentStage = useWorkflowStore((state) => state.currentStage);
 
   const isActive = (href?: string, items?: NavItem["items"]) => {
     if (href) {
@@ -159,10 +167,43 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
     return false;
   };
 
+  // Check if current path is part of workflow
+  const isInWorkflow = workflowItems.some((item) => isActive(item.href));
+
   if (mobile) {
     return (
       <nav className={cn("flex flex-col gap-1", className)}>
-        {navigationItems.map((item) => (
+        {/* Workflow Section */}
+        <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          {isKorean ? "워크플로우" : "Workflow"}
+        </div>
+        <div className="flex flex-col gap-1 mb-4">
+          {workflowItems.map((item, index) => (
+            <div key={isKorean ? item.name.ko : item.name.en} className="flex items-center">
+              <Link href={item.href!} className="flex-1">
+                <Button
+                  variant={isActive(item.href) ? "secondary" : "ghost"}
+                  className={cn(
+                    "w-full justify-start gap-2 text-base font-semibold",
+                    isActive(item.href) && "bg-zinc-100 dark:bg-zinc-800"
+                  )}
+                >
+                  <item.icon className="h-5 w-5" />
+                  {isKorean ? item.name.ko : item.name.en}
+                </Button>
+              </Link>
+              {index < workflowItems.length - 1 && (
+                <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Secondary Section */}
+        <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          {isKorean ? "메뉴" : "Menu"}
+        </div>
+        {secondaryItems.map((item) => (
           <div key={isKorean ? item.name.ko : item.name.en}>
             {item.href ? (
               <Link href={item.href}>
@@ -176,7 +217,7 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
               </Link>
             ) : (
               <>
-                <div className="px-3 py-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <div className="px-3 py-2 text-sm font-semibold text-muted-foreground flex items-center gap-2">
                   <item.icon className="h-5 w-5" />
                   {isKorean ? item.name.ko : item.name.en}
                 </div>
@@ -202,16 +243,45 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
   }
 
   return (
-    <nav className={cn("flex items-center gap-2", className)}>
-      {navigationItems.map((item) => {
+    <nav className={cn("flex items-center gap-1", className)}>
+      {/* Workflow Navigation - Primary */}
+      <div className="flex items-center gap-0.5 px-2 py-1 bg-zinc-100 dark:bg-zinc-900 rounded-lg">
+        {workflowItems.map((item, index) => (
+          <div key={isKorean ? item.name.ko : item.name.en} className="flex items-center">
+            <Link href={item.href!}>
+              <Button
+                variant={isActive(item.href) ? "secondary" : "ghost"}
+                size="sm"
+                className={cn(
+                  "gap-1.5 text-sm font-medium h-8",
+                  isActive(item.href) && "bg-white dark:bg-zinc-800 shadow-sm"
+                )}
+              >
+                <item.icon className="h-4 w-4" />
+                {isKorean ? item.name.ko : item.name.en}
+              </Button>
+            </Link>
+            {index < workflowItems.length - 1 && (
+              <ArrowRight className="h-3 w-3 text-muted-foreground mx-0.5" />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Divider */}
+      <div className="h-6 w-px bg-border mx-2" />
+
+      {/* Secondary Navigation */}
+      {secondaryItems.map((item) => {
         if (item.href) {
           return (
             <Link key={isKorean ? item.name.ko : item.name.en} href={item.href}>
               <Button
                 variant={isActive(item.href) ? "secondary" : "ghost"}
-                className="gap-2 text-base font-semibold"
+                size="sm"
+                className="gap-1.5 text-sm font-medium h-8"
               >
-                <item.icon className="h-5 w-5" />
+                <item.icon className="h-4 w-4" />
                 {isKorean ? item.name.ko : item.name.en}
               </Button>
             </Link>
@@ -223,15 +293,18 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
             <DropdownMenuTrigger asChild>
               <Button
                 variant={isActive(undefined, item.items) ? "secondary" : "ghost"}
-                className="gap-2 text-base font-semibold"
+                size="sm"
+                className="gap-1.5 text-sm font-medium h-8"
               >
-                <item.icon className="h-5 w-5" />
+                <item.icon className="h-4 w-4" />
                 {isKorean ? item.name.ko : item.name.en}
-                <ChevronDown className="h-4 w-4 opacity-50" />
+                <ChevronDown className="h-3 w-3 opacity-50" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel className="text-base font-semibold">{isKorean ? item.name.ko : item.name.en}</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-sm font-semibold">
+                {isKorean ? item.name.ko : item.name.en}
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
               {item.items?.map((subItem) => (
                 <DropdownMenuItem key={subItem.href} asChild>
@@ -239,10 +312,12 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
                     href={subItem.href}
                     className="flex items-start gap-3 cursor-pointer"
                   >
-                    <subItem.icon className="h-5 w-5 mt-0.5 shrink-0" />
+                    <subItem.icon className="h-4 w-4 mt-0.5 shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-base font-semibold">{isKorean ? subItem.name.ko : subItem.name.en}</div>
-                      <div className="text-sm text-muted-foreground">
+                      <div className="text-sm font-medium">
+                        {isKorean ? subItem.name.ko : subItem.name.en}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
                         {isKorean ? subItem.description.ko : subItem.description.en}
                       </div>
                     </div>

@@ -32,10 +32,22 @@ import {
   Palette,
   Video,
   FileText,
+  TrendingUp,
+  Eye,
+  Heart,
+  Zap,
+  Hash,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CampaignSelector } from "./CampaignSelector";
 import { videoAnalysisApi, VideoAnalysisResult } from "@/lib/video-api";
+import {
+  getTrendContext,
+  clearTrendContext,
+  generatePromptFromContext,
+  getSuggestedHashtags,
+  TrendVideoContext,
+} from "@/lib/trend-context";
 
 const generateSteps = [
   {
@@ -90,16 +102,51 @@ export function GenerateMode({ className }: GenerateModeProps) {
 
   const [selectedCampaign, setSelectedCampaign] = useState<string>("");
 
+  // Trend context state (from TikTok trending or keyword analysis)
+  const [trendContext, setTrendContext] = useState<TrendVideoContext | null>(null);
+
   // TikTok analysis state
   const [tiktokUrl, setTiktokUrl] = useState("");
 
-  // Pre-fill TikTok URL from query param (from dashboard trending click)
+  // Load trend context when coming from trend tile
+  useEffect(() => {
+    const fromTrend = searchParams.get("from_trend");
+    if (fromTrend === "true") {
+      const context = getTrendContext();
+      if (context) {
+        setTrendContext(context);
+        // Pre-fill the TikTok URL with the trend video URL
+        if (context.video.url) {
+          setTiktokUrl(context.video.url);
+        }
+        // Store suggested prompt for campaign generate page
+        const suggestedPrompt = generatePromptFromContext(context);
+        if (suggestedPrompt) {
+          sessionStorage.setItem("tiktok_analysis_prompt", suggestedPrompt);
+          // Store hashtags for later use
+          const hashtags = getSuggestedHashtags(context);
+          sessionStorage.setItem("trend_hashtags", JSON.stringify(hashtags));
+        }
+      }
+    }
+  }, [searchParams]);
+
+  // Pre-fill TikTok URL from query param (from dashboard trending click - legacy)
   useEffect(() => {
     const urlParam = searchParams.get("tiktok_url");
     if (urlParam) {
       setTiktokUrl(decodeURIComponent(urlParam));
     }
   }, [searchParams]);
+
+  // Clear trend context when leaving
+  const handleClearTrendContext = () => {
+    setTrendContext(null);
+    clearTrendContext();
+    setTiktokUrl("");
+    sessionStorage.removeItem("tiktok_analysis_prompt");
+    sessionStorage.removeItem("trend_hashtags");
+  };
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<VideoAnalysisResult | null>(null);
   const [analysisError, setAnalysisError] = useState("");
@@ -156,8 +203,111 @@ export function GenerateMode({ className }: GenerateModeProps) {
     }
   };
 
+  // Format count helper
+  const formatCount = (num: number | null | undefined): string => {
+    if (num === null || num === undefined) return "-";
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+    return num.toLocaleString();
+  };
+
   return (
     <div className={cn("space-y-8", className)}>
+      {/* Trend Context Banner - shown when coming from trend tile */}
+      {trendContext && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-4">
+              {/* Thumbnail */}
+              {trendContext.video.thumbnailUrl && (
+                <div className="relative w-16 flex-shrink-0">
+                  <div className="aspect-[9/16] rounded-lg overflow-hidden bg-muted">
+                    <img
+                      src={trendContext.video.thumbnailUrl}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Info */}
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    <span className="font-semibold text-primary">
+                      {language === "ko" ? "트렌드 기반 생성" : "Trend-Based Creation"}
+                    </span>
+                    {trendContext.keyword && (
+                      <Badge variant="secondary" className="text-xs">
+                        #{trendContext.keyword}
+                      </Badge>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                    onClick={handleClearTrendContext}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <p className="text-sm text-muted-foreground line-clamp-1">
+                  @{trendContext.video.authorName}
+                  {trendContext.video.description && ` · ${trendContext.video.description}`}
+                </p>
+
+                {/* Stats Row */}
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Eye className="h-3 w-3" />
+                    {formatCount(trendContext.stats.playCount)}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Heart className="h-3 w-3" />
+                    {formatCount(trendContext.stats.likeCount)}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Zap className="h-3 w-3" />
+                    {trendContext.stats.engagementRate.toFixed(2)}%
+                  </span>
+                </div>
+
+                {/* Hashtags */}
+                {trendContext.hashtags.length > 0 && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <Hash className="h-3 w-3 text-muted-foreground" />
+                    {trendContext.hashtags.slice(0, 5).map((tag) => (
+                      <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0">
+                        {tag}
+                      </Badge>
+                    ))}
+                    {trendContext.hashtags.length > 5 && (
+                      <span className="text-[10px] text-muted-foreground">
+                        +{trendContext.hashtags.length - 5}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* AI Insights hint */}
+                {trendContext.aiInsights && (
+                  <p className="text-xs text-primary/80 flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" />
+                    {language === "ko"
+                      ? "AI 인사이트가 프롬프트에 반영됩니다"
+                      : "AI insights will be applied to prompt"}
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Two column layout for desktop */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
         {/* Left Column - How It Works */}

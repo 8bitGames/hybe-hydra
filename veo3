@@ -1,0 +1,748 @@
+
+       Veo 3 / Vertex AI Video Generation Integration - Complete 
+       Analysis
+
+       I've conducted a thorough search of the codebase and found
+       comprehensive Veo 3 integration. Here's the complete technical
+       breakdown:
+
+       ---
+       1. Primary Integration File
+
+       File: /Users/paksungho/hybe-hydra/lib/veo.ts
+
+       This is the main video generation service using Google Gen AI
+       SDK.
+
+       ---
+       2. API/SDK Configuration
+
+       SDK Used: Google Gen AI SDK (via @google/genai package v1.30.0)
+
+       Environment Variables:
+       - GOOGLE_AI_API_KEY - Primary API key for Google Gen AI
+       (configured in .env)
+       - GOOGLE_CLOUD_PROJECT - GCP project ID (optional, for Vertex AI
+        fallback)
+       - VERTEX_AI_LOCATION - Vertex AI location (default: us-central1)
+       - GOOGLE_ACCESS_TOKEN - Access token for Vertex AI enterprise
+       mode
+       - VEO_MOCK_MODE - Enable mock mode for development (default:
+       false if API key present)
+       - VEO_FALLBACK_TO_MOCK - Fallback to mock mode on errors
+
+       Initialization Code (lib/veo.ts, lines 10-16):
+       const getClient = () => {
+         const apiKey = process.env.GOOGLE_AI_API_KEY;
+         if (!apiKey) {
+           throw new Error("GOOGLE_AI_API_KEY is not configured");
+         }
+         return new GoogleGenAI({ apiKey });
+       };
+
+       ---
+       3. Supported Models
+
+       Type Definition (lib/veo.ts, line 19):
+       export type VeoModel = "veo-3.1-fast-generate-preview" |
+       "veo-3.1-generate-preview" | "veo-2.0-generate-001";
+
+       Default model: veo-3.1-generate-preview
+
+       ---
+       4. Complete Generation Parameters
+
+       VeoGenerationParams Interface (lib/veo.ts, lines 22-34):
+       export interface VeoGenerationParams {
+         prompt: string;                      // Main video description
+         negativePrompt?: string;             // What NOT to generate
+         durationSeconds?: number;            // Video duration 
+       (default: 8 seconds)
+         aspectRatio?: "16:9" | "9:16" | "1:1";  // Video aspect ratio
+         referenceImageUrl?: string;          // Image-to-Video (I2V) 
+       mode - from URL
+         referenceImageBase64?: string;       // Image-to-Video (I2V) 
+       mode - base64 encoded
+         style?: string;                      // Style guidance
+         model?: VeoModel;                    // Which Veo model to use
+         resolution?: "720p" | "1080p";       // Output resolution
+         sampleCount?: number;                // Number of variations
+         seed?: number;                       // Reproducibility seed
+       }
+
+       ---
+       5. Complete Generation Flow
+
+       Main Function: generateVideo() (lib/veo.ts, lines 64-279)
+
+       Flow Diagram:
+
+       Input: VeoGenerationParams
+         ↓
+       1. Check Mock Mode (line 68-72)
+          - If VEO_MOCK_MODE=true or no API key → return mock video
+         ↓
+       2. Initialize Google Gen AI Client (line 75)
+         ↓
+       3. Build Configuration Object (lines 82-102)
+          - Negative prompt
+          - Aspect ratio
+          - Resolution
+          - Sample count
+          - Seed
+         ↓
+       4. Handle Reference Image (lines 104-133)
+          - If Base64 provided → use directly (I2V mode)
+          - If URL provided → fetch and convert to Base64
+          - If neither → T2V mode (text-only)
+         ↓
+       5. Call generateVideos() (line 153)
+          - ai.models.generateVideos(generateOptions)
+          - Returns operation object with name
+         ↓
+       6. Poll for Completion (lines 163-182)
+          - Poll interval: 10 seconds
+          - Max wait: 10 minutes
+          - Use ai.operations.getVideosOperation()
+          - Check operation.done flag
+         ↓
+       7. Check Results (lines 186-206)
+          - Check RAI (Responsible AI) filtering
+          - Check for errors
+          - Extract generated video
+         ↓
+       8. Upload to S3 (lines 212-250)
+          - If video.video.videoBytes → upload base64 to S3
+          - If video.video.uri → download and upload to S3
+          - Or use URI directly if no campaignId
+         ↓
+       Output: VeoGenerationResult {
+         success: boolean
+         videoUrl?: string
+         operationName?: string (for status polling)
+         error?: string
+         metadata: { duration, resolution, format, model }
+       }
+
+       ---
+       6. Generate Call Details
+
+       Lines 137-151 (generateVideos() call):
+       const generateOptions: any = {
+         model,                              // Model selection
+         prompt: buildVideoPrompt(params),   // Processed prompt
+         config: {
+           ...config,
+           numberOfVideos: 1,
+           // Note: personGeneration options not supported in current 
+       API
+         },
+       };
+
+       if (imageInput) {
+         generateOptions.image = imageInput;  // For I2V mode
+       }
+
+       let operation = await (ai.models as
+       any).generateVideos(generateOptions);
+
+       ---
+       7. Polling Mechanism
+
+       Lines 158-182 (Long-running Operation Polling):
+       const maxWaitTime = 10 * 60 * 1000;    // 10 minutes max
+       const pollInterval = 10 * 1000;        // 10 seconds between 
+       polls
+       const startTime = Date.now();
+
+       while (!operation.done) {
+         if (Date.now() - startTime > maxWaitTime) {
+           throw new Error("Video generation timed out after 10 
+       minutes");
+         }
+
+         await sleep(pollInterval);
+
+         operation = await (ai.operations as any).getVideosOperation({
+           operation,
+         });
+       }
+
+       Status Check Points:
+       - operation.done - Indicates completion
+       - operation.response - Success data
+       - operation.error - Error message
+       - operation.metadata - Operation metadata
+
+       ---
+       8. Response Structure
+
+       VeoGenerationResult Interface (lib/veo.ts, lines 36-47):
+       export interface VeoGenerationResult {
+         success: boolean;
+         videoUrl?: string;                  // Final S3 URL or direct 
+       URI
+         operationName?: string;             // For tracking/polling 
+       later
+         error?: string;                     // Error message if failed
+         metadata?: {
+           duration: number;
+           resolution: string;               // "1920x1080" format
+           format: string;                   // "mp4"
+           model: string;                    // Model used
+         };
+       }
+
+       ---
+       9. Image-to-Video (I2V) Implementation
+
+       Image Handling (lines 104-134):
+
+       // Option 1: Direct Base64
+       if (params.referenceImageBase64) {
+         imageInput = {
+           imageBytes: params.referenceImageBase64,
+           mimeType: "image/png",
+         };
+       }
+
+       // Option 2: Fetch from URL and convert
+       else if (params.referenceImageUrl) {
+         const imageBase64 = await
+       fetchImageAsBase64(params.referenceImageUrl);
+         const mimeType =
+       detectImageMimeType(params.referenceImageUrl);
+         imageInput = {
+           imageBytes: imageBase64,
+           mimeType,
+         };
+       }
+
+       // Option 3: Text-only (T2V)
+       else {
+         // No imageInput set
+       }
+
+       Image Fetch Helper (lines 569-588):
+       async function fetchImageAsBase64(imageUrl: string): 
+       Promise<string | null> {
+         const response = await fetch(imageUrl);
+         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+         const arrayBuffer = await response.arrayBuffer();
+         const buffer = Buffer.from(arrayBuffer);
+         const base64 = buffer.toString("base64");
+
+         return base64;
+       }
+
+       ---
+       10. Vertex AI Alternative Implementation
+
+       Function: generateVideoWithVertexAI() (lib/veo.ts, lines 
+       284-421)
+
+       Enterprise/GCP-native approach using REST API:
+
+       const endpoint = `https://${location}-aiplatform.googleapis.com/
+       v1/projects/${projectId}/locations/${location}/publishers/google
+       /models/${modelId}:predictLongRunning`;
+
+       // POST request body
+       const requestBody = {
+         instances: [{
+           prompt: buildVideoPrompt(params),
+           referenceImages: [{  // For I2V
+             image: {
+               bytesBase64Encoded: base64,
+               mimeType: "image/png",
+             },
+             referenceType: "asset",
+           }],
+         }],
+         parameters: {
+           durationSeconds: params.durationSeconds || 8,
+           aspectRatio: params.aspectRatio || "16:9",
+           negativePrompt?: string,
+           resolution?: string,
+           sampleCount?: number,
+           seed?: number,
+           personGeneration: "allow_adult",
+         },
+       };
+
+       // Long-running operation polling similar to Gen AI SDK
+
+       ---
+       11. Status Checking Function
+
+       Function: checkGenerationStatus() (lib/veo.ts, lines 489-533)
+
+       For tracking async operations:
+
+       export async function checkGenerationStatus(
+         operationName: string
+       ): Promise<VeoJobStatus> {
+         // Returns: { status: 
+       "pending"|"processing"|"completed"|"failed", progress: 0-100, 
+       videoUrl?, error? }
+
+         const operation = await (ai.operations as any).get({ name:
+       operationName });
+
+         if (operation.done) {
+           return {
+             status: "completed",
+             progress: 100,
+             videoUrl:
+       operation.response?.generatedVideos?.[0]?.video?.uri,
+           };
+         }
+
+         return { status: "processing", progress: 50 };
+       }
+
+       ---
+       12. Batch Video Generation
+
+       Function: batchGenerateVideos() (lib/veo.ts, lines 538-557)
+
+       export async function batchGenerateVideos(
+         baseParams: VeoGenerationParams,
+         styleVariants: Array<{ name: string; modifier: string }>,
+         campaignId?: string
+       ): Promise<Array<{ style: string; result: VeoGenerationResult
+       }>>
+
+       Generates multiple videos with different style modifiers in
+       parallel.
+
+       ---
+       13. Integration Points in API Routes
+
+       1. Campaign Generations Route (/Users/paksungho/hybe-hydra/app/a
+       pi/v1/campaigns/[id]/generations/route.ts)
+
+       - POST - Creates new video generation with full pipeline:
+         - Step 1: Analyze audio (if audio provided)
+         - Step 2: I2V Mode - Generate image with Gemini + Imagen, then
+        optimize with video prompt
+         - Step 3: Call generateVideo(veoParams, campaignId)
+         - Step 4: Compose with audio using composeWithOptimalAudio()
+       - GET - List all generations for campaign
+
+       Key Flow (lines 17-310):
+       async function startVideoGeneration(
+         generationId: string,
+         campaignId: string,
+         params: { prompt, audioUrl, enableI2V?, imageDescription?, ...
+        }
+       ) {
+         // Async background job - doesn't await in response
+
+         // 1. Audio analysis
+         audioAnalysis = await analyzeAudio(params.audioUrl);
+
+         // 2. I2V: Generate image with Gemini + Imagen
+         if (params.enableI2V && params.imageDescription) {
+           generatedImageBase64 = await generateImage(geminiPrompt);
+           geminiVideoPrompt = await generateVideoPromptForI2V(...);
+         }
+
+         // 3. Call VEO
+         result = await generateVideo(veoParams, campaignId);
+
+         // 4. Compose with audio
+         composeResult = await composeWithOptimalAudio({
+           videoUrl: result.videoUrl,
+           audioUrl: params.audioUrl,
+           ...
+         });
+       }
+
+       2. Quick Create Route
+       (/Users/paksungho/hybe-hydra/app/api/v1/quick-create/route.ts)
+
+       - Similar flow but without audio composition
+       - Calls generateVideo(veoParams, "quick-create") for S3 folder
+       - No campaign requirement
+
+       3. Variations Route (/Users/paksungho/hybe-hydra/app/api/v1/gene
+       rations/[id]/variations/route.ts)
+
+       - Generates multiple variations with style presets
+       - Calls generateVideo() for each variation
+       - Lines 59-154: startVariationVideoGeneration()
+
+       ---
+       14. Database Storage
+
+       Prisma Model: VideoGeneration
+       (/Users/paksungho/hybe-hydra/prisma/schema.prisma, lines
+       195-252)
+
+       model VideoGeneration {
+         // Identifiers
+         id                String    @id @default(uuid())
+         campaignId        String?   // Nullable for Quick Create
+         isQuickCreate     Boolean   @default(false)
+         generationType    VideoGenerationType  // "AI" or "COMPOSE"
+
+         // Input Parameters
+         prompt            String
+         negativePrompt    String?
+         durationSeconds   Int       @default(5)
+         aspectRatio       String    @default("9:16")  // "16:9", 
+       "9:16", "1:1"
+         referenceImageId  String?
+         referenceStyle    String?
+
+         // Status Tracking
+         status            VideoGenerationStatus  // PENDING, 
+       PROCESSING, COMPLETED, FAILED
+         progress          Float     @default(0)
+         errorMessage      String?
+
+         // Vertex AI Integration
+         vertexOperationName String?  // Operation name for polling
+         vertexRequestId     String?
+
+         // Output
+         outputAssetId     String?
+         outputUrl         String?   // Direct video URL
+         qualityScore      Float?
+         qualityMetadata   Json?     // VEO metadata: {duration, 
+       resolution, format, model}
+
+         // Audio Composition
+         audioAssetId      String?
+         audioAnalysis     Json?
+         audioStartTime    Float?
+         audioDuration     Float?
+         composedOutputUrl String?   // Final video with audio
+
+         // Bridge/Context Fields
+         originalInput     String?
+         trendKeywords     String[]
+         referenceUrls     Json?
+         promptAnalysis    Json?
+         tiktokSEO         Json?
+       }
+
+       ---
+       15. S3 Upload Integration
+
+       Video Upload Functions
+       (/Users/paksungho/hybe-hydra/lib/storage.ts, lines 173-231):
+
+       export async function uploadVideoFromBase64(
+         base64Data: string,
+         campaignId: string,
+         mimeType: string = "video/mp4"
+       ): Promise<{ success: boolean; url?: string; key?: string;
+       error?: string }>
+
+       export async function uploadVideoFromUrl(
+         videoUrl: string,
+         campaignId: string
+       ): Promise<{ success: boolean; url?: string; key?: string;
+       error?: string }>
+
+       // S3 Key format: campaigns/{campaignId}/{uuid}.mp4
+       // Public URL format: 
+       https://{bucket}.s3.{region}.amazonaws.com/{key}
+
+       VEO Integration (lib/veo.ts, lines 212-250):
+       // If video bytes in response:
+       const uploadResult = await uploadVideoFromBase64(
+         video.video.videoBytes,
+         campaignId,
+         video.video.mimeType || "video/mp4"
+       );
+
+       // If video URI in response:
+       const uploadResult = await uploadVideoFromUrl(
+         downloadUrl,  // With API key auth if needed
+         campaignId
+       );
+
+       ---
+       16. Error Handling & Fallback
+
+       Error Scenarios (lib/veo.ts, lines 186-206):
+       // 1. RAI Content Filtering
+       if (operation.response?.raiMediaFilteredCount > 0) {
+         throw new Error(`Content blocked by safety filters: 
+       ${reasons}`);
+       }
+
+       // 2. Operation Error
+       if (operation.error) {
+         throw new Error(operation.error.message);
+       }
+
+       // 3. No Video Generated
+       if (!generatedVideos || generatedVideos.length === 0) {
+         throw new Error("No video generated. Check API key access and 
+       content filters.");
+       }
+
+       // 4. Fallback to Mock
+       if (process.env.VEO_FALLBACK_TO_MOCK === "true") {
+         return generateMockVideo(params);
+       }
+
+       ---
+       17. Mock Mode (Development)
+
+       Function: generateMockVideo() (lib/veo.ts, lines 454-484)
+
+       Returns sample videos from Google TV bucket for testing without
+       API calls:
+       const sampleVideos = [
+         "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBu
+       ckBunny.mp4",
+         "https://storage.googleapis.com/gtv-videos-bucket/sample/Eleph
+       antsDream.mp4",
+         // ... more samples
+       ];
+
+       Triggered by:
+       - VEO_MOCK_MODE=true environment variable
+       - Missing GOOGLE_AI_API_KEY
+       - VEO_FALLBACK_TO_MOCK=true on errors
+
+       ---
+       18. Prompt Engineering
+
+       Function: buildVideoPrompt() (lib/veo.ts, lines 426-449)
+
+       Optimizes prompts for Veo:
+       function buildVideoPrompt(params: VeoGenerationParams): string {
+         let prompt = params.prompt;
+
+         // Add style guidance
+         if (params.style) {
+           prompt = `[Style: ${params.style}] ${prompt}`;
+         }
+
+         // Add format specifications
+         const specs = [];
+         if (params.aspectRatio === "9:16") {
+           specs.push("vertical video format optimized for 
+       TikTok/Reels");
+         } else if (params.aspectRatio === "1:1") {
+           specs.push("square format for social media");
+         } else {
+           specs.push("widescreen cinematic format");
+         }
+
+         if (specs.length > 0) {
+           prompt += `. Format: ${specs.join(", ")}.`;
+         }
+
+         return prompt;
+       }
+
+       ---
+       19. Complete Example Usage Flow
+
+       From client request to final video:
+
+       POST /api/v1/campaigns/{id}/generations
+
+       Body: {
+         prompt: "K-pop idol dancing in futuristic city",
+         negative_prompt: "low quality, blurry",
+         duration_seconds: 5,
+         aspect_ratio: "9:16",
+         audio_asset_id: "audio-123",
+         enable_i2v: true,
+         image_description: "cyberpunk style character"
+       }
+
+       Backend Flow:
+       1. Create VideoGeneration record (status: PENDING)
+       2. Start async startVideoGeneration()
+       3. Return immediately with 201
+
+       Background Job:
+       1. Update to PROCESSING (progress: 5%)
+       2. Analyze audio (progress: 10%)
+       3. Generate AI image with Imagen (progress: 25%)
+       4. Generate video prompt with Gemini (progress: 30%)
+       5. Call generateVideo() to Veo API (progress: 40%)
+       6. Poll operation until done (progress: 40-70%)
+       7. Download video from Veo
+       8. Upload to S3 (progress: 70%)
+       9. Compose with audio (progress: 80-90%)
+       10. Update record with final URL (status: COMPLETED, progress: 
+       100%)
+
+       ---
+       20. Key Files Summary
+
+       | File                                             | Purpose
+                           | Lines   |
+       |--------------------------------------------------|------------
+       --------------------|---------|
+       | /lib/veo.ts                                      | Core Veo 3
+       integration         | 1-604   |
+       | /app/api/v1/campaigns/[id]/generations/route.ts  | Campaign
+       video generation API  | 1-651   |
+       | /app/api/v1/quick-create/route.ts                | Quick
+       create API (no campaign) | 1-328   |
+       | /app/api/v1/generations/[id]/variations/route.ts | Batch
+       variations API           | 1-534   |
+       | /lib/storage.ts                                  | S3 upload
+       utilities            | 1-231   |
+       | /prisma/schema.prisma                            | Database
+       model                 | 195-252 |
+
+       ---
+       This comprehensive Veo 3 integration supports:
+       - T2V (text-to-video) generation
+       - I2V (image-to-video) generation with Imagen preprocessing
+       - Full async job tracking with progress updates
+       - S3 persistent storage with public URLs
+       - Audio composition and analysis
+       - Batch/variation generation
+       - Fallback to Vertex AI or mock mode
+       - RAI (Responsible AI) safety filtering
+       - Complete database persistence
+       - Multi-aspect ratio support (16:9, 9:16, 1:1)
+
+
+
+
+
+
+
+
+
+
+  ⎿  Done (25 tool uses · 75.8k tokens · 1m 28s)
+
+⏺ Gemini Veo 3 Video Generation Process
+
+  SDK & Configuration
+
+  SDK: @google/genai (Google Gen AI SDK)
+
+  Environment Variables:
+  - GOOGLE_AI_API_KEY - Required API key
+  - VEO_MOCK_MODE - Dev mode with sample videos
+
+  Models Available:
+  "veo-3.1-fast-generate-preview"  // Faster
+  "veo-3.1-generate-preview"       // Default, higher quality
+  "veo-2.0-generate-001"           // Legacy
+
+  ---
+  Complete Flow
+
+  1. User submits prompt
+         ↓
+  2. Build parameters (prompt, aspect ratio, duration, etc.)
+         ↓
+  3. [Optional] I2V Mode: Generate image with Imagen first
+         ↓
+  4. Call ai.models.generateVideos()
+         ↓
+  5. Poll operation every 10s (max 10 min)
+         ↓
+  6. Download video bytes/URI
+         ↓
+  7. Upload to S3
+         ↓
+  8. [Optional] Compose with audio via FFmpeg/Modal
+         ↓
+  9. Return final URL
+
+  ---
+  Key Code (lib/veo.ts)
+
+  Initialization:
+  import { GoogleGenAI } from "@google/genai";
+
+  const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY
+  });
+
+  Generation Call (lines 137-153):
+  const operation = await ai.models.generateVideos({
+    model: "veo-3.1-generate-preview",
+    prompt: buildVideoPrompt(params),
+    config: {
+      aspectRatio: "9:16",      // or "16:9", "1:1"
+      resolution: "1080p",
+      numberOfVideos: 1,
+      negativePrompt: "blurry, low quality",
+    },
+    image: imageInput,          // For I2V mode (optional)
+  });
+
+  Polling (lines 158-182):
+  while (!operation.done) {
+    await sleep(10000);  // 10 seconds
+    operation = await ai.operations.getVideosOperation({ operation });
+  }
+  // Result: operation.response.generatedVideos[0].video.videoBytes
+
+  ---
+  Parameters
+
+  | Parameter            | Type                    | Default
+         | Description          |
+  |----------------------|-------------------------|-------------------
+  -------|----------------------|
+  | prompt               | string                  | required
+         | Video description    |
+  | negativePrompt       | string                  | -
+         | What NOT to generate |
+  | durationSeconds      | number                  | 8
+         | Video length         |
+  | aspectRatio          | "16:9" | "9:16" | "1:1" | "16:9"
+         | Format               |
+  | resolution           | "720p" | "1080p"        | -
+         | Output quality       |
+  | referenceImageBase64 | string                  | -
+         | I2V mode image       |
+  | model                | VeoModel                |
+  veo-3.1-generate-preview | Model selection      |
+
+  ---
+  Two Modes
+
+  1. T2V (Text-to-Video):
+  - Just provide prompt
+  - Direct video generation
+
+  2. I2V (Image-to-Video):
+  - Provide referenceImageBase64 or referenceImageUrl
+  - First frame based on image, then animates
+
+  ---
+  API Routes Using Veo
+
+  | Route                                    | Purpose
+    |
+  |------------------------------------------|-------------------------
+  --|
+  | POST /api/v1/campaigns/[id]/generations  | Full pipeline with audio
+    |
+  | POST /api/v1/quick-create                | Simple generation
+    |
+  | POST /api/v1/generations/[id]/variations | Batch with style
+  variants |
+
+  ---
+  Database Tracking
+
+  model VideoGeneration {
+    vertexOperationName  String?   // For polling
+    status               VideoGenerationStatus  // PENDING → PROCESSING
+   → COMPLETED
+    progress             Float     // 0-100
+    outputUrl            String?   // Final S3 URL
+    qualityMetadata      Json?     // {duration, resolution, model}
+  }

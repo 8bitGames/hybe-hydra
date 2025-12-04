@@ -416,6 +416,69 @@ model TrendReport {
   @@map("trend_reports")
 }
 
+// Keyword Analysis - detailed trending video analysis for a keyword
+model KeywordAnalysis {
+  id       String @id @default(uuid())
+  keyword  String
+  platform String @default("TIKTOK")
+
+  // Aggregate Stats
+  totalVideos    Int   @map("total_videos")
+  totalViews     BigInt @map("total_views")
+  totalLikes     BigInt @map("total_likes")
+  totalComments  BigInt @map("total_comments")
+  totalShares    BigInt @map("total_shares")
+  avgViews       BigInt @map("avg_views")
+  avgLikes       BigInt @map("avg_likes")
+  avgComments    BigInt @map("avg_comments")
+  avgShares      BigInt @map("avg_shares")
+  avgEngagementRate  Float @map("avg_engagement_rate")
+  medianViews        BigInt @map("median_views")
+  medianEngagementRate Float @map("median_engagement_rate")
+
+  // Performance Tiers (stored as JSON arrays of video objects)
+  viralVideos         Json @map("viral_videos")
+  highPerformingVideos Json @map("high_performing_videos")
+  averageVideos       Json @map("average_videos")
+
+  // Hashtag Insights
+  topHashtags         Json @map("top_hashtags")
+  hashtagCombos       Json @map("hashtag_combos")
+  recommendedHashtags String[] @map("recommended_hashtags")
+
+  // Content Patterns
+  avgDescriptionLength Int @map("avg_description_length")
+  commonPhrases        Json @map("common_phrases")
+  callToActions        Json @map("call_to_actions")
+  emojiUsage           Json @map("emoji_usage")
+
+  // Creator Insights
+  topCreators    Json @map("top_creators")
+  uniqueCreators Int  @map("unique_creators")
+
+  // Recommendations
+  optimalHashtagCount    Int      @map("optimal_hashtag_count")
+  suggestedHashtags      String[] @map("suggested_hashtags")
+  contentTips            String[] @map("content_tips")
+  engagementBenchmarks   Json     @map("engagement_benchmarks")
+
+  // All analyzed videos
+  allVideos Json @map("all_videos")
+
+  // AI Insights from Gemini
+  aiInsights Json? @map("ai_insights")
+
+  analyzedAt DateTime @default(now()) @map("analyzed_at")
+  expiresAt  DateTime @map("expires_at")
+
+  @@unique([platform, keyword])
+  @@index([platform])
+  @@index([keyword])
+  @@index([analyzedAt])
+  @@index([expiresAt])
+  @@map("keyword_analyses")
+}
+
 // Social Account model - stores connected social media accounts
 model SocialAccount {
   id             String          @id @default(uuid())

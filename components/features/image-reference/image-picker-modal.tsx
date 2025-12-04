@@ -127,7 +127,7 @@ export function ImagePickerModal({
           ) : (
             <div className="flex flex-col items-center justify-center py-12">
               <p className="text-muted-foreground">
-                "{searchQuery}"에 해당하는 이미지가 없습니다
+                &quot;{searchQuery}&quot;에 해당하는 이미지가 없습니다
               </p>
             </div>
           )}

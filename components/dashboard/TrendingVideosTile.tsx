@@ -20,15 +20,17 @@ import {
   Play,
   MessageCircle,
   Share2,
+  ExternalLink,
 } from "lucide-react";
 import { useLiveTrending, TrendingVideo, useInvalidateQueries } from "@/lib/queries";
 import { useI18n } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn, sanitizeUsername, sanitizeText } from "@/lib/utils";
+import { TrendVideoActionDialog } from "./TrendVideoActionDialog";
+import { TrendVideoContext } from "@/lib/trend-context";
 
 interface TrendingVideosTileProps {
   className?: string;
   maxVideos?: number;
-  defaultKeywords?: string[];
 }
 
 function formatCount(num: number | null | undefined): string {
@@ -40,18 +42,23 @@ function formatCount(num: number | null | undefined): string {
 
 function VideoCard({
   video,
-  onAnalyze,
+  onClick,
 }: {
   video: TrendingVideo;
-  onAnalyze: (url: string) => void;
+  onClick: (video: TrendingVideo) => void;
 }) {
+  const handleViewVideo = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.open(video.videoUrl, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div
-      className="group flex-shrink-0 w-[160px] cursor-pointer"
-      onClick={() => onAnalyze(video.videoUrl)}
+      className="group flex-shrink-0 w-[180px] cursor-pointer"
+      onClick={() => onClick(video)}
     >
       {/* Video Thumbnail */}
-      <div className="relative aspect-[9/16] rounded-lg overflow-hidden bg-muted mb-2">
+      <div className="relative aspect-[9/16] rounded-lg overflow-hidden bg-muted mb-3">
         {video.thumbnailUrl && (
           <img
             src={video.thumbnailUrl}
@@ -59,38 +66,42 @@ function VideoCard({
             className="w-full h-full object-cover transition-transform group-hover:scale-105"
           />
         )}
+        {/* View on TikTok button */}
+        <button
+          onClick={handleViewVideo}
+          className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-black/90 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          title="View on TikTok"
+        >
+          <ExternalLink className="h-4 w-4" />
+        </button>
         {/* Play overlay */}
         <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center">
+          <div className="w-11 h-11 rounded-full bg-white/90 flex items-center justify-center">
             <Play className="h-5 w-5 text-black fill-black ml-0.5" />
           </div>
         </div>
         {/* Views overlay */}
-        <div className="absolute bottom-2 left-2 flex items-center gap-1 text-white text-xs font-medium">
-          <Eye className="h-3 w-3" />
+        <div className="absolute bottom-2 left-2 flex items-center gap-1.5 text-white text-sm font-medium bg-black/60 px-2 py-1 rounded">
+          <Eye className="h-4 w-4" />
           {formatCount(video.playCount)}
-        </div>
-        {/* Hashtag */}
-        <div className="absolute top-2 left-2 text-white text-[10px] font-medium bg-black/50 px-1.5 py-0.5 rounded">
-          #{video.searchQuery}
         </div>
       </div>
 
       {/* Author */}
-      <p className="text-xs font-medium truncate mb-1">@{video.authorId}</p>
+      <p className="text-sm font-medium truncate mb-2">@{sanitizeUsername(video.authorId)}</p>
 
-      {/* Stats Row */}
-      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-0.5">
-          <Heart className="h-2.5 w-2.5" />
+      {/* Stats Row - Bigger */}
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <Heart className="h-3.5 w-3.5" />
           {formatCount(video.likeCount)}
         </span>
-        <span className="flex items-center gap-0.5">
-          <MessageCircle className="h-2.5 w-2.5" />
+        <span className="flex items-center gap-1">
+          <MessageCircle className="h-3.5 w-3.5" />
           {formatCount(video.commentCount)}
         </span>
-        <span className="flex items-center gap-0.5">
-          <Share2 className="h-2.5 w-2.5" />
+        <span className="flex items-center gap-1">
+          <Share2 className="h-3.5 w-3.5" />
           {formatCount(video.shareCount)}
         </span>
       </div>
@@ -98,21 +109,19 @@ function VideoCard({
   );
 }
 
-const DEFAULT_KEYWORDS = ["countrymusic", "kpop", "dance"];
-
 export default function TrendingVideosTile({
   className,
   maxVideos = 30,
-  defaultKeywords = DEFAULT_KEYWORDS,
 }: TrendingVideosTileProps) {
   const router = useRouter();
   const { language } = useI18n();
   const { invalidateLiveTrending } = useInvalidateQueries();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedVideo, setSelectedVideo] = useState<TrendVideoContext | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   // Use live trending with 24h cache
   const { data, isLoading, error, refetch } = useLiveTrending({
-    keywords: defaultKeywords,
     limit: maxVideos,
   });
 
@@ -126,9 +135,42 @@ export default function TrendingVideosTile({
     }
   }, [invalidateLiveTrending, refetch]);
 
-  const handleAnalyze = useCallback((url: string) => {
-    router.push(`/create?mode=generate&tiktok_url=${encodeURIComponent(url)}`);
-  }, [router]);
+  // Open dialog with video context
+  const handleVideoClick = useCallback((video: TrendingVideo) => {
+    const playCount = video.playCount || 0;
+    const likeCount = video.likeCount || 0;
+    const commentCount = video.commentCount || 0;
+    const shareCount = video.shareCount || 0;
+
+    // Calculate engagement rate
+    const engagementRate = playCount > 0
+      ? ((likeCount + commentCount + shareCount) / playCount) * 100
+      : 0;
+
+    const context: TrendVideoContext = {
+      source: "trending",
+      video: {
+        id: video.id,
+        url: video.videoUrl,
+        thumbnailUrl: video.thumbnailUrl || null,
+        description: sanitizeText(video.description) || "",
+        authorId: sanitizeUsername(video.authorId),
+        authorName: sanitizeUsername(video.authorId),
+      },
+      stats: {
+        playCount,
+        likeCount,
+        commentCount,
+        shareCount,
+        engagementRate,
+      },
+      hashtags: video.hashtags || [],
+      createdAt: new Date().toISOString(),
+    };
+
+    setSelectedVideo(context);
+    setDialogOpen(true);
+  }, []);
 
   const handleViewAll = useCallback(() => {
     router.push("/trends");
@@ -168,18 +210,13 @@ export default function TrendingVideosTile({
 
   return (
     <Card className={cn("", className)}>
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-pink-500" />
-            <CardTitle className="text-base">
+            <TrendingUp className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-lg">
               {language === "ko" ? "TikTok 트렌딩" : "TikTok Trending"}
             </CardTitle>
-            {cacheText && (
-              <span className="text-xs text-muted-foreground">
-                · {cacheText}
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -206,12 +243,12 @@ export default function TrendingVideosTile({
 
       <CardContent className="pt-0">
         {isLoading ? (
-          <div className="flex gap-3 overflow-hidden">
+          <div className="flex gap-4 overflow-hidden">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex-shrink-0 w-[160px]">
-                <Skeleton className="aspect-[9/16] rounded-lg mb-2" />
-                <Skeleton className="h-3 w-20 mb-1" />
-                <Skeleton className="h-2.5 w-24" />
+              <div key={i} className="flex-shrink-0 w-[180px]">
+                <Skeleton className="aspect-[9/16] rounded-lg mb-3" />
+                <Skeleton className="h-4 w-24 mb-2" />
+                <Skeleton className="h-3 w-32" />
               </div>
             ))}
           </div>
@@ -235,12 +272,12 @@ export default function TrendingVideosTile({
           </div>
         ) : (
           <ScrollArea className="w-full">
-            <div className="flex gap-3 pb-3">
+            <div className="flex gap-4 pb-4">
               {videos.slice(0, 12).map((video) => (
                 <VideoCard
                   key={video.id}
                   video={video}
-                  onAnalyze={handleAnalyze}
+                  onClick={handleVideoClick}
                 />
               ))}
             </div>
@@ -248,6 +285,13 @@ export default function TrendingVideosTile({
           </ScrollArea>
         )}
       </CardContent>
+
+      {/* Trend Video Action Dialog */}
+      <TrendVideoActionDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        context={selectedVideo}
+      />
     </Card>
   );
 }

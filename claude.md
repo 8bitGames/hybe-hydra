@@ -55,3 +55,4 @@
   for await (const chunk of response) {
     console.log(chunk.text);
   }
+- use only muted colors like black, grey, and white. never use colors unless i tell you to for design.

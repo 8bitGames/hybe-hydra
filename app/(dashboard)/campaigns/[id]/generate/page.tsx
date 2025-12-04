@@ -844,17 +844,56 @@ export default function VideoGeneratePage() {
   const [previewImage, setPreviewImage] = useState<PreviewImageResponse | null>(null);
   const [generatingPreview, setGeneratingPreview] = useState(false);
 
-  // Load prompt from URL query params (from Quick Create redirect)
+  // Load prompt from URL query params (from Quick Create redirect or Personalization modal)
   useEffect(() => {
     const urlPrompt = searchParams.get("prompt");
     const urlStyle = searchParams.get("style");
+    const urlAspectRatio = searchParams.get("aspect_ratio");
+    const isPersonalized = searchParams.get("personalized") === "true";
 
     if (urlPrompt) {
       setPrompt(decodeURIComponent(urlPrompt));
     }
-    // Style is informational - we don't have a direct style field, but could match to presets
+
+    // Handle personalized prompt from Create page workflow
+    if (isPersonalized) {
+      console.log("[Generate] Loading personalized prompt from workflow");
+
+      // Set aspect ratio if provided
+      if (urlAspectRatio) {
+        setAspectRatio(urlAspectRatio);
+      }
+
+      // Create transformed prompt info for display
+      if (urlPrompt) {
+        setTransformedPrompt({
+          status: "success",
+          veo_prompt: decodeURIComponent(urlPrompt),
+          negative_prompt: "",
+          technical_settings: {
+            aspect_ratio: urlAspectRatio || "9:16",
+            fps: 30,
+            duration_seconds: 15,
+            guidance_scale: 7,
+          },
+          analysis: {
+            intent: urlStyle ? `${urlStyle} style video` : "Personalized video from workflow",
+            trend_applied: [],
+            safety_check: {
+              passed: true,
+              concerns: [],
+            },
+            suggestions: [],
+          },
+          celebrity_warning: undefined,
+          detected_celebrities: [],
+        });
+      }
+    }
+
+    // Style is informational - log for debugging
     if (urlStyle) {
-      console.log("Style from Quick Create:", urlStyle);
+      console.log("Style from URL:", urlStyle);
     }
   }, [searchParams]);
 

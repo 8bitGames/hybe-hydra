@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     // Use upsert to handle duplicates
     let savedCount = 0;
-    let updatedCount = 0;
+    const updatedCount = 0;
 
     for (const data of videoData) {
       try {

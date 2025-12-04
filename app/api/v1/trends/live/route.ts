@@ -5,7 +5,7 @@ import { TrendPlatform } from "@prisma/client";
 import { searchTikTok } from "@/lib/tiktok-rapidapi";
 
 const CACHE_DURATION_HOURS = 24;
-const DEFAULT_KEYWORDS = ["countrymusic", "kpop", "dance"];
+const TRENDING_SEARCH_QUERY = "trending"; // Search for "trending" keyword
 
 // GET /api/v1/trends/live - Get live trending videos with 24h cache
 export async function GET(request: NextRequest) {
@@ -18,119 +18,97 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const keywords = searchParams.get("keywords")?.split(",").map(k => k.trim()) || DEFAULT_KEYWORDS;
     const limit = Math.min(parseInt(searchParams.get("limit") || "30"), 50);
     const forceRefresh = searchParams.get("refresh") === "true";
 
-    console.log("[TRENDS-LIVE] Request:", { keywords, limit, forceRefresh });
+    console.log("[TRENDS-LIVE] Request:", { limit, forceRefresh });
 
     // Check cache freshness
     const cacheThreshold = new Date(Date.now() - CACHE_DURATION_HOURS * 60 * 60 * 1000);
 
-    // Get latest collection time for each keyword
-    const latestCollections = await prisma.trendVideo.groupBy({
-      by: ["searchQuery"],
+    // Get latest collection time for trending
+    const latestCollection = await prisma.trendVideo.findFirst({
       where: {
         platform: "TIKTOK",
-        searchQuery: { in: keywords },
+        searchQuery: TRENDING_SEARCH_QUERY,
       },
-      _max: { collectedAt: true },
+      orderBy: { collectedAt: "desc" },
+      select: { collectedAt: true },
     });
 
-    const latestMap = new Map(
-      latestCollections.map(c => [c.searchQuery, c._max.collectedAt])
-    );
+    const needsRefresh = forceRefresh ||
+      !latestCollection ||
+      latestCollection.collectedAt < cacheThreshold;
 
-    // Determine which keywords need refreshing
-    const keywordsToRefresh = forceRefresh
-      ? keywords
-      : keywords.filter(k => {
-          const lastCollected = latestMap.get(k);
-          return !lastCollected || lastCollected < cacheThreshold;
-        });
+    console.log("[TRENDS-LIVE] Needs refresh:", needsRefresh);
 
-    console.log("[TRENDS-LIVE] Keywords to refresh:", keywordsToRefresh);
+    // Fetch fresh data if needed
+    if (needsRefresh) {
+      try {
+        console.log(`[TRENDS-LIVE] Fetching fresh trending data`);
+        const result = await searchTikTok(TRENDING_SEARCH_QUERY, limit);
 
-    // Fetch fresh data for stale keywords
-    if (keywordsToRefresh.length > 0) {
-      for (const keyword of keywordsToRefresh) {
-        try {
-          console.log(`[TRENDS-LIVE] Fetching fresh data for: ${keyword}`);
-          const result = await searchTikTok(keyword, limit);
+        if (result.success && result.videos.length > 0) {
+          // Delete old trending videos (cleanup)
+          await prisma.trendVideo.deleteMany({
+            where: {
+              platform: "TIKTOK",
+              searchQuery: TRENDING_SEARCH_QUERY,
+            },
+          });
 
-          if (result.success && result.videos.length > 0) {
-            // Delete old videos for this keyword (cleanup)
-            await prisma.trendVideo.deleteMany({
-              where: {
-                platform: "TIKTOK",
-                searchQuery: keyword,
-              },
-            });
+          // Insert fresh videos
+          const videoData = result.videos.map((video) => ({
+            platform: "TIKTOK" as TrendPlatform,
+            videoId: video.id,
+            searchQuery: TRENDING_SEARCH_QUERY,
+            searchType: "trending",
+            description: video.description || null,
+            authorId: video.author.uniqueId,
+            authorName: video.author.nickname,
+            playCount: video.stats.playCount ? BigInt(video.stats.playCount) : null,
+            likeCount: video.stats.likeCount ? BigInt(video.stats.likeCount) : null,
+            commentCount: video.stats.commentCount ? BigInt(video.stats.commentCount) : null,
+            shareCount: video.stats.shareCount ? BigInt(video.stats.shareCount) : null,
+            hashtags: video.hashtags || [],
+            videoUrl: video.videoUrl,
+            thumbnailUrl: video.thumbnailUrl || null,
+          }));
 
-            // Insert fresh videos
-            const videoData = result.videos.map((video) => ({
-              platform: "TIKTOK" as TrendPlatform,
-              videoId: video.id,
-              searchQuery: keyword,
-              searchType: "keyword",
-              description: video.description || null,
-              authorId: video.author.uniqueId,
-              authorName: video.author.nickname,
-              playCount: video.stats.playCount ? BigInt(video.stats.playCount) : null,
-              likeCount: video.stats.likeCount ? BigInt(video.stats.likeCount) : null,
-              commentCount: video.stats.commentCount ? BigInt(video.stats.commentCount) : null,
-              shareCount: video.stats.shareCount ? BigInt(video.stats.shareCount) : null,
-              hashtags: video.hashtags || [],
-              videoUrl: video.videoUrl,
-              thumbnailUrl: video.thumbnailUrl || null,
-            }));
+          await prisma.trendVideo.createMany({
+            data: videoData,
+            skipDuplicates: true,
+          });
 
-            await prisma.trendVideo.createMany({
-              data: videoData,
-              skipDuplicates: true,
-            });
-
-            console.log(`[TRENDS-LIVE] Saved ${videoData.length} videos for: ${keyword}`);
-          }
-        } catch (err) {
-          console.error(`[TRENDS-LIVE] Error fetching ${keyword}:`, err);
-          // Continue with other keywords
+          console.log(`[TRENDS-LIVE] Saved ${videoData.length} trending videos`);
         }
+      } catch (err) {
+        console.error(`[TRENDS-LIVE] Error fetching trending:`, err);
+        // Continue to return cached data if available
       }
     }
 
-    // Fetch all videos from database
+    // Fetch all trending videos from database
     const videos = await prisma.trendVideo.findMany({
       where: {
         platform: "TIKTOK",
-        searchQuery: { in: keywords },
+        searchQuery: TRENDING_SEARCH_QUERY,
       },
       orderBy: { playCount: "desc" },
       take: limit,
     });
 
-    // Get available hashtags with counts
-    const hashtagGroups = await prisma.trendVideo.groupBy({
-      by: ["searchQuery"],
-      where: {
-        platform: "TIKTOK",
-        searchQuery: { in: keywords },
-      },
-      _count: { id: true },
-      _sum: { playCount: true },
-      _max: { collectedAt: true },
-      orderBy: { _sum: { playCount: "desc" } },
-    });
-
     // Get cache info
-    const oldestCollection = hashtagGroups.reduce((oldest, g) => {
-      const collected = g._max.collectedAt;
-      if (!oldest || (collected && collected < oldest)) return collected;
-      return oldest;
-    }, null as Date | null);
+    const latestVideo = videos.length > 0 ? videos[0] : null;
+    const collectedAt = latestVideo
+      ? await prisma.trendVideo.findFirst({
+          where: { id: latestVideo.id },
+          select: { collectedAt: true },
+        })
+      : null;
 
-    const cacheAge = oldestCollection
-      ? Math.floor((Date.now() - oldestCollection.getTime()) / (1000 * 60 * 60))
+    const cacheAge = collectedAt
+      ? Math.floor((Date.now() - collectedAt.collectedAt.getTime()) / (1000 * 60 * 60))
       : 0;
 
     // Convert BigInt to number for JSON serialization
@@ -153,23 +131,14 @@ export async function GET(request: NextRequest) {
       collectedAt: v.collectedAt.toISOString(),
     }));
 
-    const serializedHashtags = hashtagGroups.map((g) => ({
-      query: g.searchQuery,
-      videoCount: g._count.id,
-      totalPlayCount: g._sum.playCount ? Number(g._sum.playCount) : 0,
-      lastUpdated: g._max.collectedAt?.toISOString() || null,
-    }));
-
     return NextResponse.json({
       success: true,
       videos: serializedVideos,
-      availableHashtags: serializedHashtags,
       total: serializedVideos.length,
       cache: {
         ageHours: cacheAge,
         maxAgeHours: CACHE_DURATION_HOURS,
-        refreshed: keywordsToRefresh.length > 0,
-        keywords,
+        refreshed: needsRefresh,
       },
     });
   } catch (err) {

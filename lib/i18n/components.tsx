@@ -62,12 +62,11 @@ export const T = memo(function T({
 
   // Priority 1: Key-based translation
   if (k) {
-    let text = translate(k, params);
-    content = text;
+    content = translate(k, params);
   }
   // Priority 2: Direct ko/en props
   else if (ko !== undefined || en !== undefined) {
-    let text = language === "ko" ? (ko ?? en ?? "") : (en ?? ko ?? "");
+    let text: string | ReactNode = language === "ko" ? (ko ?? en ?? "") : (en ?? ko ?? "");
 
     // Apply parameters
     if (params && typeof text === "string") {

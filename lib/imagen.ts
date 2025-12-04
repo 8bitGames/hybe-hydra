@@ -171,10 +171,10 @@ CRITICAL RULES:
     }
 
     // Extract image from response parts
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const candidates = response.candidates || [];
     for (const candidate of candidates) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const parts = candidate.content?.parts || [];
       for (const part of parts) {
         // Check for inline data (image)
@@ -190,7 +190,7 @@ CRITICAL RULES:
     }
 
     // Alternative: Check response.parts directly (newer SDK structure)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const parts = response.parts || [];
     for (const part of parts) {
       if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith("image/")) {

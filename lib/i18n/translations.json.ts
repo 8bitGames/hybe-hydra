@@ -27,13 +27,13 @@ type NestedKeyOf<T> = T extends object
 /**
  * Get nested value from object using dot-separated key
  */
-function getNestedValue(obj: any, key: string): string | undefined {
+function getNestedValue(obj: Record<string, unknown>, key: string): string | undefined {
   const keys = key.split(".");
-  let current = obj;
+  let current: unknown = obj;
 
   for (const k of keys) {
     if (current && typeof current === "object" && k in current) {
-      current = current[k];
+      current = (current as Record<string, unknown>)[k];
     } else {
       return undefined;
     }
