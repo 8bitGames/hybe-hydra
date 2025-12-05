@@ -555,6 +555,13 @@
     "merchandise": "Merchandise",
     "generateSimilar": "Generate Similar"
   },
+  "generation": {
+    "status": {
+      "completed": "Completed",
+      "processing": "Processing",
+      "failed": "Failed"
+    }
+  },
   "legal": {
     "common": {
       "backToHome": "Back to Home",

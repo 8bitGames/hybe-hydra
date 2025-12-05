@@ -555,6 +555,13 @@
     "merchandise": "상품",
     "generateSimilar": "유사 생성"
   },
+  "generation": {
+    "status": {
+      "completed": "완료됨",
+      "processing": "처리 중",
+      "failed": "실패"
+    }
+  },
   "legal": {
     "common": {
       "backToHome": "홈으로 돌아가기",
