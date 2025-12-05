@@ -26,8 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Calendar, X, Play, Trash2, ExternalLink, Clock, Check, CheckCircle } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
-import type { Translations } from "@/lib/i18n/translations";
+import { useI18n, type Translations } from "@/lib/i18n";
 
 type ViewTab = "calendar" | "list" | "queue";
 

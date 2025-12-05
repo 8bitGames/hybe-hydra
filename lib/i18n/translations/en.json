@@ -6,9 +6,12 @@
     "tabs": {
       "assets": "Assets",
       "create": "Create",
+      "generate": "AI Generate",
+      "compose": "Compose",
       "videos": "Videos",
       "publish": "Publish",
-      "analytics": "Analytics"
+      "analytics": "Analytics",
+      "info": "Info"
     }
   },
   "auth": {
@@ -327,6 +330,23 @@
     }
   },
   "common": {
+    "fileTypeError": "Only audio files are allowed",
+    "fileSizeLimit": "File size must be under 50MB",
+    "uploadFailed": "Upload failed",
+    "uploadSuccess": "Upload complete",
+    "deleteConfirm": "Are you sure you want to delete?",
+    "selected": "Selected",
+    "uploading": "Uploading",
+    "selectFile": "Select File",
+    "preview": "Preview",
+    "image": "Image",
+    "none": "None",
+    "noData": "No data",
+    "all": "All",
+    "loading": "Loading",
+    "delete": "Delete",
+    "remove": "Remove",
+    "cancel": "Cancel",
     "layout": {
       "완료될-166": "will complete",
       "때까지-167": "until",
@@ -605,12 +625,90 @@
       "completed": "Completed",
       "processing": "Processing",
       "failed": "Failed"
-    }
+    },
+    "audioSelection": "Audio Selection",
+    "showList": "Show List",
+    "uploadNewAudio": "Upload New Audio",
+    "uploadAudioGuide": "Drag and drop or click to upload audio file",
+    "audioFormats": "Supported formats: MP3, WAV, M4A (max 50MB)",
+    "noAudioUploaded": "No audio uploaded",
+    "audioSyncInfo": "Audio will be automatically synced with the video",
+    "referenceSource": "Reference Source",
+    "goods": "Products",
+    "selectedGoods": "Selected Products",
+    "searchGoods": "Search products",
+    "goodsNotFound": "No products found",
+    "maxGoodsMessage": "Maximum number of products exceeded",
+    "imageUsageRequired": "Image usage is required",
+    "audioRequired": "Audio is required",
+    "trendingNow": "Trending Now",
+    "trendingDescription": "Currently trending content",
+    "bridgePromptLoaded": "Bridge Prompt Loaded",
+    "bridgePromptMessage": "Bridge prompt has been applied",
+    "imageGuideGeneration": "Image Guide Generation",
+    "imageBasedGenerating": "Generating with image reference...",
+    "generating": "Generating...",
+    "imageReferenceOptional": "Image Reference (Optional)",
+    "imageReferenceDescription": "Select a reference image for AI video generation",
+    "selectFromAssetLocker": "Select from Asset Locker",
+    "i2vModeInfo": "Image-to-video mode generates video based on the selected image",
+    "imageUsageDescription": "Describe how the image should be used in the video",
+    "changeImage": "Change Image",
+    "imageUsagePlaceholder": "e.g., Use this image as background or show as main subject",
+    "quickSelect": "Quick Select",
+    "suggestion1": "Use as background",
+    "suggestion2": "Show as main subject",
+    "suggestion3": "Use as overlay",
+    "suggestion4": "Use for transition",
+    "suggestion5": "Use in intro"
+  },
+  "bridge": {
+    "celebrityDetected": "Celebrity Detected",
+    "celebrityWarningMessage": "detected - face will be automatically replaced."
   },
   "compose": {
     "enterPrompt": "Please enter a prompt",
     "minImagesRequired": "At least 1 image is required",
     "renderFailed": "Rendering failed"
+  },
+  "publish": {
+    "total": "Total",
+    "scheduled": "Scheduled",
+    "published": "Published",
+    "drafts": "Drafts",
+    "failed": "Failed",
+    "queue": "Queue",
+    "list": "List",
+    "calendar": "Calendar",
+    "allPlatforms": "All Platforms",
+    "schedulePost": "Schedule Post",
+    "connected": "Connected",
+    "noAccountsConnected": "No accounts connected",
+    "noScheduledPosts": "No scheduled posts",
+    "connectAccountsMessage": "Connect your social media accounts first",
+    "generateVideosFirst": "Generate videos first",
+    "scheduleFirstPost": "Schedule First Post",
+    "contactAdmin": "Contact Admin",
+    "generateVideos": "Generate Videos",
+    "scheduledPosts": "Scheduled Posts",
+    "draftPosts": "Draft Posts",
+    "publishedPosts": "Published Posts",
+    "failedPosts": "Failed Posts",
+    "noCaption": "No caption",
+    "inTime": "in",
+    "calendarView": "Calendar View",
+    "comingSoon": "Coming Soon",
+    "publishTo": "Publish To",
+    "caption": "Caption",
+    "writeCaption": "Write your caption...",
+    "scheduleTime": "Schedule Time",
+    "leaveEmptyForDraft": "Leave empty to save as draft",
+    "cancel": "Cancel",
+    "scheduling": "Scheduling...",
+    "saveAsDraft": "Save as Draft",
+    "selectVideo": "Select Video",
+    "error": "Error",
+    "viewPost": "View Post"
   },
   "legal": {
     "common": {
@@ -878,6 +976,26 @@
         "title": "Article 11 (Changes to Privacy Policy)",
         "content": "This Privacy Policy is effective from January 1, 2024, and in case of additions, deletions, or corrections of changes according to laws and policies, we will notify through announcements 7 days before the implementation of changes."
       }
+    }
+  },
+  "createPage": {
+    "modes": {
+      "quick": {
+        "name": "Quick Create"
+      },
+      "generate": {
+        "name": "AI Generate"
+      },
+      "compose": {
+        "name": "Compose"
+      },
+      "batch": {
+        "name": "Batch Create"
+      }
+    },
+    "hints": {
+      "quickModeInfo": "Select images and music to quickly generate videos",
+      "needMoreControl": "Need more control?"
     }
   }
 }
