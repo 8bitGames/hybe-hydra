@@ -74,8 +74,6 @@ interface GenerateIdeasResponse {
 const AUDIENCE_OPTIONS = [
   { id: "gen_z", label: { ko: "Gen Z", en: "Gen Z" } },
   { id: "millennials", label: { ko: "밀레니얼", en: "Millennials" } },
-  { id: "kpop_fans", label: { ko: "K-pop 팬", en: "K-pop Fans" } },
-  { id: "dance_lovers", label: { ko: "댄스 애호가", en: "Dance Lovers" } },
   { id: "music_fans", label: { ko: "음악 팬", en: "Music Fans" } },
   { id: "fashion", label: { ko: "패션 관심층", en: "Fashion Enthusiasts" } },
 ];
@@ -84,7 +82,6 @@ const GOAL_OPTIONS = [
   { id: "awareness", label: { ko: "인지도", en: "Brand Awareness" } },
   { id: "engagement", label: { ko: "참여도", en: "Engagement" } },
   { id: "viral", label: { ko: "바이럴", en: "Go Viral" } },
-  { id: "education", label: { ko: "교육", en: "Education" } },
   { id: "entertainment", label: { ko: "엔터테인먼트", en: "Entertainment" } },
 ];
 

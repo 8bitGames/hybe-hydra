@@ -71,6 +71,7 @@ interface StepStatus {
   campaignSelected: boolean;
   methodSelected: boolean;
   musicSelected: boolean;
+  imageSelected: boolean; // Required for AI (Veo3) mode
 }
 
 function StepProgressIndicator({
@@ -83,11 +84,17 @@ function StepProgressIndicator({
   const { language } = useI18n();
   const isKorean = language === "ko";
 
+  // For AI mode, image is required; for compose mode, it's not
+  const imageRequired = selectedMethod === "ai";
+  const assetsComplete = imageRequired
+    ? (status.musicSelected && status.imageSelected)
+    : status.musicSelected;
+
   // Determine current step and next action
   const getCurrentStep = (): number => {
     if (!status.campaignSelected) return 1;
     if (!status.methodSelected) return 2;
-    if (!status.musicSelected) return 3;
+    if (!assetsComplete) return 3;
     return 4; // All done
   };
 
@@ -104,10 +111,16 @@ function StepProgressIndicator({
         ? "AI 생성 또는 컴포즈 중 생성 방식을 선택하세요"
         : "Choose between AI Generated or Compose video";
     }
+    // Check assets based on method
     if (!status.musicSelected) {
       return isKorean
         ? "영상에 사용할 음악을 추가하세요"
         : "Add music for your video";
+    }
+    if (selectedMethod === "ai" && !status.imageSelected) {
+      return isKorean
+        ? "Veo3 생성을 위해 레퍼런스 이미지를 추가하세요"
+        : "Add a reference image for Veo3 generation";
     }
     // All complete
     if (selectedMethod === "ai") {
@@ -120,6 +133,7 @@ function StepProgressIndicator({
       : "Ready! Click 'Start Compose' to create";
   };
 
+  // Build steps dynamically based on method
   const steps = [
     {
       num: 1,
@@ -133,8 +147,10 @@ function StepProgressIndicator({
     },
     {
       num: 3,
-      label: isKorean ? "음악" : "Music",
-      done: status.musicSelected,
+      label: selectedMethod === "ai"
+        ? (isKorean ? "음악 + 이미지" : "Music + Image")
+        : (isKorean ? "음악" : "Music"),
+      done: assetsComplete,
     },
   ];
 
@@ -1327,57 +1343,22 @@ export default function CreatePage() {
       return;
     }
 
-    // If images are attached, show personalization modal first
-    if (imageAssets.length > 0) {
-      console.log("[Veo3] Images attached, showing personalization modal");
-      console.log("[Veo3] Image URLs:", imageAssets.map(a => a.url));
-      setShowPersonalizeModal(true);
-      console.log("[Veo3] showPersonalizeModal set to true");
-      return;
-    }
-
-    // No images, need a prompt from analyze stage or workflow
-    const defaultPrompt = analyze.optimizedPrompt || analyze.selectedIdea?.optimizedPrompt || "";
-    if (!defaultPrompt) {
+    // MANDATORY: Reference image is required for Veo3 I2V generation
+    // User must provide at least one image
+    if (imageAssets.length === 0) {
+      console.log("[Veo3] No images selected - I2V mode requires at least one reference image");
       toast.warning(
-        language === "ko" ? "프롬프트 필요" : "Prompt required",
-        language === "ko" ? "영상 생성을 위한 프롬프트가 필요합니다. 이미지를 추가하거나 분석 단계에서 아이디어를 선택하세요." : "A prompt is required for video generation. Add images or select an idea from Analyze."
+        language === "ko" ? "이미지 필요" : "Image required",
+        language === "ko" ? "Veo3 영상 생성을 위해 최소 1개의 레퍼런스 이미지가 필요합니다. 이미지를 추가해주세요." : "At least one reference image is required for Veo3 video generation. Please add an image."
       );
       return;
     }
 
-    // Start generation via API
-    setIsGenerating(true);
-    try {
-      const response = await videoApi.create(selectedCampaignId, {
-        prompt: defaultPrompt,
-        audio_asset_id: audioAsset.id,
-        aspect_ratio: "9:16",
-        duration_seconds: 5,
-        // Bridge context from workflow
-        original_input: analyze.userIdea || undefined,
-        trend_keywords: useWorkflowStore.getState().discover.keywords,
-      });
-
-      if (response.error) {
-        throw new Error(response.error.message || "Generation failed");
-      }
-
-      toast.success(
-        language === "ko" ? "생성 시작" : "Generation started",
-        language === "ko" ? "영상 생성이 시작되었습니다" : "Video generation has started"
-      );
-
-      // Navigate to processing page to monitor video generation
-      router.push("/processing");
-    } catch (error) {
-      console.error("Failed to start video generation:", error);
-      toast.error(
-        language === "ko" ? "생성 실패" : "Generation failed",
-        error instanceof Error ? error.message : "Unknown error"
-      );
-      setIsGenerating(false);
-    }
+    // Images are attached, show personalization modal
+    console.log("[Veo3] Images attached, showing personalization modal");
+    console.log("[Veo3] Image URLs:", imageAssets.map(a => a.url));
+    setShowPersonalizeModal(true);
+    console.log("[Veo3] showPersonalizeModal set to true");
   }, [selectedCampaignId, audioAsset, imageAssets.length, analyze, router, language, toast]);
 
   // Helper function to convert File to base64
@@ -1607,6 +1588,7 @@ export default function CreatePage() {
                 campaignSelected: !!selectedCampaignId,
                 methodSelected: !!selectedMethod,
                 musicSelected: !!audioAsset,
+                imageSelected: imageAssets.length > 0,
               }}
               selectedMethod={selectedMethod}
             />
@@ -1689,17 +1671,23 @@ export default function CreatePage() {
               <div className="flex items-center gap-2">
                 <div className={cn(
                   "w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
-                  audioAsset
-                    ? "bg-neutral-900 text-white"
-                    : "bg-neutral-200 text-neutral-600"
+                  selectedMethod === "ai"
+                    ? (audioAsset && imageAssets.length > 0 ? "bg-neutral-900 text-white" : "bg-neutral-200 text-neutral-600")
+                    : (audioAsset ? "bg-neutral-900 text-white" : "bg-neutral-200 text-neutral-600")
                 )}>
-                  {audioAsset ? <Check className="h-3 w-3" /> : "3"}
+                  {selectedMethod === "ai"
+                    ? (audioAsset && imageAssets.length > 0 ? <Check className="h-3 w-3" /> : "3")
+                    : (audioAsset ? <Check className="h-3 w-3" /> : "3")
+                  }
                 </div>
                 <Label className="text-sm font-medium text-neutral-700">
                   {language === "ko" ? "에셋 선택" : "Select Assets"}
                 </Label>
                 <span className="text-xs text-neutral-400">
-                  ({language === "ko" ? "음악 필수" : "Music required"})
+                  ({selectedMethod === "ai"
+                    ? (language === "ko" ? "음악 + 이미지 필수" : "Music + Image required")
+                    : (language === "ko" ? "음악 필수" : "Music required")
+                  })
                 </span>
               </div>
               <AssetUploadSection
