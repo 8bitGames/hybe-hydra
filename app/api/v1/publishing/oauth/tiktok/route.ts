@@ -244,10 +244,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch user info from TikTok (only request fields available with user.info.basic scope)
+    // Fetch user info from TikTok (request username from user.info.profile scope for profile URL)
     console.log("[TikTok OAuth POST] Fetching user info with token:", tokenResult.accessToken?.substring(0, 20) + "...");
     const userInfoResponse = await fetch(
-      "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name",
+      "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username",
       {
         method: "GET",
         headers: {
@@ -281,6 +281,9 @@ export async function POST(request: NextRequest) {
 
     console.log("[TikTok OAuth POST] Creating/updating social account for:", tiktokUser.display_name);
 
+    // Use username for profile URL, fallback to display_name or openId if username not available
+    const profileUsername = tiktokUser.username || tiktokUser.display_name || tokenResult.openId;
+
     if (existingAccount) {
       // Update existing account
       socialAccount = await prisma.socialAccount.update({
@@ -292,7 +295,7 @@ export async function POST(request: NextRequest) {
           tokenExpiresAt: tokenResult.expiresIn
             ? new Date(Date.now() + tokenResult.expiresIn * 1000)
             : null,
-          profileUrl: `https://www.tiktok.com/@${tokenResult.openId}`,
+          profileUrl: `https://www.tiktok.com/@${profileUsername}`,
           isActive: true,
         },
       });
@@ -308,7 +311,7 @@ export async function POST(request: NextRequest) {
           tokenExpiresAt: tokenResult.expiresIn
             ? new Date(Date.now() + tokenResult.expiresIn * 1000)
             : null,
-          profileUrl: `https://www.tiktok.com/@${tokenResult.openId}`,
+          profileUrl: `https://www.tiktok.com/@${profileUsername}`,
           labelId: stateDataCamel.labelId,
           createdBy: stateDataCamel.userId,
           isActive: true,
