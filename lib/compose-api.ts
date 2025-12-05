@@ -27,6 +27,7 @@ export interface ScriptGenerationRequest {
   trendContext?: TrendContext[];  // Current trending topics to incorporate
   userPrompt: string;
   targetDuration: number;
+  language?: "ko" | "en";
 }
 
 export interface GroundingSource {

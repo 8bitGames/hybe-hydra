@@ -219,6 +219,7 @@ export default function ComposePage() {
         trendContext,
         userPrompt: prompt.trim(),
         targetDuration: 0,
+        language,
       });
 
       setScriptData(result);

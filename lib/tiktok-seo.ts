@@ -222,7 +222,8 @@ export function generateTikTokSEO(
   topic: string,
   vibe: string,
   scriptLines: string[],
-  trendKeywords: string[]
+  trendKeywords: string[],
+  language: "ko" | "en" = "ko"
 ): TikTokSEO {
   const keywords = generateSEOKeywords(artistName, topic, scriptLines);
   const hashtags = generateOptimizedHashtags(artistName, vibe, trendKeywords);
@@ -236,15 +237,22 @@ export function generateTikTokSEO(
     hashtags.trending
   ].filter(Boolean).join(' ');
 
+  // CTA text based on language
+  const ctaText = language === "ko"
+    ? `💬 댓글로 의견을 남겨주세요!
+❤️ 좋아요 & 저장으로 응원해주세요!
+👉 팔로우하면 더 많은 ${artistName} 콘텐츠를 볼 수 있어요!`
+    : `💬 Drop your thoughts in the comments!
+❤️ Like & Save to show your support!
+👉 Follow for more ${artistName} content!`;
+
   const description = `${keywords.primary}
 
 ${topic}
 
 ${scriptLines.slice(0, 2).join('\n')}
 
-💬 댓글로 의견을 남겨주세요!
-❤️ 좋아요 & 저장으로 응원해주세요!
-👉 팔로우하면 더 많은 ${artistName} 콘텐츠를 볼 수 있어요!
+${ctaText}
 
 ${hashtagString}`;
 

@@ -510,6 +510,7 @@ export function InlineComposeFlow({
         trendKeywords: editableKeywords,
         userPrompt: prompt.trim(),
         targetDuration: 0,
+        language,
       });
 
       setScriptData(result);

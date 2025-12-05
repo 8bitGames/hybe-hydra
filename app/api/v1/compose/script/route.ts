@@ -28,6 +28,7 @@ interface ScriptGenerationRequest {
   userPrompt: string;
   targetDuration: number;
   useGrounding?: boolean;
+  language?: "ko" | "en";
 }
 
 interface ScriptGenerationResponse {
@@ -64,7 +65,8 @@ export async function POST(request: NextRequest) {
       trendContext,
       userPrompt,
       targetDuration: requestedDuration,
-      useGrounding = true
+      useGrounding = true,
+      language = "ko"
     } = body;
 
     // Auto-calculate duration if 0 is passed (default TikTok duration: 15 seconds)
@@ -282,7 +284,8 @@ Rules:
       userPrompt,
       parsedResponse.vibe,
       scriptTexts,
-      trendKeywords
+      trendKeywords,
+      language
     );
 
     return NextResponse.json(parsedResponse);
