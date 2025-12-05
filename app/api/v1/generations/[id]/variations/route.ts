@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
-import { generateVideo, VeoGenerationParams } from "@/lib/veo";
+import { generateVideo, VeoGenerationParams, getVeoConfig } from "@/lib/veo";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -78,11 +78,9 @@ function startVariationVideoGeneration(
         },
       });
 
-      // Call Veo API
-      // Use fast model for testing when VEO_USE_FAST_MODEL=true
-      const veoModel = process.env.VEO_USE_FAST_MODEL === "true"
-        ? "veo-3.1-fast-generate-preview"
-        : "veo-3.1-generate-preview";
+      // Get VEO configuration (3-tier: production, fast, sample)
+      const veoConfig = getVeoConfig();
+      console.log(`[Variation ${generationId}] VEO mode: ${veoConfig.mode} (${veoConfig.description})`);
 
       const veoParams: VeoGenerationParams = {
         prompt: params.prompt,
@@ -90,7 +88,7 @@ function startVariationVideoGeneration(
         durationSeconds: params.durationSeconds,
         aspectRatio: params.aspectRatio as "16:9" | "9:16" | "1:1",
         style: params.style,
-        model: veoModel,
+        model: veoConfig.model,
       };
 
       // Update progress

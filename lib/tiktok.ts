@@ -303,14 +303,17 @@ export async function getPublishStatus(
 
 /**
  * Poll publish status until complete or failed
+ * @param isInboxUpload - If true, treats SEND_TO_USER_INBOX as success (for sandbox mode)
  */
 export async function waitForPublishComplete(
   accessToken: string,
   publishId: string,
   maxAttempts: number = 30,
-  intervalMs: number = 5000
+  intervalMs: number = 5000,
+  isInboxUpload: boolean = false
 ): Promise<TikTokPublishResult> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    console.log(`[TikTok] Checking publish status, attempt ${attempt + 1}/${maxAttempts}`);
     const statusResult = await getPublishStatus(accessToken, publishId);
 
     if (!statusResult.success) {
@@ -322,6 +325,7 @@ export async function waitForPublishComplete(
     }
 
     const status = statusResult.data!;
+    console.log(`[TikTok] Publish status: ${status.status}`, status.uploaded_bytes ? `(${status.uploaded_bytes} bytes uploaded)` : "");
 
     switch (status.status) {
       case "PUBLISH_COMPLETE":
@@ -333,6 +337,21 @@ export async function waitForPublishComplete(
           postUrl: postId ? `https://www.tiktok.com/@username/video/${postId}` : undefined,
         };
 
+      case "SEND_TO_USER_INBOX":
+        // For Inbox Upload (sandbox mode), this is the success state
+        // The video is sent to the user's TikTok app inbox as a draft
+        if (isInboxUpload) {
+          console.log("[TikTok] Video successfully sent to user's TikTok inbox (draft)!");
+          return {
+            success: true,
+            publishId,
+            postUrl: undefined, // No direct post URL for inbox uploads
+          };
+        }
+        // For direct post, continue waiting
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        break;
+
       case "FAILED":
         return {
           success: false,
@@ -342,7 +361,6 @@ export async function waitForPublishComplete(
 
       case "PROCESSING_UPLOAD":
       case "PROCESSING_DOWNLOAD":
-      case "SEND_TO_USER_INBOX":
         // Still processing, wait and retry
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
         break;
@@ -645,7 +663,8 @@ export async function publishVideoToTikTokInbox(
     console.log("[TikTok Inbox] All chunks uploaded, waiting for processing...");
 
     // Step 5: Wait for upload to complete (sends to inbox)
-    const result = await waitForPublishComplete(accessToken, initResult.publishId);
+    // Pass isInboxUpload=true so SEND_TO_USER_INBOX is treated as success
+    const result = await waitForPublishComplete(accessToken, initResult.publishId, 30, 5000, true);
 
     if (result.success) {
       console.log("[TikTok Inbox] Video successfully sent to user's TikTok inbox!");

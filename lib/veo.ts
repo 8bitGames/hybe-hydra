@@ -18,6 +18,79 @@ const getClient = () => {
 // Model options
 export type VeoModel = "veo-3.1-fast-generate-preview" | "veo-3.1-generate-preview" | "veo-2.0-generate-001";
 
+// ============================================================================
+// VEO Mode Configuration (3-tier system)
+// ============================================================================
+// VEO_MODE environment variable:
+// - "production" (default): Uses veo-3.1-generate-preview (highest quality)
+// - "fast": Uses veo-3.1-fast-generate-preview (faster, lower cost)
+// - "sample": Returns sample videos without calling API (for testing)
+//
+// Backwards compatibility:
+// - VEO_USE_FAST_MODEL=true → fast mode
+// - VEO_MOCK_MODE=true → sample mode
+// ============================================================================
+
+export type VeoModeType = "production" | "fast" | "sample";
+
+export interface VeoConfig {
+  mode: VeoModeType;
+  model: VeoModel;
+  isSampleMode: boolean;
+  description: string;
+}
+
+/**
+ * Get current VEO configuration based on environment variables
+ * Priority: VEO_MODE > VEO_MOCK_MODE > VEO_USE_FAST_MODEL
+ */
+export function getVeoConfig(): VeoConfig {
+  const veoMode = process.env.VEO_MODE?.toLowerCase();
+
+  // Priority 1: Check VEO_MODE
+  if (veoMode === "sample" || process.env.VEO_MOCK_MODE === "true") {
+    return {
+      mode: "sample",
+      model: "veo-3.1-generate-preview", // Not used in sample mode
+      isSampleMode: true,
+      description: "Sample mode - returning pre-made test videos",
+    };
+  }
+
+  if (veoMode === "fast" || process.env.VEO_USE_FAST_MODEL === "true") {
+    return {
+      mode: "fast",
+      model: "veo-3.1-fast-generate-preview",
+      isSampleMode: false,
+      description: "Fast mode - using veo-3.1-fast-generate-preview",
+    };
+  }
+
+  // Default: production mode
+  return {
+    mode: "production",
+    model: "veo-3.1-generate-preview",
+    isSampleMode: false,
+    description: "Production mode - using veo-3.1-generate-preview",
+  };
+}
+
+/**
+ * Get model name based on current VEO mode
+ * Shorthand for getVeoConfig().model
+ */
+export function getVeoModel(): VeoModel {
+  return getVeoConfig().model;
+}
+
+/**
+ * Check if running in sample (mock) mode
+ * Shorthand for getVeoConfig().isSampleMode
+ */
+export function isVeoSampleMode(): boolean {
+  return getVeoConfig().isSampleMode;
+}
+
 // Video generation parameters
 export interface VeoGenerationParams {
   prompt: string;
@@ -53,9 +126,9 @@ export interface VeoJobStatus {
   error?: string;
 }
 
-// Mock mode check
+// Mock mode check (uses new config system)
 const isMockMode = () => {
-  return process.env.VEO_MOCK_MODE === "true" || !process.env.GOOGLE_AI_API_KEY;
+  return isVeoSampleMode() || !process.env.GOOGLE_AI_API_KEY;
 };
 
 /**
@@ -65,15 +138,18 @@ export async function generateVideo(
   params: VeoGenerationParams,
   campaignId?: string
 ): Promise<VeoGenerationResult> {
-  // Use mock mode if configured or API key missing
-  if (isMockMode()) {
-    console.log("[VEO] Running in mock mode (VEO_MOCK_MODE=true or no API key)");
+  const veoConfig = getVeoConfig();
+
+  // Use sample mode if configured or API key missing
+  if (veoConfig.isSampleMode || !process.env.GOOGLE_AI_API_KEY) {
+    console.log(`[VEO] Running in ${veoConfig.mode} mode (${veoConfig.description})`);
     return generateMockVideo(params);
   }
 
   try {
     const ai = getClient();
-    const model = params.model || "veo-3.1-generate-preview";
+    // Use model from params if specified, otherwise use config model
+    const model = params.model || veoConfig.model;
 
     console.log(`[VEO] Starting video generation with model: ${model}`);
     console.log(`[VEO] Prompt: ${params.prompt.slice(0, 100)}...`);

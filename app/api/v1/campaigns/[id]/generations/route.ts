@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { VideoGenerationStatus } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
-import { generateVideo, VeoGenerationParams } from "@/lib/veo";
+import { generateVideo, VeoGenerationParams, getVeoConfig } from "@/lib/veo";
 import { analyzeAudio } from "@/lib/audio-analyzer";
 // Use Modal for audio composition (GPU-accelerated, works in serverless)
 import { composeVideoWithAudioModal, type AudioComposeRequest } from "@/lib/modal/client";
@@ -262,10 +262,9 @@ async function startVideoGeneration(
         console.log(`[Generation ${generationId}] ✓ Using Gemini-generated video prompt with animation instructions`);
       }
 
-      // Use fast model for testing when VEO_USE_FAST_MODEL=true
-      const veoModel = process.env.VEO_USE_FAST_MODEL === "true"
-        ? "veo-3.1-fast-generate-preview"
-        : "veo-3.1-generate-preview";
+      // Get VEO configuration (production/fast/sample mode)
+      const veoConfig = getVeoConfig();
+      console.log(`[Generation ${generationId}] VEO mode: ${veoConfig.mode} (${veoConfig.description})`);
 
       const veoParams: VeoGenerationParams = {
         prompt: finalVideoPrompt,
@@ -275,7 +274,7 @@ async function startVideoGeneration(
         // MANDATORY I2V: Always use the generated image
         referenceImageBase64: generatedImageBase64,
         style: params.style,
-        model: veoModel,
+        model: veoConfig.model,
       };
 
       const currentProgress = 40;  // Always at 40% since image generation is mandatory

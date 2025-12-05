@@ -9,7 +9,7 @@ import { Prisma } from "@prisma/client";
 // Import the full Veo3 pipeline functions
 import { analyzeAudio, type AudioAnalysis } from "@/lib/audio-analyzer";
 import { generateImage, type ImageGenerationParams } from "@/lib/imagen";
-import { generateVideo, type VeoGenerationParams } from "@/lib/veo";
+import { generateVideo, type VeoGenerationParams, getVeoConfig } from "@/lib/veo";
 import { generateImagePromptForI2V, generateVideoPromptForI2V } from "@/lib/gemini-prompt";
 // Use Modal for audio composition (GPU-accelerated)
 import { composeVideoWithAudioModal, type AudioComposeRequest } from "@/lib/modal/client";
@@ -1063,16 +1063,15 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
 
     try {
       // MANDATORY I2V: Always use the generated image
-      // Use fast model for testing when VEO_USE_FAST_MODEL=true
-      const veoModel = process.env.VEO_USE_FAST_MODEL === "true"
-        ? "veo-3.1-fast-generate-preview"
-        : "veo-3.1-generate-preview";
+      // Get VEO configuration (3-tier: production, fast, sample)
+      const veoConfig = getVeoConfig();
+      console.log(`[GENERATE]    VEO mode: ${veoConfig.mode} (${veoConfig.description})`);
 
       const videoGenParams: VeoGenerationParams = {
         prompt: finalVideoPrompt,
         aspectRatio: aspectRatio as "16:9" | "9:16",
         durationSeconds: durationSeconds,
-        model: veoModel,
+        model: veoConfig.model,
         // MANDATORY: Always include the generated image for I2V
         referenceImageBase64: generatedImageBase64,
       };
