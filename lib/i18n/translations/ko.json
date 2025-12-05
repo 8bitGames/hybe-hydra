@@ -562,6 +562,11 @@
       "failed": "실패"
     }
   },
+  "compose": {
+    "enterPrompt": "프롬프트를 입력해주세요",
+    "minImagesRequired": "최소 1개 이상의 이미지가 필요합니다",
+    "renderFailed": "렌더링에 실패했습니다"
+  },
   "legal": {
     "common": {
       "backToHome": "홈으로 돌아가기",

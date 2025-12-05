@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { type Language } from "@/lib/i18n/landing";
 import { Navigation } from "@/components/landing/navigation";
 import { HeroSection } from "@/components/landing/hero-section";
@@ -13,8 +13,25 @@ import { CapabilitiesGrid } from "@/components/landing/capabilities-grid";
 import { CTASection } from "@/components/landing/cta-section";
 import { Footer } from "@/components/landing/footer";
 
+// Storage key shared with I18nProvider
+const LANGUAGE_STORAGE_KEY = "hydra-language";
+
 export default function Home() {
-  const [lang, setLang] = useState<Language>("ko");
+  const [lang, setLangState] = useState<Language>("ko");
+
+  // Sync with localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (stored === "ko" || stored === "en") {
+      setLangState(stored);
+    }
+  }, []);
+
+  // Wrapper to save to localStorage when language changes
+  const setLang = useCallback((newLang: Language) => {
+    setLangState(newLang);
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, newLang);
+  }, []);
 
   return (
     <main className="min-h-screen bg-black">

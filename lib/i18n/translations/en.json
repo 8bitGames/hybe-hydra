@@ -562,6 +562,11 @@
       "failed": "Failed"
     }
   },
+  "compose": {
+    "enterPrompt": "Please enter a prompt",
+    "minImagesRequired": "At least 1 image is required",
+    "renderFailed": "Rendering failed"
+  },
   "legal": {
     "common": {
       "backToHome": "Back to Home",
