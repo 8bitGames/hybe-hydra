@@ -2,6 +2,15 @@
   "errors": {
     "general": "An error occurred. Please try again."
   },
+  "campaignWorkspace": {
+    "tabs": {
+      "assets": "Assets",
+      "create": "Create",
+      "videos": "Videos",
+      "publish": "Publish",
+      "analytics": "Analytics"
+    }
+  },
   "auth": {
     "login": {
       "title": "Welcome back",
@@ -14,6 +23,25 @@
       "register": "Sign up",
       "backToHome": "Back to home",
       "error": "Login failed"
+    },
+    "register": {
+      "subtitle": "Create a new account",
+      "title": "Sign up",
+      "description": "Enter your information to create an account",
+      "name": "Name",
+      "namePlaceholder": "Enter your name",
+      "email": "Email",
+      "password": "Password",
+      "passwordPlaceholder": "Enter your password",
+      "confirmPassword": "Confirm Password",
+      "confirmPasswordPlaceholder": "Enter your password again",
+      "submit": "Create Account",
+      "hasAccount": "Already have an account?",
+      "login": "Sign in",
+      "backToHome": "Back to home",
+      "error": "Registration failed",
+      "passwordMismatch": "Passwords do not match",
+      "passwordTooShort": "Password must be at least 6 characters"
     }
   },
   "campaigns": {

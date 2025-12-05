@@ -2,6 +2,15 @@
   "errors": {
     "general": "오류가 발생했습니다. 다시 시도해 주세요."
   },
+  "campaignWorkspace": {
+    "tabs": {
+      "assets": "에셋",
+      "create": "생성",
+      "videos": "영상",
+      "publish": "배포",
+      "analytics": "분석"
+    }
+  },
   "auth": {
     "login": {
       "title": "다시 오신 것을 환영합니다",
@@ -14,6 +23,25 @@
       "register": "회원가입",
       "backToHome": "홈으로 돌아가기",
       "error": "로그인에 실패했습니다"
+    },
+    "register": {
+      "subtitle": "새로운 계정을 만들어보세요",
+      "title": "회원가입",
+      "description": "아래 정보를 입력하여 계정을 생성하세요",
+      "name": "이름",
+      "namePlaceholder": "이름을 입력하세요",
+      "email": "이메일",
+      "password": "비밀번호",
+      "passwordPlaceholder": "비밀번호를 입력하세요",
+      "confirmPassword": "비밀번호 확인",
+      "confirmPasswordPlaceholder": "비밀번호를 다시 입력하세요",
+      "submit": "계정 만들기",
+      "hasAccount": "이미 계정이 있으신가요?",
+      "login": "로그인",
+      "backToHome": "홈으로 돌아가기",
+      "error": "회원가입에 실패했습니다",
+      "passwordMismatch": "비밀번호가 일치하지 않습니다",
+      "passwordTooShort": "비밀번호는 최소 6자 이상이어야 합니다"
     }
   },
   "campaigns": {

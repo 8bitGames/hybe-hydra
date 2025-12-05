@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useAuthStore } from "@/lib/auth-store";
+import { useI18n } from "@/lib/i18n";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ import { ArrowLeft } from "@phosphor-icons/react";
 export default function RegisterPage() {
   const router = useRouter();
   const { register, isLoading } = useAuthStore();
+  const { t } = useI18n();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -27,12 +29,12 @@ export default function RegisterPage() {
     setError("");
 
     if (password !== confirmPassword) {
-      setError("비밀번호가 일치하지 않습니다");
+      setError(t.auth.register.passwordMismatch);
       return;
     }
 
     if (password.length < 6) {
-      setError("비밀번호는 최소 6자 이상이어야 합니다");
+      setError(t.auth.register.passwordTooShort);
       return;
     }
 
@@ -41,7 +43,7 @@ export default function RegisterPage() {
     if (result.success) {
       router.push("/dashboard");
     } else {
-      setError(result.error || "회원가입에 실패했습니다");
+      setError(result.error || t.auth.register.error);
     }
   };
 
@@ -60,15 +62,15 @@ export default function RegisterPage() {
               priority
             />
           </Link>
-          <p className="text-muted-foreground mt-3">새로운 계정을 만들어보세요</p>
+          <p className="text-muted-foreground mt-3">{t.auth.register.subtitle}</p>
         </div>
 
         {/* Register Form */}
         <Card className="border-border shadow-sm">
           <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl">회원가입</CardTitle>
+            <CardTitle className="text-xl">{t.auth.register.title}</CardTitle>
             <CardDescription>
-              아래 정보를 입력하여 계정을 생성하세요
+              {t.auth.register.description}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -80,20 +82,20 @@ export default function RegisterPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="name">이름</Label>
+                <Label htmlFor="name">{t.auth.register.name}</Label>
                 <Input
                   id="name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
-                  placeholder="이름을 입력하세요"
+                  placeholder={t.auth.register.namePlaceholder}
                   className="h-11"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="email">이메일</Label>
+                <Label htmlFor="email">{t.auth.register.email}</Label>
                 <Input
                   id="email"
                   type="email"
@@ -106,27 +108,27 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">비밀번호</Label>
+                <Label htmlFor="password">{t.auth.register.password}</Label>
                 <Input
                   id="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  placeholder="비밀번호를 입력하세요"
+                  placeholder={t.auth.register.passwordPlaceholder}
                   className="h-11"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword">비밀번호 확인</Label>
+                <Label htmlFor="confirmPassword">{t.auth.register.confirmPassword}</Label>
                 <Input
                   id="confirmPassword"
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
-                  placeholder="비밀번호를 다시 입력하세요"
+                  placeholder={t.auth.register.confirmPasswordPlaceholder}
                   className="h-11"
                 />
               </div>
@@ -136,14 +138,14 @@ export default function RegisterPage() {
                 className="w-full h-11 bg-foreground text-background hover:bg-foreground/90"
                 disabled={isLoading}
               >
-                {isLoading ? <Spinner className="h-4 w-4" /> : "계정 만들기"}
+                {isLoading ? <Spinner className="h-4 w-4" /> : t.auth.register.submit}
               </Button>
             </form>
 
             <div className="mt-6 text-center text-sm">
-              <span className="text-muted-foreground">이미 계정이 있으신가요? </span>
+              <span className="text-muted-foreground">{t.auth.register.hasAccount} </span>
               <Link href="/login" className="font-medium text-foreground hover:underline">
-                로그인
+                {t.auth.register.login}
               </Link>
             </div>
           </CardContent>
@@ -156,7 +158,7 @@ export default function RegisterPage() {
             className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 transition-colors"
           >
             <ArrowLeft size={14} weight="bold" />
-            홈으로 돌아가기
+            {t.auth.register.backToHome}
           </Link>
         </div>
       </div>
