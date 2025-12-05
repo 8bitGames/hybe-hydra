@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { LandingI18nWrapper } from "./i18n-wrapper";
 
 export const metadata: Metadata = {
   title: "HYDRA - Enterprise AI Video Platform",
@@ -17,8 +18,10 @@ export default function LandingLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen">
-      {children}
-    </div>
+    <LandingI18nWrapper>
+      <div className="min-h-screen">
+        {children}
+      </div>
+    </LandingI18nWrapper>
   );
 }

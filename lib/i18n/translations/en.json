@@ -496,5 +496,273 @@
       "호환성을-379": "Compatibility",
       "레거시-380": "Legacy"
     }
+  },
+  "legal": {
+    "common": {
+      "backToHome": "Back to Home",
+      "lastModified": "Last Modified",
+      "companyInfo": "Company Information",
+      "companyName": "Company Name",
+      "ceo": "CEO",
+      "businessNumber": "Business Registration Number",
+      "corporateNumber": "Corporate Registration Number",
+      "address": "Address",
+      "companyNameValue": "Eon Studio Inc.",
+      "ceoValue": "Jiwon Kang",
+      "businessNumberValue": "440-81-02170",
+      "corporateNumberValue": "110111-8000319",
+      "addressValue": "Room 44, 45-9, Bongeunsa-ro 22-gil, Gangnam-gu, Seoul, Republic of Korea",
+      "effectiveDate": "These Terms of Service are effective as of January 1, 2024."
+    },
+    "terms": {
+      "title": "Terms of Service",
+      "article1": {
+        "title": "Article 1 (Purpose)",
+        "content": "These Terms of Service are intended to define the rights, obligations, and responsibilities between Eon Studio Inc. (hereinafter referred to as the \"Company\") and users regarding the use of the AI-based video generation platform service \"Hydra\" (hereinafter referred to as the \"Service\") provided by the Company, as well as other necessary matters."
+      },
+      "article2": {
+        "title": "Article 2 (Definitions)",
+        "item1": "\"Service\" refers to all services provided by the Company, including AI-based video generation, trend analysis, content management, and multi-platform distribution.",
+        "item2": "\"User\" refers to members and non-members who use the Service provided by the Company in accordance with these Terms.",
+        "item3": "\"Member\" refers to a person who has registered as a member by providing personal information to the Company, continuously receives information from the Company, and can continuously use the Service provided by the Company.",
+        "item4": "\"Content\" refers to all forms of videos, images, text, audio, and other materials that users create, upload, and store through the Service.",
+        "item5": "\"AI-Generated Content\" refers to videos, images, text, and other outputs automatically generated using the artificial intelligence technology of the Service."
+      },
+      "article3": {
+        "title": "Article 3 (Effect and Amendment of Terms)",
+        "item1": "These Terms apply to all users who wish to use the Service.",
+        "item2": "The Company may amend these Terms within the scope permitted by relevant laws if necessary, and the amended Terms shall become effective when posted on the Service's notice board or otherwise notified to members.",
+        "item3": "If a member does not agree to the amended Terms, they may discontinue using the Service and request withdrawal of membership. If a member continues to use the Service after the effective date of the amended Terms, they shall be deemed to have agreed to the amendments."
+      },
+      "article4": {
+        "title": "Article 4 (Provision of Services)",
+        "intro": "The Company provides the following services:",
+        "item1": "AI-based automatic video generation service",
+        "item2": "Real-time trend analysis and insights",
+        "item3": "Multi-platform content distribution service (TikTok, YouTube, Instagram, etc.)",
+        "item4": "Campaign management and analytics tools",
+        "item5": "Asset library and template provision",
+        "item6": "Hyper-personalized content creation",
+        "item7": "Multi-language localization support",
+        "item8": "Other services determined by the Company"
+      },
+      "article5": {
+        "title": "Article 5 (Membership Registration)",
+        "item1": "Users apply for membership registration by filling in member information according to the form prescribed by the Company and expressing their agreement to these Terms.",
+        "item2": "The Company registers users who have applied for membership registration as members unless they fall under any of the following categories:",
+        "item2sub1": "When the registration contains false information, omissions, or errors",
+        "item2sub2": "When registration as a member is deemed to significantly impede the Company's technical operations",
+        "item3": "The membership registration agreement is established when the Company's acceptance reaches the member."
+      },
+      "article6": {
+        "title": "Article 6 (Changes to Member Information)",
+        "content": "Members may view and modify their personal information at any time through the personal information management screen. If information provided during membership registration has changed, members must directly modify it within the Service or notify the Company of the changes through customer service."
+      },
+      "article7": {
+        "title": "Article 7 (Membership Withdrawal and Disqualification)",
+        "item1": "Members may request withdrawal at any time through the membership withdrawal function within the Service or through customer service, and the Company shall process the membership withdrawal immediately.",
+        "item2": "If a member falls under any of the following reasons, the Company may restrict or suspend membership:",
+        "item2sub1": "When false information is registered during the membership application",
+        "item2sub2": "When a member fails to pay debts related to goods purchased or other service usage by the due date",
+        "item2sub3": "When a member interferes with others' use of the Service or misappropriates their information, threatening electronic commerce order",
+        "item2sub4": "When a member engages in activities prohibited by law and these Terms or contrary to public order and morals using the Service"
+      },
+      "article8": {
+        "title": "Article 8 (User Obligations)",
+        "intro": "Users must not engage in the following activities:",
+        "item1": "Registering false information during application or modification",
+        "item2": "Misappropriating others' information",
+        "item3": "Altering information posted by the Company",
+        "item4": "Transmitting or posting information other than that designated by the Company (such as computer programs)",
+        "item5": "Infringing on intellectual property rights such as copyrights of the Company and other third parties",
+        "item6": "Activities that damage the reputation of the Company and other third parties or interfere with their business",
+        "item7": "Posting or publishing obscene or violent messages, images, audio, or other information contrary to public order and morals on the Service",
+        "item8": "Creating or distributing illegal content through the Service",
+        "item9": "Using AI-Generated Content for the purpose of creating or spreading false information",
+        "item10": "Creating content that infringes on others' portrait rights or personality rights"
+      },
+      "article9": {
+        "title": "Article 9 (Rights to Content and AI-Generated Content)",
+        "item1": "The copyright of original content uploaded by users belongs to the respective user.",
+        "item2": "Rights to AI-Generated Content created through the Service are governed by relevant laws and separate agreements. However, users may freely use AI-Generated Content within the scope of service usage purposes.",
+        "item3": "The Company may analyze users' content usage patterns in anonymized form for service quality improvement and AI model enhancement.",
+        "item4": "Users must ensure that content created through this Service does not infringe on third-party rights, and all responsibility arising from such infringement lies with the user."
+      },
+      "article10": {
+        "title": "Article 10 (Service Usage Restrictions)",
+        "item1": "The Company may gradually restrict service usage through warnings, temporary suspension, or permanent suspension if a user violates the obligations of these Terms or interferes with the normal operation of the Service.",
+        "item2": "Notwithstanding the preceding paragraph, the Company may immediately impose permanent suspension for violations of related laws, such as provision of illegal programs violating copyright law and computer program protection law, interference with operations, illegal communications and hacking violating the Information and Communications Network Act, distribution of malicious programs, and exceeding access authority."
+      },
+      "article11": {
+        "title": "Article 11 (Service Interruption)",
+        "item1": "The Company may temporarily suspend the provision of the Service when reasons such as maintenance, replacement, or malfunction of information and communication equipment including computers, or interruption of communications occur.",
+        "item2": "The Company shall compensate for damages incurred by users or third parties due to temporary suspension of the Service for the reasons in paragraph 1. However, this shall not apply when the Company has no intention or negligence."
+      },
+      "article12": {
+        "title": "Article 12 (Disclaimer)",
+        "item1": "The Company is exempted from responsibility for service provision when it cannot provide the Service due to natural disasters or equivalent force majeure.",
+        "item2": "The Company is not responsible for service usage problems caused by the user's own fault.",
+        "item3": "The Company does not guarantee the accuracy or suitability of AI-Generated Content, and users must review generated content before use.",
+        "item4": "The Company is not responsible for users not obtaining expected profits or suffering losses from using the Service."
+      },
+      "article13": {
+        "title": "Article 13 (Dispute Resolution)",
+        "item1": "The Company establishes and operates a damage compensation handling organization to reflect legitimate opinions or complaints raised by users and to process damage compensation.",
+        "item2": "Disputes between the Company and users shall be governed by the laws of the Republic of Korea, and lawsuits concerning disputes shall be under the jurisdiction of the Seoul Central District Court."
+      },
+      "addendum": {
+        "title": "Addendum"
+      }
+    },
+    "privacy": {
+      "title": "Privacy Policy",
+      "intro": "Eon Studio Inc. (hereinafter referred to as the \"Company\") complies with the Personal Information Protection Act and related laws to protect the freedom and rights of data subjects, lawfully processes personal information, and manages it securely. In accordance with Article 30 of the Personal Information Protection Act, the Company establishes and discloses this Privacy Policy to inform data subjects of procedures and standards regarding personal information processing and to promptly and smoothly handle related grievances.",
+      "article1": {
+        "title": "Article 1 (Purpose of Processing Personal Information)",
+        "intro": "The Company processes personal information for the following purposes. Personal information being processed shall not be used for purposes other than the following, and if the purpose of use changes, necessary measures will be taken, such as obtaining separate consent in accordance with Article 18 of the Personal Information Protection Act.",
+        "purpose1": {
+          "title": "Member Registration and Management",
+          "content": "Personal information is processed for purposes of verifying membership registration intention, identity verification and authentication for providing membership services, maintaining and managing membership qualification, preventing fraudulent use of services, various notifications, and handling grievances."
+        },
+        "purpose2": {
+          "title": "Service Provision",
+          "content": "Personal information is processed for purposes of providing AI video generation services, providing trend analysis results, content storage and management, multi-platform distribution services, customized service provision, identity verification, and payment and settlement."
+        },
+        "purpose3": {
+          "title": "Marketing and Advertising",
+          "content": "Personal information is processed for purposes of developing new services (products) and providing customized services, providing events and advertising information and participation opportunities, providing services and advertising based on demographic characteristics, verifying service validity, and understanding access frequency or statistics on members' service usage."
+        },
+        "purpose4": {
+          "title": "AI Service Improvement",
+          "content": "De-identified data is used for purposes of improving AI model performance, enhancing service quality, and analyzing user experience."
+        }
+      },
+      "article2": {
+        "title": "Article 2 (Personal Information Items Processed)",
+        "intro": "The Company processes the following personal information items.",
+        "category1": {
+          "title": "Items Collected During Membership Registration",
+          "required": "Required items: Email address, password, name (or nickname)",
+          "optional": "Optional items: Profile image, company name, job title"
+        },
+        "category2": {
+          "title": "Items Collected During Service Usage",
+          "item1": "Service usage records, access logs, IP address, cookies",
+          "item2": "Payment records, usage suspension records",
+          "item3": "Uploaded content (videos, images, audio, text)",
+          "item4": "Social media integration information (when linking TikTok, YouTube, Instagram accounts)"
+        },
+        "category3": {
+          "title": "Items Collected During AI Service Usage",
+          "item1": "Video generation request content (prompts, settings)",
+          "item2": "Trend search history",
+          "item3": "Generated AI content metadata"
+        }
+      },
+      "article3": {
+        "title": "Article 3 (Processing and Retention Period of Personal Information)",
+        "item1": "The Company processes and retains personal information within the personal information retention and usage period pursuant to laws or within the personal information retention and usage period agreed upon when collecting personal information from data subjects.",
+        "item2intro": "The processing and retention period for each personal information item is as follows:",
+        "retention1": {
+          "title": "Member Registration and Management:",
+          "content": "Until membership withdrawal. However, in the following cases, until the relevant reason is resolved:",
+          "sub1": "When investigation or inquiry is ongoing due to violation of related laws: Until the investigation or inquiry is completed",
+          "sub2": "When credit/debt relationship from service usage remains: Until the credit/debt relationship is settled"
+        },
+        "retention2": {
+          "title": "Provision of Goods or Services:",
+          "content": "Until completion of goods/service supply and payment/settlement. However, retained as follows according to related laws:",
+          "sub1": "Records on contracts or withdrawal of subscription: 5 years (Electronic Commerce Act)",
+          "sub2": "Records on payment and supply of goods: 5 years (Electronic Commerce Act)",
+          "sub3": "Records on consumer complaints or dispute resolution: 3 years (Electronic Commerce Act)",
+          "sub4": "Records on access: 3 months (Protection of Communications Secrets Act)"
+        }
+      },
+      "article4": {
+        "title": "Article 4 (Provision of Personal Information to Third Parties)",
+        "item1": "The Company processes personal information only within the scope specified in Article 1 (Purpose of Processing Personal Information) and provides personal information to third parties only in cases falling under Articles 17 and 18 of the Personal Information Protection Act, such as consent of the data subject or special provisions of law.",
+        "item2intro": "The Company provides personal information to third parties as follows:",
+        "socialMedia": {
+          "title": "When Integrating with Social Media Platforms:",
+          "recipient": "Recipients: TikTok, YouTube (Google), Instagram (Meta)",
+          "purpose": "Purpose of provision: Content distribution, account integration",
+          "items": "Items provided: Account information required for integration, content to be distributed",
+          "retention": "Retention period: Until integration is disconnected"
+        }
+      },
+      "article5": {
+        "title": "Article 5 (Entrustment of Personal Information Processing)",
+        "item1intro": "The Company entrusts personal information processing as follows for smooth personal information handling:",
+        "cloud": {
+          "title": "Cloud Services:",
+          "provider": "Amazon Web Services (AWS), Vercel",
+          "task": "Entrusted tasks: Data storage and server operation"
+        },
+        "payment": {
+          "title": "Payment Services:",
+          "provider": "Relevant payment processors",
+          "task": "Entrusted tasks: Payment processing and settlement"
+        },
+        "ai": {
+          "title": "AI Services:",
+          "provider": "Google (Gemini API), OpenAI",
+          "task": "Entrusted tasks: AI model processing"
+        },
+        "item2": "When concluding entrustment contracts, the Company specifies in contracts and other documents matters concerning prohibition of personal information processing outside the scope of entrusted work, technical and managerial protective measures, restrictions on re-entrustment, management and supervision of trustees, and liability for damages in accordance with Article 26 of the Personal Information Protection Act, and supervises whether trustees process personal information securely."
+      },
+      "article6": {
+        "title": "Article 6 (Rights and Obligations of Data Subjects and Exercise Methods)",
+        "item1": "Data subjects may exercise rights such as requesting access, correction, deletion, or suspension of processing of personal information against the Company at any time.",
+        "item2": "The exercise of rights pursuant to paragraph 1 may be made to the Company through written form, email, facsimile (FAX), etc. in accordance with Article 41, paragraph 1 of the Enforcement Decree of the Personal Information Protection Act, and the Company shall take action without delay.",
+        "item3": "The exercise of rights pursuant to paragraph 1 may be made through legal representatives of data subjects or authorized agents.",
+        "item4": "Requests for access to and suspension of processing of personal information may be restricted in accordance with Article 35, paragraph 4 and Article 37, paragraph 2 of the Personal Information Protection Act.",
+        "item5": "Requests for correction and deletion of personal information cannot be made if that personal information is specified as a subject of collection in other laws."
+      },
+      "article7": {
+        "title": "Article 7 (Measures to Ensure Security of Personal Information)",
+        "intro": "The Company takes the following measures to ensure the security of personal information:",
+        "measure1": {
+          "title": "Administrative measures:",
+          "content": "Establishment and implementation of internal management plans, minimization and training of personnel handling personal information"
+        },
+        "measure2": {
+          "title": "Technical measures:",
+          "content": "Management of access authority to personal information processing systems, installation of access control systems, encryption of unique identification information, installation of security programs"
+        },
+        "measure3": {
+          "title": "Physical measures:",
+          "content": "Access control to computer rooms and data storage rooms"
+        }
+      },
+      "article8": {
+        "title": "Article 8 (Installation, Operation, and Rejection of Automatic Personal Information Collection Devices)",
+        "item1": "The Company uses 'cookies' that store and periodically retrieve usage information to provide customized services to individual users.",
+        "item2intro": "Cookies are small pieces of information sent by the server (http) operating the website to the user's computer browser and may be stored on the hard disk of the user's PC.",
+        "cookiePurpose": "Purpose of cookies: Used to identify visiting and usage patterns for each service and website visited by users, popular search terms, security access, etc., to provide optimized information to users.",
+        "cookieSettings": "Installation, operation, and rejection of cookies: You can refuse to store cookies through option settings in Tools > Internet Options > Privacy menu at the top of the web browser.",
+        "cookieWarning": "If you refuse to store cookies, you may experience difficulties using customized services."
+      },
+      "article9": {
+        "title": "Article 9 (Personal Information Protection Officer)",
+        "intro": "The Company designates the following personal information protection officer to take overall responsibility for personal information processing and to handle complaints and remedy damages of data subjects related to personal information processing.",
+        "officer": "Personal Information Protection Officer",
+        "name": "Name: Jiwon Kang",
+        "position": "Position: CEO",
+        "contact": "Contact: Company representative contact",
+        "outro": "Data subjects may contact the personal information protection officer regarding all personal information protection inquiries, complaint handling, and damage remedies arising while using the Company's services. The Company will respond to and process data subjects' inquiries without delay."
+      },
+      "article10": {
+        "title": "Article 10 (Methods for Remedying Rights Infringement)",
+        "intro": "Data subjects may apply for dispute resolution or consultation to the Personal Information Dispute Mediation Committee, Korea Internet & Security Agency's Personal Information Infringement Report Center, etc. to receive remedies for personal information infringement.",
+        "agency1": "Personal Information Dispute Mediation Committee: (without area code) 1833-6972 (www.kopico.go.kr)",
+        "agency2": "Personal Information Infringement Report Center: (without area code) 118 (privacy.kisa.or.kr)",
+        "agency3": "Supreme Prosecutors' Office: (without area code) 1301 (www.spo.go.kr)",
+        "agency4": "National Police Agency: (without area code) 182 (ecrm.cyber.go.kr)"
+      },
+      "article11": {
+        "title": "Article 11 (Changes to Privacy Policy)",
+        "content": "This Privacy Policy is effective from January 1, 2024, and in case of additions, deletions, or corrections of changes according to laws and policies, we will notify through announcements 7 days before the implementation of changes."
+      }
+    }
   }
 }

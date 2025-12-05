@@ -1,7 +1,26 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, ReactNode, useMemo } from "react";
-import { translations, Language, Translations, getNestedValue } from "./translations";
+import { createContext, useContext, useState, useCallback, ReactNode, useMemo, useEffect } from "react";
+import { translations } from "./translations.json";
+import type { Translations } from "./translations.json";
+
+export type Language = "ko" | "en";
+
+// Get nested translation value
+function getNestedValue(obj: Record<string, unknown>, path: string): string {
+  const keys = path.split(".");
+  let result: unknown = obj;
+
+  for (const key of keys) {
+    if (result && typeof result === "object" && key in result) {
+      result = (result as Record<string, unknown>)[key];
+    } else {
+      return path;
+    }
+  }
+
+  return typeof result === "string" ? result : path;
+}
 
 // i18n Context
 interface I18nContextType {
@@ -32,9 +51,17 @@ function getStoredLanguage(): Language | null {
 
 // i18n Provider
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(() => {
-    return getStoredLanguage() || getBrowserLanguage();
-  });
+  const [language, setLanguageState] = useState<Language>("ko");
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Sync with localStorage after mount (handles browser back navigation)
+  useEffect(() => {
+    const stored = getStoredLanguage();
+    if (stored) {
+      setLanguageState(stored);
+    }
+    setIsHydrated(true);
+  }, []);
 
   const setLanguage = useCallback((lang: Language) => {
     setLanguageState(lang);
@@ -113,4 +140,4 @@ export function LanguageSwitcher() {
 }
 
 // Re-export types
-export type { Language, Translations };
+export type { Translations };
