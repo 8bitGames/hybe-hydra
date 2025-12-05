@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
 import { getUserFromHeader } from "@/lib/auth";
 import { PublishPlatform, PublishStatus } from "@prisma/client";
+import { inngest } from "@/lib/inngest";
 
 // GET /api/v1/publishing/schedule - List scheduled posts
 export async function GET(request: NextRequest) {
@@ -234,8 +235,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Determine status based on scheduled_at
+    // NOW (no date) = immediately publish, Scheduled = wait for scheduled time
     const scheduledDate = scheduled_at ? new Date(scheduled_at) : null;
-    const status: PublishStatus = scheduledDate ? "SCHEDULED" : "DRAFT";
+    const isNow = !scheduledDate;
+    const status: PublishStatus = isNow ? "PUBLISHING" : "SCHEDULED";
 
     // Create scheduled post
     const post = await prisma.scheduledPost.create({
@@ -265,6 +268,21 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // If NOW (immediate publish), trigger Inngest function
+    if (isNow && socialAccount.platform === "TIKTOK") {
+      console.log("[Schedule API] Triggering immediate publish for post:", post.id);
+      await inngest.send({
+        name: "publish/tiktok",
+        data: {
+          videoId: generation_id,
+          userId: user.id,
+          accountId: social_account_id,
+          caption: caption || "",
+          hashtags: hashtags || [],
+        },
+      });
+    }
+
     return NextResponse.json({
       id: post.id,
       campaign_id: post.campaignId,
@@ -282,7 +300,7 @@ export async function POST(request: NextRequest) {
         profile_url: post.socialAccount.profileUrl,
       },
       created_at: post.createdAt.toISOString(),
-      message: status === "SCHEDULED" ? "Post scheduled successfully" : "Draft created",
+      message: isNow ? "Publishing started" : "Post scheduled successfully",
     }, { status: 201 });
   } catch (error) {
     console.error("Create scheduled post error:", error);

@@ -85,7 +85,7 @@ const TikTokIcon = ({ className }: { className?: string }) => (
 );
 
 const TIME_SLOTS = [
-  "09:00", "10:00", "11:00", "12:00", "13:00", "14:00",
+  "custom", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00",
   "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00",
 ];
 
@@ -117,6 +117,8 @@ export default function PublishPage() {
   // Local state
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [selectedTime, setSelectedTime] = useState<string>("18:00");
+  const [isCustomTime, setIsCustomTime] = useState(false);
+  const [customTimeValue, setCustomTimeValue] = useState<string>("12:00");
   const [isPublishing, setIsPublishing] = useState(false);
   const [newHashtag, setNewHashtag] = useState("");
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
@@ -339,7 +341,8 @@ export default function PublishPage() {
     try {
       let scheduledAt: string | null = null;
       if (selectedDate) {
-        const [hours, minutes] = selectedTime.split(":");
+        const timeToUse = isCustomTime ? customTimeValue : selectedTime;
+        const [hours, minutes] = timeToUse.split(":");
         const scheduledDate = new Date(selectedDate);
         scheduledDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
         scheduledAt = scheduledDate.toISOString();
@@ -777,21 +780,43 @@ export default function PublishPage() {
               <div>
                 <p className="text-xs text-neutral-500 mb-2">{isKorean ? "시간" : "Time"}</p>
                 <div className="grid grid-cols-4 gap-1.5">
-                  {TIME_SLOTS.slice(0, 8).map((time) => (
+                  {TIME_SLOTS.slice(0, 9).map((time) => (
                     <button
                       key={time}
-                      onClick={() => setSelectedTime(time)}
+                      onClick={() => {
+                        if (time === "custom") {
+                          setIsCustomTime(true);
+                          setSelectedTime("");
+                        } else {
+                          setIsCustomTime(false);
+                          setSelectedTime(time);
+                        }
+                      }}
                       className={cn(
                         "px-2 py-1.5 rounded-lg text-xs font-medium transition-all",
-                        selectedTime === time
+                        time === "custom"
+                          ? isCustomTime
+                            ? "bg-black text-white"
+                            : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                          : selectedTime === time && !isCustomTime
                           ? "bg-black text-white"
                           : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
                       )}
                     >
-                      {time}
+                      {time === "custom" ? (isKorean ? "직접" : "Custom") : time}
                     </button>
                   ))}
                 </div>
+                {isCustomTime && (
+                  <div className="mt-3">
+                    <Input
+                      type="time"
+                      value={customTimeValue}
+                      onChange={(e) => setCustomTimeValue(e.target.value)}
+                      className="h-10 bg-neutral-50 border-neutral-200 text-center"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -805,7 +830,9 @@ export default function PublishPage() {
                 <span className="text-neutral-500">{isKorean ? "발행 시간" : "When"}</span>
                 <span className="font-medium text-black flex items-center gap-1">
                   <Clock className="h-3.5 w-3.5" />
-                  {isScheduled ? `${format(selectedDate!, "M/d")} ${selectedTime}` : isKorean ? "즉시" : "Now"}
+                  {isScheduled
+                    ? `${format(selectedDate!, "M/d")} ${isCustomTime ? customTimeValue : selectedTime}`
+                    : isKorean ? "즉시" : "Now"}
                 </span>
               </div>
             </div>

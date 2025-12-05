@@ -368,7 +368,8 @@ export const previewImageApi = {
     ),
 
   // Generate preview without campaign (for /create page)
-  generateWithoutCampaign: (data: Omit<PreviewImageRequest, "composition_mode" | "hand_pose">) =>
+  // Now supports all PreviewImageRequest options including composition_mode and hand_pose
+  generateWithoutCampaign: (data: PreviewImageRequest) =>
     api.post<PreviewImageResponse & { success: boolean }>(
       "/api/v1/ai/generate-preview-image",
       data as unknown as Record<string, unknown>

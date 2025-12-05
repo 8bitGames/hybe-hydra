@@ -87,6 +87,11 @@ const getStatusBadge = (status: string, language: "ko" | "en") => {
         <CheckCircle className="h-3 w-3 mr-1" />
         {language === "ko" ? "발행됨" : "Published"}
       </Badge>;
+    case "PUBLISHING":
+      return <Badge className="bg-blue-500">
+        <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+        {language === "ko" ? "발행 중..." : "Publishing..."}
+      </Badge>;
     case "SCHEDULED":
       return <Badge variant="secondary">
         <Clock className="h-3 w-3 mr-1" />
@@ -184,6 +189,7 @@ export default function PublishingPage() {
   }, [loadData]);
 
   const scheduledPosts = posts.filter(p => p.status === "SCHEDULED");
+  const publishingPosts = posts.filter(p => p.status === "PUBLISHING");
   const publishedPosts = posts.filter(p => p.status === "PUBLISHED");
   const failedPosts = posts.filter(p => p.status === "FAILED");
   const cancelledPosts = posts.filter(p => p.status === "CANCELLED");
@@ -293,6 +299,12 @@ export default function PublishingPage() {
             <Clock className="h-4 w-4" />
             {language === "ko" ? "예약됨" : "Scheduled"} ({scheduledPosts.length})
           </TabsTrigger>
+          {publishingPosts.length > 0 && (
+            <TabsTrigger value="publishing" className="gap-2">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              {language === "ko" ? "발행 중" : "Publishing"} ({publishingPosts.length})
+            </TabsTrigger>
+          )}
           <TabsTrigger value="published" className="gap-2">
             <CheckCircle className="h-4 w-4" />
             {language === "ko" ? "발행됨" : "Published"} ({publishedPosts.length})
@@ -352,9 +364,11 @@ export default function PublishingPage() {
                           {post.campaignName} •{" "}
                           {post.publishedAt
                             ? `${language === "ko" ? "발행: " : "Published "}${new Date(post.publishedAt).toLocaleDateString()}`
+                            : post.status === "PUBLISHING"
+                            ? (language === "ko" ? "TikTok 인박스로 전송 중..." : "Sending to TikTok inbox...")
                             : post.scheduledAt
                             ? `${language === "ko" ? "예약: " : "Scheduled "}${new Date(post.scheduledAt).toLocaleString()}`
-                            : language === "ko" ? "날짜 없음" : "No date"}
+                            : language === "ko" ? "즉시 발행" : "Immediate publish"}
                         </p>
                         {post.status === "PUBLISHED" && (
                           <div className="flex items-center gap-4 mt-2 text-sm">
@@ -425,6 +439,58 @@ export default function PublishingPage() {
                           {post.campaignName} •{" "}
                           {language === "ko" ? "예약 시간: " : "Scheduled for "}
                           {post.scheduledAt ? new Date(post.scheduledAt).toLocaleString() : "-"}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedPost(post)}
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        {language === "ko" ? "보기" : "View"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="publishing" className="mt-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner className="h-8 w-8" />
+            </div>
+          ) : publishingPosts.length === 0 ? (
+            <Card>
+              <CardContent className="pt-12 pb-12 text-center">
+                <Send className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="font-medium mb-2">
+                  {language === "ko" ? "발행 중인 게시물이 없습니다" : "No posts being published"}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {language === "ko"
+                    ? "발행 중인 게시물이 여기에 표시됩니다"
+                    : "Posts being published will appear here"}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {publishingPosts.map((post) => (
+                <Card key={post.id} className="border-blue-500/50">
+                  <CardContent className="pt-4 pb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="text-2xl">{getPlatformIcon(post.platform)}</div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{post.accountName}</span>
+                          {getStatusBadge(post.status, language)}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {post.campaignName} •{" "}
+                          {language === "ko" ? "TikTok 인박스로 전송 중..." : "Sending to TikTok inbox..."}
                         </p>
                       </div>
                       <Button
@@ -714,6 +780,23 @@ export default function PublishingPage() {
                     {language === "ko" ? "예약 일시" : "Scheduled At"}
                   </span>
                   <span>{new Date(selectedPost.scheduledAt).toLocaleString()}</span>
+                </div>
+              )}
+
+              {/* Publishing Info (for publishing posts) */}
+              {selectedPost.status === "PUBLISHING" && (
+                <div className="border-t pt-4">
+                  <div className="flex items-center gap-2 text-blue-500 mb-2">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span className="text-sm font-medium">
+                      {language === "ko" ? "발행 진행 중" : "Publishing in Progress"}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground bg-blue-500/10 p-3 rounded-lg">
+                    {language === "ko"
+                      ? "영상이 TikTok 인박스로 전송되고 있습니다. 완료되면 TikTok 앱에서 영상을 확인하고 발행할 수 있습니다."
+                      : "Video is being sent to your TikTok inbox. Once complete, you can review and publish it from the TikTok app."}
+                  </p>
                 </div>
               )}
 

@@ -382,6 +382,11 @@ function FinalPromptStep({
   onUserFeedbackChange,
   onCopy,
   onRegenerate,
+  compositionMode,
+  onCompositionModeChange,
+  handPose,
+  onHandPoseChange,
+  hasProductImage,
 }: {
   finalPrompt: string;
   metadata: {
@@ -398,6 +403,11 @@ function FinalPromptStep({
   onUserFeedbackChange: (feedback: string) => void;
   onCopy: () => void;
   onRegenerate: () => void;
+  compositionMode: "direct" | "two_step";
+  onCompositionModeChange: (mode: "direct" | "two_step") => void;
+  handPose: string;
+  onHandPoseChange: (pose: string) => void;
+  hasProductImage: boolean;
 }) {
   const { language } = useI18n();
 
@@ -448,6 +458,72 @@ function FinalPromptStep({
           </>
         )}
       </div>
+
+      {/* Composition mode settings (only show when product image is available) */}
+      {hasProductImage && (
+        <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg space-y-3">
+          <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide flex items-center gap-1">
+            <ImageIcon className="h-3 w-3" />
+            {language === "ko" ? "이미지 합성 모드" : "Composition Mode"}
+          </h4>
+
+          {/* Mode toggle */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => onCompositionModeChange("direct")}
+              className={cn(
+                "flex-1 p-2 text-xs rounded-lg border transition-all text-left",
+                compositionMode === "direct"
+                  ? "border-neutral-900 bg-white ring-1 ring-neutral-900"
+                  : "border-neutral-200 hover:border-neutral-300"
+              )}
+            >
+              <div className="font-medium text-neutral-900">
+                {language === "ko" ? "다이렉트" : "Direct"}
+              </div>
+              <div className="text-neutral-500 mt-0.5">
+                {language === "ko"
+                  ? "배경만 생성 후 상품 합성"
+                  : "Generate background, then composite"}
+              </div>
+            </button>
+            <button
+              onClick={() => onCompositionModeChange("two_step")}
+              className={cn(
+                "flex-1 p-2 text-xs rounded-lg border transition-all text-left",
+                compositionMode === "two_step"
+                  ? "border-neutral-900 bg-white ring-1 ring-neutral-900"
+                  : "border-neutral-200 hover:border-neutral-300"
+              )}
+            >
+              <div className="font-medium text-neutral-900">
+                {language === "ko" ? "2단계 합성" : "Two-Step"}
+              </div>
+              <div className="text-neutral-500 mt-0.5">
+                {language === "ko"
+                  ? "장면 생성 → 상품 배치"
+                  : "Scene generation → Product placement"}
+              </div>
+            </button>
+          </div>
+
+          {/* Hand pose input (only for two_step mode) */}
+          {compositionMode === "two_step" && (
+            <div>
+              <Label className="text-xs text-neutral-500 mb-1.5 block">
+                {language === "ko" ? "손 포즈 설명" : "Hand Pose Description"}
+              </Label>
+              <input
+                type="text"
+                value={handPose}
+                onChange={(e) => onHandPoseChange(e.target.value)}
+                placeholder={language === "ko" ? "예: 우아하게 들고 있는" : "e.g., elegantly holding"}
+                className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-900"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Final prompt */}
       <div>
@@ -663,6 +739,10 @@ export function PersonalizePromptModal({
   // Preview image (Step 4)
   const [previewImage, setPreviewImage] = useState<PreviewImageData | null>(null);
 
+  // Composition options (for two-step mode)
+  const [compositionMode, setCompositionMode] = useState<"direct" | "two_step">("direct");
+  const [handPose, setHandPose] = useState("elegantly holding");
+
   // Reset state when modal opens - use useEffect instead to properly trigger analysis
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
@@ -680,6 +760,8 @@ export function PersonalizePromptModal({
         setFinalPrompt("");
         setUserFeedback("");
         setPreviewImage(null);
+        setCompositionMode("direct");
+        setHandPose("elegantly holding");
       }
       onOpenChange(newOpen);
     },
@@ -949,13 +1031,25 @@ export function PersonalizePromptModal({
     console.log("[PERSONALIZE] 🖼️ Step 4: Generating preview image (first frame)");
     console.log("[PERSONALIZE]   Video prompt:", finalPrompt.slice(0, 100) + "...");
     console.log("[PERSONALIZE]   Image description:", imageAnalysis.summary.slice(0, 100) + "...");
+    console.log("[PERSONALIZE]   Composition mode:", compositionMode);
 
     try {
+      // Get product image URL from images array (first S3/external URL, not blob)
+      const productImage = images.find(img => img.url && !img.url.startsWith("blob:"));
+      const productImageUrl = productImage?.url;
+
+      if (productImageUrl) {
+        console.log("[PERSONALIZE]   Product image URL:", productImageUrl.slice(0, 80) + "...");
+      }
+
       const response = await previewImageApi.generateWithoutCampaign({
         video_prompt: finalPrompt,
         image_description: imageAnalysis.summary,
         aspect_ratio: metadata.aspectRatio,
         style: metadata.style,
+        product_image_url: productImageUrl,
+        composition_mode: compositionMode,
+        hand_pose: handPose,
       });
 
       if (response.error || !response.data) {
@@ -963,6 +1057,7 @@ export function PersonalizePromptModal({
       }
 
       console.log("[PERSONALIZE] ✅ Preview image generated:", response.data.preview_id);
+      console.log("[PERSONALIZE]   Composition mode used:", response.data.composition_mode);
 
       setPreviewImage({
         preview_id: response.data.preview_id,
@@ -978,7 +1073,7 @@ export function PersonalizePromptModal({
     } finally {
       setIsGeneratingPreview(false);
     }
-  }, [finalPrompt, imageAnalysis, metadata]);
+  }, [finalPrompt, imageAnalysis, metadata, images, compositionMode, handPose]);
 
   // Handle regenerate preview image
   const handleRegeneratePreview = useCallback(() => {
@@ -1092,6 +1187,11 @@ export function PersonalizePromptModal({
               onUserFeedbackChange={setUserFeedback}
               onCopy={handleCopy}
               onRegenerate={handleRegenerate}
+              compositionMode={compositionMode}
+              onCompositionModeChange={setCompositionMode}
+              handPose={handPose}
+              onHandPoseChange={setHandPose}
+              hasProductImage={images.some(img => img.url && !img.url.startsWith("blob:"))}
             />
           )}
           {step === 4 && (
