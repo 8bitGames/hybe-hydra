@@ -107,12 +107,18 @@ function startMerchandiseVideoGeneration(
       }
 
       // Build Veo params with merchandise reference image for I2V
+      // Use fast model for testing when VEO_USE_FAST_MODEL=true
+      const veoModel = process.env.VEO_USE_FAST_MODEL === "true"
+        ? "veo-3.1-fast-generate-preview"
+        : "veo-3.1-generate-preview";
+
       const veoParams: VeoGenerationParams = {
         prompt: finalPrompt,
         negativePrompt: params.negativePrompt,
         durationSeconds: params.durationSeconds,
         aspectRatio: params.aspectRatio as "16:9" | "9:16" | "1:1",
         style: params.style,
+        model: veoModel,
         // Pass primary merchandise image as reference for I2V mode
         referenceImageUrl: params.primaryMerchandiseUrl,
       };

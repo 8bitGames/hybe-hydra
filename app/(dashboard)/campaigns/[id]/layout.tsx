@@ -167,9 +167,9 @@ export default function CampaignWorkspaceLayout({
   }
 
   return (
-    <div className="min-h-full -mx-4 -mt-6">
+    <div className="min-h-full px-[7%]">
       {/* Compact Header Bar */}
-      <div className="bg-background border-b">
+      <div className="bg-background border-b border-x border-border rounded-t-lg">
         {/* Top Row: Back + Campaign Info */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50">
           <Link href="/campaigns">
@@ -262,7 +262,7 @@ export default function CampaignWorkspaceLayout({
       </div>
 
       {/* Page Content */}
-      <div className="py-6 px-[7%]">
+      <div className="py-6">
         {children}
       </div>
     </div>

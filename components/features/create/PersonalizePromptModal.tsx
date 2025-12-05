@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useI18n } from "@/lib/i18n";
+import { previewImageApi } from "@/lib/video-api";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ import {
   AlertCircle,
   Copy,
   RefreshCw,
+  ImagePlus,
 } from "lucide-react";
 
 // ============================================================================
@@ -109,6 +111,14 @@ interface ImageAnalysis {
   mood: string;
 }
 
+// Preview image data from I2V generation
+interface PreviewImageData {
+  preview_id: string;
+  image_url: string;
+  image_base64: string;
+  gemini_image_prompt: string;
+}
+
 interface PersonalizePromptModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -118,6 +128,7 @@ interface PersonalizePromptModalProps {
     duration: string;
     aspectRatio: string;
     style: string;
+    previewImage?: PreviewImageData;
   }) => void;
 }
 
@@ -130,7 +141,8 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
   const steps = [
     { num: 1, label: language === "ko" ? "분석 중" : "Analyzing" },
     { num: 2, label: language === "ko" ? "방향 선택" : "Choose Direction" },
-    { num: 3, label: language === "ko" ? "최종 프롬프트" : "Final Prompt" },
+    { num: 3, label: language === "ko" ? "영상 프롬프트" : "Video Prompt" },
+    { num: 4, label: language === "ko" ? "첫 장면 생성" : "First Frame" },
   ];
 
   return (
@@ -495,6 +507,120 @@ function FinalPromptStep({
 }
 
 // ============================================================================
+// Step 4: Preview Image Generation
+// ============================================================================
+
+function PreviewImageStep({
+  previewImage,
+  isGenerating,
+  error,
+  onRegenerate,
+}: {
+  previewImage: PreviewImageData | null;
+  isGenerating: boolean;
+  error: string | null;
+  onRegenerate: () => void;
+}) {
+  const { language } = useI18n();
+
+  if (isGenerating) {
+    return (
+      <div className="py-12 text-center">
+        <div className="relative w-20 h-20 mx-auto mb-6">
+          <div className="absolute inset-0 rounded-full bg-neutral-100 animate-pulse" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <ImagePlus className="h-8 w-8 text-neutral-600 animate-pulse" />
+          </div>
+        </div>
+        <h3 className="text-lg font-semibold text-neutral-900 mb-2">
+          {language === "ko" ? "첫 장면 이미지 생성 중..." : "Generating first frame..."}
+        </h3>
+        <p className="text-sm text-neutral-500 mb-6">
+          {language === "ko"
+            ? "AI가 영상의 첫 장면을 생성하고 있습니다"
+            : "AI is creating the first frame for your video"}
+        </p>
+        <Spinner className="mx-auto" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="py-8 text-center">
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-50 flex items-center justify-center">
+          <AlertCircle className="h-8 w-8 text-red-500" />
+        </div>
+        <h3 className="text-lg font-semibold text-neutral-900 mb-2">
+          {language === "ko" ? "이미지 생성 실패" : "Image generation failed"}
+        </h3>
+        <p className="text-sm text-red-600 mb-4">{error}</p>
+        <Button onClick={onRegenerate} variant="outline">
+          <RefreshCw className="h-4 w-4 mr-2" />
+          {language === "ko" ? "다시 시도" : "Try again"}
+        </Button>
+      </div>
+    );
+  }
+
+  if (!previewImage) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Success header */}
+      <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+        <Check className="h-5 w-5 text-green-600" />
+        <div>
+          <h4 className="text-sm font-semibold text-green-800">
+            {language === "ko" ? "첫 장면 이미지가 생성되었습니다" : "First frame generated successfully"}
+          </h4>
+          <p className="text-xs text-green-600">
+            {language === "ko"
+              ? "이 이미지를 기반으로 영상이 생성됩니다"
+              : "This image will be used as the starting frame for your video"}
+          </p>
+        </div>
+      </div>
+
+      {/* Preview image */}
+      <div className="relative rounded-lg overflow-hidden border border-neutral-200 bg-neutral-100">
+        <img
+          src={previewImage.image_url}
+          alt="Generated first frame"
+          className="w-full h-auto object-contain max-h-[400px]"
+        />
+      </div>
+
+      {/* Image prompt info */}
+      <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
+        <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+          <Wand2 className="h-3 w-3" />
+          {language === "ko" ? "사용된 이미지 프롬프트" : "Image Prompt Used"}
+        </h4>
+        <p className="text-sm text-neutral-600 line-clamp-3">
+          {previewImage.gemini_image_prompt}
+        </p>
+      </div>
+
+      {/* Regenerate button */}
+      <div className="flex justify-center">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRegenerate}
+          className="text-xs"
+        >
+          <RefreshCw className="h-3 w-3 mr-2" />
+          {language === "ko" ? "다른 이미지 생성" : "Generate different image"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Main Modal Component
 // ============================================================================
 
@@ -508,10 +634,12 @@ export function PersonalizePromptModal({
   const { language } = useI18n();
 
   // State
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   // Analysis results
   const [variations, setVariations] = useState<PromptVariation[]>([]);
@@ -532,6 +660,9 @@ export function PersonalizePromptModal({
   });
   const [userFeedback, setUserFeedback] = useState("");
 
+  // Preview image (Step 4)
+  const [previewImage, setPreviewImage] = useState<PreviewImageData | null>(null);
+
   // Reset state when modal opens - use useEffect instead to properly trigger analysis
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
@@ -540,12 +671,15 @@ export function PersonalizePromptModal({
         setStep(1);
         setIsAnalyzing(false);
         setIsFinalizing(false);
+        setIsGeneratingPreview(false);
         setError(null);
+        setPreviewError(null);
         setVariations([]);
         setImageAnalysis(null);
         setSelectedVariation(null);
         setFinalPrompt("");
         setUserFeedback("");
+        setPreviewImage(null);
       }
       onOpenChange(newOpen);
     },
@@ -804,35 +938,88 @@ export function PersonalizePromptModal({
     }
   }, [selectedVariation, finalizePrompt]);
 
+  // Step 3 → 4: Generate preview image (first frame for I2V)
+  const generatePreviewImage = useCallback(async () => {
+    if (!finalPrompt || !imageAnalysis) return;
+
+    setIsGeneratingPreview(true);
+    setPreviewError(null);
+    setStep(4);
+
+    console.log("[PERSONALIZE] 🖼️ Step 4: Generating preview image (first frame)");
+    console.log("[PERSONALIZE]   Video prompt:", finalPrompt.slice(0, 100) + "...");
+    console.log("[PERSONALIZE]   Image description:", imageAnalysis.summary.slice(0, 100) + "...");
+
+    try {
+      const response = await previewImageApi.generateWithoutCampaign({
+        video_prompt: finalPrompt,
+        image_description: imageAnalysis.summary,
+        aspect_ratio: metadata.aspectRatio,
+        style: metadata.style,
+      });
+
+      if (response.error || !response.data) {
+        throw new Error(response.error?.message || "Failed to generate preview image");
+      }
+
+      console.log("[PERSONALIZE] ✅ Preview image generated:", response.data.preview_id);
+
+      setPreviewImage({
+        preview_id: response.data.preview_id,
+        image_url: response.data.image_url,
+        image_base64: response.data.image_base64,
+        gemini_image_prompt: response.data.gemini_image_prompt,
+      });
+    } catch (err) {
+      console.error("[PERSONALIZE] ❌ Preview image generation error:", err);
+      setPreviewError(
+        err instanceof Error ? err.message : "Failed to generate preview image"
+      );
+    } finally {
+      setIsGeneratingPreview(false);
+    }
+  }, [finalPrompt, imageAnalysis, metadata]);
+
+  // Handle regenerate preview image
+  const handleRegeneratePreview = useCallback(() => {
+    generatePreviewImage();
+  }, [generatePreviewImage]);
+
   // Handle complete
   const handleComplete = useCallback(() => {
     console.log("[PERSONALIZE] handleComplete called with:", {
       finalPrompt: finalPrompt?.slice(0, 100),
       metadata,
+      previewImage: previewImage ? { id: previewImage.preview_id, hasImage: !!previewImage.image_url } : null,
     });
     onComplete(finalPrompt, {
       duration: metadata.duration,
       aspectRatio: metadata.aspectRatio,
       style: metadata.style,
+      previewImage: previewImage || undefined,
     });
     onOpenChange(false);
-  }, [finalPrompt, metadata, onComplete, onOpenChange]);
+  }, [finalPrompt, metadata, previewImage, onComplete, onOpenChange]);
 
   // Navigation
-  const canGoBack = step > 1 && !isAnalyzing && !isFinalizing;
+  const canGoBack = step > 1 && !isAnalyzing && !isFinalizing && !isGeneratingPreview;
   const canGoForward =
     (step === 2 && selectedVariation !== null) ||
-    (step === 3 && finalPrompt !== "");
+    (step === 3 && finalPrompt !== "") ||
+    (step === 4 && previewImage !== null);
 
   const handleBack = () => {
     if (step === 2) setStep(1);
     else if (step === 3) setStep(2);
+    else if (step === 4) setStep(3);
   };
 
   const handleNext = () => {
     if (step === 2 && selectedVariation) {
       finalizePrompt();
     } else if (step === 3 && finalPrompt) {
+      generatePreviewImage();
+    } else if (step === 4 && previewImage) {
       handleComplete();
     }
   };
@@ -907,6 +1094,14 @@ export function PersonalizePromptModal({
               onRegenerate={handleRegenerate}
             />
           )}
+          {step === 4 && (
+            <PreviewImageStep
+              previewImage={previewImage}
+              isGenerating={isGeneratingPreview}
+              error={previewError}
+              onRegenerate={handleRegeneratePreview}
+            />
+          )}
         </div>
 
         {/* Footer */}
@@ -930,7 +1125,8 @@ export function PersonalizePromptModal({
                 {t.back}
               </Button>
             )}
-            {step < 3 && (
+            {/* Steps 2-3: Next button */}
+            {(step === 2 || (step === 3 && !isFinalizing && finalPrompt)) && (
               <Button
                 onClick={handleNext}
                 disabled={!canGoForward}
@@ -940,7 +1136,8 @@ export function PersonalizePromptModal({
                 <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
             )}
-            {step === 3 && !isFinalizing && finalPrompt && (
+            {/* Step 4: Generate button (final step) */}
+            {step === 4 && !isGeneratingPreview && previewImage && (
               <Button
                 onClick={handleComplete}
                 className="bg-neutral-900 text-white hover:bg-neutral-800"

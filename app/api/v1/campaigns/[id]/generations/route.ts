@@ -262,6 +262,11 @@ async function startVideoGeneration(
         console.log(`[Generation ${generationId}] ✓ Using Gemini-generated video prompt with animation instructions`);
       }
 
+      // Use fast model for testing when VEO_USE_FAST_MODEL=true
+      const veoModel = process.env.VEO_USE_FAST_MODEL === "true"
+        ? "veo-3.1-fast-generate-preview"
+        : "veo-3.1-generate-preview";
+
       const veoParams: VeoGenerationParams = {
         prompt: finalVideoPrompt,
         negativePrompt: params.negativePrompt,
@@ -270,6 +275,7 @@ async function startVideoGeneration(
         // MANDATORY I2V: Always use the generated image
         referenceImageBase64: generatedImageBase64,
         style: params.style,
+        model: veoModel,
       };
 
       const currentProgress = 40;  // Always at 40% since image generation is mandatory

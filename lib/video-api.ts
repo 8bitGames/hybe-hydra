@@ -366,6 +366,13 @@ export const previewImageApi = {
       `/api/v1/campaigns/${campaignId}/generations/preview-image`,
       data as unknown as Record<string, unknown>
     ),
+
+  // Generate preview without campaign (for /create page)
+  generateWithoutCampaign: (data: Omit<PreviewImageRequest, "composition_mode" | "hand_pose">) =>
+    api.post<PreviewImageResponse & { success: boolean }>(
+      "/api/v1/ai/generate-preview-image",
+      data as unknown as Record<string, unknown>
+    ),
 };
 
 // Prompt Alchemist API

@@ -1,0 +1,11 @@
+{
+  "enabledMcpjsonServers": [
+    "context7",
+    "shadcn",
+    "sequential-thinking",
+    "microsoft-playwright-mcp",
+    "supabase",
+    "Sentry"
+  ],
+  "enableAllProjectMcpServers": true
+}

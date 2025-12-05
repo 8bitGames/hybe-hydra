@@ -1063,10 +1063,16 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
 
     try {
       // MANDATORY I2V: Always use the generated image
+      // Use fast model for testing when VEO_USE_FAST_MODEL=true
+      const veoModel = process.env.VEO_USE_FAST_MODEL === "true"
+        ? "veo-3.1-fast-generate-preview"
+        : "veo-3.1-generate-preview";
+
       const videoGenParams: VeoGenerationParams = {
         prompt: finalVideoPrompt,
         aspectRatio: aspectRatio as "16:9" | "9:16",
         durationSeconds: durationSeconds,
+        model: veoModel,
         // MANDATORY: Always include the generated image for I2V
         referenceImageBase64: generatedImageBase64,
       };

@@ -1378,10 +1378,20 @@ export default function CreatePage() {
 
   // Handle personalization complete - start generation with personalized prompt
   const handlePersonalizationComplete = useCallback(
-    async (prompt: string, metadata: { duration: string; aspectRatio: string; style: string }) => {
+    async (prompt: string, metadata: {
+      duration: string;
+      aspectRatio: string;
+      style: string;
+      previewImage?: {
+        preview_id: string;
+        image_url: string;
+        image_base64: string;
+        gemini_image_prompt: string;
+      };
+    }) => {
       console.log("[Veo3] handlePersonalizationComplete called", {
         prompt: prompt.slice(0, 100) + "...",
-        metadata,
+        metadata: { ...metadata, previewImage: metadata.previewImage ? { id: metadata.previewImage.preview_id, hasImage: !!metadata.previewImage.image_url } : null },
         audioAsset: audioAsset?.id,
         imageAssetsCount: imageAssets.length,
       });
@@ -1403,48 +1413,66 @@ export default function CreatePage() {
         console.log("[Veo3] ═══════════════════════════════════════════════════════");
         console.log("[Veo3] Starting video generation via API...");
         console.log("[Veo3] Total image assets:", imageAssets.length);
-
-        // Get first image for I2V if available
-        const firstImage = imageAssets[0];
+        console.log("[Veo3] Has AI-generated preview:", !!metadata.previewImage);
 
         // Prepare image data for the API
         let previewImageBase64: string | undefined;
         let previewImageUrl: string | undefined;
+        let imageDescription: string | undefined;
 
-        if (firstImage) {
-          console.log("[Veo3] First image details:", {
-            id: firstImage.id,
-            name: firstImage.name,
-            fromCampaign: firstImage.fromCampaign,
-            hasFile: !!firstImage.file,
-            hasUrl: !!firstImage.url,
-            urlPreview: firstImage.url?.slice(0, 60),
-          });
+        // PRIORITY 1: Use AI-generated preview image from modal (I2V first frame)
+        if (metadata.previewImage) {
+          console.log("[Veo3] 🎨 Using AI-GENERATED preview image from modal");
+          console.log("[Veo3]   Preview ID:", metadata.previewImage.preview_id);
+          console.log("[Veo3]   Image URL:", metadata.previewImage.image_url.slice(0, 80) + "...");
+          console.log("[Veo3]   Base64 length:", metadata.previewImage.image_base64?.length || 0);
 
-          if (firstImage.fromCampaign) {
-            // Campaign asset - use the S3 URL directly
-            previewImageUrl = firstImage.url;
-            console.log("[Veo3] ✓ Using CAMPAIGN image URL:", previewImageUrl.slice(0, 80) + "...");
-          } else if (firstImage.file) {
-            // Local upload - convert to base64
-            console.log("[Veo3] Converting LOCAL upload to base64...");
-            previewImageBase64 = await fileToBase64(firstImage.file);
-            console.log("[Veo3] ✓ Base64 image ready:", Math.round(previewImageBase64.length / 1024) + "KB");
-          } else if (firstImage.url && !firstImage.url.startsWith("blob:")) {
-            // External URL that's not a blob
-            previewImageUrl = firstImage.url;
-            console.log("[Veo3] ✓ Using EXTERNAL image URL:", previewImageUrl.slice(0, 80) + "...");
+          previewImageUrl = metadata.previewImage.image_url;
+          previewImageBase64 = metadata.previewImage.image_base64;
+          imageDescription = metadata.previewImage.gemini_image_prompt;
+          console.log("[Veo3] ✓ AI-generated first frame ready for I2V");
+        }
+        // PRIORITY 2: Fall back to user-uploaded images (legacy behavior)
+        else {
+          const firstImage = imageAssets[0];
+
+          if (firstImage) {
+            console.log("[Veo3] 📷 Using USER-UPLOADED image (legacy mode)");
+            console.log("[Veo3] First image details:", {
+              id: firstImage.id,
+              name: firstImage.name,
+              fromCampaign: firstImage.fromCampaign,
+              hasFile: !!firstImage.file,
+              hasUrl: !!firstImage.url,
+              urlPreview: firstImage.url?.slice(0, 60),
+            });
+
+            if (firstImage.fromCampaign) {
+              // Campaign asset - use the S3 URL directly
+              previewImageUrl = firstImage.url;
+              console.log("[Veo3] ✓ Using CAMPAIGN image URL:", previewImageUrl.slice(0, 80) + "...");
+            } else if (firstImage.file) {
+              // Local upload - convert to base64
+              console.log("[Veo3] Converting LOCAL upload to base64...");
+              previewImageBase64 = await fileToBase64(firstImage.file);
+              console.log("[Veo3] ✓ Base64 image ready:", Math.round(previewImageBase64.length / 1024) + "KB");
+            } else if (firstImage.url && !firstImage.url.startsWith("blob:")) {
+              // External URL that's not a blob
+              previewImageUrl = firstImage.url;
+              console.log("[Veo3] ✓ Using EXTERNAL image URL:", previewImageUrl.slice(0, 80) + "...");
+            } else {
+              console.log("[Veo3] ⚠ Could not process first image - no valid source");
+            }
+            imageDescription = `Reference image for video generation`;
           } else {
-            console.log("[Veo3] ⚠ Could not process first image - no valid source");
+            console.log("[Veo3] No images provided - will use T2V mode");
           }
-        } else {
-          console.log("[Veo3] No images provided - will use T2V mode");
         }
 
         console.log("[Veo3] Image mode summary:", {
           hasBase64: !!previewImageBase64,
           hasUrl: !!previewImageUrl,
-          mode: previewImageBase64 ? "LOCAL_UPLOAD" : previewImageUrl ? "CAMPAIGN_URL" : "TEXT_ONLY",
+          mode: metadata.previewImage ? "AI_GENERATED" : previewImageBase64 ? "LOCAL_UPLOAD" : previewImageUrl ? "CAMPAIGN_URL" : "TEXT_ONLY",
         });
 
         const apiParams = {
@@ -1454,11 +1482,11 @@ export default function CreatePage() {
           duration_seconds: parseInt(metadata.duration) || 5,
           reference_style: metadata.style || undefined,
           enable_i2v: !!(previewImageBase64 || previewImageUrl),
-          image_description: firstImage ? `Reference image for video generation` : undefined,
+          image_description: imageDescription,
           has_preview_image_base64: !!previewImageBase64,
           has_preview_image_url: !!previewImageUrl,
           preview_image_url_preview: previewImageUrl?.slice(0, 60),
-          reference_image_id: firstImage?.fromCampaign ? firstImage.id : undefined,
+          mode: metadata.previewImage ? "AI_GENERATED" : "USER_UPLOADED",
         };
         console.log("[Veo3] API request params:", apiParams);
 
@@ -1470,11 +1498,10 @@ export default function CreatePage() {
           reference_style: metadata.style || undefined,
           // Enable I2V if image is available
           enable_i2v: !!(previewImageBase64 || previewImageUrl),
-          image_description: firstImage ? `Reference image for video generation` : undefined,
+          image_description: imageDescription,
           // Pass the actual image data
           preview_image_base64: previewImageBase64,
           preview_image_url: previewImageUrl,
-          reference_image_id: firstImage?.fromCampaign ? firstImage.id : undefined,
           // Bridge context from workflow
           original_input: analyze.userIdea || undefined,
           trend_keywords: useWorkflowStore.getState().discover.keywords,

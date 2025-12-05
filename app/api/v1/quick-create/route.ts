@@ -111,6 +111,11 @@ async function startQuickVideoGeneration(
         console.log(`[QuickCreate ${generationId}] Using Gemini-generated video prompt`);
       }
 
+      // Use fast model for testing when VEO_USE_FAST_MODEL=true
+      const veoModel = process.env.VEO_USE_FAST_MODEL === "true"
+        ? "veo-3.1-fast-generate-preview"
+        : "veo-3.1-generate-preview";
+
       const veoParams: VeoGenerationParams = {
         prompt: finalVideoPrompt,
         negativePrompt: params.negativePrompt,
@@ -118,6 +123,7 @@ async function startQuickVideoGeneration(
         aspectRatio: (params.aspectRatio as "16:9" | "9:16" | "1:1") || "16:9",
         referenceImageBase64: generatedImageBase64,
         style: params.style,
+        model: veoModel,
       };
 
       await prisma.videoGeneration.update({
