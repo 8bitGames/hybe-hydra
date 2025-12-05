@@ -17,6 +17,7 @@ import { generateImage, convertAspectRatioForImagen } from "@/lib/imagen";
 import { generateImagePromptForI2V, generateVideoPromptForI2V } from "@/lib/gemini-prompt";
 import {
   publishVideoToTikTok,
+  publishVideoToTikTokInbox,
   refreshAccessToken,
   TikTokPostSettings,
 } from "@/lib/tiktok";
@@ -729,22 +730,33 @@ export const publishToTikTok = inngest.createFunction(
     });
 
     // Step 4: Publish to TikTok
+    // TIKTOK_MODE: "sandbox" = Inbox Upload (draft), "production" = Direct Post
     const publishResult = await step.run("publish-to-tiktok", async () => {
-      const tiktokSettings: Partial<TikTokPostSettings> = {
-        privacy_level: (context.platformSettings?.privacy_level as TikTokPostSettings["privacy_level"]) || "PUBLIC_TO_EVERYONE",
-        disable_duet: context.platformSettings?.disable_duet as boolean | undefined,
-        disable_comment: context.platformSettings?.disable_comment as boolean | undefined,
-        disable_stitch: context.platformSettings?.disable_stitch as boolean | undefined,
-        video_cover_timestamp_ms: context.platformSettings?.video_cover_timestamp_ms as number | undefined,
-      };
+      const tiktokMode = process.env.TIKTOK_MODE || "sandbox";
 
-      return await publishVideoToTikTok(
-        accessToken,
-        context.videoUrl,
-        caption || "",
-        hashtags || [],
-        tiktokSettings
-      );
+      if (tiktokMode === "sandbox") {
+        // Sandbox mode: Send to user's TikTok inbox as draft
+        console.log("[TikTok Publish] Using INBOX mode (sandbox)");
+        return await publishVideoToTikTokInbox(accessToken, context.videoUrl);
+      } else {
+        // Production mode: Direct post to TikTok
+        console.log("[TikTok Publish] Using DIRECT POST mode (production)");
+        const tiktokSettings: Partial<TikTokPostSettings> = {
+          privacy_level: (context.platformSettings?.privacy_level as TikTokPostSettings["privacy_level"]) || "PUBLIC_TO_EVERYONE",
+          disable_duet: context.platformSettings?.disable_duet as boolean | undefined,
+          disable_comment: context.platformSettings?.disable_comment as boolean | undefined,
+          disable_stitch: context.platformSettings?.disable_stitch as boolean | undefined,
+          video_cover_timestamp_ms: context.platformSettings?.video_cover_timestamp_ms as number | undefined,
+        };
+
+        return await publishVideoToTikTok(
+          accessToken,
+          context.videoUrl,
+          caption || "",
+          hashtags || [],
+          tiktokSettings
+        );
+      }
     });
 
     // Step 5: Update database with result
