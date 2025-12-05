@@ -209,19 +209,28 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       const validTransitions: Record<PublishStatus, PublishStatus[]> = {
         DRAFT: ["SCHEDULED", "CANCELLED"],
         SCHEDULED: ["DRAFT", "CANCELLED"],
-        PUBLISHING: [], // Can't manually change from publishing
+        PUBLISHING: [], // Can't manually change from publishing (except ADMIN)
         PUBLISHED: [], // Can't change from published
         FAILED: ["DRAFT", "SCHEDULED"], // Can retry
         CANCELLED: ["DRAFT", "SCHEDULED"],
       };
 
-      if (!validTransitions[post.status]?.includes(status)) {
+      // ADMIN can force-update stuck PUBLISHING posts
+      const isAdminRecovery = user.role === "ADMIN" && post.status === "PUBLISHING" &&
+        ["PUBLISHED", "FAILED", "DRAFT"].includes(status);
+
+      if (!isAdminRecovery && !validTransitions[post.status]?.includes(status)) {
         return NextResponse.json(
           { detail: `Cannot transition from ${post.status} to ${status}` },
           { status: 400 }
         );
       }
       updateData.status = status;
+
+      // If ADMIN is manually setting to PUBLISHED, update publishedAt
+      if (isAdminRecovery && status === "PUBLISHED") {
+        updateData.publishedAt = new Date();
+      }
 
       // If re-scheduling a failed post, reset retry count
       if (post.status === "FAILED" && status === "SCHEDULED") {

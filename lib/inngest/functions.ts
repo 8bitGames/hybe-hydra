@@ -737,7 +737,9 @@ export const publishToTikTok = inngest.createFunction(
       if (tiktokMode === "sandbox") {
         // Sandbox mode: Send to user's TikTok inbox as draft
         console.log("[TikTok Publish] Using INBOX mode (sandbox)");
-        return await publishVideoToTikTokInbox(accessToken, context.videoUrl);
+        const result = await publishVideoToTikTokInbox(accessToken, context.videoUrl);
+        console.log("[TikTok Publish] Inbox upload result:", JSON.stringify(result));
+        return result;
       } else {
         // Production mode: Direct post to TikTok
         console.log("[TikTok Publish] Using DIRECT POST mode (production)");
@@ -749,38 +751,53 @@ export const publishToTikTok = inngest.createFunction(
           video_cover_timestamp_ms: context.platformSettings?.video_cover_timestamp_ms as number | undefined,
         };
 
-        return await publishVideoToTikTok(
+        const result = await publishVideoToTikTok(
           accessToken,
           context.videoUrl,
           caption || "",
           hashtags || [],
           tiktokSettings
         );
+        console.log("[TikTok Publish] Direct post result:", JSON.stringify(result));
+        return result;
       }
     });
 
     // Step 5: Update database with result
     await step.run("update-database", async () => {
-      if (publishResult.success) {
-        await prisma.scheduledPost.update({
-          where: { id: context.postId },
-          data: {
-            status: "PUBLISHED",
-            publishedAt: new Date(),
-            platformPostId: publishResult.postId,
-            publishedUrl: publishResult.postUrl,
-            errorMessage: null,
-          },
-        });
-      } else {
-        await prisma.scheduledPost.update({
-          where: { id: context.postId },
-          data: {
-            status: "FAILED",
-            errorMessage: publishResult.error || "Unknown publish error",
-            retryCount: { increment: 1 },
-          },
-        });
+      console.log("[TikTok Publish] Step 5: Updating database with result...");
+      console.log("[TikTok Publish] publishResult.success:", publishResult.success);
+      console.log("[TikTok Publish] postId:", context.postId);
+
+      try {
+        if (publishResult.success) {
+          console.log("[TikTok Publish] Marking post as PUBLISHED");
+          await prisma.scheduledPost.update({
+            where: { id: context.postId },
+            data: {
+              status: "PUBLISHED",
+              publishedAt: new Date(),
+              platformPostId: publishResult.postId || null,
+              publishedUrl: publishResult.postUrl || null,
+              errorMessage: null,
+            },
+          });
+          console.log("[TikTok Publish] Database updated successfully - PUBLISHED");
+        } else {
+          console.log("[TikTok Publish] Marking post as FAILED:", publishResult.error);
+          await prisma.scheduledPost.update({
+            where: { id: context.postId },
+            data: {
+              status: "FAILED",
+              errorMessage: publishResult.error || "Unknown publish error",
+              retryCount: { increment: 1 },
+            },
+          });
+          console.log("[TikTok Publish] Database updated successfully - FAILED");
+        }
+      } catch (dbError) {
+        console.error("[TikTok Publish] Database update error:", dbError);
+        throw dbError;
       }
     });
 
