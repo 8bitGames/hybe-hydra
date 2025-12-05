@@ -14,6 +14,7 @@ import { generateImagePromptForI2V, generateVideoPromptForI2V } from "@/lib/gemi
 // Use Modal for audio composition (GPU-accelerated)
 import { composeVideoWithAudioModal, type AudioComposeRequest } from "@/lib/modal/client";
 import { generateS3Key } from "@/lib/storage";
+import { sanitizeCelebrityNames } from "@/lib/celebrity-sanitizer";
 
 // S3 Client
 const s3Client = new S3Client({
@@ -725,9 +726,15 @@ Return ONLY the JSON object, no markdown or extra text.`;
     console.log("[PERSONALIZE] Parsed finalPrompt:", parsed.finalPrompt?.slice(0, 100));
     console.log("[PERSONALIZE] Parsed metadata:", JSON.stringify(parsed.metadata));
 
+    // Sanitize celebrity names from the prompt to comply with Google Veo policy
+    const sanitized = sanitizeCelebrityNames(parsed.finalPrompt || "");
+    if (sanitized.hasCelebrityNames) {
+      console.log("[PERSONALIZE] Celebrity names detected and replaced:", sanitized.replacements);
+    }
+
     return NextResponse.json({
       success: true,
-      veo3Prompt: parsed.finalPrompt,       // The final Veo3 video generation prompt
+      veo3Prompt: sanitized.sanitizedText,       // The final Veo3 video generation prompt (sanitized)
       metadata: parsed.metadata,
       finalizePromptUsed: finalizePrompt,   // Return the prompt for stashing
     } as FinalizeResponse);

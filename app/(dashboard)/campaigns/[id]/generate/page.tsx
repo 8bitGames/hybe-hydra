@@ -66,16 +66,16 @@ const ASPECT_RATIOS = [
   { value: "1:1", label: "1:1 (Square)", icon: "square" },
 ];
 
-// Category labels for style presets
-const CATEGORY_LABELS: Record<string, string> = {
-  contrast: "Contrast",
-  mood: "Mood",
-  motion: "Motion",
-  cinematic: "Cinematic",
-  aesthetic: "Aesthetic",
-  country: "Country",
-  effect: "Effects",
-  lighting: "Lighting",
+// Category labels for style presets (bilingual)
+const CATEGORY_LABELS: Record<string, { en: string; ko: string }> = {
+  contrast: { en: "Contrast", ko: "대비" },
+  mood: { en: "Mood", ko: "분위기" },
+  motion: { en: "Motion", ko: "모션" },
+  cinematic: { en: "Cinematic", ko: "시네마틱" },
+  aesthetic: { en: "Aesthetic", ko: "미학" },
+  country: { en: "Country", ko: "컨트리" },
+  effect: { en: "Effects", ko: "효과" },
+  lighting: { en: "Lighting", ko: "조명" },
 };
 
 // Audio Selection Section Component - Required for video generation
@@ -1873,7 +1873,7 @@ export default function VideoGeneratePage() {
                     {Object.entries(presetsByCategory).map(([category, categoryPresets]) => (
                       <div key={category} className="mb-3 last:mb-0">
                         <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
-                          {CATEGORY_LABELS[category] || category}
+                          {(CATEGORY_LABELS[category]?.[language === "ko" ? "ko" : "en"]) || category}
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {categoryPresets.map((preset) => (
