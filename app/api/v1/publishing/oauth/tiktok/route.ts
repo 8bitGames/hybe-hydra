@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
-import { getAuthorizationUrl, exchangeCodeForToken } from "@/lib/tiktok";
+import { getAuthorizationUrl, exchangeCodeForToken, getCreatorInfo } from "@/lib/tiktok";
 import { randomBytes } from "crypto";
 
 // GET /api/v1/publishing/oauth/tiktok - Start OAuth flow
@@ -244,10 +244,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch user info from TikTok (request username from user.info.profile scope for profile URL)
+    // Fetch user info from TikTok (basic info)
     console.log("[TikTok OAuth POST] Fetching user info with token:", tokenResult.accessToken?.substring(0, 20) + "...");
     const userInfoResponse = await fetch(
-      "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username",
+      "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name",
       {
         method: "GET",
         headers: {
@@ -269,6 +269,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fetch creator info to get username (available via video.publish scope)
+    console.log("[TikTok OAuth POST] Fetching creator info for username...");
+    const creatorInfoResult = await getCreatorInfo(tokenResult.accessToken!);
+    console.log("[TikTok OAuth POST] Creator info result:", JSON.stringify(creatorInfoResult));
+    const creatorUsername = creatorInfoResult.data?.creator_username;
+
     // Check if account already exists
     const existingAccount = await prisma.socialAccount.findFirst({
       where: {
@@ -281,8 +287,9 @@ export async function POST(request: NextRequest) {
 
     console.log("[TikTok OAuth POST] Creating/updating social account for:", tiktokUser.display_name);
 
-    // Use username for profile URL, fallback to display_name or openId if username not available
-    const profileUsername = tiktokUser.username || tiktokUser.display_name || tokenResult.openId;
+    // Use creator_username for profile URL, fallback to display_name or openId if not available
+    // In sandbox mode, creator_info might not work, so display_name is the fallback
+    const profileUsername = creatorUsername || tiktokUser.display_name || tokenResult.openId;
 
     if (existingAccount) {
       // Update existing account

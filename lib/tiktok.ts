@@ -774,8 +774,7 @@ export function getAuthorizationUrl(
 ): string {
   // Request both video.publish (Direct Post) and video.upload (Inbox Upload) scopes
   // video.upload works in Sandbox mode, video.publish requires Production approval
-  // user.info.profile gives us the username for profile URL
-  const scope = "video.publish,video.upload,user.info.basic,user.info.profile";
+  const scope = "video.publish,video.upload,user.info.basic";
 
   const params = new URLSearchParams({
     client_key: clientKey,
