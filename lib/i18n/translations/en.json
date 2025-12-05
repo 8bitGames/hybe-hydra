@@ -1,4 +1,21 @@
 {
+  "errors": {
+    "general": "An error occurred. Please try again."
+  },
+  "auth": {
+    "login": {
+      "title": "Welcome back",
+      "description": "Enter your credentials to access your account",
+      "email": "Email",
+      "password": "Password",
+      "passwordPlaceholder": "Enter your password",
+      "submit": "Sign in",
+      "noAccount": "Don't have an account?",
+      "register": "Sign up",
+      "backToHome": "Back to home",
+      "error": "Login failed"
+    }
+  },
   "campaigns": {
     "page": {
       "이미지-0": "Image",

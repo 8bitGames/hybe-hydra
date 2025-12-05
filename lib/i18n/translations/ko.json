@@ -1,4 +1,21 @@
 {
+  "errors": {
+    "general": "오류가 발생했습니다. 다시 시도해 주세요."
+  },
+  "auth": {
+    "login": {
+      "title": "다시 오신 것을 환영합니다",
+      "description": "계정에 접근하려면 자격 증명을 입력하세요",
+      "email": "이메일",
+      "password": "비밀번호",
+      "passwordPlaceholder": "비밀번호를 입력하세요",
+      "submit": "로그인",
+      "noAccount": "계정이 없으신가요?",
+      "register": "회원가입",
+      "backToHome": "홈으로 돌아가기",
+      "error": "로그인에 실패했습니다"
+    }
+  },
   "campaigns": {
     "page": {
       "이미지-0": "이미지",
