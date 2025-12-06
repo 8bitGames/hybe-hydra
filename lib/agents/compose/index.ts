@@ -33,7 +33,6 @@ export {
   ComposeEffectAnalyzerConfig,
   ComposeEffectAnalyzerInputSchema,
   ComposeEffectAnalyzerOutputSchema,
-  analyzeEffectsWithFallback,
   type ComposeEffectAnalyzerInput,
   type ComposeEffectAnalyzerOutput,
 } from './effect-analyzer';

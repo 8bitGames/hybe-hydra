@@ -76,7 +76,7 @@ export const TikTokVisionConfig: AgentConfig<TikTokVisionInput, TikTokVisionOutp
 
   model: {
     provider: 'gemini',
-    name: 'gemini-2.0-flash',
+    name: 'gemini-2.5-flash',
     options: {
       temperature: 0.4,
       maxTokens: 4096,
@@ -201,16 +201,16 @@ export class TikTokVisionAgent extends BaseAgent<TikTokVisionInput, TikTokVision
       prompt = prompt.replace('{{musicTitle}}', input.musicTitle);
     } else {
       // Remove the music line entirely
-      prompt = prompt.replace(/{{#musicTitle}}.*?{{\/musicTitle}}\n?/gs, '');
+      prompt = prompt.replace(/{{#musicTitle}}[\s\S]*?{{\/musicTitle}}\n?/g, '');
     }
 
     // Handle slideshow for image analysis
     if (input.mediaType === 'image') {
       if (input.isSlideshow) {
         prompt = prompt.replace('{{#isSlideshow}}', '').replace('{{/isSlideshow}}', '');
-        prompt = prompt.replace(/{{(\^)isSlideshow}}.*?{{\/isSlideshow}}/gs, '');
+        prompt = prompt.replace(/{{(\^)isSlideshow}}[\s\S]*?{{\/isSlideshow}}/g, '');
       } else {
-        prompt = prompt.replace(/{{#isSlideshow}}.*?{{\/isSlideshow}}/gs, '');
+        prompt = prompt.replace(/{{#isSlideshow}}[\s\S]*?{{\/isSlideshow}}/g, '');
         prompt = prompt.replace('{{^isSlideshow}}', '').replace('{{/isSlideshow}}', '');
       }
     }
@@ -227,8 +227,8 @@ export class TikTokVisionAgent extends BaseAgent<TikTokVisionInput, TikTokVision
     input: TikTokVisionInput,
     context: AgentContext
   ): Promise<AgentResult<TikTokVisionOutput>> {
-    const images = [{ data: videoBase64, mimeType }];
-    return this.executeWithImages(images, { ...input, mediaType: 'video' }, context);
+    const images = [{ data: videoBase64, mimeType: mimeType as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' }];
+    return this.executeWithImages({ ...input, mediaType: 'video' }, context, images);
   }
 
   /**
@@ -240,8 +240,8 @@ export class TikTokVisionAgent extends BaseAgent<TikTokVisionInput, TikTokVision
     input: TikTokVisionInput,
     context: AgentContext
   ): Promise<AgentResult<TikTokVisionOutput>> {
-    const images = [{ data: imageBase64, mimeType }];
-    return this.executeWithImages(images, { ...input, mediaType: 'image' }, context);
+    const images = [{ data: imageBase64, mimeType: mimeType as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' }];
+    return this.executeWithImages({ ...input, mediaType: 'image' }, context, images);
   }
 }
 

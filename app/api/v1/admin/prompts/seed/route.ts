@@ -14,6 +14,9 @@ import { VisionAnalyzerConfig } from '@/lib/agents/analyzers/vision-analyzer';
 import { TextPatternConfig } from '@/lib/agents/analyzers/text-pattern';
 import { VisualTrendConfig } from '@/lib/agents/analyzers/visual-trend';
 import { StrategySynthesizerConfig } from '@/lib/agents/analyzers/strategy-synthesizer';
+import { KeywordInsightsConfig } from '@/lib/agents/analyzers/keyword-insights';
+import { TikTokVisionConfig } from '@/lib/agents/analyzers/tiktok-vision';
+import { Veo3PersonalizeConfig } from '@/lib/agents/analyzers/veo3-personalize';
 import { CreativeDirectorConfig } from '@/lib/agents/creators/creative-director';
 import { ScriptWriterConfig } from '@/lib/agents/creators/script-writer';
 import { PromptEngineerConfig } from '@/lib/agents/transformers/prompt-engineer';
@@ -32,6 +35,9 @@ const AGENT_CONFIGS = [
   TextPatternConfig,
   VisualTrendConfig,
   StrategySynthesizerConfig,
+  KeywordInsightsConfig,
+  TikTokVisionConfig,
+  Veo3PersonalizeConfig,
   // Creators
   CreativeDirectorConfig,
   ScriptWriterConfig,

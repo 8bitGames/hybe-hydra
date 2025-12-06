@@ -214,7 +214,6 @@ export {
   ComposeEffectAnalyzerConfig,
   ComposeEffectAnalyzerInputSchema,
   ComposeEffectAnalyzerOutputSchema,
-  analyzeEffectsWithFallback,
   type ComposeEffectAnalyzerInput,
   type ComposeEffectAnalyzerOutput,
 
@@ -262,6 +261,9 @@ export const AgentFactories = {
   textPattern: () => import('./analyzers/text-pattern').then(m => m.createTextPatternAgent()),
   visualTrend: () => import('./analyzers/visual-trend').then(m => m.createVisualTrendAgent()),
   strategySynthesizer: () => import('./analyzers/strategy-synthesizer').then(m => m.createStrategySynthesizerAgent()),
+  keywordInsights: () => import('./analyzers/keyword-insights').then(m => m.createKeywordInsightsAgent()),
+  tiktokVision: () => import('./analyzers/tiktok-vision').then(m => m.createTikTokVisionAgent()),
+  veo3Personalize: () => import('./analyzers/veo3-personalize').then(m => m.createVeo3PersonalizeAgent()),
 
   // Creators
   creativeDirector: () => import('./creators/creative-director').then(m => m.createCreativeDirectorAgent()),
@@ -285,7 +287,7 @@ export const AgentFactories = {
  * Agent category mapping
  */
 export const AgentCategories = {
-  analyzer: ['vision-analyzer', 'text-pattern', 'visual-trend', 'strategy-synthesizer'],
+  analyzer: ['vision-analyzer', 'text-pattern', 'visual-trend', 'strategy-synthesizer', 'keyword-insights', 'tiktok-vision', 'veo3-personalize'],
   creator: ['creative-director', 'script-writer'],
   transformer: ['prompt-engineer', 'i2v-specialist'],
   publisher: ['publish-optimizer', 'copywriter'],
@@ -301,12 +303,15 @@ export const AgentModels = {
   'text-pattern': 'gemini-2.5-flash',
   'visual-trend': 'gemini-2.5-flash',
   'strategy-synthesizer': 'gemini-2.5-flash',
+  'tiktok-vision': 'gemini-2.5-flash',
+  'veo3-personalize': 'gemini-2.5-flash',
   'script-writer': 'gemini-2.5-flash',
   'prompt-engineer': 'gemini-2.5-flash',
   'i2v-specialist': 'gemini-2.5-flash',
 
   // Gemini 3 Pro - Deep reasoning
   'creative-director': 'gemini-3-pro-preview',
+  'keyword-insights': 'gemini-3-pro-preview',
 
   // GPT-5.1 - Copywriting
   'publish-optimizer': 'gpt-5.1',

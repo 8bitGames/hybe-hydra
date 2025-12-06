@@ -9,7 +9,8 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
-import { AgentConfig, AgentContext } from '../types';
+import { AgentConfig, AgentContext, AgentResult } from '../types';
+import type { ModelResponse } from '@/lib/models';
 
 // ============================================================================
 // Input/Output Schemas
@@ -151,7 +152,6 @@ export const ComposeConductorConfig: AgentConfig<ComposeConductorInput, ComposeC
   name: 'Compose Conductor',
   description: '영상 컴포지션 플래닝 (이미지/가사 분석 + 세그먼트/전환/효과 계획)',
   category: 'compose',
-  version: '1.0.0',
 
   model: {
     provider: 'gemini',
@@ -272,12 +272,6 @@ Intensity: {{intensity}}
 Output a complete composition plan with segments, caption overlays, and audio sync markers.`,
     },
   },
-
-  metadata: {
-    tags: ['compose', 'video', 'conductor', 'composition', 'planning'],
-    author: 'hydra-system',
-    createdAt: new Date().toISOString(),
-  },
 };
 
 // ============================================================================
@@ -298,7 +292,7 @@ export class ComposeConductorAgent extends BaseAgent<ComposeConductorInput, Comp
   ): Promise<ComposeConductorOutput['imageAnalysis']> {
     const analysisInput = {
       images,
-      artistName: context.artistName || '',
+      artistName: context.workflow?.artistName || '',
       songTitle: '',
       mood: '',
       genre: '',
@@ -306,7 +300,7 @@ export class ComposeConductorAgent extends BaseAgent<ComposeConductorInput, Comp
 
     try {
       const result = await this.execute(analysisInput as ComposeConductorInput, context);
-      return result.imageAnalysis;
+      return result.data?.imageAnalysis;
     } catch (error) {
       console.error('[ComposeConductor] Image analysis failed:', error);
       // Return basic analysis
@@ -338,13 +332,13 @@ export class ComposeConductorAgent extends BaseAgent<ComposeConductorInput, Comp
     try {
       const analysisInput = {
         lyrics,
-        artistName: context.artistName || '',
+        artistName: context.workflow?.artistName || '',
         songTitle: '',
         duration: lyrics[lyrics.length - 1]?.endTime || 60,
       };
 
       const result = await this.execute(analysisInput as ComposeConductorInput, context);
-      return result.lyricsAnalysis || {
+      return result.data?.lyricsAnalysis || {
         emotionalArc: [{ section: 'full', emotion: 'neutral', intensity: 0.5 }],
         keyMoments: [],
         themes: [],
@@ -365,7 +359,7 @@ export class ComposeConductorAgent extends BaseAgent<ComposeConductorInput, Comp
   async compose(
     input: ComposeConductorInput,
     context: AgentContext
-  ): Promise<ComposeConductorOutput> {
+  ): Promise<AgentResult<ComposeConductorOutput>> {
     return this.execute(input, context);
   }
 
@@ -418,11 +412,12 @@ export class ComposeConductorAgent extends BaseAgent<ComposeConductorInput, Comp
   /**
    * Parse LLM response into structured output
    */
-  protected parseResponse(response: string): ComposeConductorOutput {
+  protected parseResponse(response: ModelResponse): ComposeConductorOutput {
+    const content = response.content;
     try {
       // Try to extract JSON from response
-      const jsonMatch = response.match(/```json\n?([\s\S]*?)\n?```/) ||
-                        response.match(/\{[\s\S]*"segments"[\s\S]*\}/);
+      const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) ||
+                        content.match(/\{[\s\S]*"segments"[\s\S]*\}/);
 
       if (jsonMatch) {
         const jsonStr = jsonMatch[1] || jsonMatch[0];
@@ -430,7 +425,7 @@ export class ComposeConductorAgent extends BaseAgent<ComposeConductorInput, Comp
       }
 
       // If no JSON found, try to parse the entire response
-      return JSON.parse(response);
+      return JSON.parse(content);
     } catch (error) {
       console.error('[ComposeConductor] Failed to parse response:', error);
 

@@ -328,13 +328,13 @@ export class VideoTrendAnalyzer {
 
       // Convert TikTokAnalysisResult to VisualTrendAgent input format
       const videoAnalyses = analyses.map((a) => ({
-        id: a.video_url || `video-${Date.now()}`,
+        id: a.metadata?.video_url || `video-${Date.now()}`,
         style_analysis: {
           visual_style: a.style_analysis?.visual_style || 'modern',
           color_palette: a.style_analysis?.color_palette || [],
           lighting: a.style_analysis?.lighting || 'natural',
           mood: a.style_analysis?.mood || 'engaging',
-          composition: a.style_analysis?.composition || 'centered',
+          composition: 'centered', // Default composition (not in VideoStyleAnalysis)
         },
         content_analysis: a.content_analysis ? {
           main_subject: a.content_analysis.main_subject || '',

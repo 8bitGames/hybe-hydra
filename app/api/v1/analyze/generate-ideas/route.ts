@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { createCreativeDirectorAgent } from "@/lib/agents/creators/creative-director";
-import { AgentContext } from "@/lib/agents/types";
+import { AgentContext, ContentStrategy } from "@/lib/agents/types";
 
 // ============================================================================
 // Types
@@ -196,20 +196,7 @@ function buildStrategyFromTrends(params: {
   hashtags: string[];
   inspiration_videos?: InspirationVideo[];
   trend_insights?: TrendInsights;
-}): {
-  contentThemes: Array<{ theme: string; priority: number; rationale: string }>;
-  visualGuidelines: {
-    styles: string[];
-    colors: string[];
-    pace: string;
-    effects: string[];
-  };
-  captionGuidelines: {
-    hooks: string[];
-    ctas: string[];
-    hashtags: string[];
-  };
-} {
+}): ContentStrategy {
   const { keywords, hashtags, inspiration_videos, trend_insights } = params;
 
   // Extract themes from keywords and trend insights
@@ -279,6 +266,18 @@ function buildStrategyFromTrends(params: {
       ],
       hashtags: hashtags.slice(0, 10),
     },
+    bestPractices: [
+      "Use trending sounds",
+      "Post during peak hours",
+      "Engage in comments",
+      "Use relevant hashtags",
+    ],
+    avoid: [
+      "Copyrighted music without license",
+      "Overly promotional content",
+      "Low quality visuals",
+    ],
+    confidenceScore: trend_insights ? 0.8 : 0.6,
   };
 }
 

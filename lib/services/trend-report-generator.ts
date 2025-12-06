@@ -98,7 +98,7 @@ export class TrendReportGenerator {
     this.agentContext = {
       workflow: {
         artistName: searchQuery,
-        platform: platform.toLowerCase(),
+        platform: platform.toLowerCase() as "tiktok" | "instagram" | "youtube" | "shorts" | "youtube_shorts",
         language,
         sessionId: `trend-report-${Date.now()}`,
       },
@@ -249,8 +249,8 @@ export class TrendReportGenerator {
       const textAnalysisInput = this.textAnalysis
         ? {
             clusters: this.textAnalysis.hashtagClusters.map((c) => ({
-              name: c.name,
-              hashtags: c.hashtags.map((h) => h.hashtag || h),
+              name: c.theme,
+              hashtags: c.hashtags,
               trendDirection: "stable" as const,
             })),
             sentiment: {
@@ -286,10 +286,10 @@ export class TrendReportGenerator {
             promptTemplates: [],
           };
 
-      // Prepare benchmarks
+      // Prepare benchmarks (estimate views from engagement metrics)
       const benchmarks = this.textAnalysis
         ? {
-            avgViews: this.textAnalysis.metrics.avgViews,
+            avgViews: this.textAnalysis.metrics.avgLikes * 10, // Estimate views from likes
             avgEngagement: this.textAnalysis.metrics.avgLikes,
           }
         : undefined;

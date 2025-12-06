@@ -232,6 +232,7 @@ export class ComposeScriptGeneratorAgent extends BaseAgent<ComposeScriptGenerato
       const prompt = groundingTemplate.replace('{{artistName}}', artistName);
 
       const response = await groundingClient.generate({
+        system: 'You are a research assistant that finds current information about K-pop artists and trending topics.',
         user: prompt,
         responseFormat: 'text',
       });

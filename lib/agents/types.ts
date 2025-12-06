@@ -88,7 +88,7 @@ export interface VisualPattern {
 }
 
 export interface ContentStrategy {
-  themes: Array<{ theme: string; priority: number; rationale: string }>;
+  contentThemes: Array<{ theme: string; priority: number; rationale: string }>;
   visualGuidelines: {
     styles: string[];
     colors: string[];
@@ -129,10 +129,16 @@ export interface ScriptLine {
 }
 
 export interface DiscoverContext {
-  trendKeywords: string[];
-  hashtags: string[];
-  visualPatterns: VisualPattern[];
+  trendKeywords?: string[];
+  hashtags?: string[];
+  visualPatterns?: VisualPattern[];
   contentStrategy?: ContentStrategy;
+  inspirationVideos?: unknown[];
+  trendInsights?: unknown;
+  groundingInfo?: {
+    summary: string;
+    sources: Array<{ title: string; url: string }>;
+  };
 }
 
 export interface AnalyzeContext {

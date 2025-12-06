@@ -257,7 +257,7 @@ export class I2VSpecialistAgent extends BaseAgent<I2VSpecialistInput, I2VSpecial
       'cinematic, modern';
 
     const mood = input.mood ||
-      context.discover?.visualPatterns[0]?.mood ||
+      context.discover?.visualPatterns?.[0]?.mood ||
       'engaging, dynamic';
 
     return this.fillTemplate(template, {

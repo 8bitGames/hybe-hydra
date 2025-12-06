@@ -100,7 +100,7 @@ export const Veo3PersonalizeConfig: AgentConfig<AnalyzeImagesInput, AnalyzeImage
 
   model: {
     provider: 'gemini',
-    name: 'gemini-flash-latest',
+    name: 'gemini-2.5-flash',
     options: {
       temperature: 0.7,
       maxTokens: 4096,
@@ -288,18 +288,32 @@ export class Veo3PersonalizeAgent extends BaseAgent<AnalyzeImagesInput, AnalyzeI
     input: AnalyzeImagesInput,
     context: AgentContext
   ): Promise<AgentResult<AnalyzeImagesOutput>> {
-    const prompt = this.buildPrompt(input, context);
+    const startTime = Date.now();
+    const defaultMetadata = {
+      agentId: this.config.id,
+      model: this.config.model.name,
+      tokenUsage: { input: 0, output: 0, total: 0 },
+      latencyMs: 0,
+      timestamp: new Date().toISOString(),
+    };
 
     try {
+      const formattedImages = images.map(img => ({
+        data: img.base64,
+        mimeType: img.mimeType as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif',
+      }));
+
       const result = await this.executeWithImages(
-        { prompt, images },
-        context
+        input,
+        context,
+        formattedImages
       );
 
       if (!result.success || !result.data) {
         return {
           success: false,
           error: result.error || 'Failed to analyze images',
+          metadata: { ...defaultMetadata, latencyMs: Date.now() - startTime },
         };
       }
 
@@ -316,6 +330,7 @@ export class Veo3PersonalizeAgent extends BaseAgent<AnalyzeImagesInput, AnalyzeI
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+        metadata: { ...defaultMetadata, latencyMs: Date.now() - startTime },
       };
     }
   }
@@ -328,6 +343,15 @@ export class Veo3PersonalizeAgent extends BaseAgent<AnalyzeImagesInput, AnalyzeI
     context: AgentContext,
     image?: { base64: string; mimeType: string }
   ): Promise<AgentResult<FinalizePromptOutput>> {
+    const startTime = Date.now();
+    const defaultMetadata = {
+      agentId: this.config.id,
+      model: this.config.model.name,
+      tokenUsage: { input: 0, output: 0, total: 0 },
+      latencyMs: 0,
+      timestamp: new Date().toISOString(),
+    };
+
     const template = this.getTemplate('finalize');
     const contextStr = this.buildContextString(input.context);
 
@@ -350,34 +374,29 @@ export class Veo3PersonalizeAgent extends BaseAgent<AnalyzeImagesInput, AnalyzeI
       let result;
 
       if (image) {
+        const formattedImages = [{
+          data: image.base64,
+          mimeType: image.mimeType as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif',
+        }];
         result = await this.executeWithImages(
-          { prompt, images: [image] },
-          context
+          input.context as unknown as AnalyzeImagesInput,
+          context,
+          formattedImages
         );
       } else {
         // Execute without images using the base execute method
-        result = await this.execute(input.context, context);
-        // Override with our custom prompt
-        const { getGeminiClient } = await import('@/lib/models/gemini-client');
-        const client = getGeminiClient();
+        const { createGeminiClient } = await import('@/lib/models/gemini-client');
+        const client = createGeminiClient('flash');
         const response = await client.generate({
-          prompt,
-          systemPrompt: this.config.prompts.system,
-          model: this.config.model.name,
-          options: this.config.model.options,
+          system: this.config.prompts.system,
+          user: prompt,
         });
 
-        if (!response.success) {
-          return {
-            success: false,
-            error: response.error || 'Failed to generate finalize prompt',
-          };
-        }
-
-        const parsed = this.parseFinalizeResponse(response.text || '');
+        const parsed = this.parseFinalizeResponse(response.content || '');
         return {
           success: true,
           data: parsed,
+          metadata: { ...defaultMetadata, latencyMs: Date.now() - startTime },
         };
       }
 
@@ -385,6 +404,7 @@ export class Veo3PersonalizeAgent extends BaseAgent<AnalyzeImagesInput, AnalyzeI
         return {
           success: false,
           error: result.error || 'Failed to finalize prompt',
+          metadata: { ...defaultMetadata, latencyMs: Date.now() - startTime },
         };
       }
 
@@ -401,6 +421,7 @@ export class Veo3PersonalizeAgent extends BaseAgent<AnalyzeImagesInput, AnalyzeI
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+        metadata: { ...defaultMetadata, latencyMs: Date.now() - startTime },
       };
     }
   }

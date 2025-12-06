@@ -66,7 +66,7 @@ export const KeywordInsightsConfig: AgentConfig<KeywordInsightsInput, KeywordIns
       temperature: 0.7,
       maxTokens: 4096,
       tools: [{ type: 'google_search' }],
-      thinkingLevel: 'high',
+      thinkingLevel: 'HIGH',
     },
   },
 

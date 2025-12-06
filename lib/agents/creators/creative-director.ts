@@ -228,11 +228,7 @@ export class CreativeDirectorAgent extends BaseAgent<CreativeDirectorInput, Crea
       {
         userIdea,
         strategy: options?.strategy || (context.discover?.contentStrategy ? {
-          contentThemes: context.discover.contentStrategy.themes.map(t => ({
-            theme: t.theme,
-            priority: t.priority,
-            rationale: t.rationale,
-          })),
+          contentThemes: context.discover.contentStrategy.contentThemes,
           visualGuidelines: context.discover.contentStrategy.visualGuidelines,
           captionGuidelines: context.discover.contentStrategy.captionGuidelines,
         } : undefined),

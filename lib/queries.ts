@@ -688,7 +688,7 @@ export function useAllAIVideos() {
                 id: video.id,
                 campaign_id: video.campaign_id,
                 campaign_name: campaign.name,
-                artist_name: campaign.artist?.name || campaign.artist?.stage_name || "Unknown",
+                artist_name: campaign.artist_name || campaign.artist_stage_name || "Unknown",
                 prompt: video.prompt,
                 duration_seconds: video.duration_seconds,
                 aspect_ratio: video.aspect_ratio,
