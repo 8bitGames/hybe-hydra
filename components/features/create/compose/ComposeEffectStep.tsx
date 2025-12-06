@@ -322,6 +322,61 @@ export function ComposeEffectStep({
         </div>
       )}
 
+      {/* First Frame Preview - Shows how the video will look */}
+      {selectedImages.length > 0 && (
+        <div className="space-y-2">
+          <Label className="text-sm font-medium text-neutral-700 flex items-center gap-2">
+            <Film className="h-4 w-4" />
+            {language === "ko" ? "첫 프레임 미리보기" : "First Frame Preview"}
+          </Label>
+          <div className="relative w-full max-w-[280px] mx-auto">
+            <div
+              className={cn(
+                "relative rounded-lg overflow-hidden border-2 border-neutral-200 bg-neutral-900",
+                aspectRatio === "9:16" ? "aspect-[9/16]" : aspectRatio === "1:1" ? "aspect-square" : "aspect-video"
+              )}
+            >
+              {/* Background Image */}
+              <img
+                src={selectedImages[0]?.thumbnailUrl || selectedImages[0]?.sourceUrl}
+                alt="First frame preview"
+                className="w-full h-full object-cover"
+              />
+              {/* Gradient Overlay */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+              {/* Script Text Preview */}
+              {scriptData?.script.lines && scriptData.script.lines[0] && (
+                <div className="absolute bottom-0 left-0 right-0 p-4">
+                  <p className="text-white text-sm font-medium text-center drop-shadow-lg line-clamp-2">
+                    {scriptData.script.lines[0].text}
+                  </p>
+                </div>
+              )}
+              {/* Effect Badge */}
+              <div className="absolute top-2 right-2">
+                <Badge variant="secondary" className="bg-black/50 text-white text-[9px] backdrop-blur-sm">
+                  {EFFECT_PRESETS.find(p => p.value === effectPreset)?.label || effectPreset}
+                </Badge>
+              </div>
+              {/* Audio Info */}
+              {selectedAudio && (
+                <div className="absolute top-2 left-2">
+                  <Badge variant="secondary" className="bg-black/50 text-white text-[9px] backdrop-blur-sm">
+                    <Music className="h-2.5 w-2.5 mr-1" />
+                    {selectedAudio.bpm} BPM
+                  </Badge>
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-neutral-400 text-center mt-1">
+              {language === "ko"
+                ? "실제 영상은 선택한 효과에 따라 달라질 수 있습니다"
+                : "Actual video may vary based on selected effects"}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Selected Images Preview */}
       <div className="space-y-2">
         <Label className="text-sm font-medium text-neutral-700">

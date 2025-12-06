@@ -11,48 +11,133 @@
   ## Documentation
   - ALWAYS check with Context7 MCP tool (`mcp__context7__*`) for library documentation before implementing code
 
-  ## Gemini AI Integration
-  When using Gemini AI, follow these requirements:
+  ## AI Integration - MUST USE AGENT SYSTEM
 
-  ### Dependencies
-  ```bash
-  npm install @google/genai mime
-  npm install -D @types/node
+  **CRITICAL**: All AI usage in this project MUST go through the Agent System at `lib/agents/`.
+  Do NOT use direct AI API calls (GoogleGenAI, OpenAI SDK, etc.) outside of the agent system.
 
-  Model Selection
+  ### Why Agent System?
+  - Centralized prompt management (database-driven prompts)
+  - Execution logging and metrics tracking
+  - Input/output validation with Zod schemas
+  - Model client abstraction (Gemini/OpenAI)
+  - Consistent error handling
 
-  - For image generation: use gemini-3-pro-image-preview
-  - For text generation: use gemini-flash-lite-latest
+  ### Agent System Architecture (`lib/agents/`)
 
-  Required Code Pattern
+  ```
+  lib/agents/
+  ├── base-agent.ts      # Abstract base class for all agents
+  ├── types.ts           # Type definitions
+  ├── orchestrator.ts    # Workflow orchestrator
+  ├── prompt-loader.ts   # Database prompt loading
+  ├── evaluation-service.ts # Execution logging
+  ├── analyzers/         # Vision, Text Pattern, Visual Trend, Strategy
+  ├── creators/          # Creative Director, Script Writer
+  ├── transformers/      # Prompt Engineer, I2V Specialist
+  ├── publishers/        # Publish Optimizer, Copywriter
+  └── compose/           # Compose-specific agents
+  ```
 
-  import { GoogleGenAI } from '@google/genai';
+  ### Model Assignments
+  - **Gemini 2.5 Flash**: Analyzers, Transformers (fast analysis)
+  - **Gemini 3 Pro**: Creative Director (deep reasoning)
+  - **GPT-5.1**: Publishers (copywriting)
 
-  const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-  });
+  ### How to Add New AI Functionality
 
-  const tools = [{ googleSearch: {} }];
+  1. **Create a new agent** extending `BaseAgent`:
+  ```typescript
+  import { BaseAgent } from '@/lib/agents/base-agent';
+  import { z } from 'zod';
+  import type { AgentContext } from '@/lib/agents/types';
 
-  const config = {
-    thinkingConfig: {
-      thinkingLevel: 'HIGH',
-    },
-    tools,
-  };
+  // Define input/output schemas
+  export const MyAgentInputSchema = z.object({ /* your fields */ });
+  export const MyAgentOutputSchema = z.object({ /* your fields */ });
+  export type MyAgentInput = z.infer<typeof MyAgentInputSchema>;
+  export type MyAgentOutput = z.infer<typeof MyAgentOutputSchema>;
 
-  const response = await ai.models.generateContentStream({
-    model: 'gemini-flash-lite-latest', // or gemini-3-pro-image-preview for images
-    config,
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: 'your prompt here' }],
-      },
-    ],
-  });
+  export class MyAgent extends BaseAgent<MyAgentInput, MyAgentOutput> {
+    constructor() {
+      super({
+        id: 'my-agent',
+        name: 'My Agent',
+        description: 'Agent description',
+        category: 'analyzer', // or 'creator', 'transformer', 'publisher'
+        model: {
+          provider: 'gemini',
+          name: 'gemini-2.5-flash',
+          options: { temperature: 0.7 }
+        },
+        prompts: {
+          system: 'Your system prompt...',
+          templates: {}
+        },
+        inputSchema: MyAgentInputSchema,
+        outputSchema: MyAgentOutputSchema,
+      });
+    }
 
-  for await (const chunk of response) {
-    console.log(chunk.text);
+    protected buildPrompt(input: MyAgentInput, context: AgentContext): string {
+      return `Your prompt with ${JSON.stringify(input)}`;
+    }
   }
+
+  export function createMyAgent(): MyAgent {
+    return new MyAgent();
+  }
+  ```
+
+  2. **Use the agent**:
+  ```typescript
+  import { createMyAgent } from '@/lib/agents/my-agent';
+
+  const agent = createMyAgent();
+  const result = await agent.execute(input, context);
+
+  if (result.success) {
+    console.log(result.data);
+  } else {
+    console.error(result.error);
+  }
+  ```
+
+  3. **Or use existing agents via factories**:
+  ```typescript
+  import { AgentFactories, createOrchestrator } from '@/lib/agents';
+
+  // Single agent
+  const visionAgent = await AgentFactories.visionAnalyzer();
+  const result = await visionAgent.executeWithImages(input, context, images);
+
+  // Orchestrated workflow
+  const orchestrator = createOrchestrator('Artist', 'tiktok', 'ko');
+  const result = await orchestrator.runWorkflow('analyze', input);
+  ```
+
+  ### FORBIDDEN - Do NOT do this:
+  ```typescript
+  // ❌ WRONG: Direct API calls outside agent system
+  import { GoogleGenAI } from '@google/genai';
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const response = await ai.models.generateContent(...);
+
+  // ❌ WRONG: Direct OpenAI calls outside agent system
+  import OpenAI from 'openai';
+  const openai = new OpenAI();
+  const response = await openai.chat.completions.create(...);
+  ```
+
+  ### Model Selection (for reference only - use via Agent System)
+  - For image generation: use gemini-3-pro-image-preview
+  - For text generation: use gemini-2.5-flash or gemini-flash-lite-latest
+
+  ### Model Clients (internal use in Agent System only)
+  If you need to create a new agent, use the model clients from `lib/models/`:
+  - `GeminiClient` - for Gemini models
+  - `OpenAIClient` - for OpenAI models
+
+  These are already integrated into `BaseAgent` and should not be used directly outside agents.
+
 - use only muted colors like black, grey, and white. never use colors unless i tell you to for design.

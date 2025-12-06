@@ -72,20 +72,34 @@ class RendererAdapter:
 
     def _check_gl_transitions(self) -> bool:
         """Check if GL Transitions are available."""
+        print("[ADAPTER] Checking GL Transitions availability...")
+
         if not GL_RENDERER_AVAILABLE:
+            print("[ADAPTER] GL_RENDERER_AVAILABLE is False (import failed)")
             logger.info("GL renderer module not available")
             return False
 
         try:
-            if is_gl_available():
+            print("[ADAPTER] Calling is_gl_available()...")
+            gl_available = is_gl_available()
+            print(f"[ADAPTER] is_gl_available() returned: {gl_available}")
+
+            if gl_available:
+                print("[ADAPTER] Getting GL renderer instance...")
                 self._gl_renderer = get_gl_renderer()
                 if self._gl_renderer:
+                    print("[ADAPTER] ✅ GL Transitions ENABLED via OSMesa!")
                     logger.info("GL Transitions enabled (OSMesa software rendering)")
-                    print("[ADAPTER] GL Transitions ENABLED via OSMesa!")
                     return True
+                else:
+                    print("[ADAPTER] get_gl_renderer() returned None!")
         except Exception as e:
+            print(f"[ADAPTER] GL renderer check EXCEPTION: {e}")
+            import traceback
+            traceback.print_exc()
             logger.warning(f"GL renderer check failed: {e}")
 
+        print("[ADAPTER] ❌ GL Transitions not available, using xfade fallback")
         logger.info("GL Transitions not available, using xfade fallback")
         return False
 
@@ -171,16 +185,27 @@ class RendererAdapter:
         print(f"[ADAPTER][{job_id}] Renderer types: {[g.value for g in groups]}")
         logger.info(f"[{job_id}] Renderer types: {[g.value for g in groups]}")
 
-        # If all transitions can use xfade, process as batch
-        if all(r == RendererType.XFADE for r in groups):
-            print(f"[ADAPTER][{job_id}] Using xfade batch renderer for {len(transitions)} transitions")
-            logger.info(f"[{job_id}] Using xfade batch renderer for {len(transitions)} transitions")
-            result = self._apply_xfade_batch(clips, transitions, temp_dir, job_id)
+        # If all transitions are GL type and GL is available, use GL renderer
+        if all(r == RendererType.GL_TRANSITIONS for r in groups) and self._gl_available:
+            print(f"[ADAPTER][{job_id}] Using GL renderer for {len(transitions)} transitions")
+            logger.info(f"[{job_id}] Using GL renderer for {len(transitions)} transitions")
+            result = self._apply_gl_batch(clips, transitions, temp_dir, job_id)
             if result is not None:
-                print(f"[ADAPTER][{job_id}] xfade batch SUCCESS!")
+                print(f"[ADAPTER][{job_id}] GL batch SUCCESS!")
                 return result
-            print(f"[ADAPTER][{job_id}] xfade batch FAILED, falling back to MoviePy")
-            logger.warning(f"[{job_id}] xfade batch failed, falling back to MoviePy")
+            print(f"[ADAPTER][{job_id}] GL batch FAILED, falling back to xfade")
+            logger.warning(f"[{job_id}] GL batch failed, falling back to xfade")
+
+        # If all transitions can use xfade, or GL failed, process as xfade batch
+        # Map GL transitions to xfade equivalents
+        print(f"[ADAPTER][{job_id}] Using xfade batch renderer for {len(transitions)} transitions")
+        logger.info(f"[{job_id}] Using xfade batch renderer for {len(transitions)} transitions")
+        result = self._apply_xfade_batch(clips, transitions, temp_dir, job_id)
+        if result is not None:
+            print(f"[ADAPTER][{job_id}] xfade batch SUCCESS!")
+            return result
+        print(f"[ADAPTER][{job_id}] xfade batch FAILED, falling back to MoviePy")
+        logger.warning(f"[{job_id}] xfade batch failed, falling back to MoviePy")
 
         # Otherwise, fall back to MoviePy-based processing
         print(f"[ADAPTER][{job_id}] Using MoviePy fallback renderer")
@@ -190,6 +215,115 @@ class RendererAdapter:
     def _group_by_renderer(self, transitions: List[TransitionSpec]) -> List[RendererType]:
         """Group transitions by their renderer type."""
         return [self.get_renderer_for_effect(t.effect_id) for t in transitions]
+
+    def _apply_gl_batch(
+        self,
+        clips: List[ImageClip],
+        transitions: List[TransitionSpec],
+        temp_dir: str,
+        job_id: str,
+    ) -> Optional[CompositeVideoClip]:
+        """
+        Apply transitions using GL Transitions renderer.
+
+        This renders high-quality shader-based transitions.
+        """
+        if not self._gl_renderer:
+            logger.warning(f"[{job_id}] GL renderer not available")
+            return None
+
+        try:
+            from moviepy import VideoFileClip, concatenate_videoclips
+
+            # First, export each clip as an image (for GL processing)
+            clip_images = []
+            clip_durations = []
+
+            for i, clip in enumerate(clips):
+                # Save first frame as image for GL transition
+                img_path = os.path.join(temp_dir, f"{job_id}_img_{i}.png")
+                clip.save_frame(img_path, t=0)
+                clip_images.append(img_path)
+                clip_durations.append(clip.duration)
+
+            # Render each transition with GL
+            transition_videos = []
+            segment_videos = []
+
+            for i in range(len(clips)):
+                # Export the full clip segment as video
+                clip_path = os.path.join(temp_dir, f"{job_id}_segment_{i}.mp4")
+                clips[i].write_videofile(
+                    clip_path,
+                    fps=30,
+                    codec="libx264",
+                    preset="ultrafast",
+                    audio=False,
+                    logger=None
+                )
+                segment_videos.append(clip_path)
+
+                # Render transition if not last clip
+                if i < len(transitions):
+                    trans = transitions[i]
+                    trans_path = os.path.join(temp_dir, f"{job_id}_trans_{i}.mp4")
+
+                    print(f"[ADAPTER][{job_id}] Rendering GL transition {i}: {trans.effect_id}")
+                    logger.info(f"[{job_id}] Rendering GL transition {i}: {trans.effect_id}")
+
+                    success = self._gl_renderer.render_transition(
+                        from_image_path=clip_images[i],
+                        to_image_path=clip_images[i + 1],
+                        output_path=trans_path,
+                        transition_name=trans.effect_id,
+                        duration=trans.duration,
+                        fps=30
+                    )
+
+                    if success and os.path.exists(trans_path):
+                        transition_videos.append(trans_path)
+                        print(f"[ADAPTER][{job_id}] GL transition {i} SUCCESS: {trans.effect_id}")
+                    else:
+                        print(f"[ADAPTER][{job_id}] GL transition {i} FAILED: {trans.effect_id}")
+                        logger.warning(f"[{job_id}] GL transition {i} failed: {trans.effect_id}")
+                        return None  # Fail and fall back to xfade
+
+            # Now concatenate: segment0 (trimmed) + trans0 + segment1 (trimmed) + trans1 + ...
+            final_clips = []
+
+            for i in range(len(segment_videos)):
+                seg_clip = VideoFileClip(segment_videos[i])
+                trans_duration = transitions[i].duration if i < len(transitions) else 0
+
+                # Trim clip to account for transition overlap
+                if i < len(transition_videos):
+                    # Trim end of current clip by half transition duration
+                    trimmed_duration = max(0.1, seg_clip.duration - trans_duration / 2)
+                    seg_clip = seg_clip.subclipped(0, trimmed_duration)
+
+                if i > 0 and i - 1 < len(transition_videos):
+                    # Trim start of current clip by half transition duration
+                    prev_trans_dur = transitions[i - 1].duration
+                    seg_clip = seg_clip.subclipped(min(prev_trans_dur / 2, seg_clip.duration - 0.1), seg_clip.duration)
+
+                final_clips.append(seg_clip)
+
+                # Add transition after clip (except for last)
+                if i < len(transition_videos):
+                    trans_clip = VideoFileClip(transition_videos[i])
+                    final_clips.append(trans_clip)
+
+            # Concatenate all
+            result = concatenate_videoclips(final_clips, method="compose")
+            print(f"[ADAPTER][{job_id}] GL batch complete: {result.duration}s")
+            logger.info(f"[{job_id}] GL batch complete with {len(transitions)} transitions")
+            return result
+
+        except Exception as e:
+            logger.error(f"[{job_id}] GL batch failed with error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def _apply_xfade_batch(
         self,
@@ -208,18 +342,56 @@ class RendererAdapter:
             clip_paths = []
             segments = []
 
+            print(f"[ADAPTER][{job_id}] Exporting {len(clips)} clips to temp files...")
+
+            # Determine target size from first clip
+            # CRITICAL: All clips MUST be same size for xfade
+            first_clip = clips[0]
+            # Get the base size (before any dynamic resizing effects)
+            target_w, target_h = first_clip.size
+            print(f"[ADAPTER][{job_id}] Target size for all clips: {target_w}x{target_h}")
+
             for i, clip in enumerate(clips):
                 clip_path = os.path.join(temp_dir, f"{job_id}_clip_{i}.mp4")
 
-                # Write clip to file (without audio for now)
-                clip.write_videofile(
-                    clip_path,
-                    fps=30,
-                    codec="libx264",
-                    preset="ultrafast",
-                    audio=False,
-                    logger=None
-                )
+                print(f"[ADAPTER][{job_id}] Exporting clip {i}: duration={clip.duration}s, size={clip.size}")
+
+                try:
+                    # Force clip to target size to ensure consistency
+                    # This is needed because Ken Burns effects can change dimensions dynamically
+                    export_clip = clip
+
+                    # Check if clip size doesn't match target
+                    # Note: Dynamic Ken Burns clips may report different sizes
+                    current_w, current_h = clip.size
+                    if current_w != target_w or current_h != target_h:
+                        print(f"[ADAPTER][{job_id}] Resizing clip {i} from {current_w}x{current_h} to {target_w}x{target_h}")
+                        export_clip = clip.resized((target_w, target_h))
+
+                    # Write clip to file (without audio for now)
+                    export_clip.write_videofile(
+                        clip_path,
+                        fps=30,
+                        codec="libx264",
+                        preset="ultrafast",
+                        audio=False,
+                        logger="bar"  # Show progress bar for debugging
+                    )
+                except Exception as write_err:
+                    print(f"[ADAPTER][{job_id}] ERROR writing clip {i}: {write_err}")
+                    import traceback
+                    traceback.print_exc()
+                    return None
+
+                # Verify the file was written
+                if os.path.exists(clip_path):
+                    file_size = os.path.getsize(clip_path)
+                    print(f"[ADAPTER][{job_id}] Clip {i} written: {file_size} bytes ({file_size / 1024:.1f} KB)")
+                    if file_size < 1000:  # Less than 1KB is suspicious
+                        print(f"[ADAPTER][{job_id}] WARNING: Clip {i} file is suspiciously small!")
+                else:
+                    print(f"[ADAPTER][{job_id}] ERROR: Clip {i} file not created!")
+                    return None
 
                 clip_paths.append(clip_path)
                 segments.append(ClipSegment(
@@ -227,6 +399,8 @@ class RendererAdapter:
                     duration=clip.duration,
                     start_time=clip.start if hasattr(clip, 'start') else 0
                 ))
+
+            print(f"[ADAPTER][{job_id}] All {len(clips)} clips exported successfully")
 
             # Get xfade transition names with blacklist filtering
             xfade_names = []
@@ -236,13 +410,30 @@ class RendererAdapter:
                     logger.warning(f"[{job_id}] Replacing blacklisted {t.effect_id} with fade")
                     xfade_names.append("fade")
                 elif t.effect_id in XFADE_TRANSITIONS:
-                    xfade_names.append(XFADE_TRANSITIONS[t.effect_id])
+                    xfade_name = XFADE_TRANSITIONS[t.effect_id]
+                    # Double-check the mapped name isn't blacklisted
+                    if xfade_name in BLACKLISTED_EFFECTS or f"xfade_{xfade_name}" in BLACKLISTED_EFFECTS:
+                        logger.warning(f"[{job_id}] Mapped xfade {xfade_name} is blacklisted, using fade")
+                        xfade_names.append("fade")
+                    else:
+                        xfade_names.append(xfade_name)
                 elif t.effect_id.startswith("xfade_"):
                     xfade_name = t.effect_id.replace("xfade_", "")
-                    xfade_names.append(xfade_name)
+                    # Check raw xfade name against blacklist
+                    if xfade_name in BLACKLISTED_EFFECTS or t.effect_id in BLACKLISTED_EFFECTS:
+                        logger.warning(f"[{job_id}] xfade {xfade_name} is blacklisted, using fade")
+                        xfade_names.append("fade")
+                    else:
+                        xfade_names.append(xfade_name)
                 else:
                     # Map GL transition to similar xfade with diversity
-                    xfade_names.append(self._map_to_xfade(t.effect_id))
+                    mapped = self._map_to_xfade(t.effect_id)
+                    # Final blacklist check on mapped name
+                    if mapped in BLACKLISTED_EFFECTS or f"xfade_{mapped}" in BLACKLISTED_EFFECTS:
+                        logger.warning(f"[{job_id}] Mapped {t.effect_id} -> {mapped} is blacklisted, using fade")
+                        xfade_names.append("fade")
+                    else:
+                        xfade_names.append(mapped)
 
             print(f"[ADAPTER][{job_id}] xfade effects to apply: {xfade_names}")
             logger.info(f"[{job_id}] xfade effects to apply: {xfade_names}")
@@ -313,9 +504,9 @@ class RendererAdapter:
             # === SLIDE TRANSITIONS ===
             "gl_slideright": "slideright",
             "gl_slideleft": "slideleft",
-            "gl_swap": "slideright",
-            "gl_leftright": "slideright",
-            "gl_wind": "slideleft",
+            "gl_swap": "coverright",       # Use cover for swap effect
+            "gl_leftright": "revealleft",  # Use reveal for variety
+            "gl_wind": "hlwind",           # Use actual wind effect!
 
             # === CIRCLE TRANSITIONS ===
             "gl_circle": "circleopen",
@@ -351,13 +542,14 @@ class RendererAdapter:
             "gl_bowTie": "vertclose",
 
             # === PIXEL/MOSAIC TRANSITIONS ===
+            # NOTE: rectcrop is BLACKLISTED - causes horizontal stripes!
             "gl_pixelize": "pixelize",
-            "gl_mosaic": "rectcrop",
+            "gl_mosaic": "pixelize",        # Changed from rectcrop (blacklisted)
             "gl_randomsquares": "pixelize",
-            "gl_hexagonalize": "pixelize",
-            "gl_crosshatch": "rectcrop",
-            "gl_squareswipe": "rectcrop",
-            "gl_gridflip": "diagtl",
+            "gl_hexagonalize": "dissolve",  # Changed from pixelize for variety
+            "gl_crosshatch": "diagtl",      # Changed from rectcrop (blacklisted)
+            "gl_squareswipe": "diagtr",     # Changed from rectcrop (blacklisted)
+            "gl_gridflip": "diagbl",        # Changed for variety
 
             # === DISTORTION TRANSITIONS ===
             "gl_crosswarp": "dissolve",
@@ -387,11 +579,11 @@ class RendererAdapter:
             "gl_colorphaseRotate": "diagbr",
             "gl_luminance_melt": "fadegrays",
             "gl_multiply_blend": "dissolve",
-            "gl_displacement": "wipeup",
-            "gl_inverted_page_curl": "wipebr",
-            "gl_directionalscaled": "wipetr",
-            "gl_directionalwarp": "wipebl",
-            "gl_bounce": "slidedown",
+            "gl_displacement": "vuwind",       # Use wind effect
+            "gl_inverted_page_curl": "revealup",  # Use reveal for page curl
+            "gl_directionalscaled": "coverup",    # Use cover effect
+            "gl_directionalwarp": "hrwind",       # Use wind effect
+            "gl_bounce": "coverdown",             # Use cover for bounce
             "gl_polkadotscurtain": "circleclose",
             "gl_windowblinds": "horzopen",
         }
@@ -428,7 +620,7 @@ class RendererAdapter:
             variants = ["circleopen", "circleclose", "circlecrop"]
             return variants[hash(effect_id) % len(variants)]
         elif "pixel" in effect_lower:
-            variants = ["pixelize", "rectcrop"]
+            variants = ["pixelize", "dissolve", "diagtl"]  # rectcrop removed (blacklisted)
             return variants[hash(effect_id) % len(variants)]
         elif "slice" in effect_lower:
             variants = ["wipeleft", "wiperight", "horzopen", "vertopen"]
@@ -450,10 +642,28 @@ class RendererAdapter:
             return variants[hash(effect_id) % len(variants)]
 
         # Default fallback with diversity based on effect_id hash
+        # Includes all safe FFmpeg xfade effects for maximum variety
         fallback_effects = [
-            "fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideright",
-            "circleopen", "vertopen", "horzopen", "diagtl", "smoothleft", "smoothright",
-            "fadeblack", "fadegrays", "pixelize", "radial", "zoomin", "distance"
+            # Basic fades
+            "fade", "dissolve", "fadeblack", "fadewhite", "fadegrays", "distance",
+            # Wipes
+            "wipeleft", "wiperight", "wipeup", "wipedown", "wipetl", "wipetr", "wipebl", "wipebr",
+            # Slides
+            "slideleft", "slideright", "slideup", "slidedown",
+            # Smooth
+            "smoothleft", "smoothright", "smoothup", "smoothdown",
+            # Geometric
+            "circleopen", "circleclose", "circlecrop", "vertopen", "vertclose", "horzopen", "horzclose",
+            # Diagonal
+            "diagtl", "diagtr", "diagbl", "diagbr",
+            # Special
+            "pixelize", "radial", "zoomin", "squeezev", "squeezeh",
+            # Wind effects
+            "hlwind", "hrwind", "vuwind", "vdwind",
+            # Cover effects
+            "coverleft", "coverright", "coverup", "coverdown",
+            # Reveal effects
+            "revealleft", "revealright", "revealup", "revealdown",
         ]
         return fallback_effects[hash(effect_id) % len(fallback_effects)]
 

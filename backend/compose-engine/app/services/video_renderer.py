@@ -14,6 +14,7 @@ if platform.system() != "Darwin":  # Not macOS
 import asyncio
 import logging
 import hashlib
+import random
 from typing import Callable, Optional, List, Tuple
 from concurrent.futures import ThreadPoolExecutor
 from moviepy import (
@@ -171,24 +172,15 @@ class VideoRenderer:
                 logger.info(f"[{job_id}] AI effects - transitions: {len(ai_effects.transitions)}, text_animations: {len(ai_effects.text_animations)}")
 
             # ============================================================
-            # STEP 7: APPLY TRANSITIONS (AI-powered or preset-based)
+            # STEP 7: APPLY TRANSITIONS (simple crossfade only)
             # ============================================================
             await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
 
-            if request.settings.use_ai_effects and ai_effects:
-                # Use AI-selected effects
-                video = await self._apply_ai_transitions_with_effects(
-                    clips=clips,
-                    ai_effects=ai_effects,
-                    preset=preset,
-                    job_dir=job_dir,
-                    job_id=job_id
-                )
-            else:
-                # Use traditional preset-based effects
-                effect_preset = request.settings.effect_preset.value if request.settings.effect_preset else preset.transition_type
-                transition_func = transitions.get_transition(effect_preset)
-                video = transition_func(clips, duration=preset.transition_duration)
+            # SIMPLIFIED: Always use basic crossfade with 0.2s duration
+            # This avoids all the complex GL/xfade rendering issues
+            SIMPLE_TRANSITION_DURATION = 0.2
+            logger.info(f"[{job_id}] Applying simple crossfade transitions (duration={SIMPLE_TRANSITION_DURATION}s)")
+            video = transitions.apply_crossfade(clips, duration=SIMPLE_TRANSITION_DURATION)
 
             # ============================================================
             # STEP 8: ADD TEXT OVERLAYS (with AI-selected animations)
@@ -219,11 +211,43 @@ class VideoRenderer:
             # ============================================================
             # STEP 10: COLOR GRADING
             # ============================================================
-            await self._update_progress(progress_callback, job_id, 80, "Color grading")
+            await self._update_progress(progress_callback, job_id, 78, "Color grading")
             video = filters.apply_color_grade(video, request.settings.color_grade.value)
 
             # ============================================================
-            # STEP 11: GPU RENDER WITH OPTIMIZED NVENC
+            # STEP 11: APPLY AI-SELECTED OVERLAY EFFECTS (Dynamic Parameters)
+            # ============================================================
+            if ai_effects and ai_effects.overlays:
+                await self._update_progress(progress_callback, job_id, 82, "Adding overlay effects")
+
+                # Convert overlay IDs to filter function IDs (remove 'overlay_' prefix)
+                overlay_types = []
+                for overlay_id in ai_effects.overlays:
+                    # Map from catalog ID to generic type (e.g., "overlay_light_leak" → "light_leak")
+                    overlay_type = overlay_id.replace("overlay_", "")
+                    overlay_types.append(overlay_type)
+
+                # Extract analysis data for dynamic parameter selection
+                analysis_data = ai_effects.analysis or {}
+                moods = analysis_data.get("moods", [])
+                intensity = analysis_data.get("intensity", "medium")
+                bpm = int(audio_analysis.bpm) if audio_analysis.bpm else None
+                suggested_colors = analysis_data.get("suggested_colors")  # AI-suggested colors
+
+                logger.info(f"[{job_id}] Applying dynamic overlays: types={overlay_types}, moods={moods}, intensity={intensity}, bpm={bpm}, colors={suggested_colors}")
+
+                # Use dynamic overlay system that selects variants based on mood/audio
+                video = filters.apply_overlay_effects_dynamic(
+                    video,
+                    overlay_types=overlay_types,
+                    moods=moods,
+                    intensity=intensity,
+                    bpm=bpm,
+                    suggested_colors=suggested_colors,
+                )
+
+            # ============================================================
+            # STEP 12: GPU RENDER WITH OPTIMIZED NVENC
             # ============================================================
             await self._update_progress(progress_callback, job_id, 85, "Rendering video")
 
@@ -233,7 +257,7 @@ class VideoRenderer:
             await self._render_with_nvenc(video, output_path, temp_audiofile, job_id)
 
             # ============================================================
-            # STEP 12: CLEANUP AND UPLOAD
+            # STEP 13: CLEANUP AND UPLOAD
             # ============================================================
             self._cleanup_clips(video, clips, audio_clips_to_close)
 
@@ -773,6 +797,7 @@ class VideoRenderer:
                     motions=settings.ai_effects.motions,
                     filters=settings.ai_effects.filters,
                     text_animations=settings.ai_effects.text_animations,
+                    overlays=settings.ai_effects.overlays if settings.ai_effects.overlays else [],
                     analysis=settings.ai_effects.analysis
                 )
             # If all transitions were blacklisted, fall through to auto-select
@@ -813,24 +838,27 @@ class VideoRenderer:
             num_transitions=num_transitions_needed,  # One unique transition per cut
             num_motions=2,
             num_filters=1,
+            num_overlays=random.randint(2, 4),  # Randomly select 2-4 overlay effects
             gpu_available=True,
             diversity_weight=0.5,  # Higher diversity to ensure different effects
         )
 
         selected = self.effect_selector.select(analysis, config)
 
-        logger.info(f"[{job_id}] AI selected: {len(selected.transitions)} transitions, {len(selected.motions)} motions")
+        logger.info(f"[{job_id}] AI selected: {len(selected.transitions)} transitions, {len(selected.motions)} motions, {len(selected.overlays)} overlays")
 
         return AIEffectSelection(
             transitions=[e.id for e in selected.transitions],
             motions=[e.id for e in selected.motions],
             filters=[e.id for e in selected.filters],
             text_animations=[e.id for e in selected.text_animations],
+            overlays=[e.id for e in selected.overlays],
             analysis={
                 "moods": analysis.moods,
                 "genres": analysis.genres,
                 "keywords": analysis.keywords,
-                "intensity": analysis.intensity
+                "intensity": analysis.intensity,
+                "suggested_colors": analysis.suggested_colors.to_dict() if analysis.suggested_colors else None,
             }
         )
 

@@ -8,16 +8,30 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-EffectType = Literal["transition", "motion", "filter", "text"]
+EffectType = Literal["transition", "motion", "filter", "text", "overlay"]
 
 # Blacklisted effects that cause visual corruption or make images invisible
 # These effects don't render properly with xfade in many configurations
 BLACKLISTED_EFFECTS = {
+    # Slice effects - cause horizontal/vertical stripes
     "xfade_hlslice",   # Horizontal left slice - causes horizontal stripes
     "xfade_hrslice",   # Horizontal right slice - causes horizontal stripes
     "xfade_vuslice",   # Vertical up slice - causes vertical stripes
     "xfade_vdslice",   # Vertical down slice - causes vertical stripes
+    "hlslice",         # Raw names (without xfade_ prefix)
+    "hrslice",
+    "vuslice",
+    "vdslice",
+
+    # Blur effects - can make images invisible
     "xfade_hblur",     # Horizontal blur - can make images invisible
+    "hblur",
+
+    # Crop effects - cause visual corruption (horizontal stripes)
+    "xfade_rectcrop",  # Rectangle crop - causes horizontal stripes
+    "rectcrop",        # Raw name
+
+    # Other problematic effects
     "gl_windowslice",  # Window slice - similar issues
 }
 EffectSource = Literal["gl-transitions", "ffmpeg-xfade", "moviepy"]
@@ -116,6 +130,7 @@ class EffectRegistry:
             "motion": [],
             "filter": [],
             "text": [],
+            "overlay": [],
         }
         self._by_source: Dict[EffectSource, List[EffectMetadata]] = {
             "gl-transitions": [],

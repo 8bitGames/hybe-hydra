@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useLabels, useCreateArtist } from "@/lib/queries";
 import {
@@ -14,14 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+
+const BIG_MACHINE_CODE = "BIGMACHINE";
 
 interface AddArtistModalProps {
   open: boolean;
@@ -49,6 +44,15 @@ export function AddArtistModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Auto-select Big Machine label when labels are loaded
+  const bigMachineLabel = labels.find((l) => l.code === BIG_MACHINE_CODE);
+
+  useEffect(() => {
+    if (bigMachineLabel && !formData.label_id) {
+      setFormData((prev) => ({ ...prev, label_id: bigMachineLabel.id }));
+    }
+  }, [bigMachineLabel, formData.label_id]);
+
   const handleClose = () => {
     if (!createArtistMutation.isPending) {
       setFormData({
@@ -70,8 +74,9 @@ export function AddArtistModal({
       newErrors.name = language === "ko" ? "이름은 필수입니다" : "Name is required";
     }
 
-    if (!formData.label_id) {
-      newErrors.label_id = language === "ko" ? "레이블을 선택하세요" : "Please select a label";
+    // Label is auto-set to Big Machine, validate it exists
+    if (!formData.label_id && !bigMachineLabel) {
+      newErrors.label_id = language === "ko" ? "레이블을 찾을 수 없습니다" : "Label not found";
     }
 
     setErrors(newErrors);
@@ -83,10 +88,13 @@ export function AddArtistModal({
 
     if (!validate()) return;
 
+    const labelId = formData.label_id || bigMachineLabel?.id;
+    if (!labelId) return;
+
     try {
       await createArtistMutation.mutateAsync({
         name: formData.name.trim(),
-        label_id: formData.label_id,
+        label_id: labelId,
         stage_name: formData.stage_name.trim() || undefined,
         group_name: formData.group_name.trim() || undefined,
         profile_description: formData.profile_description.trim() || undefined,
@@ -168,10 +176,10 @@ export function AddArtistModal({
             />
           </div>
 
-          {/* Label (Required) */}
+          {/* Label (Fixed to Big Machine) */}
           <div className="space-y-2">
             <Label htmlFor="label_id" className="text-base">
-              {artist.label} <span className="text-destructive">*</span>
+              {artist.label}
             </Label>
             {labelsLoading ? (
               <div className="flex items-center gap-2 h-10">
@@ -181,29 +189,11 @@ export function AddArtistModal({
                 </span>
               </div>
             ) : (
-              <Select
-                value={formData.label_id}
-                onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, label_id: value }))
-                }
-              >
-                <SelectTrigger
-                  className="h-10 text-base"
-                  aria-invalid={!!errors.label_id}
-                >
-                  <SelectValue placeholder={artist.selectLabel} />
-                </SelectTrigger>
-                <SelectContent>
-                  {labels.map((label) => (
-                    <SelectItem key={label.id} value={label.id} className="text-base">
-                      {label.name} ({label.code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {errors.label_id && (
-              <p className="text-sm text-destructive">{errors.label_id}</p>
+              <Input
+                value={bigMachineLabel?.name || "Big Machine Records"}
+                disabled
+                className="h-10 text-base bg-muted"
+              />
             )}
           </div>
 

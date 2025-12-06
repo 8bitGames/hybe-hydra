@@ -134,6 +134,7 @@ class SelectedEffects:
     motions: List[EffectMetadata] = field(default_factory=list)
     filters: List[EffectMetadata] = field(default_factory=list)
     text_animations: List[EffectMetadata] = field(default_factory=list)
+    overlays: List[EffectMetadata] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -141,6 +142,7 @@ class SelectedEffects:
             "motions": [e.to_dict() for e in self.motions],
             "filters": [e.to_dict() for e in self.filters],
             "text_animations": [e.to_dict() for e in self.text_animations],
+            "overlays": [e.to_dict() for e in self.overlays],
         }
 
     def to_ids(self) -> Dict[str, List[str]]:
@@ -150,6 +152,7 @@ class SelectedEffects:
             "motions": [e.id for e in self.motions],
             "filters": [e.id for e in self.filters],
             "text_animations": [e.id for e in self.text_animations],
+            "overlays": [e.id for e in self.overlays],
         }
 
 
@@ -161,6 +164,7 @@ class SelectionConfig:
     num_motions: int = 3  # Number of motion effects
     num_filters: int = 2  # Number of filter effects
     num_text_animations: int = 2  # Number of text animations
+    num_overlays: int = 2  # Number of overlay effects (light leak, bokeh, bloom, etc.)
 
     preferred_sources: Optional[List[EffectSource]] = None  # Preferred effect sources
     exclude_sources: Optional[List[EffectSource]] = None  # Sources to exclude
@@ -235,6 +239,14 @@ class EffectSelector:
             analysis=analysis,
             config=config,
             count=config.num_text_animations,
+        )
+
+        # Select overlay effects (light leak, bokeh, bloom, lens flare, etc.)
+        selected.overlays = self._select_by_type(
+            effect_type="overlay",
+            analysis=analysis,
+            config=config,
+            count=config.num_overlays,
         )
 
         # Check compatibility and remove conflicts
@@ -398,7 +410,7 @@ class EffectSelector:
         """Remove conflicting effects."""
         # Collect all selected effect IDs
         all_selected = set()
-        for effects_list in [selected.transitions, selected.motions, selected.filters, selected.text_animations]:
+        for effects_list in [selected.transitions, selected.motions, selected.filters, selected.text_animations, selected.overlays]:
             for effect in effects_list:
                 all_selected.add(effect.id)
 
@@ -418,6 +430,7 @@ class EffectSelector:
             selected.motions = [e for e in selected.motions if e.id not in to_remove]
             selected.filters = [e for e in selected.filters if e.id not in to_remove]
             selected.text_animations = [e for e in selected.text_animations if e.id not in to_remove]
+            selected.overlays = [e for e in selected.overlays if e.id not in to_remove]
 
         return selected
 
@@ -447,6 +460,7 @@ class EffectSelector:
             "motion": None,
             "filter": None,
             "text": None,
+            "overlay": None,
         }
 
         # Transition (except for last clip)
@@ -477,6 +491,13 @@ class EffectSelector:
         if selected_effects.text_animations and clip_index == 0:
             # Apply text animation to first clip
             result["text"] = selected_effects.text_animations[0].to_dict()
+
+        # Overlay effects (light leak, bokeh, bloom, etc.) - apply to video globally
+        # Return all selected overlays so the renderer can apply them
+        if selected_effects.overlays:
+            # For clip-level selection, cycle through overlays
+            idx = clip_index % len(selected_effects.overlays)
+            result["overlay"] = selected_effects.overlays[idx].to_dict()
 
         return result
 

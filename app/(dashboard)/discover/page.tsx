@@ -13,19 +13,17 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn, sanitizeUsername, getProxiedImageUrl } from "@/lib/utils";
+import { cn, sanitizeUsername } from "@/lib/utils";
 import {
   Search,
   TrendingUp,
   Plus,
   X,
-  ArrowRight,
-  ArrowLeft,
   Sparkles,
   Eye,
   Heart,
   MessageCircle,
-  Play,
+  MessageSquare,
   ExternalLink,
   Trophy,
   Flame,
@@ -42,7 +40,13 @@ import {
   History,
   Clock,
   Trash2,
+  Info,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 
 // ============================================================================
@@ -61,7 +65,7 @@ function formatPercent(num: number): string {
 }
 
 // ============================================================================
-// Video Card Component
+// Video Card Component (Text-based - No Thumbnail)
 // ============================================================================
 
 interface VideoCardProps {
@@ -72,7 +76,7 @@ interface VideoCardProps {
 }
 
 function VideoCard({ video, onSaveInspiration, isSaved, showRank = false }: VideoCardProps) {
-  const [imageError, setImageError] = useState(false);
+  const { language } = useI18n();
 
   const handleViewVideo = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -84,86 +88,84 @@ function VideoCard({ video, onSaveInspiration, isSaved, showRank = false }: Vide
     onSaveInspiration?.(video);
   };
 
+  // Calculate engagement bar width (max 100%, scaled for visibility)
+  const engagementBarWidth = Math.min(video.engagementRate * 8, 100);
+
   return (
-    <div className="group">
-      <div className="relative aspect-[9/16] rounded-lg overflow-hidden bg-neutral-100 mb-2">
-        {video.thumbnailUrl && !imageError ? (
-          <img
-            src={getProxiedImageUrl(video.thumbnailUrl) || ""}
-            alt=""
-            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-            onError={() => setImageError(true)}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-neutral-200">
-            <Play className="h-8 w-8 text-neutral-400" />
-          </div>
-        )}
-        {/* Play overlay */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+    <div
+      className="group relative p-3 border border-neutral-200 rounded-lg hover:bg-neutral-50 hover:border-neutral-300 transition-all cursor-pointer"
+      onClick={handleViewVideo}
+    >
+      {/* Header: Rank + Author + Actions */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {showRank && video.rank && (
+            <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-900 text-white">
+              #{video.rank}
+            </span>
+          )}
+          <span className="text-xs font-medium text-neutral-700 truncate">
+            @{sanitizeUsername(video.author.name)}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Save button */}
+          {onSaveInspiration && (
+            <button
+              onClick={handleSave}
+              className={cn(
+                "p-1 rounded transition-all",
+                isSaved
+                  ? "text-neutral-900"
+                  : "text-neutral-400 opacity-0 group-hover:opacity-100 hover:text-neutral-700"
+              )}
+              title={isSaved ? (language === "ko" ? "저장됨" : "Saved") : (language === "ko" ? "저장" : "Save")}
+            >
+              {isSaved ? (
+                <BookmarkCheck className="h-3.5 w-3.5" />
+              ) : (
+                <Bookmark className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
+          {/* External link */}
           <button
             onClick={handleViewVideo}
-            className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center"
+            className="p-1 rounded text-neutral-400 opacity-0 group-hover:opacity-100 hover:text-neutral-700 transition-all"
+            title="View on TikTok"
           >
-            <Play className="h-5 w-5 text-black fill-black ml-0.5" />
+            <ExternalLink className="h-3.5 w-3.5" />
           </button>
-        </div>
-        {/* Rank badge */}
-        {showRank && (
-          <div className="absolute top-1.5 left-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/70 text-white">
-            #{video.rank}
-          </div>
-        )}
-        {/* View on TikTok button */}
-        <button
-          onClick={handleViewVideo}
-          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 hover:bg-black/90 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
-          title="View on TikTok"
-        >
-          <ExternalLink className="h-3 w-3" />
-        </button>
-        {/* Save to inspiration button */}
-        {onSaveInspiration && (
-          <button
-            onClick={handleSave}
-            className={cn(
-              "absolute bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-medium transition-opacity z-10 whitespace-nowrap flex items-center gap-1",
-              isSaved
-                ? "bg-white text-black opacity-100"
-                : "bg-white text-black opacity-0 group-hover:opacity-100"
-            )}
-          >
-            {isSaved ? (
-              <>
-                <BookmarkCheck className="h-3 w-3" />
-                Saved
-              </>
-            ) : (
-              <>
-                <Bookmark className="h-3 w-3" />
-                Save
-              </>
-            )}
-          </button>
-        )}
-        {/* Views overlay */}
-        <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 text-white text-[10px] font-medium bg-black/60 px-1.5 py-0.5 rounded">
-          <Eye className="h-2.5 w-2.5" />
-          {formatCount(video.stats.playCount)}
-        </div>
-        {/* Engagement badge */}
-        <div className="absolute bottom-1.5 right-1.5 text-[10px] font-medium bg-black/60 text-white px-1.5 py-0.5 rounded">
-          {formatPercent(video.engagementRate)}
         </div>
       </div>
 
-      {/* Author */}
-      <p className="text-[11px] font-medium truncate mb-1 text-neutral-700">
-        @{sanitizeUsername(video.author.name)}
+      {/* Description */}
+      <p className="text-xs text-neutral-600 line-clamp-2 mb-2 min-h-[2.5rem]">
+        {video.description || (language === "ko" ? "설명 없음" : "No description")}
       </p>
 
+      {/* Hashtags */}
+      {video.hashtags && video.hashtags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-3">
+          {video.hashtags.slice(0, 3).map((tag) => (
+            <span key={tag} className="text-[10px] text-neutral-500">
+              #{tag}
+            </span>
+          ))}
+          {video.hashtags.length > 3 && (
+            <span className="text-[10px] text-neutral-400">
+              +{video.hashtags.length - 3}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Stats Row */}
-      <div className="flex items-center gap-2 text-[10px] text-neutral-500">
+      <div className="flex items-center gap-3 text-[10px] text-neutral-500 mb-2">
+        <span className="flex items-center gap-0.5">
+          <Eye className="h-2.5 w-2.5" />
+          {formatCount(video.stats.playCount)}
+        </span>
         <span className="flex items-center gap-0.5">
           <Heart className="h-2.5 w-2.5" />
           {formatCount(video.stats.likeCount)}
@@ -172,6 +174,24 @@ function VideoCard({ video, onSaveInspiration, isSaved, showRank = false }: Vide
           <MessageCircle className="h-2.5 w-2.5" />
           {formatCount(video.stats.commentCount)}
         </span>
+      </div>
+
+      {/* Engagement Rate Bar */}
+      <div className="space-y-1">
+        <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-neutral-700 rounded-full transition-all"
+            style={{ width: `${engagementBarWidth}%` }}
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-neutral-500">
+            {language === "ko" ? "참여율" : "Engagement"}
+          </span>
+          <span className="text-[10px] font-medium text-neutral-700">
+            {formatPercent(video.engagementRate)}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -193,11 +213,23 @@ function LiveTrendingSection({
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
-        {Array.from({ length: 24 }).map((_, i) => (
-          <div key={i}>
-            <div className="aspect-[9/16] bg-neutral-200 rounded-lg animate-pulse mb-2" />
-            <div className="h-3 bg-neutral-200 rounded animate-pulse w-20" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        {Array.from({ length: 15 }).map((_, i) => (
+          <div key={i} className="p-3 border border-neutral-200 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="h-4 w-8 bg-neutral-200 rounded animate-pulse" />
+              <div className="h-3 bg-neutral-200 rounded animate-pulse w-20" />
+            </div>
+            <div className="h-8 bg-neutral-200 rounded animate-pulse mb-2" />
+            <div className="flex gap-1 mb-3">
+              <div className="h-3 w-12 bg-neutral-200 rounded animate-pulse" />
+              <div className="h-3 w-10 bg-neutral-200 rounded animate-pulse" />
+            </div>
+            <div className="flex gap-3 mb-2">
+              <div className="h-3 w-12 bg-neutral-200 rounded animate-pulse" />
+              <div className="h-3 w-10 bg-neutral-200 rounded animate-pulse" />
+            </div>
+            <div className="h-1.5 bg-neutral-200 rounded-full animate-pulse" />
           </div>
         ))}
       </div>
@@ -235,7 +267,7 @@ function LiveTrendingSection({
   }));
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
       {videos.map((video) => (
         <VideoCard
           key={video.id}
@@ -300,20 +332,116 @@ function AnalysisResults({
           </div>
           <p className="text-xs text-neutral-600 leading-relaxed">{analysis.aiInsights.summary}</p>
           {aiExpanded && (
-            <div className="mt-3 pt-3 border-t border-neutral-200 space-y-3">
-              <div>
-                <h5 className="text-[10px] font-semibold text-neutral-500 mb-1.5">
-                  {language === "ko" ? "비디오 아이디어" : "Video Ideas"}
-                </h5>
-                <ul className="space-y-1">
-                  {analysis.aiInsights.videoIdeas.slice(0, 3).map((idea, i) => (
-                    <li key={i} className="text-[11px] flex items-start gap-1.5 text-neutral-600">
-                      <Sparkles className="h-2.5 w-2.5 mt-0.5 shrink-0" />
-                      {idea}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            <div className="mt-3 pt-3 border-t border-neutral-200 space-y-4">
+              {/* Content Strategy */}
+              {analysis.aiInsights.contentStrategy && analysis.aiInsights.contentStrategy.length > 0 && (
+                <div>
+                  <h5 className="text-[10px] font-semibold text-neutral-500 mb-1.5 flex items-center gap-1">
+                    <Target className="h-2.5 w-2.5" />
+                    {language === "ko" ? "콘텐츠 전략" : "Content Strategy"}
+                  </h5>
+                  <ul className="space-y-1">
+                    {analysis.aiInsights.contentStrategy.slice(0, 3).map((strategy, i) => (
+                      <li key={i} className="text-[11px] flex items-start gap-1.5 text-neutral-600">
+                        <span className="text-neutral-400">•</span>
+                        {strategy}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Video Ideas */}
+              {analysis.aiInsights.videoIdeas && analysis.aiInsights.videoIdeas.length > 0 && (
+                <div>
+                  <h5 className="text-[10px] font-semibold text-neutral-500 mb-1.5 flex items-center gap-1">
+                    <Sparkles className="h-2.5 w-2.5" />
+                    {language === "ko" ? "비디오 아이디어" : "Video Ideas"}
+                  </h5>
+                  <ul className="space-y-1">
+                    {analysis.aiInsights.videoIdeas.slice(0, 3).map((idea, i) => (
+                      <li key={i} className="text-[11px] flex items-start gap-1.5 text-neutral-600">
+                        <span className="text-neutral-400">•</span>
+                        {idea}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Hashtag Strategy */}
+              {analysis.aiInsights.hashtagStrategy && analysis.aiInsights.hashtagStrategy.length > 0 && (
+                <div>
+                  <h5 className="text-[10px] font-semibold text-neutral-500 mb-1.5 flex items-center gap-1">
+                    <Hash className="h-2.5 w-2.5" />
+                    {language === "ko" ? "해시태그 전략" : "Hashtag Strategy"}
+                  </h5>
+                  <ul className="space-y-1">
+                    {analysis.aiInsights.hashtagStrategy.slice(0, 3).map((hashtag, i) => (
+                      <li key={i} className="text-[11px] flex items-start gap-1.5 text-neutral-600">
+                        <span className="text-neutral-400">•</span>
+                        {hashtag}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Caption Templates */}
+              {analysis.aiInsights.captionTemplates && analysis.aiInsights.captionTemplates.length > 0 && (
+                <div>
+                  <h5 className="text-[10px] font-semibold text-neutral-500 mb-1.5 flex items-center gap-1">
+                    <MessageSquare className="h-2.5 w-2.5" />
+                    {language === "ko" ? "캡션 템플릿" : "Caption Templates"}
+                  </h5>
+                  <ul className="space-y-1.5">
+                    {analysis.aiInsights.captionTemplates.slice(0, 2).map((template, i) => (
+                      <li key={i} className="text-[11px] text-neutral-600 bg-neutral-100 rounded px-2 py-1.5 italic">
+                        "{template}"
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Best Posting Advice */}
+              {analysis.aiInsights.bestPostingAdvice && (
+                <div>
+                  <h5 className="text-[10px] font-semibold text-neutral-500 mb-1.5 flex items-center gap-1">
+                    <Clock className="h-2.5 w-2.5" />
+                    {language === "ko" ? "최적 포스팅 조언" : "Best Posting Advice"}
+                  </h5>
+                  <p className="text-[11px] text-neutral-600 leading-relaxed">
+                    {analysis.aiInsights.bestPostingAdvice}
+                  </p>
+                </div>
+              )}
+
+              {/* Audience Insights */}
+              {analysis.aiInsights.audienceInsights && (
+                <div>
+                  <h5 className="text-[10px] font-semibold text-neutral-500 mb-1.5 flex items-center gap-1">
+                    <Users className="h-2.5 w-2.5" />
+                    {language === "ko" ? "오디언스 인사이트" : "Audience Insights"}
+                  </h5>
+                  <p className="text-[11px] text-neutral-600 leading-relaxed">
+                    {analysis.aiInsights.audienceInsights}
+                  </p>
+                </div>
+              )}
+
+              {/* Trend Prediction */}
+              {analysis.aiInsights.trendPrediction && (
+                <div>
+                  <h5 className="text-[10px] font-semibold text-neutral-500 mb-1.5 flex items-center gap-1">
+                    <TrendingUp className="h-2.5 w-2.5" />
+                    {language === "ko" ? "트렌드 예측" : "Trend Prediction"}
+                  </h5>
+                  <p className="text-[11px] text-neutral-600 leading-relaxed">
+                    {analysis.aiInsights.trendPrediction}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -321,37 +449,147 @@ function AnalysisResults({
 
       {/* Stats Summary */}
       <div className="grid grid-cols-4 gap-2">
+        {/* 평균 조회 */}
         <div className="bg-neutral-100 rounded-lg p-2 text-center">
-          <div className="flex items-center justify-center gap-1 text-neutral-500 text-[10px] mb-0.5">
+          <div className="flex items-center justify-center gap-1.5 text-neutral-500 text-[10px] mb-0.5">
             <Eye className="h-2.5 w-2.5" />
             {language === "ko" ? "평균 조회" : "Avg Views"}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="p-0.5 rounded-full bg-neutral-200 hover:bg-neutral-300 transition-colors">
+                  <Info className="h-3 w-3 text-neutral-600" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-3" side="bottom" align="center">
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-xs text-neutral-900">
+                    {language === "ko" ? "평균 조회수" : "Average Views"}
+                  </h4>
+                  <p className="text-[11px] text-neutral-600 leading-relaxed">
+                    {language === "ko"
+                      ? "검색된 모든 영상의 조회수 평균값입니다. 해당 키워드의 일반적인 도달 범위를 나타냅니다."
+                      : "The average view count of all searched videos. Indicates typical reach for this keyword."}
+                  </p>
+                  <div className="text-[10px] text-neutral-500 pt-1 border-t border-neutral-200">
+                    💡 {language === "ko"
+                      ? "조회수가 높다고 참여율이 높은 것은 아닙니다."
+                      : "High views don't always mean high engagement."}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="text-sm font-bold text-black">
             {formatCount(analysis.aggregateStats.avgViews)}
           </div>
         </div>
+
+        {/* 참여율 */}
         <div className="bg-neutral-100 rounded-lg p-2 text-center">
-          <div className="flex items-center justify-center gap-1 text-neutral-500 text-[10px] mb-0.5">
+          <div className="flex items-center justify-center gap-1.5 text-neutral-500 text-[10px] mb-0.5">
             <Zap className="h-2.5 w-2.5" />
             {language === "ko" ? "참여율" : "Engagement"}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="p-0.5 rounded-full bg-neutral-200 hover:bg-neutral-300 transition-colors">
+                  <Info className="h-3 w-3 text-neutral-600" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 p-3" side="bottom" align="center">
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-xs text-neutral-900">
+                    {language === "ko" ? "참여율이란?" : "What is Engagement Rate?"}
+                  </h4>
+                  <p className="text-[11px] text-neutral-600 leading-relaxed">
+                    {language === "ko"
+                      ? "영상을 본 사람들 중 실제로 반응(좋아요, 댓글, 공유)한 비율입니다."
+                      : "The percentage of viewers who actively engaged (liked, commented, shared) with the video."}
+                  </p>
+                  <div className="bg-white rounded p-2 text-[10px] font-mono text-neutral-700 border border-neutral-200">
+                    {language === "ko"
+                      ? "(좋아요 + 댓글 + 공유) / 조회수 × 100"
+                      : "(Likes + Comments + Shares) / Views × 100"}
+                  </div>
+                  <div className="text-[10px] text-neutral-500 pt-1 border-t border-neutral-200">
+                    💡 {language === "ko"
+                      ? "참여율이 높을수록 콘텐츠 품질이 좋다는 신호입니다."
+                      : "Higher engagement indicates better content quality."}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="text-sm font-bold text-black">
             {formatPercent(analysis.aggregateStats.avgEngagementRate)}
           </div>
         </div>
+
+        {/* 바이럴 기준 */}
         <div className="bg-neutral-100 rounded-lg p-2 text-center">
-          <div className="flex items-center justify-center gap-1 text-neutral-500 text-[10px] mb-0.5">
-            <Trophy className="h-2.5 w-2.5" />
+          <div className="flex items-center justify-center gap-1.5 text-neutral-500 text-[10px] mb-0.5">
+            <Trophy className="h-2.5 w-2.5 text-amber-500" />
             {language === "ko" ? "바이럴" : "Viral"}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="p-0.5 rounded-full bg-neutral-200 hover:bg-neutral-300 transition-colors">
+                  <Info className="h-3 w-3 text-neutral-600" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 p-3" side="bottom" align="center">
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-xs text-neutral-900 flex items-center gap-1">
+                    <Trophy className="h-3 w-3 text-amber-500" />
+                    {language === "ko" ? "바이럴 영상 기준" : "Viral Video Criteria"}
+                  </h4>
+                  <p className="text-[11px] text-neutral-600 leading-relaxed">
+                    {language === "ko"
+                      ? "참여율 기준 상위 10%에 해당하는 영상입니다. 이 수치 이상의 참여율을 달성하면 바이럴 가능성이 높습니다."
+                      : "Videos in the top 10% by engagement rate. Achieving this rate or higher indicates viral potential."}
+                  </p>
+                  <div className="bg-amber-50 rounded p-2 text-[10px] text-amber-800 border border-amber-200">
+                    🏆 {language === "ko"
+                      ? `이 키워드에서 ${analysis.recommendations.engagementBenchmarks.toGoViral} 이상이면 바이럴!`
+                      : `${analysis.recommendations.engagementBenchmarks.toGoViral}+ means viral for this keyword!`}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="text-[11px] font-semibold text-black">
             {analysis.recommendations.engagementBenchmarks.toGoViral}
           </div>
         </div>
+
+        {/* 고성과 기준 */}
         <div className="bg-neutral-100 rounded-lg p-2 text-center">
-          <div className="flex items-center justify-center gap-1 text-neutral-500 text-[10px] mb-0.5">
-            <Target className="h-2.5 w-2.5" />
+          <div className="flex items-center justify-center gap-1.5 text-neutral-500 text-[10px] mb-0.5">
+            <Flame className="h-2.5 w-2.5 text-orange-500" />
             {language === "ko" ? "고성과" : "High"}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="p-0.5 rounded-full bg-neutral-200 hover:bg-neutral-300 transition-colors">
+                  <Info className="h-3 w-3 text-neutral-600" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 p-3" side="bottom" align="center">
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-xs text-neutral-900 flex items-center gap-1">
+                    <Flame className="h-3 w-3 text-orange-500" />
+                    {language === "ko" ? "고성과 영상 기준" : "High Performing Criteria"}
+                  </h4>
+                  <p className="text-[11px] text-neutral-600 leading-relaxed">
+                    {language === "ko"
+                      ? "참여율 기준 상위 10~30%에 해당하는 영상입니다. 평균 이상의 좋은 성과를 보이는 콘텐츠입니다."
+                      : "Videos in the top 10-30% by engagement rate. These show above-average performance."}
+                  </p>
+                  <div className="bg-orange-50 rounded p-2 text-[10px] text-orange-800 border border-orange-200">
+                    🔥 {language === "ko"
+                      ? `이 키워드에서 ${analysis.recommendations.engagementBenchmarks.toBeHighPerforming} 이상이면 고성과!`
+                      : `${analysis.recommendations.engagementBenchmarks.toBeHighPerforming}+ means high performing!`}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="text-[11px] font-semibold text-black">
             {analysis.recommendations.engagementBenchmarks.toBeHighPerforming}
@@ -370,7 +608,7 @@ function AnalysisResults({
             ({language === "ko" ? "상위 10%" : "Top 10%"})
           </span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {analysis.performanceTiers.viral.map((video) => (
             <VideoCard
               key={video.id}
@@ -395,8 +633,8 @@ function AnalysisResults({
               ({language === "ko" ? "상위 25%" : "Top 25%"})
             </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {analysis.performanceTiers.highPerforming.slice(0, 12).map((video) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {analysis.performanceTiers.highPerforming.slice(0, 10).map((video) => (
               <VideoCard
                 key={video.id}
                 video={video}
@@ -418,29 +656,44 @@ function AnalysisResults({
             {language === "ko" ? "추천 해시태그" : "Recommended Hashtags"}
           </h4>
           <div className="flex flex-wrap gap-1.5">
-            {analysis.hashtagInsights.recommendedHashtags.slice(0, 10).map((tag) => {
-              const isSelected = selectedHashtags.includes(tag);
-              return (
-                <Badge
-                  key={tag}
-                  variant={isSelected ? "default" : "outline"}
-                  className={cn(
-                    "cursor-pointer text-[11px] transition-all",
-                    isSelected
-                      ? "bg-black text-white border-black"
-                      : "border-neutral-300 text-neutral-600 hover:border-neutral-400"
-                  )}
-                  onClick={() => onSelectHashtag(tag)}
-                >
-                  #{tag}
-                  {isSelected ? (
-                    <X className="h-2.5 w-2.5 ml-1" />
-                  ) : (
-                    <Plus className="h-2.5 w-2.5 ml-1 opacity-50" />
-                  )}
-                </Badge>
-              );
-            })}
+            {(() => {
+              // Use recommendedHashtags if available, fallback to topHashtags
+              const hashtagsToShow = analysis.hashtagInsights.recommendedHashtags.length > 0
+                ? analysis.hashtagInsights.recommendedHashtags
+                : analysis.hashtagInsights.topHashtags.map(h => h.tag);
+
+              if (hashtagsToShow.length === 0) {
+                return (
+                  <p className="text-[11px] text-neutral-400 italic">
+                    {language === "ko" ? "해시태그 데이터가 없습니다" : "No hashtag data available"}
+                  </p>
+                );
+              }
+
+              return hashtagsToShow.slice(0, 10).map((tag) => {
+                const isSelected = selectedHashtags.includes(tag);
+                return (
+                  <Badge
+                    key={tag}
+                    variant={isSelected ? "default" : "outline"}
+                    className={cn(
+                      "cursor-pointer text-[11px] transition-all",
+                      isSelected
+                        ? "bg-black text-white border-black"
+                        : "border-neutral-300 text-neutral-600 hover:border-neutral-400"
+                    )}
+                    onClick={() => onSelectHashtag(tag)}
+                  >
+                    #{tag}
+                    {isSelected ? (
+                      <X className="h-2.5 w-2.5 ml-1" />
+                    ) : (
+                      <Plus className="h-2.5 w-2.5 ml-1 opacity-50" />
+                    )}
+                  </Badge>
+                );
+              });
+            })()}
           </div>
 
           {/* Top Creators */}
@@ -498,29 +751,6 @@ function AnalysisResults({
 // Saved Inspiration Panel
 // ============================================================================
 
-// Small thumbnail with error handling
-function SmallThumbnail({ url }: { url: string | null }) {
-  const [error, setError] = useState(false);
-  const proxiedUrl = getProxiedImageUrl(url);
-
-  if (!proxiedUrl || error) {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-neutral-200">
-        <Play className="h-4 w-4 text-neutral-400" />
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={proxiedUrl}
-      alt=""
-      className="w-full h-full object-cover"
-      onError={() => setError(true)}
-    />
-  );
-}
-
 function SavedInspirationPanel({
   savedVideos,
   onRemove,
@@ -532,9 +762,13 @@ function SavedInspirationPanel({
 
   if (savedVideos.length === 0) return null;
 
+  const handleViewVideo = (videoUrl: string) => {
+    window.open(videoUrl, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="border-t border-neutral-200 pt-4 mt-4">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-3">
         <h4 className="text-xs font-semibold flex items-center gap-1.5 text-neutral-700">
           <BookmarkCheck className="h-3.5 w-3.5 text-black" />
           {language === "ko" ? "저장된 영감" : "Saved Inspiration"} ({savedVideos.length})
@@ -542,16 +776,48 @@ function SavedInspirationPanel({
       </div>
       <div className="flex gap-2 pb-2 overflow-x-auto">
         {savedVideos.map((video) => (
-          <div key={video.id} className="relative flex-shrink-0 w-16">
-            <div className="aspect-[9/16] rounded overflow-hidden bg-neutral-100">
-              <SmallThumbnail url={video.thumbnailUrl} />
+          <div
+            key={video.id}
+            className="group relative flex-shrink-0 w-48 p-2.5 border border-neutral-200 rounded-lg hover:bg-neutral-50 hover:border-neutral-300 transition-all cursor-pointer"
+            onClick={() => handleViewVideo(video.videoUrl)}
+          >
+            {/* Header: Author + Remove */}
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-medium text-neutral-700 truncate flex-1">
+                @{sanitizeUsername(video.author.name)}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(video.id);
+                }}
+                className="p-0.5 rounded text-neutral-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <X className="h-3 w-3" />
+              </button>
             </div>
-            <button
-              onClick={() => onRemove(video.id)}
-              className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-neutral-300 flex items-center justify-center text-neutral-700 hover:bg-red-500 hover:text-white transition-colors"
-            >
-              <X className="h-2.5 w-2.5" />
-            </button>
+            {/* Description */}
+            <p className="text-[10px] text-neutral-500 line-clamp-2 mb-1.5 min-h-[2rem]">
+              {video.description || (language === "ko" ? "설명 없음" : "No description")}
+            </p>
+            {/* Stats */}
+            <div className="flex items-center gap-2 text-[9px] text-neutral-400">
+              <span className="flex items-center gap-0.5">
+                <Eye className="h-2 w-2" />
+                {formatCount(video.stats.playCount)}
+              </span>
+              <span className="flex items-center gap-0.5">
+                <Heart className="h-2 w-2" />
+                {formatCount(video.stats.likeCount)}
+              </span>
+              <span className="text-neutral-500 font-medium">
+                {formatPercent(video.engagementRate)}
+              </span>
+            </div>
+            {/* External link indicator on hover */}
+            <div className="absolute top-2 right-7 opacity-0 group-hover:opacity-100 transition-opacity">
+              <ExternalLink className="h-2.5 w-2.5 text-neutral-400" />
+            </div>
           </div>
         ))}
       </div>
@@ -844,22 +1110,22 @@ export default function DiscoverPage() {
         recommendations: {
           optimalHashtagCount: 5,
           suggestedHashtags: selectedHashtags,
-          contentTips: persistedInsights || [],
+          contentTips: persistedInsights?.contentStrategy || [],
           engagementBenchmarks: {
             toGoViral: ">10%",
             toBeHighPerforming: ">5%",
             averagePerformance: ">2%",
           },
         },
-        aiInsights: persistedInsights && persistedInsights.length > 0 ? {
-          summary: persistedInsights[0],
-          contentStrategy: persistedInsights.slice(1),
-          hashtagStrategy: [],
-          captionTemplates: [],
-          videoIdeas: [],
-          bestPostingAdvice: "",
-          audienceInsights: "",
-          trendPrediction: "",
+        aiInsights: persistedInsights ? {
+          summary: persistedInsights.summary || "",
+          contentStrategy: persistedInsights.contentStrategy || [],
+          hashtagStrategy: persistedInsights.hashtagStrategy || [],
+          captionTemplates: persistedInsights.captionTemplates || [],
+          videoIdeas: persistedInsights.videoIdeas || [],
+          bestPostingAdvice: persistedInsights.bestPostingAdvice || "",
+          audienceInsights: persistedInsights.audienceInsights || "",
+          trendPrediction: persistedInsights.trendPrediction || "",
         } : undefined,
       } satisfies KeywordAnalysis;
     }
@@ -881,10 +1147,19 @@ export default function DiscoverPage() {
       viralBenchmark: apiAnalysis.aggregateStats.medianViews * 10,
     });
     if (apiAnalysis.aiInsights) {
-      setDiscoverAiInsights([
-        apiAnalysis.aiInsights.summary,
-        ...apiAnalysis.aiInsights.contentStrategy,
-      ]);
+      // Pass full AI insights object instead of flattened array
+      setDiscoverAiInsights({
+        summary: apiAnalysis.aiInsights.summary,
+        contentStrategy: apiAnalysis.aiInsights.contentStrategy,
+        hashtagStrategy: apiAnalysis.aiInsights.hashtagStrategy,
+        captionTemplates: apiAnalysis.aiInsights.captionTemplates,
+        videoIdeas: apiAnalysis.aiInsights.videoIdeas,
+        bestPostingAdvice: apiAnalysis.aiInsights.bestPostingAdvice,
+        audienceInsights: apiAnalysis.aiInsights.audienceInsights,
+        trendPrediction: apiAnalysis.aiInsights.trendPrediction,
+      });
+    } else {
+      setDiscoverAiInsights(null);
     }
     setDiscoverTrendAnalysis({
       keyword: apiAnalysis.keyword,
@@ -1055,8 +1330,12 @@ export default function DiscoverPage() {
     title: language === "ko" ? "트렌드 발견" : "Discover Trends",
     subtitle:
       language === "ko"
-        ? "TikTok 트렌드를 검색하고 영감을 수집하세요"
-        : "Search TikTok trends and gather inspiration",
+        ? "트렌드 데이터를 수집하여 AI 콘텐츠 생성의 기반을 만드세요"
+        : "Collect trend data to build the foundation for AI content generation",
+    subtitleHint:
+      language === "ko"
+        ? "수집한 키워드, 해시태그, 영감이 맞춤형 프롬프트 생성에 활용됩니다"
+        : "Collected keywords, hashtags, and inspiration will be used for custom prompt generation",
     searchPlaceholder:
       language === "ko"
         ? "키워드 또는 #해시태그 (최대 3개)..."
@@ -1218,11 +1497,23 @@ export default function DiscoverPage() {
                       <div key={i} className="h-16 bg-neutral-200 rounded-lg animate-pulse" />
                     ))}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                    {Array.from({ length: 12 }).map((_, i) => (
-                      <div key={i}>
-                        <div className="aspect-[9/16] bg-neutral-200 rounded-lg animate-pulse mb-2" />
-                        <div className="h-3 bg-neutral-200 rounded animate-pulse w-20" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                    {Array.from({ length: 10 }).map((_, i) => (
+                      <div key={i} className="p-3 border border-neutral-200 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="h-4 w-8 bg-neutral-200 rounded animate-pulse" />
+                          <div className="h-3 bg-neutral-200 rounded animate-pulse w-20" />
+                        </div>
+                        <div className="h-8 bg-neutral-200 rounded animate-pulse mb-2" />
+                        <div className="flex gap-1 mb-3">
+                          <div className="h-3 w-12 bg-neutral-200 rounded animate-pulse" />
+                          <div className="h-3 w-10 bg-neutral-200 rounded animate-pulse" />
+                        </div>
+                        <div className="flex gap-3 mb-2">
+                          <div className="h-3 w-12 bg-neutral-200 rounded animate-pulse" />
+                          <div className="h-3 w-10 bg-neutral-200 rounded animate-pulse" />
+                        </div>
+                        <div className="h-1.5 bg-neutral-200 rounded-full animate-pulse" />
                       </div>
                     ))}
                   </div>

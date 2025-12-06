@@ -484,14 +484,14 @@ function ContextPanel() {
         )}
 
         {/* AI Insights */}
-        {aiInsights.length > 0 && (
+        {aiInsights?.summary && (
           <div className="border border-neutral-200 rounded-lg p-3 bg-neutral-50">
             <h3 className="text-xs font-semibold text-neutral-500 mb-2 flex items-center gap-1">
               <Sparkles className="h-3 w-3" />
               {language === "ko" ? "AI 인사이트" : "AI Insight"}
             </h3>
             <p className="text-xs text-neutral-600 leading-relaxed">
-              {aiInsights[0]}
+              {aiInsights.summary}
             </p>
           </div>
         )}
@@ -1542,7 +1542,7 @@ export default function CreatePage() {
       campaignName: campaignName || selectedCampaignName,
       artistName: selectedCampaign?.artist_name,
       performanceMetrics: performanceMetrics || null,
-      aiInsights: aiInsights || [],
+      aiInsights: aiInsights || null,
     };
   }, [analyze, selectedCampaignName, selectedCampaign]);
 

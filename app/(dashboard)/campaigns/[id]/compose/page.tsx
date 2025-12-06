@@ -1220,6 +1220,9 @@ export default function ComposePage() {
                       audio={selectedAudio}
                       scriptLines={scriptData.script.lines}
                       totalDuration={scriptData.script.totalDuration}
+                      realEnergyCurve={audioAnalysis?.energyCurve}
+                      realBeatTimes={audioAnalysis?.beatTimes}
+                      isAnalyzed={audioAnalysis?.analyzed}
                     />
                   </div>
                 )}

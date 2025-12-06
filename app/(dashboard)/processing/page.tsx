@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useCampaigns } from "@/lib/queries";
 import { videoApi, VideoGeneration } from "@/lib/video-api";
+import { composeApi } from "@/lib/compose-api";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkflowSync, useWorkflowNavigation } from "@/lib/hooks/useWorkflowNavigation";
 import { useWorkflowStore, ProcessingVideo, useWorkflowHydrated } from "@/lib/stores/workflow-store";
@@ -982,6 +983,45 @@ export default function ProcessingPage() {
       setHasProcessing(hasProcessingVideos);
     }
   }, [allGenerations, setProcessingVideos, campaignNames]);
+
+  // Poll compose status API for processing COMPOSE videos
+  // This triggers Modal polling and database updates
+  useEffect(() => {
+    if (!hasProcessing) return;
+
+    const processingComposeVideos = videos.filter(
+      (v) => v.status === "processing" && v.generationType === "COMPOSE"
+    );
+
+    if (processingComposeVideos.length === 0) return;
+
+    // Poll each processing compose video's status
+    const pollStatus = async () => {
+      for (const video of processingComposeVideos) {
+        try {
+          const status = await composeApi.getRenderStatus(video.generationId);
+          console.log(`[Processing] Compose ${video.id} status:`, status.status, status.progress);
+
+          // If status changed to completed or failed, trigger a refetch
+          if (status.status === "completed" || status.status === "failed") {
+            console.log(`[Processing] Compose ${video.id} finished with status: ${status.status}`);
+            refetchGenerations();
+            break; // One refresh is enough to update all
+          }
+        } catch (error) {
+          console.error(`[Processing] Failed to poll compose status for ${video.id}:`, error);
+        }
+      }
+    };
+
+    // Initial poll
+    pollStatus();
+
+    // Set up interval polling (every 3 seconds)
+    const intervalId = setInterval(pollStatus, 3000);
+
+    return () => clearInterval(intervalId);
+  }, [hasProcessing, videos, refetchGenerations]);
 
   const loading = !isHydrated || campaignsLoading || generationsLoading;
   const [refreshing, setRefreshing] = useState(false);

@@ -1,28 +1,18 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { useDashboardStats } from "@/lib/queries";
+import { useComposeVideos, useAllAIVideos, AllVideoItem } from "@/lib/queries";
+import { ComposedVideo } from "@/lib/compose-api";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -31,14 +21,11 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   PlayCircle,
   Search,
-  Filter,
-  Star,
   Clock,
-  CheckCircle,
-  FolderOpen,
   ExternalLink,
   MoreVertical,
   Trash2,
@@ -46,20 +33,19 @@ import {
   Download,
   Eye,
   Music,
-  Image,
   Wand2,
   Film,
-  Palette,
-  Type,
   Sparkles,
   Calendar,
-  User,
   Tag,
   FileText,
   Settings,
   Layers,
   Volume2,
   VolumeX,
+  ChevronLeft,
+  ChevronRight,
+  Play,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -69,52 +55,110 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { VideoPlayer } from "@/components/ui/video-player";
+import { api } from "@/lib/api";
 import { VideoGeneration as FullVideoGeneration } from "@/lib/video-api";
 
-interface VideoListItem {
-  id: string;
-  campaignId: string;
-  campaignName: string;
-  prompt: string;
-  status: string;
-  outputUrl: string | null;
-  composedOutputUrl: string | null;
-  qualityScore: number | null;
-  createdAt: string;
-}
+type VideoType = "all" | "ai" | "compose";
 
 export default function AllVideosPage() {
   const router = useRouter();
   const { language } = useI18n();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [campaignFilter, setCampaignFilter] = useState<string>("all");
+  const [videoType, setVideoType] = useState<VideoType>("all");
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [page, setPage] = useState(1);
+  const pageSize = 24;
 
   // Detail modal state
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<FullVideoGeneration | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  // Use TanStack Query for data fetching with caching
-  const { data: dashboardStats, isLoading: loading } = useDashboardStats();
+  // Fetch compose videos with pagination
+  const { data: composeData, isLoading: loadingCompose } = useComposeVideos({
+    page,
+    page_size: pageSize,
+  });
 
-  // Transform the data from dashboard stats
-  const videos: VideoListItem[] = dashboardStats?.recent_activity?.generations?.map((gen: any) => ({
-    id: gen.id,
-    campaignId: gen.campaign_id,
-    campaignName: gen.campaign_name,
-    prompt: gen.prompt,
-    status: "COMPLETED",
-    outputUrl: gen.output_url,
-    composedOutputUrl: gen.composed_output_url,
-    qualityScore: gen.quality_score,
-    createdAt: gen.created_at,
-  })) || [];
+  // Fetch AI videos from all campaigns
+  const { data: aiData, isLoading: loadingAI } = useAllAIVideos();
 
-  const fetchVideoDetail = useCallback(async (videoId: string) => {
+  const composeVideos = composeData?.items || [];
+  const aiVideos = aiData?.items || [];
+  const aiTotal = aiData?.total || 0;
+  const composeTotal = composeData?.total || 0;
+  const totalAll = aiTotal + composeTotal;
+  const totalPages = composeData?.pages || 1;
+
+  // Translations
+  const t = {
+    title: language === "ko" ? "모든 영상" : "All Videos",
+    subtitle: language === "ko" ? "캠페인 전체의 생성된 영상을 탐색하고 관리" : "Browse and manage all generated videos across campaigns",
+    createNew: language === "ko" ? "새 영상 만들기" : "Create New Video",
+    all: language === "ko" ? "전체" : "All",
+    ai: language === "ko" ? "AI 영상" : "AI Videos",
+    compose: language === "ko" ? "컴포즈" : "Compose",
+    searchPlaceholder: language === "ko" ? "프롬프트, 캠페인명으로 검색..." : "Search by prompt, campaign...",
+    noVideos: language === "ko" ? "영상을 찾을 수 없습니다" : "No videos found",
+    createFirst: language === "ko" ? "영상 생성을 시작해보세요" : "Start generating videos to see them here",
+    tryAdjust: language === "ko" ? "필터를 조정해보세요" : "Try adjusting your filters",
+    page: language === "ko" ? "페이지" : "Page",
+    of: language === "ko" ? "/" : "of",
+    totalVideos: language === "ko" ? "전체 영상" : "Total Videos",
+    viewDetails: language === "ko" ? "상세보기" : "View Details",
+    viewInCampaign: language === "ko" ? "캠페인에서 보기" : "View in Campaign",
+    schedulePublish: language === "ko" ? "게시 예약" : "Schedule Publish",
+    download: language === "ko" ? "다운로드" : "Download",
+    delete: language === "ko" ? "삭제" : "Delete",
+    completed: language === "ko" ? "완료" : "Completed",
+    processing: language === "ko" ? "처리중" : "Processing",
+    failed: language === "ko" ? "실패" : "Failed",
+    videoDetails: language === "ko" ? "영상 상세 정보" : "Video Details",
+    prompt: language === "ko" ? "프롬프트" : "Prompt",
+    negativePrompt: language === "ko" ? "네거티브 프롬프트" : "Negative Prompt",
+    videoSettings: language === "ko" ? "영상 설정" : "Video Settings",
+    duration: language === "ko" ? "길이" : "Duration",
+    aspectRatio: language === "ko" ? "비율" : "Aspect Ratio",
+    status: language === "ko" ? "상태" : "Status",
+    qualityScore: language === "ko" ? "품질 점수" : "Quality Score",
+    generationType: language === "ko" ? "생성 타입" : "Generation Type",
+    composeVideo: language === "ko" ? "컴포즈 영상" : "Compose Video",
+    aiVideo: language === "ko" ? "AI 영상" : "AI Video",
+    audio: language === "ko" ? "오디오" : "Audio",
+    filename: language === "ko" ? "파일명" : "Filename",
+    startTime: language === "ko" ? "시작 시간" : "Start Time",
+    referenceStyle: language === "ko" ? "참조 스타일" : "Reference Style",
+    effectPreset: language === "ko" ? "이펙트 프리셋" : "Effect Preset",
+    metadata: language === "ko" ? "메타데이터" : "Metadata",
+    tags: language === "ko" ? "태그" : "Tags",
+    createdAt: language === "ko" ? "생성일" : "Created",
+    updatedAt: language === "ko" ? "수정일" : "Updated",
+    loadFailed: language === "ko" ? "영상 정보를 불러올 수 없습니다" : "Failed to load video details",
+    openInNewTab: language === "ko" ? "새 탭에서 열기" : "Open in New Tab",
+    createSimilar: language === "ko" ? "유사하게 만들기" : "Create Similar",
+  };
+
+  const handleDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('Download failed:', error);
+      // Fallback: open in new tab
+      window.open(url, '_blank');
+    }
+  };
+
+  const fetchVideoDetail = async (videoId: string, campaignId?: string) => {
     setLoadingDetail(true);
     setDetailModalOpen(true);
     try {
@@ -127,17 +171,18 @@ export default function AllVideosPage() {
     } finally {
       setLoadingDetail(false);
     }
-  }, []);
+  };
 
-  const getVideoUrl = (video: VideoListItem) => {
-    return video.composedOutputUrl || video.outputUrl;
+  // Helper to get video URL for unified video type
+  const getUnifiedVideoUrl = (video: { composed_output_url: string | null; output_url: string | null }) => {
+    return video.composed_output_url || video.output_url;
   };
 
   const getDetailVideoUrl = (video: FullVideoGeneration) => {
     return video.composed_output_url || video.output_url;
   };
 
-  // Check if video is compose type (from generation_type or metadata)
+  // Check if video is compose type
   const isComposeVideo = (video: FullVideoGeneration) => {
     if (video.generation_type === "COMPOSE") return true;
     if (video.id?.startsWith("compose-")) return true;
@@ -150,115 +195,168 @@ export default function AllVideosPage() {
     return video.aspect_ratio === "9:16";
   };
 
-  const filteredVideos = videos.filter((video) => {
-    if (searchQuery && !video.prompt.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-    if (statusFilter !== "all" && video.status !== statusFilter) {
-      return false;
-    }
-    if (campaignFilter !== "all" && video.campaignId !== campaignFilter) {
-      return false;
-    }
-    return true;
-  });
+  // Unified video type for rendering
+  type UnifiedVideo = {
+    id: string;
+    campaign_id: string;
+    campaign_name: string;
+    artist_name: string;
+    prompt: string;
+    duration_seconds: number;
+    aspect_ratio: string;
+    status: string;
+    output_url: string | null;
+    composed_output_url: string | null;
+    created_at: string;
+    updated_at: string;
+    generation_type: "AI" | "COMPOSE";
+  };
 
-  const uniqueCampaigns = Array.from(new Set(videos.map(v => v.campaignId)))
-    .map(id => ({
-      id,
-      name: videos.find(v => v.campaignId === id)?.campaignName || "Unknown"
-    }));
+  // Convert compose videos to unified format
+  const unifiedComposeVideos: UnifiedVideo[] = composeVideos.map((video) => ({
+    id: video.id,
+    campaign_id: video.campaign_id,
+    campaign_name: video.campaign_name,
+    artist_name: video.artist_name,
+    prompt: video.prompt,
+    duration_seconds: video.duration_seconds,
+    aspect_ratio: video.aspect_ratio,
+    status: video.status,
+    output_url: video.output_url,
+    composed_output_url: video.composed_output_url,
+    created_at: video.created_at,
+    updated_at: video.updated_at,
+    generation_type: "COMPOSE" as const,
+  }));
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "COMPLETED":
-        return <Badge variant="outline" className="border-zinc-400 bg-zinc-100 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
-          <CheckCircle className="h-3 w-3 mr-1" />
-          {language === "ko" ? "완료" : "Completed"}
-        </Badge>;
-      case "PROCESSING":
-        return <Badge variant="outline" className="border-zinc-300 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-          <Clock className="h-3 w-3 mr-1" />
-          {language === "ko" ? "처리중" : "Processing"}
-        </Badge>;
-      case "FAILED":
-        return <Badge variant="outline" className="border-zinc-500 bg-zinc-200 text-zinc-800 dark:border-zinc-500 dark:bg-zinc-700 dark:text-zinc-200">
-          {language === "ko" ? "실패" : "Failed"}
-        </Badge>;
+  // Convert AI videos to unified format
+  const unifiedAIVideos: UnifiedVideo[] = aiVideos.map((video) => ({
+    id: video.id,
+    campaign_id: video.campaign_id,
+    campaign_name: video.campaign_name,
+    artist_name: video.artist_name,
+    prompt: video.prompt,
+    duration_seconds: video.duration_seconds,
+    aspect_ratio: video.aspect_ratio,
+    status: video.status,
+    output_url: video.output_url,
+    composed_output_url: video.composed_output_url,
+    created_at: video.created_at,
+    updated_at: video.updated_at,
+    generation_type: "AI" as const,
+  }));
+
+  // Filter videos based on search and type
+  const filteredVideos = useMemo(() => {
+    // Choose videos based on type filter
+    let baseVideos: UnifiedVideo[] = [];
+
+    if (videoType === "all") {
+      // Combine both and sort by created_at
+      baseVideos = [...unifiedAIVideos, ...unifiedComposeVideos].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    } else if (videoType === "ai") {
+      baseVideos = unifiedAIVideos;
+    } else {
+      baseVideos = unifiedComposeVideos;
+    }
+
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      return baseVideos.filter(
+        (video) =>
+          video.prompt.toLowerCase().includes(query) ||
+          video.campaign_name.toLowerCase().includes(query) ||
+          video.artist_name.toLowerCase().includes(query)
+      );
+    }
+
+    return baseVideos;
+  }, [unifiedAIVideos, unifiedComposeVideos, searchQuery, videoType]);
+
+  const getAspectRatioLabel = (ratio: string) => {
+    switch (ratio) {
+      case "9:16":
+        return "TikTok/Reels";
+      case "16:9":
+        return "YouTube";
+      case "1:1":
+        return "Instagram";
       default:
-        return <Badge variant="outline" className="border-zinc-300 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400">{status}</Badge>;
+        return ratio;
     }
   };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString(language === "ko" ? "ko-KR" : "en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const loading = loadingCompose || loadingAI;
 
   return (
     <div className="space-y-6 pb-8 px-[7%]">
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            {language === "ko" ? "모든 영상" : "All Videos"}
-          </h1>
-          <p className="text-muted-foreground">
-            {language === "ko"
-              ? "캠페인 전체의 생성된 영상을 탐색하고 관리"
-              : "Browse and manage all generated videos across campaigns"}
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">{t.title}</h1>
+          <p className="text-muted-foreground">{t.subtitle}</p>
         </div>
         <Button onClick={() => router.push("/create/generate")}>
-          {language === "ko" ? "새 영상 만들기" : "Create New Video"}
+          {t.createNew}
         </Button>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={language === "ko" ? "프롬프트로 검색..." : "Search by prompt..."}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
+      {/* Stats & Filters */}
+      <div className="flex flex-col gap-4">
+        {/* Type Tabs */}
+        <div className="flex items-center justify-between">
+          <Tabs value={videoType} onValueChange={(v) => { setVideoType(v as VideoType); setPage(1); }}>
+            <TabsList>
+              <TabsTrigger value="all" className="gap-2">
+                <Film className="h-4 w-4" />
+                {t.all}
+                <Badge variant="secondary" className="ml-1">{totalAll}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="ai" className="gap-2">
+                <Sparkles className="h-4 w-4" />
+                {t.ai}
+                <Badge variant="secondary" className="ml-1">{aiTotal}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="compose" className="gap-2">
+                <Layers className="h-4 w-4" />
+                {t.compose}
+                <Badge variant="secondary" className="ml-1">{composeTotal}</Badge>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          <div className="flex items-center gap-2">
+            <div className="relative w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={t.searchPlaceholder}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder={language === "ko" ? "상태" : "Status"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{language === "ko" ? "모든 상태" : "All Status"}</SelectItem>
-                <SelectItem value="COMPLETED">{language === "ko" ? "완료" : "Completed"}</SelectItem>
-                <SelectItem value="PROCESSING">{language === "ko" ? "처리중" : "Processing"}</SelectItem>
-                <SelectItem value="FAILED">{language === "ko" ? "실패" : "Failed"}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={campaignFilter} onValueChange={setCampaignFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder={language === "ko" ? "캠페인" : "Campaign"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{language === "ko" ? "모든 캠페인" : "All Campaigns"}</SelectItem>
-                {uniqueCampaigns.map((campaign) => (
-                  <SelectItem key={campaign.id} value={campaign.id}>
-                    {campaign.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <Button
               variant={soundEnabled ? "default" : "outline"}
               size="icon"
               onClick={() => setSoundEnabled(!soundEnabled)}
-              title={language === "ko" ? (soundEnabled ? "소리 끄기" : "소리 켜기") : (soundEnabled ? "Mute" : "Unmute")}
+              title={soundEnabled ? "Mute" : "Unmute"}
             >
               {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Videos Grid */}
       {loading ? (
@@ -269,101 +367,160 @@ export default function AllVideosPage() {
         <Card>
           <CardContent className="pt-12 pb-12 text-center">
             <PlayCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="font-medium mb-2">
-              {language === "ko" ? "영상을 찾을 수 없습니다" : "No videos found"}
-            </h3>
+            <h3 className="font-medium mb-2">{t.noVideos}</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              {videos.length === 0
-                ? (language === "ko" ? "영상 생성을 시작해보세요" : "Start generating videos to see them here")
-                : (language === "ko" ? "필터를 조정해보세요" : "Try adjusting your filters")}
+              {totalAll === 0 ? t.createFirst : t.tryAdjust}
             </p>
             <Button onClick={() => router.push("/create/generate")}>
-              {language === "ko" ? "첫 영상 만들기" : "Create Your First Video"}
+              {t.createNew}
             </Button>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {filteredVideos.map((video) => (
-            <Card key={video.id} className="overflow-hidden">
-              {/* Video Thumbnail */}
-              <div className="relative aspect-video bg-muted">
-                <VideoPlayer
-                  src={getVideoUrl(video)}
-                  className="w-full h-full"
-                  playOnHover={true}
-                  soundOnHover={soundEnabled}
-                />
-                {video.qualityScore && (
-                  <Badge
-                    variant="outline"
-                    className="absolute top-2 right-2 border-zinc-400 bg-white/90 text-zinc-900 dark:border-zinc-500 dark:bg-zinc-900/90 dark:text-zinc-100"
-                  >
-                    <Star className="h-3 w-3 mr-1" />
-                    {video.qualityScore.toFixed(0)}%
-                  </Badge>
-                )}
-              </div>
-
-              <CardContent className="pt-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{video.prompt}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="outline" className="text-xs border-zinc-300 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400">
-                        <FolderOpen className="h-3 w-3 mr-1" />
-                        {video.campaignName}
-                      </Badge>
-                      {getStatusBadge(video.status)}
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+            {filteredVideos.map((video) => (
+              <Card
+                key={`${video.generation_type}-${video.id}`}
+                className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow group"
+                onClick={() => fetchVideoDetail(video.id, video.campaign_id)}
+              >
+                {/* Video Thumbnail */}
+                <div className="relative aspect-video bg-muted">
+                  {getUnifiedVideoUrl(video) ? (
+                    <video
+                      src={getUnifiedVideoUrl(video)!}
+                      className="w-full h-full object-cover"
+                      muted
+                      preload="metadata"
+                      onMouseOver={(e) => {
+                        const videoEl = e.currentTarget as HTMLVideoElement;
+                        if (soundEnabled) {
+                          videoEl.muted = false;
+                          videoEl.volume = 0.1;
+                        }
+                        videoEl.play();
+                      }}
+                      onMouseOut={(e) => {
+                        const videoEl = e.currentTarget as HTMLVideoElement;
+                        videoEl.pause();
+                        videoEl.currentTime = 0;
+                        videoEl.muted = true;
+                      }}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <Film className="h-8 w-8 text-muted-foreground" />
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      {new Date(video.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => fetchVideoDetail(video.id)}>
-                        <Eye className="h-4 w-4 mr-2" />
-                        {language === "ko" ? "상세보기" : "View Details"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => router.push(`/campaigns/${video.campaignId}/curation`)}
-                      >
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        {language === "ko" ? "캠페인에서 보기" : "View in Campaign"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => router.push(`/campaigns/${video.campaignId}/publish`)}
-                      >
-                        <Send className="h-4 w-4 mr-2" />
-                        {language === "ko" ? "게시 예약" : "Schedule Publish"}
-                      </DropdownMenuItem>
-                      {getVideoUrl(video) && (
-                        <DropdownMenuItem asChild>
-                          <a href={getVideoUrl(video)!} download>
-                            <Download className="h-4 w-4 mr-2" />
-                            {language === "ko" ? "다운로드" : "Download"}
-                          </a>
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        {language === "ko" ? "삭제" : "Delete"}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  )}
+                  {/* Duration badge */}
+                  <Badge
+                    variant="secondary"
+                    className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px]"
+                  >
+                    {video.duration_seconds}s
+                  </Badge>
+                  {/* Type badge */}
+                  <Badge
+                    variant="secondary"
+                    className="absolute top-2 left-2 bg-black/70 text-white text-[10px]"
+                  >
+                    {video.generation_type === "AI" ? (
+                      <>
+                        <Sparkles className="h-3 w-3 mr-1" />
+                        AI
+                      </>
+                    ) : (
+                      <>
+                        <Layers className="h-3 w-3 mr-1" />
+                        Compose
+                      </>
+                    )}
+                  </Badge>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+
+                <CardContent className="p-3">
+                  <div className="space-y-1.5">
+                    <p className="font-medium text-xs truncate">{video.campaign_name}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{video.artist_name}</p>
+                    <p className="text-[10px] text-muted-foreground line-clamp-2">{video.prompt}</p>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatDate(video.created_at)}
+                      </span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => e.stopPropagation()}>
+                            <MoreVertical className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => fetchVideoDetail(video.id, video.campaign_id)}>
+                            <Eye className="h-4 w-4 mr-2" />
+                            {t.viewDetails}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => router.push(`/campaigns/${video.campaign_id}/curation`)}
+                          >
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            {t.viewInCampaign}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => router.push(`/campaigns/${video.campaign_id}/publish`)}
+                          >
+                            <Send className="h-4 w-4 mr-2" />
+                            {t.schedulePublish}
+                          </DropdownMenuItem>
+                          {getUnifiedVideoUrl(video) && (
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownload(getUnifiedVideoUrl(video)!, `video-${video.id}.mp4`);
+                              }}
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              {t.download}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-destructive">
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            {t.delete}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                {page} {t.of} {totalPages} {t.page}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Video Detail Modal */}
@@ -372,7 +529,7 @@ export default function AllVideosPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Film className="h-5 w-5" />
-              {language === "ko" ? "영상 상세 정보" : "Video Details"}
+              {t.videoDetails}
             </DialogTitle>
           </DialogHeader>
 
@@ -406,12 +563,25 @@ export default function AllVideosPage() {
                   </div>
                 </div>
 
+                {/* Download Button */}
+                {getDetailVideoUrl(selectedVideo) && (
+                  <div className="flex justify-center">
+                    <Button
+                      onClick={() => handleDownload(getDetailVideoUrl(selectedVideo)!, `video-${selectedVideo.id}.mp4`)}
+                      className="gap-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      {t.download}
+                    </Button>
+                  </div>
+                )}
+
                 {/* Basic Info */}
                 <div className="space-y-4">
                   <div>
                     <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-2">
                       <FileText className="h-4 w-4" />
-                      {language === "ko" ? "프롬프트" : "Prompt"}
+                      {t.prompt}
                     </h3>
                     <p className="text-sm bg-muted p-3 rounded-lg">{selectedVideo.prompt}</p>
                   </div>
@@ -419,7 +589,7 @@ export default function AllVideosPage() {
                   {selectedVideo.negative_prompt && (
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground mb-2">
-                        {language === "ko" ? "네거티브 프롬프트" : "Negative Prompt"}
+                        {t.negativePrompt}
                       </h3>
                       <p className="text-sm bg-muted p-3 rounded-lg">{selectedVideo.negative_prompt}</p>
                     </div>
@@ -432,23 +602,23 @@ export default function AllVideosPage() {
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
                     <Settings className="h-4 w-4" />
-                    {language === "ko" ? "영상 설정" : "Video Settings"}
+                    {t.videoSettings}
                   </h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-muted p-3 rounded-lg">
-                      <p className="text-xs text-muted-foreground">{language === "ko" ? "길이" : "Duration"}</p>
+                      <p className="text-xs text-muted-foreground">{t.duration}</p>
                       <p className="font-medium">{selectedVideo.duration_seconds}s</p>
                     </div>
                     <div className="bg-muted p-3 rounded-lg">
-                      <p className="text-xs text-muted-foreground">{language === "ko" ? "비율" : "Aspect Ratio"}</p>
+                      <p className="text-xs text-muted-foreground">{t.aspectRatio}</p>
                       <p className="font-medium">{selectedVideo.aspect_ratio}</p>
                     </div>
                     <div className="bg-muted p-3 rounded-lg">
-                      <p className="text-xs text-muted-foreground">{language === "ko" ? "상태" : "Status"}</p>
+                      <p className="text-xs text-muted-foreground">{t.status}</p>
                       <p className="font-medium">{selectedVideo.status}</p>
                     </div>
                     <div className="bg-muted p-3 rounded-lg">
-                      <p className="text-xs text-muted-foreground">{language === "ko" ? "품질 점수" : "Quality Score"}</p>
+                      <p className="text-xs text-muted-foreground">{t.qualityScore}</p>
                       <p className="font-medium">{selectedVideo.quality_score ?? "-"}</p>
                     </div>
                   </div>
@@ -460,18 +630,18 @@ export default function AllVideosPage() {
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
                     <Wand2 className="h-4 w-4" />
-                    {language === "ko" ? "생성 타입" : "Generation Type"}
+                    {t.generationType}
                   </h3>
                   <Badge variant="outline" className="border-zinc-400 bg-zinc-100 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
                     {isComposeVideo(selectedVideo) ? (
                       <>
                         <Layers className="h-3 w-3 mr-1" />
-                        {language === "ko" ? "컴포즈 영상" : "Compose Video"}
+                        {t.composeVideo}
                       </>
                     ) : (
                       <>
                         <Sparkles className="h-3 w-3 mr-1" />
-                        {language === "ko" ? "AI 영상" : "AI Video"}
+                        {t.aiVideo}
                       </>
                     )}
                   </Badge>
@@ -484,22 +654,22 @@ export default function AllVideosPage() {
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
                         <Music className="h-4 w-4" />
-                        {language === "ko" ? "오디오" : "Audio"}
+                        {t.audio}
                       </h3>
                       <div className="bg-muted p-3 rounded-lg space-y-2">
                         <p className="text-sm">
-                          <span className="text-muted-foreground">{language === "ko" ? "파일명: " : "Filename: "}</span>
+                          <span className="text-muted-foreground">{t.filename}: </span>
                           {selectedVideo.audio_asset.original_filename || selectedVideo.audio_asset.filename}
                         </p>
                         {selectedVideo.audio_start_time !== undefined && selectedVideo.audio_start_time !== null && (
                           <p className="text-sm">
-                            <span className="text-muted-foreground">{language === "ko" ? "시작 시간: " : "Start Time: "}</span>
+                            <span className="text-muted-foreground">{t.startTime}: </span>
                             {selectedVideo.audio_start_time.toFixed(1)}s
                           </p>
                         )}
                         {selectedVideo.audio_duration !== undefined && selectedVideo.audio_duration !== null && (
                           <p className="text-sm">
-                            <span className="text-muted-foreground">{language === "ko" ? "길이: " : "Duration: "}</span>
+                            <span className="text-muted-foreground">{t.duration}: </span>
                             {selectedVideo.audio_duration.toFixed(1)}s
                           </p>
                         )}
@@ -514,93 +684,23 @@ export default function AllVideosPage() {
                     <Separator />
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
-                        <Palette className="h-4 w-4" />
-                        {language === "ko" ? "참조 스타일" : "Reference Style"}
+                        {t.referenceStyle}
                       </h3>
                       <p className="text-sm bg-muted p-3 rounded-lg">{selectedVideo.reference_style}</p>
                     </div>
                   </>
                 )}
 
-                {/* Effect Preset (Compose) */}
+                {/* Effect Preset */}
                 {selectedVideo.effect_preset && (
                   <>
                     <Separator />
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
                         <Sparkles className="h-4 w-4" />
-                        {language === "ko" ? "이펙트 프리셋" : "Effect Preset"}
+                        {t.effectPreset}
                       </h3>
-                      <Badge variant="outline" className="border-zinc-300 text-zinc-700 dark:border-zinc-600 dark:text-zinc-300">{selectedVideo.effect_preset}</Badge>
-                    </div>
-                  </>
-                )}
-
-                {/* Quality Metadata */}
-                {selectedVideo.quality_metadata && Object.keys(selectedVideo.quality_metadata).length > 0 && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
-                        <Tag className="h-4 w-4" />
-                        {language === "ko" ? "메타데이터" : "Metadata"}
-                      </h3>
-                      <div className="bg-muted p-3 rounded-lg space-y-2">
-                        {Boolean(selectedVideo.quality_metadata.batchId) && (
-                          <p className="text-sm">
-                            <span className="text-muted-foreground">Batch ID: </span>
-                            <code className="text-xs">{String(selectedVideo.quality_metadata.batchId)}</code>
-                          </p>
-                        )}
-                        {Boolean(selectedVideo.quality_metadata.variationType) && (
-                          <p className="text-sm">
-                            <span className="text-muted-foreground">{language === "ko" ? "변형 타입: " : "Variation Type: "}</span>
-                            {String(selectedVideo.quality_metadata.variationType)}
-                          </p>
-                        )}
-                        {Boolean(selectedVideo.quality_metadata.variationLabel) && (
-                          <p className="text-sm">
-                            <span className="text-muted-foreground">{language === "ko" ? "변형 라벨: " : "Variation Label: "}</span>
-                            {String(selectedVideo.quality_metadata.variationLabel)}
-                          </p>
-                        )}
-                        {Array.isArray(selectedVideo.quality_metadata.searchTags) && selectedVideo.quality_metadata.searchTags.length > 0 && (
-                          <div>
-                            <span className="text-sm text-muted-foreground">{language === "ko" ? "검색 태그: " : "Search Tags: "}</span>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {(selectedVideo.quality_metadata.searchTags as string[]).map((tag, i) => (
-                                <Badge key={i} variant="outline" className="text-xs border-zinc-300 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400">
-                                  #{tag}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {Boolean(selectedVideo.quality_metadata.settings) && typeof selectedVideo.quality_metadata.settings === 'object' && (
-                          <div>
-                            <span className="text-sm text-muted-foreground">{language === "ko" ? "설정: " : "Settings: "}</span>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {Object.entries(selectedVideo.quality_metadata.settings as Record<string, unknown>).map(([key, value]) => (
-                                <Badge key={key} variant="outline" className="text-xs border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                                  {key}: {String(value)}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {Array.isArray(selectedVideo.quality_metadata.appliedPresets) && selectedVideo.quality_metadata.appliedPresets.length > 0 && (
-                          <div>
-                            <span className="text-sm text-muted-foreground">{language === "ko" ? "적용된 프리셋: " : "Applied Presets: "}</span>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {(selectedVideo.quality_metadata.appliedPresets as Array<{name: string; category: string}>).map((preset, i) => (
-                                <Badge key={i} variant="outline" className="text-xs border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                                  {preset.category}: {preset.name}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      <Badge variant="outline">{selectedVideo.effect_preset}</Badge>
                     </div>
                   </>
                 )}
@@ -612,11 +712,11 @@ export default function AllVideosPage() {
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
                         <Tag className="h-4 w-4" />
-                        {language === "ko" ? "태그" : "Tags"}
+                        {t.tags}
                       </h3>
                       <div className="flex flex-wrap gap-1">
                         {selectedVideo.tags.map((tag, i) => (
-                          <Badge key={i} variant="outline" className="border-zinc-300 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400">
+                          <Badge key={i} variant="outline">
                             {tag}
                           </Badge>
                         ))}
@@ -632,14 +732,14 @@ export default function AllVideosPage() {
                   <div>
                     <span className="text-muted-foreground flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
-                      {language === "ko" ? "생성일" : "Created"}
+                      {t.createdAt}
                     </span>
                     <p>{new Date(selectedVideo.created_at).toLocaleString()}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {language === "ko" ? "수정일" : "Updated"}
+                      {t.updatedAt}
                     </span>
                     <p>{new Date(selectedVideo.updated_at).toLocaleString()}</p>
                   </div>
@@ -654,7 +754,7 @@ export default function AllVideosPage() {
             </ScrollArea>
           ) : (
             <div className="py-12 text-center text-muted-foreground">
-              {language === "ko" ? "영상 정보를 불러올 수 없습니다" : "Failed to load video details"}
+              {t.loadFailed}
             </div>
           )}
         </DialogContent>

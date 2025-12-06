@@ -29,6 +29,23 @@ export interface TrendVideo {
   engagementRate: number;
 }
 
+// Full AI insights structure from trend analysis
+export interface AiInsightsData {
+  summary?: string;
+  contentStrategy?: string[];
+  hashtagStrategy?: string[];
+  captionTemplates?: string[];
+  videoIdeas?: string[];
+  bestPostingAdvice?: string;
+  audienceInsights?: string;
+  trendPrediction?: string;
+  // Legacy: also support array of strings
+  legacyInsights?: string[];
+  // Additional fields for generation
+  targetAudience?: string[];
+  bestPostingTimes?: string[];
+}
+
 export interface DiscoverData {
   keywords: string[];
   selectedHashtags: string[];
@@ -38,7 +55,7 @@ export interface DiscoverData {
     avgEngagement: number;
     viralBenchmark: number;
   } | null;
-  aiInsights: string[];
+  aiInsights: AiInsightsData | null;
   trendAnalysis: {
     keyword: string;
     totalVideos: number;
@@ -218,8 +235,8 @@ export interface StashedPrompt {
     // Target audience & goals
     targetAudience?: string[];
     contentGoals?: string[];
-    // AI insights
-    aiInsights?: string[];
+    // AI insights (can be new object format or legacy string array)
+    aiInsights?: AiInsightsData | string[] | null;
   };
   createdAt: string;
 }
@@ -258,7 +275,7 @@ interface WorkflowState {
   updateInspiration: (videoId: string, updates: Partial<TrendVideo>) => void;
   removeInspiration: (videoId: string) => void;
   setDiscoverPerformanceMetrics: (metrics: DiscoverData["performanceMetrics"]) => void;
-  setDiscoverAiInsights: (insights: string[]) => void;
+  setDiscoverAiInsights: (insights: AiInsightsData | null) => void;
   setDiscoverTrendAnalysis: (analysis: DiscoverData["trendAnalysis"]) => void;
   clearDiscoverAnalysis: () => void;
 
@@ -331,7 +348,7 @@ const initialDiscoverData: DiscoverData = {
   selectedHashtags: [],
   savedInspiration: [],
   performanceMetrics: null,
-  aiInsights: [],
+  aiInsights: null,
   trendAnalysis: null,
 };
 
@@ -504,7 +521,7 @@ export const useWorkflowStore = create<WorkflowState>()(
               keywords: [],
               selectedHashtags: [],
               performanceMetrics: null,
-              aiInsights: [],
+              aiInsights: null,
               trendAnalysis: null,
               // Keep savedInspiration as user may want to keep that
             },
@@ -901,7 +918,12 @@ export const useWorkflowStore = create<WorkflowState>()(
                 keywords: metadata.keywords || state.discover.keywords,
                 selectedHashtags: metadata.hashtags || state.discover.selectedHashtags,
                 performanceMetrics: metadata.performanceMetrics || state.discover.performanceMetrics,
-                aiInsights: metadata.aiInsights || state.discover.aiInsights,
+                // Handle backward compatibility for aiInsights (can be string[] or AiInsightsData)
+                aiInsights: metadata.aiInsights
+                  ? Array.isArray(metadata.aiInsights)
+                    ? { legacyInsights: metadata.aiInsights } // Convert legacy string[] to object
+                    : metadata.aiInsights // Use new object format directly
+                  : state.discover.aiInsights,
                 // Restore inspiration videos if available
                 savedInspiration: metadata.savedInspiration
                   ? metadata.savedInspiration.map((v) => ({

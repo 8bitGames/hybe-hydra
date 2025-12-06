@@ -31,7 +31,18 @@
       "Bash(grep:*)",
       "Bash(npx tsc:*)",
       "Bash(rm:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(curl:*)",
+      "Bash(git -C \"e:/Github/hybe-hydra\" diff HEAD~1 --name-only)",
+      "Bash(mkdir:*)",
+      "Bash(ls:*)",
+      "SlashCommand(/sc:workflow)",
+      "Bash(npm install:*)",
+      "Bash(find:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(git checkout:*)",
+      "Bash(python -m py_compile:*)"
     ],
     "deny": [],
     "ask": []

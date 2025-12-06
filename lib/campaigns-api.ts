@@ -56,6 +56,7 @@ export interface CampaignList {
 export interface Asset {
   id: string;
   campaign_id: string;
+  campaign_name?: string;
   type: "image" | "video" | "audio" | "goods";
   merchandise_type?: "album" | "photocard" | "lightstick" | "apparel" | "accessory" | "other" | null;
   filename: string;
@@ -189,8 +190,38 @@ export const campaignsApi = {
   delete: (id: string) => api.delete(`/api/v1/campaigns/${id}`),
 };
 
+// All Assets Response (with stats)
+export interface AllAssetsResponse extends AssetList {
+  stats: {
+    total: number;
+    images: number;
+    audio: number;
+    videos: number;
+    goods: number;
+  };
+}
+
 // Assets API
 export const assetsApi = {
+  // Get all assets across all campaigns
+  getAll: (params?: {
+    page?: number;
+    page_size?: number;
+    type?: string;
+    campaign_id?: string;
+    search?: string;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set("page", params.page.toString());
+    if (params?.page_size) searchParams.set("page_size", params.page_size.toString());
+    if (params?.type) searchParams.set("type", params.type);
+    if (params?.campaign_id) searchParams.set("campaign_id", params.campaign_id);
+    if (params?.search) searchParams.set("search", params.search);
+
+    const query = searchParams.toString();
+    return api.get<AllAssetsResponse>(`/api/v1/assets${query ? `?${query}` : ""}`);
+  },
+
   getByCampaign: (
     campaignId: string,
     params?: { page?: number; page_size?: number; type?: string }

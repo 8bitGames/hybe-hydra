@@ -28,9 +28,16 @@ try:
     from OpenGL import GL
     from OpenGL.osmesa import OSMesaCreateContext, OSMesaMakeCurrent, OSMesaDestroyContext, OSMESA_RGBA
     GL_AVAILABLE = True
-except ImportError:
+    print("[GL_RENDERER] PyOpenGL + OSMesa imported successfully!")
+    logger.info("PyOpenGL + OSMesa imported successfully")
+except ImportError as e:
     GL_AVAILABLE = False
-    logger.warning("PyOpenGL not available, GL Transitions disabled")
+    print(f"[GL_RENDERER] PyOpenGL import FAILED: {e}")
+    logger.warning(f"PyOpenGL not available: {e}")
+except Exception as e:
+    GL_AVAILABLE = False
+    print(f"[GL_RENDERER] PyOpenGL import EXCEPTION: {e}")
+    logger.warning(f"PyOpenGL import exception: {e}")
 
 
 # GL Transitions GLSL shader templates
@@ -105,11 +112,15 @@ class GLTransitionRenderer:
     def is_available(self) -> bool:
         """Check if GL rendering is available."""
         if not GL_AVAILABLE:
+            print("[GL_RENDERER] is_available: GL_AVAILABLE is False (import failed)")
             return False
         try:
+            print("[GL_RENDERER] is_available: Checking GL context...")
             self._init_context()
+            print(f"[GL_RENDERER] is_available: _initialized = {self._initialized}")
             return self._initialized
         except Exception as e:
+            print(f"[GL_RENDERER] is_available: EXCEPTION - {e}")
             logger.warning(f"GL rendering not available: {e}")
             return False
 
@@ -119,20 +130,31 @@ class GLTransitionRenderer:
             return
 
         try:
+            print(f"[GL_RENDERER] Creating OSMesa context for {self.width}x{self.height}...")
             self._ctx = OSMesaCreateContext(OSMESA_RGBA, None)
             if not self._ctx:
+                print("[GL_RENDERER] OSMesaCreateContext returned None!")
                 raise RuntimeError("Failed to create OSMesa context")
+            print(f"[GL_RENDERER] OSMesa context created: {self._ctx}")
 
-            self._buffer = (ctypes.c_ubyte * (self.width * self.height * 4))()
+            buffer_size = self.width * self.height * 4
+            print(f"[GL_RENDERER] Allocating buffer: {buffer_size} bytes ({buffer_size / 1024 / 1024:.2f} MB)")
+            self._buffer = (ctypes.c_ubyte * buffer_size)()
 
+            print("[GL_RENDERER] Making OSMesa context current...")
             if not OSMesaMakeCurrent(self._ctx, self._buffer, GL.GL_UNSIGNED_BYTE, self.width, self.height):
+                print("[GL_RENDERER] OSMesaMakeCurrent FAILED!")
                 raise RuntimeError("Failed to make OSMesa context current")
 
             self._initialized = True
+            print(f"[GL_RENDERER] GL renderer INITIALIZED: {self.width}x{self.height}")
             logger.info(f"GL renderer initialized: {self.width}x{self.height}")
 
         except Exception as e:
+            print(f"[GL_RENDERER] INIT FAILED: {e}")
             logger.error(f"Failed to initialize GL renderer: {e}")
+            import traceback
+            traceback.print_exc()
             raise
 
     def _compile_shader(self, source: str, shader_type: int) -> int:
@@ -366,18 +388,32 @@ _gl_renderer: Optional[GLTransitionRenderer] = None
 def get_gl_renderer(width: int = 1080, height: int = 1920) -> Optional[GLTransitionRenderer]:
     """Get or create GL renderer instance."""
     global _gl_renderer
+    print(f"[GL_RENDERER] get_gl_renderer called (width={width}, height={height})")
+
     if _gl_renderer is None:
         try:
+            print("[GL_RENDERER] Creating new GLTransitionRenderer instance...")
             _gl_renderer = GLTransitionRenderer(width, height)
+            print(f"[GL_RENDERER] Checking availability...")
             if not _gl_renderer.is_available():
+                print("[GL_RENDERER] Renderer not available, setting to None")
                 _gl_renderer = None
+            else:
+                print("[GL_RENDERER] Renderer is available!")
         except Exception as e:
+            print(f"[GL_RENDERER] get_gl_renderer EXCEPTION: {e}")
             logger.warning(f"GL renderer unavailable: {e}")
             _gl_renderer = None
+    else:
+        print("[GL_RENDERER] Returning cached renderer instance")
+
     return _gl_renderer
 
 
 def is_gl_available() -> bool:
     """Check if GL rendering is available."""
+    print("[GL_RENDERER] is_gl_available() called")
     renderer = get_gl_renderer()
-    return renderer is not None and renderer.is_available()
+    result = renderer is not None and renderer.is_available()
+    print(f"[GL_RENDERER] is_gl_available() returning: {result}")
+    return result

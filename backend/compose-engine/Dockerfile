@@ -42,7 +42,8 @@ RUN ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
 # Set FFmpeg environment variables IMMEDIATELY after installation
 ENV IMAGEIO_FFMPEG_EXE=/usr/lib/jellyfin-ffmpeg/ffmpeg
 ENV FFMPEG_BINARY=/usr/lib/jellyfin-ffmpeg/ffmpeg
-ENV LD_LIBRARY_PATH=/usr/lib/jellyfin-ffmpeg/lib:/usr/local/cuda/lib64
+# Include OSMesa library path for GL Transitions headless rendering
+ENV LD_LIBRARY_PATH=/usr/lib/jellyfin-ffmpeg/lib:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
 ENV PATH=/usr/lib/jellyfin-ffmpeg:/usr/local/bin:/usr/bin:/bin
 
 # Verify FFmpeg is correctly installed
@@ -155,9 +156,17 @@ RUN pip3 install --no-cache-dir \
     redis==5.0.1
 
 # PyOpenGL for GL Transitions (with OSMesa backend for headless rendering)
+# PyOpenGL-accelerate improves performance and stability
 RUN pip3 install --no-cache-dir \
-    PyOpenGL==3.1.7
+    PyOpenGL==3.1.7 \
+    PyOpenGL-accelerate==3.1.7
 ENV PYOPENGL_PLATFORM=osmesa
+
+# Verify PyOpenGL can find OSMesa
+RUN echo "=== Verifying PyOpenGL + OSMesa ===" \
+    && python3 -c "import os; os.environ['PYOPENGL_PLATFORM']='osmesa'; from OpenGL import GL; print('OpenGL import: OK')" \
+    && python3 -c "import os; os.environ['PYOPENGL_PLATFORM']='osmesa'; from OpenGL.osmesa import OSMesaCreateContext; print('OSMesa import: OK')" \
+    && echo "=== PyOpenGL + OSMesa verification passed ==="
 
 # AI Effect Selection (Gemini API)
 RUN pip3 install --no-cache-dir \
@@ -179,6 +188,7 @@ RUN echo "=== Final Verification ===" \
     && python3 -c "import imageio_ffmpeg; exe=imageio_ffmpeg.get_ffmpeg_exe(); print(f'imageio_ffmpeg: {exe}')" \
     && python3 -c "import boto3; print('boto3: OK')" \
     && python3 -c "import fastapi; print('fastapi: OK')" \
+    && python3 -c "from OpenGL import GL; from OpenGL.osmesa import OSMesaCreateContext, OSMESA_RGBA; print('GL Transitions (OSMesa): OK')" \
     && echo "=== All verifications passed ==="
 
 # =============================================================================

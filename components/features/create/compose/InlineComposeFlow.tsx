@@ -35,6 +35,8 @@ import {
   Zap,
   Trophy,
   Sparkles,
+  RotateCcw,
+  AlertCircle,
 } from "lucide-react";
 
 // Step Components
@@ -291,14 +293,14 @@ function ComposeContextPanel() {
         )}
 
         {/* AI Insights */}
-        {aiInsights.length > 0 && (
+        {aiInsights?.summary && (
           <div className="border border-neutral-200 rounded-lg p-3 bg-neutral-50">
             <h3 className="text-xs font-semibold text-neutral-500 mb-2 flex items-center gap-1">
               <Sparkles className="h-3 w-3" />
               {language === "ko" ? "AI 인사이트" : "AI Insight"}
             </h3>
             <p className="text-xs text-neutral-600 leading-relaxed">
-              {aiInsights[0]}
+              {aiInsights.summary}
             </p>
           </div>
         )}
@@ -435,9 +437,9 @@ export function InlineComposeFlow({
   const [error, setError] = useState("");
 
   // Step 1: Script state
-  const [prompt, setPrompt] = useState(
-    analyze.optimizedPrompt || analyze.selectedIdea?.description || ""
-  );
+  const initialPrompt = analyze.optimizedPrompt || analyze.selectedIdea?.description || "";
+  const [prompt, setPrompt] = useState(initialPrompt);
+  const [originalPrompt, setOriginalPrompt] = useState(initialPrompt);
   const [aspectRatio, setAspectRatio] = useState("9:16");
   const [generatingScript, setGeneratingScript] = useState(false);
   const [scriptData, setScriptData] = useState<ScriptGenerationResponse | null>(null);
@@ -715,6 +717,64 @@ export function InlineComposeFlow({
   };
 
   // ========================================
+  // Soft Reset Handler
+  // ========================================
+
+  const handleSoftReset = useCallback(() => {
+    // Reset to step 1 while preserving original prompt
+    setCurrentStep(1);
+    setPrompt(originalPrompt);
+    setScriptData(null);
+    setTiktokSEO(null);
+    setImageCandidates([]);
+    setSelectedImages([]);
+    setAudioMatches([]);
+    setSelectedAudio(null);
+    setAudioAnalysis(null);
+    setAudioStartTime(0);
+    setGenerationId(null);
+    setError("");
+
+    toast.info(
+      language === "ko" ? "초기화 완료" : "Reset complete",
+      language === "ko" ? "원본 프롬프트로 다시 시작합니다" : "Starting over with original prompt"
+    );
+  }, [originalPrompt, language, toast]);
+
+  // ========================================
+  // Progress Summary Helper
+  // ========================================
+
+  const getProgressSummary = useCallback(() => {
+    return {
+      script: {
+        complete: scriptData !== null,
+        label: language === "ko" ? "스크립트" : "Script",
+        detail: scriptData
+          ? `${scriptData.script.lines.length} ${language === "ko" ? "라인" : "lines"}`
+          : language === "ko" ? "대기 중" : "Pending"
+      },
+      images: {
+        complete: selectedImages.length >= 3,
+        label: language === "ko" ? "이미지" : "Images",
+        detail: `${selectedImages.length}/3+ ${language === "ko" ? "선택됨" : "selected"}`
+      },
+      music: {
+        complete: selectedAudio !== null,
+        label: language === "ko" ? "음악" : "Music",
+        detail: selectedAudio
+          ? selectedAudio.filename.substring(0, 20) + (selectedAudio.filename.length > 20 ? "..." : "")
+          : language === "ko" ? "대기 중" : "Pending"
+      },
+      effects: {
+        complete: false, // Never complete - final step
+        label: language === "ko" ? "효과" : "Effects",
+        detail: effectPreset.replace("_", " ")
+      }
+    };
+  }, [scriptData, selectedImages.length, selectedAudio, effectPreset, language]);
+
+  // ========================================
   // Navigation
   // ========================================
 
@@ -854,17 +914,56 @@ export function InlineComposeFlow({
 
       {/* Bottom Navigation - Fixed at bottom */}
       <div className="shrink-0 px-[7%] py-4 border-t border-neutral-200 bg-white">
+        {/* Progress Summary */}
+        {currentStep > 1 && (
+          <div className="mb-3 flex items-center gap-4 text-xs">
+            {Object.entries(getProgressSummary()).map(([key, info]) => (
+              <div
+                key={key}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 rounded-full",
+                  info.complete
+                    ? "bg-neutral-900 text-white"
+                    : "bg-neutral-100 text-neutral-500"
+                )}
+              >
+                {info.complete ? (
+                  <Check className="h-3 w-3" />
+                ) : (
+                  <AlertCircle className="h-3 w-3" />
+                )}
+                <span className="font-medium">{info.label}</span>
+                <span className="opacity-75">· {info.detail}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
-          <Button
-            variant="outline"
-            onClick={handleBack}
-            className="border-neutral-300"
-          >
-            <ChevronLeft className="h-4 w-4 mr-2" />
-            {currentStep === 1
-              ? language === "ko" ? "취소" : "Cancel"
-              : language === "ko" ? "이전" : "Back"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleBack}
+              className="border-neutral-300"
+            >
+              <ChevronLeft className="h-4 w-4 mr-2" />
+              {currentStep === 1
+                ? language === "ko" ? "취소" : "Cancel"
+                : language === "ko" ? "이전" : "Back"}
+            </Button>
+
+            {/* Soft Reset Button - Only show after step 1 */}
+            {currentStep > 1 && (
+              <Button
+                variant="ghost"
+                onClick={handleSoftReset}
+                className="text-neutral-500 hover:text-neutral-700"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                {language === "ko" ? "처음부터" : "Start Over"}
+              </Button>
+            )}
+          </div>
 
           {/* Step progress indicator */}
           <div className="flex items-center gap-2 text-sm text-neutral-500">

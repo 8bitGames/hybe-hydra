@@ -3,10 +3,14 @@
  * Combines text and video trend analyses into unified content creation recommendations
  */
 
-import { GoogleGenAI } from "@google/genai";
 import { TrendPlatform } from "@prisma/client";
 import { TextTrendAnalysisResult } from "./text-trend-analyzer";
 import { VideoTrendAnalysisResult } from "./video-trend-analyzer";
+import {
+  createStrategySynthesizerAgent,
+  type StrategySynthesizerAgent,
+} from "@/lib/agents/analyzers/strategy-synthesizer";
+import type { AgentContext } from "@/lib/agents/types";
 
 // Types for the combined report
 export interface TextGuide {
@@ -60,14 +64,15 @@ export interface TrendReportResult {
   } | null;
 }
 
-// Initialize Gemini client
-const getGeminiClient = () => {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GOOGLE_AI_API_KEY is not configured");
+// Singleton agent instance
+let strategySynthesizerAgent: StrategySynthesizerAgent | null = null;
+
+function getStrategySynthesizerAgent(): StrategySynthesizerAgent {
+  if (!strategySynthesizerAgent) {
+    strategySynthesizerAgent = createStrategySynthesizerAgent();
   }
-  return new GoogleGenAI({ apiKey });
-};
+  return strategySynthesizerAgent;
+}
 
 /**
  * Trend Report Generator Class
@@ -77,17 +82,27 @@ export class TrendReportGenerator {
   private platform: TrendPlatform;
   private textAnalysis: TextTrendAnalysisResult | null;
   private videoAnalysis: VideoTrendAnalysisResult | null;
+  private agentContext: AgentContext;
 
   constructor(
     searchQuery: string,
     platform: TrendPlatform,
     textAnalysis: TextTrendAnalysisResult | null,
-    videoAnalysis: VideoTrendAnalysisResult | null
+    videoAnalysis: VideoTrendAnalysisResult | null,
+    language: "ko" | "en" = "ko"
   ) {
     this.searchQuery = searchQuery;
     this.platform = platform;
     this.textAnalysis = textAnalysis;
     this.videoAnalysis = videoAnalysis;
+    this.agentContext = {
+      workflow: {
+        artistName: searchQuery,
+        platform: platform.toLowerCase(),
+        language,
+        sessionId: `trend-report-${Date.now()}`,
+      },
+    };
   }
 
   /**
@@ -224,51 +239,92 @@ export class TrendReportGenerator {
   }
 
   /**
-   * Generate combined strategy using AI
+   * Generate combined strategy using StrategySynthesizerAgent
    */
   async generateCombinedStrategy(): Promise<CombinedStrategy> {
     try {
-      const ai = getGeminiClient();
+      const agent = getStrategySynthesizerAgent();
 
-      const textGuide = this.generateTextGuide();
-      const videoGuide = this.generateVideoGuide();
+      // Prepare text analysis input for agent
+      const textAnalysisInput = this.textAnalysis
+        ? {
+            clusters: this.textAnalysis.hashtagClusters.map((c) => ({
+              name: c.name,
+              hashtags: c.hashtags.map((h) => h.hashtag || h),
+              trendDirection: "stable" as const,
+            })),
+            sentiment: {
+              overall: this.textAnalysis.sentimentTrend as "positive" | "neutral" | "negative",
+              score: this.textAnalysis.sentimentTrend === "positive" ? 0.7 : 0.5,
+              emotions: [],
+            },
+          }
+        : { clusters: [], sentiment: { overall: "neutral" as const, score: 0.5, emotions: [] } };
 
-      const prompt = `You are a social media content strategist. Based on this trend analysis for "${this.searchQuery}" on ${this.platform}:
+      // Prepare visual analysis input for agent
+      const visualAnalysisInput = this.videoAnalysis
+        ? {
+            dominantStyles: this.videoAnalysis.visualPatterns.dominantStyles.map((style, idx) => ({
+              style,
+              frequency: 1 - idx * 0.1,
+            })),
+            colorTrends: this.videoAnalysis.visualPatterns.colorPalettes.map((palette, idx) => ({
+              palette,
+              usage: 1 - idx * 0.1,
+            })),
+            effectsTrending: this.videoAnalysis.effectsTrending,
+            promptTemplates: this.videoAnalysis.videoRecommendations.promptTemplates.map((t) => ({
+              template: t.template,
+              style: t.style,
+              confidence: 0.8,
+            })),
+          }
+        : {
+            dominantStyles: [{ style: "modern", frequency: 0.5 }],
+            colorTrends: [{ palette: ["#000000", "#FFFFFF"], usage: 0.5 }],
+            effectsTrending: ["color grading"],
+            promptTemplates: [],
+          };
 
-Text Trends:
-- Caption style: ${textGuide.captionStyle}
-- Top hashtags: ${textGuide.hashtags.primary.join(", ")}
-- Content themes: ${textGuide.contentThemes.join(", ")}
-- Tone: ${textGuide.toneRecommendation}
+      // Prepare benchmarks
+      const benchmarks = this.textAnalysis
+        ? {
+            avgViews: this.textAnalysis.metrics.avgViews,
+            avgEngagement: this.textAnalysis.metrics.avgLikes,
+          }
+        : undefined;
 
-Video Trends:
-- Visual style: ${videoGuide.visualStyle}
-- Mood: ${videoGuide.mood}
-- Pace: ${videoGuide.pace}
-- Effects: ${videoGuide.effects.join(", ")}
-- Technical: ${videoGuide.technicalSpecs.aspectRatio}, ${videoGuide.technicalSpecs.duration}s
+      const result = await agent.synthesize(
+        textAnalysisInput,
+        visualAnalysisInput,
+        this.agentContext,
+        benchmarks
+      );
 
-Generate a combined content strategy. Return ONLY valid JSON:
-{
-  "summary": "One paragraph strategy summary",
-  "keyActions": ["3-5 specific actions to take"],
-  "bestPractices": ["3-5 best practices to follow"],
-  "doNot": ["3-5 things to avoid"]
-}`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-
-      const responseText = response.text || "";
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+      if (!result.success || !result.data) {
+        return this.fallbackCombinedStrategy();
       }
 
-      return this.fallbackCombinedStrategy();
+      // Map agent output to CombinedStrategy format
+      const { contentThemes, visualGuidelines, captionGuidelines, bestPractices, avoid } = result.data;
+
+      const summary = contentThemes.length > 0
+        ? `Focus on ${contentThemes[0].theme}. ${contentThemes[0].rationale} Use ${visualGuidelines.styles.join(", ")} visual styles with ${visualGuidelines.pace} pacing. Include hooks like "${captionGuidelines.hooks[0] || "Wait for it..."}" and hashtags: ${captionGuidelines.hashtags.slice(0, 3).join(", ")}.`
+        : this.fallbackCombinedStrategy().summary;
+
+      const keyActions = [
+        ...contentThemes.slice(0, 2).map((t) => `Focus on "${t.theme}" content (Priority: ${t.priority})`),
+        `Use ${visualGuidelines.styles[0] || "modern"} visual style`,
+        `Apply ${visualGuidelines.effects[0] || "color grading"} effects`,
+        `Include hashtags: ${captionGuidelines.hashtags.slice(0, 3).join(", ")}`,
+      ].slice(0, 5);
+
+      return {
+        summary,
+        keyActions,
+        bestPractices: bestPractices.slice(0, 5),
+        doNot: avoid.slice(0, 5),
+      };
     } catch (error) {
       console.error("[TrendReportGenerator] Error generating combined strategy:", error);
       return this.fallbackCombinedStrategy();
@@ -453,13 +509,15 @@ export async function generateTrendReport(
   searchQuery: string,
   platform: TrendPlatform,
   textAnalysis: TextTrendAnalysisResult | null,
-  videoAnalysis: VideoTrendAnalysisResult | null
+  videoAnalysis: VideoTrendAnalysisResult | null,
+  language: "ko" | "en" = "ko"
 ): Promise<TrendReportResult> {
   const generator = new TrendReportGenerator(
     searchQuery,
     platform,
     textAnalysis,
-    videoAnalysis
+    videoAnalysis,
+    language
   );
   return generator.generateReport();
 }

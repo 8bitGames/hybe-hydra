@@ -415,7 +415,7 @@ PRESET_CONFIGS: Dict[StylePreset, SlideshowConfig] = {
             pool=[
                 "xfade_zoomin", "xfade_slideleft", "xfade_slideright",
                 "xfade_slideup", "xfade_slidedown", "xfade_radial",
-                "xfade_circleopen", "xfade_rectcrop"
+                "xfade_circleopen", "xfade_pixelize"  # rectcrop removed (causes visual corruption)
             ],
             duration_range=(0.1, 0.3),
             variety=1.0,

@@ -116,15 +116,23 @@ export interface AudioMatch {
   duration: number;
   energy: number;
   matchScore: number;
+  // Real analysis data (if available)
+  energyCurve?: [number, number][];  // [[time, energy], ...]
+  beatTimes?: number[];
+  analyzed?: boolean;
 }
 
 export interface AudioAnalysisResponse {
   assetId: string;
   duration: number;
   bpm: number | null;
+  vibe?: string;
   suggestedStartTime: number;
   suggestedEndTime: number;
-  analyzed: boolean;  // true if Modal analyzed, false if fallback heuristics used
+  analyzed: boolean;  // true if compose-engine analyzed, false if fallback heuristics used
+  // Real analysis data from compose-engine (librosa)
+  energyCurve?: [number, number][];  // [[time, energy], ...] - 0.5s intervals
+  beatTimes?: number[];  // Beat positions in seconds
 }
 
 export interface MusicMatchRequest {

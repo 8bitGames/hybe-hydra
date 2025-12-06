@@ -1,10 +1,12 @@
 /**
  * Text Trend Analyzer Service
  * Analyzes hashtags, descriptions, and text patterns from TikTok search results
+ *
+ * Uses TextPatternAgent for AI-powered analysis
  */
 
-import { GoogleGenAI } from "@google/genai";
-import { TrendPlatform } from "@prisma/client";
+import { createTextPatternAgent, type TextPatternAgent } from "@/lib/agents/analyzers/text-pattern";
+import type { AgentContext } from "@/lib/agents/types";
 
 // Types
 export interface VideoData {
@@ -62,14 +64,15 @@ export interface TextTrendAnalysisResult {
   contentSuggestions: ContentSuggestions;
 }
 
-// Initialize Gemini client
-const getGeminiClient = () => {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GOOGLE_AI_API_KEY is not configured");
+// Singleton agent instance
+let textPatternAgent: TextPatternAgent | null = null;
+
+function getTextPatternAgent(): TextPatternAgent {
+  if (!textPatternAgent) {
+    textPatternAgent = createTextPatternAgent();
   }
-  return new GoogleGenAI({ apiKey });
-};
+  return textPatternAgent;
+}
 
 /**
  * Text Trend Analyzer Class
@@ -77,10 +80,19 @@ const getGeminiClient = () => {
 export class TextTrendAnalyzer {
   private videos: VideoData[];
   private searchQuery: string;
+  private agentContext: AgentContext;
 
-  constructor(videos: VideoData[], searchQuery: string) {
+  constructor(videos: VideoData[], searchQuery: string, language: 'ko' | 'en' = 'ko') {
     this.videos = videos;
     this.searchQuery = searchQuery;
+    this.agentContext = {
+      workflow: {
+        artistName: searchQuery,
+        platform: 'tiktok',
+        language,
+        sessionId: `text-trend-${Date.now()}`,
+      },
+    };
   }
 
   /**
@@ -129,7 +141,7 @@ export class TextTrendAnalyzer {
   }
 
   /**
-   * Cluster hashtags by semantic similarity using Gemini
+   * Cluster hashtags by semantic similarity using TextPatternAgent
    */
   async clusterHashtags(hashtags: HashtagAnalysis[]): Promise<HashtagCluster[]> {
     if (hashtags.length === 0) {
@@ -137,48 +149,21 @@ export class TextTrendAnalyzer {
     }
 
     try {
-      const ai = getGeminiClient();
+      const agent = getTextPatternAgent();
 
       // Take top 30 hashtags for clustering
       const topHashtags = hashtags.slice(0, 30).map((h) => h.hashtag);
 
-      const prompt = `You are analyzing trending hashtags from TikTok for the search query "${this.searchQuery}".
+      const result = await agent.clusterHashtags(topHashtags, this.agentContext);
 
-Hashtags to analyze: ${topHashtags.join(", ")}
-
-Group these hashtags into 3-5 thematic clusters. Each cluster should have:
-1. A clear theme name (in English)
-2. The hashtags that belong to that theme
-3. A brief description of what this cluster represents
-
-Respond ONLY with valid JSON in this exact format:
-{
-  "clusters": [
-    {
-      "theme": "theme name",
-      "hashtags": ["hashtag1", "hashtag2"],
-      "description": "Brief description"
-    }
-  ]
-}`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-
-      const responseText = response.text || "";
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-
-      if (!jsonMatch) {
-        console.error("[TextTrendAnalyzer] Failed to parse cluster response");
+      if (!result.success || !result.data?.clusters) {
+        console.error("[TextTrendAnalyzer] Agent clustering failed:", result.error);
         return this.fallbackClustering(hashtags);
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
       const clusters: HashtagCluster[] = [];
 
-      for (const cluster of parsed.clusters || []) {
+      for (const cluster of result.data.clusters) {
         // Calculate popularity based on hashtag analytics
         const clusterHashtags = cluster.hashtags || [];
         let totalPopularity = 0;
@@ -193,10 +178,11 @@ Respond ONLY with valid JSON in this exact format:
         }
 
         clusters.push({
-          theme: cluster.theme,
+          theme: cluster.name,
           hashtags: clusterHashtags,
           popularity: Math.round(totalPopularity),
-          description: cluster.description,
+          description: cluster.trendDirection === 'rising' ? 'Rising trend' :
+                       cluster.trendDirection === 'declining' ? 'Declining trend' : 'Stable trend',
         });
       }
 
@@ -327,44 +313,54 @@ Respond ONLY with valid JSON in this exact format:
   }
 
   /**
-   * Analyze content themes using Gemini
+   * Analyze content themes from hashtag clusters
+   * Derives themes from clustering analysis rather than direct AI call
    */
-  async analyzeContentThemes(): Promise<string[]> {
+  async analyzeContentThemes(clusters?: HashtagCluster[]): Promise<string[]> {
     try {
-      const ai = getGeminiClient();
-
-      // Get sample descriptions
-      const sampleDescriptions = this.videos
-        .slice(0, 20)
-        .map((v) => v.description)
-        .filter((d) => d && d.length > 10)
-        .slice(0, 10);
-
-      if (sampleDescriptions.length === 0) {
-        return ["general content"];
+      // If clusters provided, extract themes from cluster names
+      if (clusters && clusters.length > 0) {
+        return clusters.slice(0, 5).map((c) => c.theme);
       }
 
-      const prompt = `Analyze these TikTok video descriptions from a search for "${this.searchQuery}":
+      // Fallback: Extract themes from common words in descriptions
+      const wordFreq = new Map<string, number>();
+      const stopWords = new Set([
+        'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+        'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
+        'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'up',
+        'about', 'into', 'over', 'after', 'this', 'that', 'these', 'those',
+        'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her',
+        'us', 'them', 'my', 'your', 'his', 'its', 'our', 'their', 'and',
+        'but', 'or', 'not', 'no', 'so', 'as', 'if', 'when', 'than', 'then',
+        'fyp', 'foryou', 'foryoupage', 'viral', 'trending',
+      ]);
 
-${sampleDescriptions.map((d, i) => `${i + 1}. ${d.slice(0, 200)}`).join("\n")}
+      for (const video of this.videos.slice(0, 30)) {
+        const words = video.description
+          .toLowerCase()
+          .replace(/#\w+/g, '') // Remove hashtags
+          .replace(/[^\w\s가-힣]/g, ' ') // Keep only words
+          .split(/\s+/)
+          .filter((w) => w.length > 3 && !stopWords.has(w));
 
-Identify 3-5 main content themes/topics that appear in these descriptions.
-Return ONLY a JSON array of theme strings, like: ["theme1", "theme2", "theme3"]`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-
-      const responseText = response.text || "";
-      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-
-      if (jsonMatch) {
-        const themes = JSON.parse(jsonMatch[0]);
-        return themes.slice(0, 5);
+        for (const word of words) {
+          wordFreq.set(word, (wordFreq.get(word) || 0) + 1);
+        }
       }
 
-      return ["general content"];
+      // Get top words as themes
+      const sortedWords = Array.from(wordFreq.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([word]) => word);
+
+      if (sortedWords.length === 0) {
+        return [this.searchQuery, "general content"];
+      }
+
+      return sortedWords;
     } catch (error) {
       console.error("[TextTrendAnalyzer] Error analyzing themes:", error);
       return ["general content"];
@@ -372,38 +368,29 @@ Return ONLY a JSON array of theme strings, like: ["theme1", "theme2", "theme3"]`
   }
 
   /**
-   * Analyze overall sentiment trend
+   * Analyze overall sentiment trend using TextPatternAgent
    */
   async analyzeSentiment(): Promise<"positive" | "neutral" | "negative"> {
     try {
-      const ai = getGeminiClient();
+      const agent = getTextPatternAgent();
 
       const sampleDescriptions = this.videos
         .slice(0, 15)
         .map((v) => v.description)
-        .filter((d) => d && d.length > 5)
-        .join(" | ");
+        .filter((d) => d && d.length > 5);
 
-      if (!sampleDescriptions) {
+      if (sampleDescriptions.length === 0) {
         return "neutral";
       }
 
-      const prompt = `Analyze the overall sentiment of these TikTok descriptions:
+      const result = await agent.analyzeSentiment(sampleDescriptions, this.agentContext);
 
-"${sampleDescriptions.slice(0, 1000)}"
+      if (!result.success || !result.data?.sentiment) {
+        console.error("[TextTrendAnalyzer] Agent sentiment analysis failed:", result.error);
+        return "neutral";
+      }
 
-Respond with ONLY one word: positive, neutral, or negative`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-
-      const responseText = (response.text || "").toLowerCase().trim();
-
-      if (responseText.includes("positive")) return "positive";
-      if (responseText.includes("negative")) return "negative";
-      return "neutral";
+      return result.data.sentiment.overall;
     } catch (error) {
       console.error("[TextTrendAnalyzer] Error analyzing sentiment:", error);
       return "neutral";
@@ -443,14 +430,14 @@ Respond with ONLY one word: positive, neutral, or negative`;
   }
 
   /**
-   * Generate caption templates from top-performing content
+   * Generate caption templates from top-performing content using TextPatternAgent
    */
   async generateCaptionTemplates(
     hashtags: HashtagAnalysis[],
     themes: string[]
   ): Promise<string[]> {
     try {
-      const ai = getGeminiClient();
+      const agent = getTextPatternAgent();
 
       // Get top performing descriptions
       const topDescriptions = this.videos
@@ -462,44 +449,37 @@ Respond with ONLY one word: positive, neutral, or negative`;
 
       const topHashtags = hashtags.slice(0, 10).map((h) => h.hashtag);
 
-      const prompt = `You are a TikTok content strategist. Based on these top-performing captions for "${this.searchQuery}":
+      // Build patterns object for agent
+      const patterns: Record<string, unknown> = {
+        searchQuery: this.searchQuery,
+        topDescriptions,
+        topHashtags,
+        themes,
+      };
 
-${topDescriptions.map((d, i) => `${i + 1}. ${d.slice(0, 150)}`).join("\n")}
+      const result = await agent.generateTemplates(patterns, this.agentContext);
 
-Top hashtags: ${topHashtags.join(", ")}
-Content themes: ${themes.join(", ")}
-
-Generate 3 caption templates that could be used for new content in this niche.
-Use [brackets] for customizable parts.
-Include relevant hashtags in the templates.
-
-Return ONLY a JSON array of template strings.`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-
-      const responseText = response.text || "";
-      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]).slice(0, 5);
+      if (!result.success || !result.data?.captionTemplates) {
+        console.error("[TextTrendAnalyzer] Agent template generation failed:", result.error);
+        return this.getFallbackTemplates(topHashtags);
       }
 
-      // Fallback templates
-      return [
-        `POV: [your scenario] #${this.searchQuery} #fyp`,
-        `[Your hook here] 🔥 #${topHashtags[0] || this.searchQuery} #trending`,
-        `Wait for it... #${this.searchQuery} #viral`,
-      ];
+      return result.data.captionTemplates.map((t) => t.template).slice(0, 5);
     } catch (error) {
       console.error("[TextTrendAnalyzer] Error generating templates:", error);
-      return [
-        `POV: [your scenario] #${this.searchQuery} #fyp`,
-        `[Your hook here] 🔥 #${this.searchQuery} #trending`,
-      ];
+      return this.getFallbackTemplates(hashtags.slice(0, 10).map((h) => h.hashtag));
     }
+  }
+
+  /**
+   * Fallback templates when AI is unavailable
+   */
+  private getFallbackTemplates(topHashtags: string[]): string[] {
+    return [
+      `POV: [your scenario] #${this.searchQuery} #fyp`,
+      `[Your hook here] 🔥 #${topHashtags[0] || this.searchQuery} #trending`,
+      `Wait for it... #${this.searchQuery} #viral`,
+    ];
   }
 
   /**
@@ -551,11 +531,14 @@ Return ONLY a JSON array of template strings.`;
     const hashtags = this.analyzeHashtags();
     console.log(`[TextTrendAnalyzer] Found ${hashtags.length} unique hashtags`);
 
-    const [clusters, themes, sentiment] = await Promise.all([
+    // First get clusters and sentiment in parallel
+    const [clusters, sentiment] = await Promise.all([
       this.clusterHashtags(hashtags),
-      this.analyzeContentThemes(),
       this.analyzeSentiment(),
     ]);
+
+    // Then derive themes from clusters
+    const themes = await this.analyzeContentThemes(clusters);
 
     const commonPhrases = this.extractPhrases();
     const metrics = this.calculateMetrics();
@@ -594,8 +577,9 @@ Return ONLY a JSON array of template strings.`;
  */
 export async function analyzeTextTrends(
   videos: VideoData[],
-  searchQuery: string
+  searchQuery: string,
+  language: 'ko' | 'en' = 'ko'
 ): Promise<TextTrendAnalysisResult> {
-  const analyzer = new TextTrendAnalyzer(videos, searchQuery);
+  const analyzer = new TextTrendAnalyzer(videos, searchQuery, language);
   return analyzer.analyze();
 }

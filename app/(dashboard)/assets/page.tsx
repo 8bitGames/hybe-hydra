@@ -1,16 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
-import { useCampaigns } from "@/lib/queries";
-import type { Campaign } from "@/lib/campaigns-api";
+import { useAllAssets, useCampaigns } from "@/lib/queries";
+import { Asset } from "@/lib/campaigns-api";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,26 +29,15 @@ import {
   RefreshCw,
   FolderOpen,
   Search,
-  Filter,
   Download,
   Trash2,
   Eye,
   Grid3x3,
   List,
+  ChevronLeft,
+  ChevronRight,
+  Package,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-interface Asset {
-  id: string;
-  campaign_id: string;
-  campaign_name: string;
-  filename: string;
-  file_type: string;
-  file_size: number;
-  url: string;
-  thumbnail_url?: string;
-  uploaded_at: string;
-}
 
 export default function AssetsPage() {
   const router = useRouter();
@@ -60,65 +46,105 @@ export default function AssetsPage() {
   const [fileTypeFilter, setFileTypeFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
 
-  // Use TanStack Query for data fetching with caching
-  const { data: campaignsData, isLoading: loading, refetch } = useCampaigns({ page_size: 100 });
-  const loadData = () => refetch();
-
+  // Fetch campaigns for filter dropdown
+  const { data: campaignsData } = useCampaigns({ page_size: 100 });
   const campaigns = campaignsData?.items || [];
 
-  // Generate mock assets from campaigns (TODO: Replace with actual API when available)
-  const assets: Asset[] = campaigns.flatMap((campaign) => {
-    // Use campaign id hash to generate consistent mock data
-    const seed = campaign.id.charCodeAt(0) % 10 + 1;
-    return Array.from({ length: seed }, (_, i) => ({
-      id: `${campaign.id}-asset-${i}`,
-      campaign_id: campaign.id,
-      campaign_name: campaign.name,
-      filename: `asset-${i + 1}.${["jpg", "png", "mp3", "mp4"][i % 4]}`,
-      file_type: ["image/jpeg", "image/png", "audio/mp3", "video/mp4"][i % 4],
-      file_size: (i + 1) * 500000,
-      url: `https://via.placeholder.com/400x300?text=Asset+${i + 1}`,
-      thumbnail_url: `https://via.placeholder.com/150x150?text=${i + 1}`,
-      uploaded_at: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
-    }));
-  });
+  // Build API params
+  const apiParams = useMemo(() => {
+    const params: {
+      page: number;
+      page_size: number;
+      type?: string;
+      campaign_id?: string;
+      search?: string;
+    } = {
+      page,
+      page_size: pageSize,
+    };
 
-  const formatFileSize = (bytes: number): string => {
+    if (fileTypeFilter !== "all") {
+      params.type = fileTypeFilter;
+    }
+    if (selectedCampaign !== "all") {
+      params.campaign_id = selectedCampaign;
+    }
+    if (searchQuery) {
+      params.search = searchQuery;
+    }
+
+    return params;
+  }, [page, fileTypeFilter, selectedCampaign, searchQuery]);
+
+  // Fetch all assets
+  const { data: assetsData, isLoading: loading, refetch } = useAllAssets(apiParams);
+
+  const assets = assetsData?.items || [];
+  const totalPages = assetsData?.pages || 1;
+  const stats = assetsData?.stats || { total: 0, images: 0, audio: 0, videos: 0, goods: 0 };
+
+  const formatFileSize = (bytes: number | null): string => {
+    if (!bytes) return "-";
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const getFileIcon = (fileType: string) => {
-    if (fileType.startsWith("image/")) return <ImageIcon className="h-5 w-5" />;
-    if (fileType.startsWith("audio/")) return <Music className="h-5 w-5" />;
-    if (fileType.startsWith("video/")) return <Video className="h-5 w-5" />;
-    return <FileText className="h-5 w-5" />;
+  const getFileIcon = (type: string) => {
+    switch (type) {
+      case "image":
+        return <ImageIcon className="h-5 w-5" />;
+      case "audio":
+        return <Music className="h-5 w-5" />;
+      case "video":
+        return <Video className="h-5 w-5" />;
+      case "goods":
+        return <Package className="h-5 w-5" />;
+      default:
+        return <FileText className="h-5 w-5" />;
+    }
   };
 
-  const filteredAssets = assets
-    .filter((asset) => {
-      if (selectedCampaign !== "all" && asset.campaign_id !== selectedCampaign) return false;
-      if (fileTypeFilter !== "all") {
-        const type = fileTypeFilter === "images" ? "image/" :
-                     fileTypeFilter === "audio" ? "audio/" :
-                     fileTypeFilter === "videos" ? "video/" : "";
-        if (!asset.file_type.startsWith(type)) return false;
-      }
-      if (searchQuery && !asset.filename.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      return true;
-    });
-
-  const assetStats = {
-    total: assets.length,
-    images: assets.filter(a => a.file_type.startsWith("image/")).length,
-    audio: assets.filter(a => a.file_type.startsWith("audio/")).length,
-    videos: assets.filter(a => a.file_type.startsWith("video/")).length,
-    totalSize: assets.reduce((sum, a) => sum + a.file_size, 0),
+  const getThumbnailUrl = (asset: Asset) => {
+    // For images, use the s3_url directly
+    if (asset.type === "image" || asset.type === "goods") {
+      return asset.s3_url;
+    }
+    // For other types, use thumbnail if available
+    return asset.thumbnail_url;
   };
 
-  if (loading) {
+  const isImageType = (asset: Asset) => {
+    return asset.type === "image" || asset.type === "goods" ||
+           asset.mime_type?.startsWith("image/");
+  };
+
+  // Translations
+  const t = {
+    title: language === "ko" ? "에셋 라이브러리" : "Asset Library",
+    subtitle: language === "ko" ? "업로드된 이미지, 오디오, 영상 관리" : "Manage uploaded images, audio, and videos",
+    refresh: language === "ko" ? "새로고침" : "Refresh",
+    upload: language === "ko" ? "업로드" : "Upload",
+    totalAssets: language === "ko" ? "총 에셋" : "Total Assets",
+    images: language === "ko" ? "이미지" : "Images",
+    audio: language === "ko" ? "오디오" : "Audio",
+    videos: language === "ko" ? "영상" : "Videos",
+    goods: language === "ko" ? "굿즈" : "Goods",
+    totalSize: language === "ko" ? "총 용량" : "Total Size",
+    searchPlaceholder: language === "ko" ? "파일명 검색..." : "Search filename...",
+    allCampaigns: language === "ko" ? "모든 캠페인" : "All Campaigns",
+    allTypes: language === "ko" ? "모든 타입" : "All Types",
+    noAssets: language === "ko" ? "에셋이 없습니다" : "No assets found",
+    noAssetsDesc: language === "ko" ? "캠페인을 만들고 파일을 업로드하세요" : "Create a campaign and upload files to get started",
+    startUpload: language === "ko" ? "업로드 시작" : "Start Uploading",
+    page: language === "ko" ? "페이지" : "Page",
+    of: language === "ko" ? "/" : "of",
+  };
+
+  if (loading && assets.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
@@ -136,23 +162,17 @@ export default function AssetsPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            {language === "ko" ? "에셋 라이브러리" : "Asset Library"}
-          </h1>
-          <p className="text-muted-foreground">
-            {language === "ko"
-              ? "업로드된 이미지, 오디오, 영상 관리"
-              : "Manage uploaded images, audio, and videos"}
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">{t.title}</h1>
+          <p className="text-muted-foreground">{t.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={loadData}>
+          <Button variant="outline" onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            {language === "ko" ? "새로고침" : "Refresh"}
+            {t.refresh}
           </Button>
           <Button onClick={() => router.push("/campaigns/new")}>
             <Upload className="h-4 w-4 mr-2" />
-            {language === "ko" ? "업로드" : "Upload"}
+            {t.upload}
           </Button>
         </div>
       </div>
@@ -166,10 +186,8 @@ export default function AssetsPage() {
                 <FolderOpen className="h-5 w-5 text-blue-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">
-                  {language === "ko" ? "총 에셋" : "Total Assets"}
-                </p>
-                <p className="text-2xl font-bold">{assetStats.total}</p>
+                <p className="text-sm text-muted-foreground">{t.totalAssets}</p>
+                <p className="text-2xl font-bold">{stats.total}</p>
               </div>
             </div>
           </CardContent>
@@ -182,10 +200,8 @@ export default function AssetsPage() {
                 <ImageIcon className="h-5 w-5 text-purple-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">
-                  {language === "ko" ? "이미지" : "Images"}
-                </p>
-                <p className="text-2xl font-bold">{assetStats.images}</p>
+                <p className="text-sm text-muted-foreground">{t.images}</p>
+                <p className="text-2xl font-bold">{stats.images}</p>
               </div>
             </div>
           </CardContent>
@@ -198,10 +214,8 @@ export default function AssetsPage() {
                 <Music className="h-5 w-5 text-green-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">
-                  {language === "ko" ? "오디오" : "Audio"}
-                </p>
-                <p className="text-2xl font-bold">{assetStats.audio}</p>
+                <p className="text-sm text-muted-foreground">{t.audio}</p>
+                <p className="text-2xl font-bold">{stats.audio}</p>
               </div>
             </div>
           </CardContent>
@@ -214,10 +228,8 @@ export default function AssetsPage() {
                 <Video className="h-5 w-5 text-orange-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">
-                  {language === "ko" ? "영상" : "Videos"}
-                </p>
-                <p className="text-2xl font-bold">{assetStats.videos}</p>
+                <p className="text-sm text-muted-foreground">{t.videos}</p>
+                <p className="text-2xl font-bold">{stats.videos}</p>
               </div>
             </div>
           </CardContent>
@@ -227,13 +239,11 @@ export default function AssetsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-teal-500/10 rounded-lg">
-                <Download className="h-5 w-5 text-teal-500" />
+                <Package className="h-5 w-5 text-teal-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">
-                  {language === "ko" ? "총 용량" : "Total Size"}
-                </p>
-                <p className="text-2xl font-bold">{formatFileSize(assetStats.totalSize)}</p>
+                <p className="text-sm text-muted-foreground">{t.goods}</p>
+                <p className="text-2xl font-bold">{stats.goods}</p>
               </div>
             </div>
           </CardContent>
@@ -248,21 +258,28 @@ export default function AssetsPage() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder={language === "ko" ? "파일명 검색..." : "Search filename..."}
+                  placeholder={t.searchPlaceholder}
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
                   className="pl-9"
                 />
               </div>
             </div>
-            <Select value={selectedCampaign} onValueChange={setSelectedCampaign}>
+            <Select
+              value={selectedCampaign}
+              onValueChange={(v) => {
+                setSelectedCampaign(v);
+                setPage(1);
+              }}
+            >
               <SelectTrigger className="w-full md:w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">
-                  {language === "ko" ? "모든 캠페인" : "All Campaigns"}
-                </SelectItem>
+                <SelectItem value="all">{t.allCampaigns}</SelectItem>
                 {campaigns.map((campaign) => (
                   <SelectItem key={campaign.id} value={campaign.id}>
                     {campaign.name}
@@ -270,23 +287,22 @@ export default function AssetsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={fileTypeFilter} onValueChange={setFileTypeFilter}>
+            <Select
+              value={fileTypeFilter}
+              onValueChange={(v) => {
+                setFileTypeFilter(v);
+                setPage(1);
+              }}
+            >
               <SelectTrigger className="w-full md:w-40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">
-                  {language === "ko" ? "모든 타입" : "All Types"}
-                </SelectItem>
-                <SelectItem value="images">
-                  {language === "ko" ? "이미지" : "Images"}
-                </SelectItem>
-                <SelectItem value="audio">
-                  {language === "ko" ? "오디오" : "Audio"}
-                </SelectItem>
-                <SelectItem value="videos">
-                  {language === "ko" ? "영상" : "Videos"}
-                </SelectItem>
+                <SelectItem value="all">{t.allTypes}</SelectItem>
+                <SelectItem value="image">{t.images}</SelectItem>
+                <SelectItem value="audio">{t.audio}</SelectItem>
+                <SelectItem value="video">{t.videos}</SelectItem>
+                <SelectItem value="goods">{t.goods}</SelectItem>
               </SelectContent>
             </Select>
             <div className="flex gap-2">
@@ -312,57 +328,72 @@ export default function AssetsPage() {
       {/* Assets Display */}
       <Card>
         <CardContent className="pt-6">
-          {filteredAssets.length === 0 ? (
+          {assets.length === 0 ? (
             <div className="text-center py-12">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mx-auto mb-4">
                 <Upload className="h-8 w-8 text-muted-foreground" />
               </div>
-              <h3 className="font-medium mb-2">
-                {language === "ko" ? "에셋이 없습니다" : "No assets found"}
-              </h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                {language === "ko"
-                  ? "캠페인을 만들고 파일을 업로드하세요"
-                  : "Create a campaign and upload files to get started"}
-              </p>
+              <h3 className="font-medium mb-2">{t.noAssets}</h3>
+              <p className="text-sm text-muted-foreground mb-4">{t.noAssetsDesc}</p>
               <Button onClick={() => router.push("/campaigns/new")}>
                 <Upload className="h-4 w-4 mr-2" />
-                {language === "ko" ? "업로드 시작" : "Start Uploading"}
+                {t.startUpload}
               </Button>
             </div>
           ) : viewMode === "grid" ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-              {filteredAssets.map((asset) => (
+              {assets.map((asset) => (
                 <div
                   key={asset.id}
                   className="group relative rounded-lg border overflow-hidden hover:shadow-lg transition-all cursor-pointer"
                 >
                   <div className="aspect-square bg-muted flex items-center justify-center">
-                    {asset.thumbnail_url ? (
+                    {isImageType(asset) ? (
                       <img
-                        src={asset.thumbnail_url}
-                        alt={asset.filename}
+                        src={getThumbnailUrl(asset) || ""}
+                        alt={asset.original_filename}
                         className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // Hide broken image and show icon instead
+                          e.currentTarget.style.display = "none";
+                          e.currentTarget.nextElementSibling?.classList.remove("hidden");
+                        }}
                       />
-                    ) : (
-                      getFileIcon(asset.file_type)
-                    )}
+                    ) : null}
+                    <div className={`flex items-center justify-center ${isImageType(asset) ? "hidden" : ""}`}>
+                      {getFileIcon(asset.type)}
+                    </div>
                   </div>
                   <div className="p-3">
-                    <p className="text-sm font-medium truncate">{asset.filename}</p>
+                    <p className="text-sm font-medium truncate">{asset.original_filename}</p>
                     <p className="text-xs text-muted-foreground truncate">{asset.campaign_name}</p>
                     <div className="flex items-center justify-between mt-2">
                       <Badge variant="secondary" className="text-[10px]">
                         {formatFileSize(asset.file_size)}
                       </Badge>
+                      <Badge variant="outline" className="text-[10px]">
+                        {asset.type}
+                      </Badge>
                     </div>
                   </div>
                   <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                    <Button variant="secondary" size="icon" className="h-7 w-7">
+                    <Button
+                      variant="secondary"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => window.open(asset.s3_url, "_blank")}
+                    >
                       <Eye className="h-3 w-3" />
                     </Button>
-                    <Button variant="secondary" size="icon" className="h-7 w-7">
-                      <Download className="h-3 w-3" />
+                    <Button
+                      variant="secondary"
+                      size="icon"
+                      className="h-7 w-7"
+                      asChild
+                    >
+                      <a href={asset.s3_url} download={asset.original_filename}>
+                        <Download className="h-3 w-3" />
+                      </a>
                     </Button>
                   </div>
                 </div>
@@ -370,37 +401,49 @@ export default function AssetsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredAssets.map((asset) => (
+              {assets.map((asset) => (
                 <div
                   key={asset.id}
                   className="flex items-center gap-4 p-4 rounded-lg border hover:bg-accent/50 transition-colors"
                 >
-                  <div className="w-12 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0">
-                    {asset.thumbnail_url ? (
+                  <div className="w-12 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    {isImageType(asset) ? (
                       <img
-                        src={asset.thumbnail_url}
-                        alt={asset.filename}
-                        className="w-full h-full object-cover rounded"
+                        src={getThumbnailUrl(asset) || ""}
+                        alt={asset.original_filename}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                          e.currentTarget.nextElementSibling?.classList.remove("hidden");
+                        }}
                       />
-                    ) : (
-                      getFileIcon(asset.file_type)
-                    )}
+                    ) : null}
+                    <div className={`flex items-center justify-center ${isImageType(asset) ? "hidden" : ""}`}>
+                      {getFileIcon(asset.type)}
+                    </div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{asset.filename}</p>
+                    <p className="font-medium truncate">{asset.original_filename}</p>
                     <p className="text-sm text-muted-foreground truncate">{asset.campaign_name}</p>
                   </div>
                   <div className="flex items-center gap-4 flex-shrink-0">
-                    <Badge variant="outline">{formatFileSize(asset.file_size)}</Badge>
+                    <Badge variant="outline">{asset.type}</Badge>
+                    <Badge variant="secondary">{formatFileSize(asset.file_size)}</Badge>
                     <p className="text-sm text-muted-foreground">
-                      {new Date(asset.uploaded_at).toLocaleDateString()}
+                      {new Date(asset.created_at).toLocaleDateString()}
                     </p>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => window.open(asset.s3_url, "_blank")}
+                      >
                         <Eye className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon">
-                        <Download className="h-4 w-4" />
+                      <Button variant="ghost" size="icon" asChild>
+                        <a href={asset.s3_url} download={asset.original_filename}>
+                          <Download className="h-4 w-4" />
+                        </a>
                       </Button>
                       <Button variant="ghost" size="icon">
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -413,6 +456,31 @@ export default function AssetsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {page} {t.of} {totalPages} {t.page}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

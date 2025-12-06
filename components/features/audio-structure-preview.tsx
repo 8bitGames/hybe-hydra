@@ -7,6 +7,10 @@ interface AudioStructurePreviewProps {
   audio: AudioMatch;
   scriptLines?: ScriptLine[];
   totalDuration: number;
+  // Real analysis data from compose-engine
+  realEnergyCurve?: [number, number][];  // [[time, energy], ...]
+  realBeatTimes?: number[];
+  isAnalyzed?: boolean;
 }
 
 // TikTok Hook Strategy Constants
@@ -16,8 +20,13 @@ const BEAT_DROP_TIME = 2.0; // Beat drops at 2 seconds
 export function AudioStructurePreview({
   audio,
   scriptLines = [],
-  totalDuration
+  totalDuration,
+  realEnergyCurve,
+  realBeatTimes,
+  isAnalyzed = false
 }: AudioStructurePreviewProps) {
+  // Check if we have real analysis data (from props or audio object)
+  const hasRealData = isAnalyzed || audio.analyzed || (realEnergyCurve && realEnergyCurve.length > 0);
   // Calculate the display duration (use totalDuration or audio duration, whichever is smaller)
   const displayDuration = Math.min(audio.duration, totalDuration);
 
@@ -30,9 +39,20 @@ export function AudioStructurePreview({
     timeMarkers.push(t);
   }
 
-  // Simulate energy curve based on BPM and energy
-  // Higher BPM = more beats, higher energy = higher amplitude
-  const generateEnergyCurve = () => {
+  // Use real energy curve from compose-engine if available, otherwise simulate
+  const getEnergyCurve = (): { time: number; energy: number }[] => {
+    // Priority: props > audio object > simulated
+    const curveData = realEnergyCurve || audio.energyCurve;
+
+    if (curveData && curveData.length > 0) {
+      // Use real data from librosa analysis
+      return curveData
+        .filter(([time]) => time <= displayDuration)
+        .map(([time, energy]) => ({ time, energy }));
+    }
+
+    // Fallback: Simulate energy curve based on BPM and energy
+    // Higher BPM = more beats, higher energy = higher amplitude
     const points: { time: number; energy: number }[] = [];
     const bpm = audio.bpm || 100;
     const baseEnergy = audio.energy || 0.5;
@@ -65,7 +85,7 @@ export function AudioStructurePreview({
     return points;
   };
 
-  const energyCurve = generateEnergyCurve();
+  const energyCurve = getEnergyCurve();
 
   // Calculate where climax might be (highest energy section)
   const findClimaxSection = () => {
@@ -107,6 +127,15 @@ export function AudioStructurePreview({
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-medium flex items-center gap-2">
           <span>🎵</span> 음악 구조 분석
+          {hasRealData ? (
+            <Badge variant="default" className="text-[10px] bg-green-600 hover:bg-green-700">
+              AI 분석
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] text-muted-foreground">
+              추정값
+            </Badge>
+          )}
         </h4>
         <div className="flex gap-2">
           <Badge variant="outline" className="text-xs">
@@ -193,6 +222,20 @@ export function AudioStructurePreview({
             preserveAspectRatio="none"
             viewBox={`0 0 ${displayMax} 1`}
           >
+            {/* Beat markers (real data from librosa) */}
+            {hasRealData && (realBeatTimes || audio.beatTimes)?.filter(t => t <= displayDuration).map((beatTime, idx) => (
+              <line
+                key={`beat-${idx}`}
+                x1={beatTime}
+                y1="0"
+                x2={beatTime}
+                y2="1"
+                stroke="currentColor"
+                strokeWidth="0.02"
+                strokeOpacity="0.3"
+                className="text-primary"
+              />
+            ))}
             {/* Energy area fill */}
             <path
               d={`M 0 1 ${energyCurve.map(p => `L ${p.time} ${1 - p.energy}`).join(' ')} L ${displayDuration} 1 Z`}
@@ -263,8 +306,16 @@ export function AudioStructurePreview({
           )}
           <div className="flex items-center gap-1.5 text-xs">
             <div className="w-3 h-1 rounded bg-primary" />
-            <span className="text-muted-foreground">Energy Curve</span>
+            <span className="text-muted-foreground">
+              Energy Curve {hasRealData ? '(librosa)' : '(추정)'}
+            </span>
           </div>
+          {hasRealData && (realBeatTimes || audio.beatTimes)?.length && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <div className="w-0.5 h-3 bg-primary/30" />
+              <span className="text-muted-foreground">Beat Markers</span>
+            </div>
+          )}
         </div>
       </div>
 

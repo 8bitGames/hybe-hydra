@@ -14,7 +14,8 @@ import { inngest } from "./client";
 import { prisma } from "@/lib/db/prisma";
 import { generateVideo as generateVideoWithVeo, VeoGenerationParams } from "@/lib/veo";
 import { generateImage, convertAspectRatioForImagen } from "@/lib/imagen";
-import { generateImagePromptForI2V, generateVideoPromptForI2V } from "@/lib/gemini-prompt";
+import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
+import type { AgentContext } from "@/lib/agents/types";
 import {
   publishVideoToTikTok,
   publishVideoToTikTokInbox,
@@ -156,16 +157,25 @@ export const generateVideo = inngest.createFunction(
         data: { progress: 15 },
       });
 
-      // Generate optimized image prompt from the video prompt
-      const imagePromptResult = await generateImagePromptForI2V({
-        videoPrompt: prompt,
-        imageDescription: options?.imageDescription || prompt,
-        style: options?.stylePreset,
-        aspectRatio: options?.aspectRatio,
-      });
+      // Generate optimized image prompt from the video prompt using I2V Specialist Agent
+      const i2vAgent = createI2VSpecialistAgent();
+      const agentContext: AgentContext = {
+        workflow: {
+          artistName: "Brand",
+          platform: "tiktok",
+          language: "ko",
+          sessionId: `inngest-video-${Date.now()}`,
+        },
+      };
 
-      const imagePrompt = imagePromptResult.success && imagePromptResult.imagePrompt
-        ? imagePromptResult.imagePrompt
+      const imagePromptResult = await i2vAgent.generateImagePrompt(
+        `${prompt}. ${options?.imageDescription || prompt}`,
+        agentContext,
+        { style: options?.stylePreset }
+      );
+
+      const imagePrompt = imagePromptResult.success && imagePromptResult.data?.prompt
+        ? imagePromptResult.data.prompt
         : prompt;
 
       console.log(`[Inngest]    Image prompt: ${imagePrompt.slice(0, 100)}...`);
@@ -192,20 +202,32 @@ export const generateVideo = inngest.createFunction(
       return imageResult.imageBase64;
     });
 
-    // Step 4: Generate video prompt with animation instructions
+    // Step 4: Generate video prompt with animation instructions using I2V Specialist Agent
     const finalVideoPrompt = await step.run("generate-video-prompt", async () => {
-      const videoPromptResult = await generateVideoPromptForI2V(
-        {
-          videoPrompt: prompt,
-          imageDescription: options?.imageDescription || prompt,
-          style: options?.stylePreset,
-          aspectRatio: options?.aspectRatio,
+      const i2vAgent = createI2VSpecialistAgent();
+      const agentContext: AgentContext = {
+        workflow: {
+          artistName: "Brand",
+          platform: "tiktok",
+          language: "ko",
+          sessionId: `inngest-video-prompt-${Date.now()}`,
         },
-        "Generated image ready for animation"
+      };
+
+      const videoPromptResult = await i2vAgent.generateVideoPrompt(
+        {
+          visual_style: options?.stylePreset || "cinematic",
+          color_palette: [],
+          mood: "dynamic",
+          main_subject: options?.imageDescription || prompt,
+        },
+        `${prompt}. ${options?.imageDescription || prompt}`,
+        agentContext,
+        { duration: options?.duration || 8, style: options?.stylePreset }
       );
 
-      return videoPromptResult.success && videoPromptResult.videoPrompt
-        ? videoPromptResult.videoPrompt
+      return videoPromptResult.success && videoPromptResult.data?.prompt
+        ? videoPromptResult.data.prompt
         : prompt;
     });
 

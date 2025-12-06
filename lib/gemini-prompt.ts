@@ -1,6 +1,19 @@
 /**
  * Gemini Prompt Generator for I2V (Image-to-Video) Generation
  *
+ * @deprecated This module is deprecated. Use the I2V Specialist Agent instead:
+ * ```typescript
+ * import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
+ * const i2vAgent = createI2VSpecialistAgent();
+ * ```
+ *
+ * Migration guide:
+ * - generateImagePromptForI2V → i2vAgent.generateImagePrompt()
+ * - generateVideoPromptForI2V → i2vAgent.generateVideoPrompt()
+ * - generateBackgroundPromptForEditing → i2vAgent.generateBackgroundForEditing()
+ * - generateSceneWithPlaceholderPrompt → i2vAgent.generateSceneWithPlaceholder()
+ * - generateCompositePrompt → i2vAgent.generateComposite()
+ *
  * Uses Google Gemini to create coherent, organically connected prompts for:
  * 1. Image generation (first frame of video)
  * 2. Video generation with specific image animation instructions
@@ -67,6 +80,12 @@ export interface CompositePromptInput {
  *
  * When user provides a product image as reference, we only need to describe the
  * BACKGROUND/SCENE - the product itself will be preserved from the reference image.
+ *
+ * @deprecated Use i2vAgent.generateBackgroundForEditing() instead:
+ * ```typescript
+ * const i2vAgent = createI2VSpecialistAgent();
+ * const result = await i2vAgent.generateBackgroundForEditing(videoPrompt, imageDescription, agentContext, options);
+ * ```
  */
 export async function generateBackgroundPromptForEditing(
   input: BackgroundPromptInput
@@ -151,6 +170,12 @@ Generate a description of the BACKGROUND/ENVIRONMENT only. The product will be p
  * Step 1 of 2-step composition: Preserve the FULL scene description but replace
  * the specific product with a generic placeholder that will be replaced by the
  * actual product image.
+ *
+ * @deprecated Use i2vAgent.generateSceneWithPlaceholder() instead:
+ * ```typescript
+ * const i2vAgent = createI2VSpecialistAgent();
+ * const result = await i2vAgent.generateSceneWithPlaceholder(videoPrompt, imageDescription, agentContext, options);
+ * ```
  */
 export async function generateSceneWithPlaceholderPrompt(
   input: SceneWithPlaceholderInput
@@ -243,6 +268,12 @@ ${input.aspectRatio ? `ASPECT RATIO: ${input.aspectRatio}` : ""}`;
  *
  * Step 2 of 2-step composition: Instructions for replacing the placeholder
  * with the actual product image.
+ *
+ * @deprecated Use i2vAgent.generateComposite() instead:
+ * ```typescript
+ * const i2vAgent = createI2VSpecialistAgent();
+ * const result = await i2vAgent.generateComposite(videoPrompt, imageDescription, placementHint, agentContext);
+ * ```
  */
 export async function generateCompositePrompt(
   input: CompositePromptInput
@@ -328,6 +359,12 @@ Generate precise instructions for seamlessly placing the product image into the 
  *
  * Takes the video concept and image description, and creates a prompt
  * that will generate an image suitable as the starting frame of the video.
+ *
+ * @deprecated Use i2vAgent.generateImagePrompt() instead:
+ * ```typescript
+ * const i2vAgent = createI2VSpecialistAgent();
+ * const result = await i2vAgent.generateImagePrompt(sceneDescription, agentContext, options);
+ * ```
  */
 export async function generateImagePromptForI2V(
   input: I2VPromptInput
@@ -412,6 +449,12 @@ Generate a detailed image prompt where the PRODUCT/OBJECT is the HERO ELEMENT, c
  * - References the generated image as the starting frame
  * - Includes specific animation/motion instructions
  * - Tells VEO exactly how to animate the first frame into video
+ *
+ * @deprecated Use i2vAgent.generateVideoPrompt() instead:
+ * ```typescript
+ * const i2vAgent = createI2VSpecialistAgent();
+ * const result = await i2vAgent.generateVideoPrompt(imageAnalysis, sceneDescription, agentContext, options);
+ * ```
  */
 export async function generateVideoPromptForI2V(
   input: I2VPromptInput,
@@ -499,6 +542,13 @@ Generate a video prompt that tells VEO how to animate this first frame into a co
 /**
  * Complete I2V prompt generation pipeline
  * Returns both image and video prompts in one call
+ *
+ * @deprecated Use individual agent methods instead:
+ * ```typescript
+ * const i2vAgent = createI2VSpecialistAgent();
+ * const imageResult = await i2vAgent.generateImagePrompt(sceneDescription, agentContext, options);
+ * const videoResult = await i2vAgent.generateVideoPrompt(imageAnalysis, sceneDescription, agentContext, options);
+ * ```
  */
 export async function generateI2VPrompts(
   input: I2VPromptInput

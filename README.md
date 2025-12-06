@@ -151,3 +151,49 @@ Non-AI Main accounts from BMLG (not artist- specific):
 
 
 supabase pw : MkVvrXtT_Q8Uz4
+
+
+
+AI-powered platform to create and manage marketing video content for social media campaigns.
+
+
+
+Hydra is an AI-powered video content creation platform for social media marketing.
+Website: https://hydra.ai.kr
+
+=== Login Kit ===
+Purpose: Allow users to connect their TikTok account
+Flow: Dashboard → "Connect TikTok" button → TikTok OAuth → Redirect back
+Scope: user.info.basic (display connected account name and avatar)
+
+=== Content Posting API ===
+Purpose: Upload AI-generated videos to user's TikTok drafts
+Flow: Create video → "Upload to TikTok" → Video saved to drafts → User edits and publishes
+Scope: video.upload
+
+All features require explicit user action and consent. No automated posting.
+
+
+
+📹 데모 영상 제작 가이드
+필수 촬영 내용
+1. Login Kit 시연 (약 30초)
+hydra.ai.kr 접속 화면
+"TikTok 연결" 버튼 클릭
+TikTok 로그인/권한 승인 화면
+연결 완료 후 계정 정보 표시
+2. Content Posting API 시연 (약 1분)
+AI로 영상 생성하는 과정
+"TikTok에 업로드" 버튼 클릭
+TikTok 초안함에 저장되는 화면
+TikTok 앱에서 초안 확인
+3. Share Kit 시연 (약 30초)
+생성된 영상에서 "공유" 버튼 클릭
+TikTok 공유 화면 열림
+사용자가 게시하는 과정
+영상 요구사항
+형식: MP4 또는 MOV
+크기: 각 50MB 이하
+개수: 최대 5개
+도메인: 영상에 보이는 URL이 hydra.ai.kr과 일치해야 함
+환경: Sandbox 환경 사용 (앱 미승인 상태)

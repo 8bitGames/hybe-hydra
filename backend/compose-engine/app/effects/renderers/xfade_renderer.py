@@ -13,51 +13,84 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# FFmpeg xfade transition names
-# NOTE: Blacklisted effects (hlslice, hrslice, vuslice, vdslice, hblur) are excluded
+# FFmpeg xfade transition names (from https://trac.ffmpeg.org/wiki/Xfade)
+# BLACKLISTED effects are excluded: hlslice, hrslice, vuslice, vdslice, hblur, rectcrop
 # These cause visual corruption or make images invisible
 XFADE_TRANSITIONS = {
+    # === FADE EFFECTS ===
     "xfade_fade": "fade",
     "xfade_fadeblack": "fadeblack",
     "xfade_fadewhite": "fadewhite",
+    "xfade_fadegrays": "fadegrays",
     "xfade_distance": "distance",
+    "xfade_dissolve": "dissolve",
+
+    # === WIPE EFFECTS ===
     "xfade_wipeleft": "wipeleft",
     "xfade_wiperight": "wiperight",
     "xfade_wipeup": "wipeup",
     "xfade_wipedown": "wipedown",
+    "xfade_wipetl": "wipetl",
+    "xfade_wipetr": "wipetr",
+    "xfade_wipebl": "wipebl",
+    "xfade_wipebr": "wipebr",
+
+    # === SLIDE EFFECTS ===
     "xfade_slideleft": "slideleft",
     "xfade_slideright": "slideright",
     "xfade_slideup": "slideup",
     "xfade_slidedown": "slidedown",
+
+    # === SMOOTH EFFECTS ===
     "xfade_smoothleft": "smoothleft",
     "xfade_smoothright": "smoothright",
     "xfade_smoothup": "smoothup",
     "xfade_smoothdown": "smoothdown",
+
+    # === CIRCLE/GEOMETRIC EFFECTS ===
     "xfade_circlecrop": "circlecrop",
-    "xfade_rectcrop": "rectcrop",
     "xfade_circleopen": "circleopen",
     "xfade_circleclose": "circleclose",
     "xfade_vertopen": "vertopen",
     "xfade_vertclose": "vertclose",
     "xfade_horzopen": "horzopen",
     "xfade_horzclose": "horzclose",
-    "xfade_dissolve": "dissolve",
-    "xfade_pixelize": "pixelize",
+    "xfade_radial": "radial",
+
+    # === DIAGONAL EFFECTS ===
     "xfade_diagtl": "diagtl",
     "xfade_diagtr": "diagtr",
     "xfade_diagbl": "diagbl",
     "xfade_diagbr": "diagbr",
-    # BLACKLISTED effects removed: hlslice, hrslice, vuslice, vdslice, hblur
-    # These cause visual corruption or make images invisible
-    "xfade_fadegrays": "fadegrays",
+
+    # === SPECIAL EFFECTS ===
+    "xfade_pixelize": "pixelize",
     "xfade_squeezev": "squeezev",
     "xfade_squeezeh": "squeezeh",
     "xfade_zoomin": "zoomin",
-    "xfade_radial": "radial",
-    "xfade_wipetl": "wipetl",
-    "xfade_wipetr": "wipetr",
-    "xfade_wipebl": "wipebl",
-    "xfade_wipebr": "wipebr",
+
+    # === WIND EFFECTS ===
+    "xfade_hlwind": "hlwind",
+    "xfade_hrwind": "hrwind",
+    "xfade_vuwind": "vuwind",
+    "xfade_vdwind": "vdwind",
+
+    # === COVER EFFECTS (new clip covers old) ===
+    "xfade_coverleft": "coverleft",
+    "xfade_coverright": "coverright",
+    "xfade_coverup": "coverup",
+    "xfade_coverdown": "coverdown",
+
+    # === REVEAL EFFECTS (old clip reveals new) ===
+    "xfade_revealleft": "revealleft",
+    "xfade_revealright": "revealright",
+    "xfade_revealup": "revealup",
+    "xfade_revealdown": "revealdown",
+
+    # BLACKLISTED (DO NOT ADD):
+    # - rectcrop: causes horizontal stripes
+    # - hlslice, hrslice, vuslice, vdslice: causes stripes
+    # - hblur: makes images invisible
 }
 
 
@@ -184,6 +217,43 @@ class XfadeRenderer:
         Returns:
             True if successful
         """
+        # Debug: Log all input clips
+        print(f"[XFADE_RENDERER] ============================================")
+        print(f"[XFADE_RENDERER] render_sequence called with {len(clips)} clips")
+        print(f"[XFADE_RENDERER] Transitions: {transitions}")
+        print(f"[XFADE_RENDERER] Transition duration: {transition_duration}s")
+
+        all_valid = True
+        for i, clip in enumerate(clips):
+            exists = os.path.exists(clip.path)
+            size_str = "N/A"
+            is_valid = False
+            actual_duration = 0.0
+
+            if exists:
+                file_size = os.path.getsize(clip.path)
+                size_str = f"{file_size / 1024:.1f}KB"
+
+                # Verify it's a valid video file by getting duration
+                actual_duration = self._get_duration(clip.path)
+                is_valid = file_size > 0 and actual_duration > 0
+
+                if not is_valid:
+                    print(f"[XFADE_RENDERER] WARNING: Clip {i} is INVALID (size={file_size}, duration={actual_duration})")
+                    all_valid = False
+            else:
+                print(f"[XFADE_RENDERER] ERROR: Clip {i} does NOT EXIST!")
+                all_valid = False
+
+            print(f"[XFADE_RENDERER]   Clip {i}: {clip.path}")
+            print(f"[XFADE_RENDERER]     exists={exists}, file_size={size_str}, expected_dur={clip.duration}s, actual_dur={actual_duration}s, valid={is_valid}")
+
+        print(f"[XFADE_RENDERER] ============================================")
+
+        if not all_valid:
+            print(f"[XFADE_RENDERER] ERROR: Some input clips are invalid, cannot proceed!")
+            return False
+
         # Determine target size - CRITICAL for Ken Burns motion clips
         # Ken Burns effects (zoom_in, zoom_out, pan) change clip dimensions
         # xfade requires ALL inputs to have identical dimensions
@@ -202,6 +272,14 @@ class XfadeRenderer:
         if len(clips) < 2:
             logger.warning("Need at least 2 clips for transitions")
             return False
+
+        # VALIDATION: Ensure all clips have valid duration for transitions
+        min_clip_duration = transition_duration + 0.1  # Need at least transition + 0.1s
+        for i, clip in enumerate(clips):
+            if clip.duration < min_clip_duration:
+                print(f"[XFADE_RENDERER] WARNING: Clip {i} duration ({clip.duration}s) < minimum ({min_clip_duration}s)")
+                print(f"[XFADE_RENDERER] Adjusting transition_duration from {transition_duration}s to {max(0.1, clip.duration - 0.1)}s")
+                transition_duration = max(0.1, min(transition_duration, clip.duration - 0.1))
 
         if len(transitions) != len(clips) - 1:
             # Pad with fade if not enough transitions
@@ -236,6 +314,7 @@ class XfadeRenderer:
 
             # Start with first clip's duration
             accumulated_duration = clips[0].duration
+            print(f"[XFADE_RENDERER] Initial accumulated_duration: {accumulated_duration}s")
 
             for i, transition in enumerate(transitions):
                 next_input = f"[s{i + 1}]"  # Use scaled input, not raw
@@ -244,17 +323,30 @@ class XfadeRenderer:
                 # It should be: accumulated_duration - transition_duration
                 offset = max(0, accumulated_duration - transition_duration)
 
+                # VALIDATION: Ensure offset is not longer than accumulated duration
+                if offset > accumulated_duration:
+                    print(f"[XFADE_RENDERER] WARNING: offset {offset} > accumulated {accumulated_duration}, clamping")
+                    offset = max(0, accumulated_duration - 0.1)
+
+                # VALIDATION: Ensure transition_duration doesn't exceed remaining time
+                remaining_time = accumulated_duration - offset
+                effective_transition = min(transition_duration, remaining_time)
+                if effective_transition != transition_duration:
+                    print(f"[XFADE_RENDERER] WARNING: Clamped transition from {transition_duration}s to {effective_transition}s")
+
+                print(f"[XFADE_RENDERER] Transition {i}: {transition}, offset={offset:.2f}s, duration={effective_transition:.2f}s")
+
                 if i < len(transitions) - 1:
                     output_label = f"[v{i}]"
                 else:
                     output_label = ""  # Final output has no label
 
-                xfade_filter = f"{current_label}{next_input}xfade=transition={transition}:duration={transition_duration}:offset={offset}{output_label}"
+                xfade_filter = f"{current_label}{next_input}xfade=transition={transition}:duration={effective_transition}:offset={offset}{output_label}"
                 filter_parts.append(xfade_filter)
 
                 # Update accumulated duration: add next clip, subtract overlap
-                accumulated_duration = offset + transition_duration + clips[i + 1].duration - transition_duration
-                # Simplified: accumulated_duration = offset + clips[i + 1].duration
+                accumulated_duration = offset + clips[i + 1].duration
+                print(f"[XFADE_RENDERER] After transition {i}: accumulated_duration = {accumulated_duration}s")
 
                 if output_label:
                     current_label = output_label
@@ -309,8 +401,13 @@ class XfadeRenderer:
 
             if result.returncode != 0:
                 print(f"[XFADE_RENDERER] FFmpeg FAILED! Return code: {result.returncode}")
-                print(f"[XFADE_RENDERER] stderr: {result.stderr[:1000]}")
-                logger.error(f"xfade sequence render failed: {result.stderr[:500]}")
+                print(f"[XFADE_RENDERER] === FULL STDERR ===")
+                print(result.stderr)
+                print(f"[XFADE_RENDERER] === END STDERR ===")
+                # Also print stdout in case there's useful info there
+                if result.stdout:
+                    print(f"[XFADE_RENDERER] stdout: {result.stdout}")
+                logger.error(f"xfade sequence render failed: {result.stderr}")
                 return False
 
             print(f"[XFADE_RENDERER] FFmpeg SUCCESS! Output: {output_path}")
@@ -385,7 +482,9 @@ class XfadeRenderer:
     def _get_duration(self, video_path: str) -> float:
         """Get video duration using ffprobe."""
         try:
-            ffprobe_path = self.ffmpeg_path.replace("ffmpeg", "ffprobe")
+            # Fix: Replace only the filename, not the directory name
+            # e.g., /usr/lib/jellyfin-ffmpeg/ffmpeg -> /usr/lib/jellyfin-ffmpeg/ffprobe
+            ffprobe_path = os.path.join(os.path.dirname(self.ffmpeg_path), "ffprobe")
             cmd = [
                 ffprobe_path,
                 "-v", "error",
@@ -404,7 +503,9 @@ class XfadeRenderer:
     def _get_video_size(self, video_path: str) -> Optional[Tuple[int, int]]:
         """Get video dimensions (width, height) using ffprobe."""
         try:
-            ffprobe_path = self.ffmpeg_path.replace("ffmpeg", "ffprobe")
+            # Fix: Replace only the filename, not the directory name
+            # e.g., /usr/lib/jellyfin-ffmpeg/ffmpeg -> /usr/lib/jellyfin-ffmpeg/ffprobe
+            ffprobe_path = os.path.join(os.path.dirname(self.ffmpeg_path), "ffprobe")
             cmd = [
                 ffprobe_path,
                 "-v", "error",

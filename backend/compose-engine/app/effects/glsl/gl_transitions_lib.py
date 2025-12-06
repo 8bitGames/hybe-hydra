@@ -940,14 +940,15 @@ vec4 transition(vec2 uv) {
 
     "gl_wind": """
 uniform float size; // = 0.2
+// rand() must be defined BEFORE use in GLSL
+float rand(vec2 co) {
+    return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+}
 vec4 transition(vec2 uv) {
     float sz = 0.2;
     float r = rand(vec2(floor(uv.y / sz), 0.0));
     float m = smoothstep(0.0, 0.01, uv.x - progress - r * 0.3);
     return mix(getToColor(uv), getFromColor(uv), m);
-}
-float rand(vec2 co) {
-    return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
 }
 """,
 

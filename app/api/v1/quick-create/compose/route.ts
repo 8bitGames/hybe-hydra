@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { v4 as uuidv4 } from 'uuid';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { searchImagesMultiQuery, isGoogleSearchConfigured, ImageSearchResult } from '@/lib/google-search';
 import { uploadToS3 } from '@/lib/storage';
 import crypto from 'crypto';
+import {
+  createComposeScriptGeneratorAgent,
+  type ComposeScriptGeneratorAgent,
+} from '@/lib/agents/compose/script-generator';
+import type { AgentContext } from '@/lib/agents/types';
 import {
   generateSearchCacheKey,
   getCachedSearchResults,
@@ -20,10 +24,19 @@ function hashUrl(url: string): string {
   return crypto.createHash('md5').update(url).digest('hex').slice(0, 12);
 }
 
-const GOOGLE_API_KEY = process.env.GOOGLE_AI_API_KEY || '';
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 const MODAL_SUBMIT_URL = process.env.MODAL_SUBMIT_URL;
 const MODAL_CALLBACK_SECRET = process.env.MODAL_CALLBACK_SECRET || 'hydra-modal-callback-secret';
+
+// Singleton agent instance
+let scriptAgent: ComposeScriptGeneratorAgent | null = null;
+
+function getScriptAgent(): ComposeScriptGeneratorAgent {
+  if (!scriptAgent) {
+    scriptAgent = createComposeScriptGeneratorAgent();
+  }
+  return scriptAgent;
+}
 
 interface QuickComposeRequest {
   prompt: string;
@@ -50,79 +63,34 @@ function getCallbackUrl(): string {
   return `${baseUrl}/api/v1/compose/callback`;
 }
 
-// Generate script using Gemini AI (simplified for Quick Create)
-async function generateQuickScript(prompt: string): Promise<ScriptResult> {
-  if (!GOOGLE_API_KEY) {
-    throw new Error('GOOGLE_AI_API_KEY not configured');
-  }
+// Generate script using ComposeScriptGeneratorAgent
+async function generateQuickScript(prompt: string, language: 'ko' | 'en' = 'ko'): Promise<ScriptResult> {
+  const agent = getScriptAgent();
 
-  const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash',
-    generationConfig: {
-      temperature: 0.7,
-      topP: 0.95,
-      maxOutputTokens: 2048,
+  // Create agent context for quick compose
+  const agentContext: AgentContext = {
+    workflow: {
+      artistName: 'Quick Create',
+      platform: 'tiktok',
+      language,
+      sessionId: `quick-compose-${Date.now()}`,
     },
-  });
+  };
 
-  const systemPrompt = `You are a creative director for short-form video content. Generate a video script based on the user's concept.
+  // Call the agent with simplified input
+  const result = await agent.generateScript(
+    {
+      artistName: 'Quick Create',
+      userPrompt: prompt,
+      targetDuration: 15,
+      trendKeywords: [],
+      useGrounding: false,
+      language,
+    },
+    agentContext
+  );
 
-User's Video Concept: ${prompt}
-Target Duration: 15 seconds
-
-Generate a JSON response with this structure:
-{
-  "script": {
-    "lines": [
-      { "text": "HOOK TEXT", "timing": 0, "duration": 2 },
-      { "text": "Setup line", "timing": 2, "duration": 2.5 },
-      { "text": "Build up", "timing": 4.5, "duration": 2.5 },
-      { "text": "Key point", "timing": 7, "duration": 2.5 },
-      { "text": "Climax", "timing": 9.5, "duration": 2.5 },
-      { "text": "Call to action", "timing": 12, "duration": 3 }
-    ],
-    "totalDuration": 15
-  },
-  "vibe": "One of: Exciting, Emotional, Pop, Minimal",
-  "searchKeywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5", "keyword6"],
-  "effectPreset": "One of: zoom_beat, crossfade, bounce, minimal"
-}
-
-Rules:
-1. FIRST LINE must be a HOOK (curiosity-inducing, 2-4 words): "Wait for it...", "POV:", "This is insane"
-2. Script lines should be SHORT (3-8 words) for TikTok style
-3. Generate 5-8 script lines total
-4. Search keywords should be relevant to the concept for image search
-5. Choose vibe based on content mood
-6. Return ONLY JSON`;
-
-  const result = await model.generateContent(systemPrompt);
-  const response = result.response.text();
-
-  try {
-    // Extract JSON from response
-    let jsonStr = response;
-    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[1];
-    } else {
-      const startIdx = response.indexOf('{');
-      const endIdx = response.lastIndexOf('}');
-      if (startIdx !== -1 && endIdx !== -1) {
-        jsonStr = response.substring(startIdx, endIdx + 1);
-      }
-    }
-
-    const parsed = JSON.parse(jsonStr);
-    return {
-      lines: parsed.script?.lines || [],
-      totalDuration: parsed.script?.totalDuration || 15,
-      vibe: parsed.vibe || 'Pop',
-      searchKeywords: parsed.searchKeywords || [],
-      effectPreset: parsed.effectPreset || 'bounce',
-    };
-  } catch {
+  if (!result.success || !result.data) {
     // Return fallback script
     return {
       lines: [
@@ -138,6 +106,20 @@ Rules:
       effectPreset: 'bounce',
     };
   }
+
+  const { script, vibe, searchKeywords, effectRecommendation } = result.data;
+
+  return {
+    lines: script.lines.map((line) => ({
+      text: line.text,
+      timing: line.timing,
+      duration: line.duration,
+    })),
+    totalDuration: script.totalDuration,
+    vibe: vibe,
+    searchKeywords: searchKeywords || [],
+    effectPreset: effectRecommendation || 'bounce',
+  };
 }
 
 // Search and proxy images with caching

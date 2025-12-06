@@ -1,9 +1,10 @@
 /**
  * TikTok Video Analyzer Service
- * Downloads TikTok videos and analyzes them using Gemini Vision
+ * Downloads TikTok videos and analyzes them using Gemini Vision via TikTokVisionAgent
  */
 
-import { GoogleGenAI } from "@google/genai";
+import { getTikTokVisionAgent } from "@/lib/agents/analyzers/tiktok-vision";
+import type { AgentContext } from "@/lib/agents/types";
 
 // TikTok API types
 interface TikTokAuthor {
@@ -115,14 +116,15 @@ export interface TikTokAnalysisResult {
   };
 }
 
-// Initialize Gemini client
-const getGeminiClient = () => {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GOOGLE_AI_API_KEY is not configured");
-  }
-  return new GoogleGenAI({ apiKey });
-};
+// Create agent context for TikTok analysis
+const createAgentContext = (videoId?: string): AgentContext => ({
+  workflow: {
+    artistName: 'TikTok Analysis',
+    platform: 'tiktok',
+    language: 'en',
+    sessionId: `tiktok-analysis-${videoId || Date.now()}`,
+  },
+});
 
 /**
  * Download TikTok video and extract metadata
@@ -193,7 +195,7 @@ export async function downloadTikTok(url: string): Promise<{
 }
 
 /**
- * Analyze video content using Gemini Vision
+ * Analyze video content using TikTokVisionAgent
  */
 export async function analyzeVideoWithGemini(
   videoUrl: string,
@@ -211,10 +213,8 @@ export async function analyzeVideoWithGemini(
   prompt_elements?: TikTokAnalysisResult["prompt_elements"];
 }> {
   try {
-    const ai = getGeminiClient();
-
     // Download video and convert to base64
-    console.log("[GEMINI] Fetching video for analysis:", videoUrl);
+    console.log("[TIKTOK-VISION] Fetching video for analysis:", videoUrl);
 
     const videoResponse = await fetch(videoUrl, {
       headers: {
@@ -230,91 +230,37 @@ export async function analyzeVideoWithGemini(
     const videoBase64 = Buffer.from(videoBuffer).toString("base64");
     const videoSize = videoBuffer.byteLength / (1024 * 1024);
 
-    console.log(`[GEMINI] Video size: ${videoSize.toFixed(2)} MB`);
+    console.log(`[TIKTOK-VISION] Video size: ${videoSize.toFixed(2)} MB`);
 
     // Gemini has file size limits, check if video is too large
     if (videoSize > 20) {
-      console.log("[GEMINI] Video too large, using metadata-only analysis");
+      console.log("[TIKTOK-VISION] Video too large, using metadata-only analysis");
       return analyzeFromMetadataOnly(metadata);
     }
 
-    const analysisPrompt = `You are a video style analyst specializing in short-form social media content. Analyze this TikTok video and provide a detailed breakdown.
+    // Call the agent
+    const agent = getTikTokVisionAgent();
+    const context = createAgentContext();
+    const result = await agent.analyzeVideo(
+      videoBase64,
+      "video/mp4",
+      {
+        mediaType: 'video',
+        description: metadata.description,
+        hashtags: metadata.hashtags,
+        musicTitle: metadata.musicTitle,
+      },
+      context
+    );
 
-Context from the video:
-- Original description: "${metadata.description}"
-- Hashtags: ${metadata.hashtags.join(", ")}
-${metadata.musicTitle ? `- Music: "${metadata.musicTitle}"` : ""}
-
-Analyze the video and respond in this exact JSON format:
-{
-  "style_analysis": {
-    "visual_style": "describe the overall visual aesthetic (e.g., 'cinematic', 'lo-fi', 'high-fashion editorial', 'documentary')",
-    "color_palette": ["list", "dominant", "colors"],
-    "lighting": "describe lighting style (e.g., 'natural daylight', 'neon', 'golden hour', 'dramatic shadows')",
-    "camera_movement": ["list camera techniques like 'slow zoom', 'tracking shot', 'handheld', 'static'"],
-    "transitions": ["list transition styles like 'jump cut', 'smooth pan', 'fade', 'whip pan'"],
-    "mood": "overall emotional tone (e.g., 'energetic', 'melancholic', 'dreamy', 'intense')",
-    "pace": "editing pace (e.g., 'fast-paced', 'slow and contemplative', 'rhythmic')",
-    "effects": ["list visual effects like 'blur', 'grain', 'speed ramp', 'color grading'"]
-  },
-  "content_analysis": {
-    "main_subject": "describe the main subject/person in the video",
-    "actions": ["list main actions/movements"],
-    "setting": "describe the location/environment",
-    "props": ["list notable props or objects"],
-    "clothing_style": "describe fashion/clothing style"
-  },
-  "suggested_prompt": "Write a detailed Veo video generation prompt that would recreate this style. Be specific about visual elements, camera work, and mood. Do NOT include any real person names.",
-  "prompt_elements": {
-    "style_keywords": ["5-7 key style descriptors for the prompt"],
-    "mood_keywords": ["3-5 mood/emotion keywords"],
-    "action_keywords": ["3-5 action/movement keywords"],
-    "technical_suggestions": {
-      "aspect_ratio": "9:16 or 16:9 or 1:1 based on the video",
-      "duration": 5 or 8 or 10 based on content pacing,
-      "camera_style": "primary camera technique to use"
-    }
-  }
-}`;
-
-    // Use Gemini 2.0 Flash for video understanding
-    const model = ai.models.generateContent;
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              inlineData: {
-                mimeType: "video/mp4",
-                data: videoBase64,
-              },
-            },
-            { text: analysisPrompt },
-          ],
-        },
-      ],
-    });
-
-    const responseText = response.text || "";
-    console.log("[GEMINI] Analysis response received, length:", responseText.length);
-    console.log("[GEMINI] Raw response (first 500 chars):", responseText.slice(0, 500));
-
-    // Parse JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error("[GEMINI] Failed to find JSON in response");
-      throw new Error("Failed to parse analysis response");
+    if (!result.success || !result.data) {
+      console.error("[TIKTOK-VISION] Agent error:", result.error);
+      return analyzeFromMetadataOnly(metadata);
     }
 
-    console.log("[GEMINI] Matched JSON length:", jsonMatch[0].length);
-    const analysis = JSON.parse(jsonMatch[0]);
-
-    console.log("[GEMINI] Parsed analysis keys:", Object.keys(analysis));
-    console.log("[GEMINI] suggested_prompt:", analysis.suggested_prompt?.slice(0, 200));
-    console.log("[GEMINI] style_analysis:", analysis.style_analysis);
-    console.log("[GEMINI] prompt_elements:", analysis.prompt_elements);
+    const analysis = result.data;
+    console.log("[TIKTOK-VISION] Analysis complete");
+    console.log("[TIKTOK-VISION] suggested_prompt:", analysis.suggested_prompt?.slice(0, 200));
 
     return {
       success: true,
@@ -324,16 +270,16 @@ Analyze the video and respond in this exact JSON format:
       prompt_elements: analysis.prompt_elements,
     };
   } catch (error) {
-    console.error("[GEMINI] Analysis error:", error);
+    console.error("[TIKTOK-VISION] Analysis error:", error);
 
     // Fallback to metadata-only analysis
-    console.log("[GEMINI] Falling back to metadata-only analysis");
+    console.log("[TIKTOK-VISION] Falling back to metadata-only analysis");
     return analyzeFromMetadataOnly(metadata);
   }
 }
 
 /**
- * Analyze image content using Gemini Vision (for photo/slideshow posts)
+ * Analyze image content using TikTokVisionAgent (for photo/slideshow posts)
  */
 export async function analyzeImageWithGemini(
   imageUrl: string,
@@ -352,10 +298,8 @@ export async function analyzeImageWithGemini(
   prompt_elements?: TikTokAnalysisResult["prompt_elements"];
 }> {
   try {
-    const ai = getGeminiClient();
-
     // Download image and convert to base64
-    console.log("[GEMINI] Fetching image for analysis:", imageUrl);
+    console.log("[TIKTOK-VISION] Fetching image for analysis:", imageUrl);
 
     const imageResponse = await fetch(imageUrl, {
       headers: {
@@ -371,79 +315,32 @@ export async function analyzeImageWithGemini(
     const imageBase64 = Buffer.from(imageBuffer).toString("base64");
     const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
 
-    console.log(`[GEMINI] Image size: ${(imageBuffer.byteLength / 1024).toFixed(2)} KB`);
+    console.log(`[TIKTOK-VISION] Image size: ${(imageBuffer.byteLength / 1024).toFixed(2)} KB`);
 
-    const analysisPrompt = `You are a visual style analyst specializing in social media content. Analyze this TikTok ${metadata.isSlideshow ? "slideshow/photo carousel" : "image"} and provide a detailed breakdown.
+    // Call the agent
+    const agent = getTikTokVisionAgent();
+    const context = createAgentContext();
+    const result = await agent.analyzeImage(
+      imageBase64,
+      contentType,
+      {
+        mediaType: 'image',
+        description: metadata.description,
+        hashtags: metadata.hashtags,
+        musicTitle: metadata.musicTitle,
+        isSlideshow: metadata.isSlideshow,
+      },
+      context
+    );
 
-Context from the post:
-- Original description: "${metadata.description}"
-- Hashtags: ${metadata.hashtags.join(", ")}
-${metadata.musicTitle ? `- Music: "${metadata.musicTitle}"` : ""}
-
-Analyze the image and respond in this exact JSON format:
-{
-  "style_analysis": {
-    "visual_style": "describe the overall visual aesthetic (e.g., 'minimalist', 'vibrant pop', 'aesthetic', 'editorial')",
-    "color_palette": ["list", "dominant", "colors"],
-    "lighting": "describe lighting style (e.g., 'natural daylight', 'soft', 'dramatic', 'studio')",
-    "camera_movement": ["suggest video camera techniques that would match this style"],
-    "transitions": ["suggest transition styles for video version"],
-    "mood": "overall emotional tone (e.g., 'calm', 'energetic', 'dreamy', 'bold')",
-    "pace": "suggested editing pace for video (e.g., 'slow and contemplative', 'medium', 'fast-paced')",
-    "effects": ["visual effects to apply like 'soft focus', 'grain', 'color grading'"]
-  },
-  "content_analysis": {
-    "main_subject": "describe the main subject in the image",
-    "actions": ["suggest actions/movements for video version"],
-    "setting": "describe the location/environment",
-    "props": ["list notable props or objects"],
-    "clothing_style": "describe fashion/clothing style if applicable"
-  },
-  "suggested_prompt": "Write a detailed Veo video generation prompt that would create a video matching this image's style and mood. Be specific about visual elements, suggested camera work, and mood. Include motion and action suggestions. Do NOT include any real person names.",
-  "prompt_elements": {
-    "style_keywords": ["5-7 key style descriptors"],
-    "mood_keywords": ["3-5 mood/emotion keywords"],
-    "action_keywords": ["3-5 suggested action/movement keywords"],
-    "technical_suggestions": {
-      "aspect_ratio": "9:16 or 16:9 or 1:1 based on the image",
-      "duration": 8,
-      "camera_style": "suggested camera technique"
-    }
-  }
-}`;
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              inlineData: {
-                mimeType: contentType,
-                data: imageBase64,
-              },
-            },
-            { text: analysisPrompt },
-          ],
-        },
-      ],
-    });
-
-    const responseText = response.text || "";
-    console.log("[GEMINI] Image analysis response received, length:", responseText.length);
-
-    // Parse JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error("[GEMINI] Failed to find JSON in response");
-      throw new Error("Failed to parse analysis response");
+    if (!result.success || !result.data) {
+      console.error("[TIKTOK-VISION] Agent error:", result.error);
+      return analyzeFromMetadataOnly(metadata);
     }
 
-    const analysis = JSON.parse(jsonMatch[0]);
-
-    console.log("[GEMINI] Parsed image analysis keys:", Object.keys(analysis));
-    console.log("[GEMINI] suggested_prompt:", analysis.suggested_prompt?.slice(0, 200));
+    const analysis = result.data;
+    console.log("[TIKTOK-VISION] Image analysis complete");
+    console.log("[TIKTOK-VISION] suggested_prompt:", analysis.suggested_prompt?.slice(0, 200));
 
     return {
       success: true,
@@ -453,10 +350,10 @@ Analyze the image and respond in this exact JSON format:
       prompt_elements: analysis.prompt_elements,
     };
   } catch (error) {
-    console.error("[GEMINI] Image analysis error:", error);
+    console.error("[TIKTOK-VISION] Image analysis error:", error);
 
     // Fallback to metadata-only analysis
-    console.log("[GEMINI] Falling back to metadata-only analysis");
+    console.log("[TIKTOK-VISION] Falling back to metadata-only analysis");
     return analyzeFromMetadataOnly(metadata);
   }
 }

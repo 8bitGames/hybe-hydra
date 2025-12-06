@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useI18n } from "@/lib/i18n";
 import { previewImageApi } from "@/lib/video-api";
+import type { AiInsightsData } from "@/lib/stores/workflow-store";
 import {
   Dialog,
   DialogContent,
@@ -62,7 +63,7 @@ interface ContextData {
     avgEngagement: number;
     viralBenchmark: number;
   } | null;
-  aiInsights?: string[];
+  aiInsights?: AiInsightsData | null;
 }
 
 interface PromptVariation {

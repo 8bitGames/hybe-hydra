@@ -2,14 +2,124 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 
+// Use MODAL_COMPOSE_URL (production) or LOCAL_COMPOSE_URL (development)
+const COMPOSE_ENGINE_URL = process.env.MODAL_COMPOSE_URL || process.env.LOCAL_COMPOSE_URL || process.env.COMPOSE_ENGINE_URL || 'http://localhost:8000';
+
 interface AnalyzeRequest {
   assetId: string;
   targetDuration?: number;
 }
 
+interface ComposeEngineAnalysisResponse {
+  bpm: number;
+  beat_times: number[];
+  energy_curve: [number, number][];
+  duration: number;
+  suggested_vibe: string;
+}
+
+interface ComposeEngineBestSegmentResponse {
+  start_time: number;
+  end_time: number;
+  duration: number;
+}
+
+/**
+ * Call compose-engine to analyze audio using librosa
+ */
+async function analyzeWithComposeEngine(s3Url: string, jobId: string): Promise<ComposeEngineAnalysisResponse | null> {
+  const url = `${COMPOSE_ENGINE_URL}/audio/analyze`;
+  console.log('[AudioAnalyze] Calling compose-engine:', url);
+  console.log('[AudioAnalyze] Audio URL:', s3Url);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout for audio analysis
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio_url: s3Url, job_id: jobId }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error('[AudioAnalyze] compose-engine analyze failed:', response.status, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    console.log('[AudioAnalyze] Analysis complete:', {
+      bpm: data.bpm,
+      duration: data.duration,
+      vibe: data.suggested_vibe,
+      beatCount: data.beat_times?.length,
+      energyPoints: data.energy_curve?.length
+    });
+    return data;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error('[AudioAnalyze] compose-engine request timed out after 120s');
+    } else {
+      console.error('[AudioAnalyze] compose-engine connection error:', error);
+    }
+    return null;
+  }
+}
+
+/**
+ * Call compose-engine to find best audio segment (highest energy)
+ */
+async function findBestSegmentWithComposeEngine(
+  s3Url: string,
+  targetDuration: number,
+  jobId: string
+): Promise<ComposeEngineBestSegmentResponse | null> {
+  const url = `${COMPOSE_ENGINE_URL}/audio/best-segment`;
+  console.log('[AudioAnalyze] Finding best segment:', { url, targetDuration });
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 minute timeout
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_url: s3Url,
+        target_duration: targetDuration,
+        job_id: jobId
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error('[AudioAnalyze] compose-engine best-segment failed:', response.status, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    console.log('[AudioAnalyze] Best segment found:', data);
+    return data;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error('[AudioAnalyze] best-segment request timed out after 60s');
+    } else {
+      console.error('[AudioAnalyze] compose-engine connection error:', error);
+    }
+    return null;
+  }
+}
+
 /**
  * Analyze audio asset and find best segment (highest energy section)
- * Uses Modal backend for audio analysis with librosa
+ * Uses compose-engine backend for real audio analysis with librosa
  */
 export async function POST(request: NextRequest) {
   try {
@@ -42,13 +152,58 @@ export async function POST(request: NextRequest) {
     }
 
     const metadata = asset.metadata as Record<string, unknown> || {};
+    const jobId = `analyze-${assetId}-${Date.now()}`;
+
+    // Try real audio analysis with compose-engine (librosa)
+    const analysisResult = await analyzeWithComposeEngine(asset.s3Url, jobId);
+
+    if (analysisResult) {
+      // Real analysis succeeded - find best segment
+      const bestSegment = await findBestSegmentWithComposeEngine(
+        asset.s3Url,
+        targetDuration,
+        jobId
+      );
+
+      // Update asset metadata with real analysis results
+      const updatedMetadata = {
+        ...metadata,
+        bpm: analysisResult.bpm,
+        audioBpm: analysisResult.bpm,
+        duration: analysisResult.duration,
+        audioDurationSec: analysisResult.duration,
+        vibe: analysisResult.suggested_vibe,
+        audioVibe: analysisResult.suggested_vibe,
+        energyCurve: analysisResult.energy_curve,
+        beatTimes: analysisResult.beat_times,
+        analyzed: true,
+        analyzedAt: new Date().toISOString()
+      };
+
+      await prisma.asset.update({
+        where: { id: assetId },
+        data: { metadata: updatedMetadata }
+      });
+
+      const suggestedStart = bestSegment?.start_time ?? 0;
+      const suggestedEnd = bestSegment?.end_time ?? Math.min(targetDuration, analysisResult.duration);
+
+      return NextResponse.json({
+        assetId,
+        duration: analysisResult.duration,
+        bpm: analysisResult.bpm,
+        vibe: analysisResult.suggested_vibe,
+        energyCurve: analysisResult.energy_curve,
+        beatTimes: analysisResult.beat_times,
+        suggestedStartTime: suggestedStart,
+        suggestedEndTime: suggestedEnd,
+        analyzed: true
+      });
+    }
+
+    // Fallback to heuristics if compose-engine is unavailable
+    console.log('[AudioAnalyze] Using fallback heuristics (compose-engine unavailable)');
     const audioDuration = (metadata.duration || metadata.audioDurationSec || 180) as number;
-
-    // NOTE: Modal audio web endpoints are not deployed.
-    // Audio functions (compose_audio, analyze_audio) exist in Modal but have no web endpoints.
-    // Using local heuristic-based analysis instead.
-
-    // Use heuristics for audio analysis
     const metadataBpm = (metadata.bpm || metadata.audioBpm || null) as number | null;
     const suggestedStart = calculateFallbackStart(audioDuration, targetDuration, metadataBpm);
 

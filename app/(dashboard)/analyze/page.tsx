@@ -46,13 +46,38 @@ import {
 // Types
 // ============================================================================
 
+// Video content for trend analysis
+interface InspirationVideo {
+  id: string;
+  description?: string;
+  hashtags?: string[];
+  stats?: {
+    playCount?: number;
+    likeCount?: number;
+    commentCount?: number;
+    shareCount?: number;
+  };
+  engagementRate?: number;
+}
+
+// AI insights from discover phase
+interface TrendInsights {
+  summary?: string;
+  contentStrategy?: string[];
+  videoIdeas?: string[];
+  targetAudience?: string[];
+  bestPostingTimes?: string[];
+}
+
 interface GenerateIdeasRequest {
   user_idea: string;
   keywords: string[];
   hashtags: string[];
   target_audience: string[];
   content_goals: string[];
-  inspiration_count: number;
+  // Rich trend data (instead of just a count)
+  inspiration_videos?: InspirationVideo[];
+  trend_insights?: TrendInsights;
   performance_metrics?: {
     avgViews: number;
     avgEngagement: number;
@@ -129,10 +154,11 @@ function ContextReceptionPanel() {
 
   return (
     <div className="border border-neutral-200 rounded-lg p-4 bg-neutral-50">
-      <div className="flex items-center justify-between mb-3">
+      {/* Header with data usage purpose */}
+      <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold text-neutral-700 flex items-center gap-2">
           <BookmarkCheck className="h-4 w-4 text-neutral-900" />
-          {language === "ko" ? "발견 단계에서 수집됨" : "From Discovery"}
+          {language === "ko" ? "AI 생성에 활용될 데이터" : "Data for AI Generation"}
         </h3>
         <Button
           variant="ghost"
@@ -143,6 +169,13 @@ function ContextReceptionPanel() {
           {language === "ko" ? "수정" : "Edit"}
         </Button>
       </div>
+      {/* Data usage description */}
+      <p className="text-xs text-neutral-500 mb-3 flex items-center gap-1">
+        <span className="inline-block w-1 h-1 rounded-full bg-neutral-400" />
+        {language === "ko"
+          ? "아래 데이터가 맞춤형 콘텐츠 아이디어 생성에 반영됩니다"
+          : "The following data will be reflected in custom content idea generation"}
+      </p>
 
       <div className="space-y-3">
         {/* Keywords */}
@@ -528,13 +561,49 @@ export default function AnalyzePage() {
     setIsGenerating(true);
 
     try {
+      // Transform saved inspiration to include rich content data
+      const inspirationVideos: InspirationVideo[] = discover.savedInspiration.map((video) => ({
+        id: video.id,
+        description: video.description,
+        hashtags: video.hashtags,
+        stats: video.stats,
+        engagementRate: video.engagementRate,
+      }));
+
+      // Also include viral videos from trend analysis
+      if (discover.trendAnalysis?.viralVideos) {
+        discover.trendAnalysis.viralVideos.forEach((video) => {
+          // Only add if not already in saved inspiration
+          if (!inspirationVideos.find(v => v.id === video.id)) {
+            inspirationVideos.push({
+              id: video.id,
+              description: video.description,
+              hashtags: video.hashtags,
+              stats: video.stats,
+              engagementRate: video.engagementRate,
+            });
+          }
+        });
+      }
+
+      // Extract AI insights from discover phase
+      const trendInsights: TrendInsights | undefined = discover.aiInsights ? {
+        summary: discover.aiInsights.summary,
+        contentStrategy: discover.aiInsights.contentStrategy,
+        videoIdeas: discover.aiInsights.videoIdeas,
+        targetAudience: discover.aiInsights.targetAudience,
+        bestPostingTimes: discover.aiInsights.bestPostingTimes,
+      } : undefined;
+
       const request: GenerateIdeasRequest = {
         user_idea: analyze.userIdea,
         keywords: discover.keywords,
         hashtags: analyze.hashtags,
         target_audience: analyze.targetAudience,
         content_goals: analyze.contentGoals,
-        inspiration_count: discover.savedInspiration.length,
+        // Pass rich trend data instead of just count
+        inspiration_videos: inspirationVideos,
+        trend_insights: trendInsights,
         performance_metrics: discover.performanceMetrics,
       };
 
@@ -705,6 +774,37 @@ export default function AnalyzePage() {
                   })}
                 </div>
               </div>
+
+              {/* Data Flow Indicator */}
+              {(discover.keywords.length > 0 || discover.savedInspiration.length > 0) && (
+                <div className="mb-3 p-2 rounded-lg bg-neutral-100 border border-neutral-200">
+                  <div className="flex items-center gap-2 text-xs text-neutral-600">
+                    <div className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-neutral-400" />
+                      <span>{language === "ko" ? "트렌드 데이터" : "Trend Data"}</span>
+                    </div>
+                    <span className="text-neutral-300">→</span>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-neutral-500" />
+                      <span>{language === "ko" ? "AI 분석" : "AI Analysis"}</span>
+                    </div>
+                    <span className="text-neutral-300">→</span>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-neutral-900" />
+                      <span>{language === "ko" ? "맞춤 프롬프트" : "Custom Prompt"}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Context Info */}
+              {(discover.keywords.length > 0 || discover.savedInspiration.length > 0) && (
+                <p className="text-xs text-neutral-500 mb-2 text-center">
+                  {language === "ko"
+                    ? `${discover.keywords.length}개 키워드 + ${discover.savedInspiration.length}개 영감 활용`
+                    : `Using ${discover.keywords.length} keywords + ${discover.savedInspiration.length} inspirations`}
+                </p>
+              )}
 
               {/* Generate Button */}
               <Button

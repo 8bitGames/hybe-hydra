@@ -51,6 +51,7 @@ class AIEffectSelection(BaseModel):
     motions: List[str] = Field(default=[], description="List of motion effect IDs")
     filters: List[str] = Field(default=[], description="List of filter effect IDs")
     text_animations: List[str] = Field(default=[], description="List of text animation IDs")
+    overlays: List[str] = Field(default=[], description="List of overlay effect IDs (light leak, bokeh, bloom, etc.)")
     analysis: Optional[Dict[str, Any]] = Field(default=None, description="AI analysis results")
 
 

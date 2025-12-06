@@ -2,16 +2,18 @@
  * Video Trend Analyzer Service
  * Analyzes visual styles, content patterns, and generates video recommendations
  * from top TikTok videos for a given search query
+ *
+ * Uses VisualTrendAgent for AI-powered trend aggregation
  */
 
-import { GoogleGenAI } from "@google/genai";
 import {
   analyzeTikTokVideo,
   TikTokAnalysisResult,
   VideoStyleAnalysis,
   VideoContentAnalysis,
 } from "@/lib/tiktok-analyzer";
-import { TrendPlatform } from "@prisma/client";
+import { createVisualTrendAgent, type VisualTrendAgent } from "@/lib/agents/analyzers/visual-trend";
+import type { AgentContext } from "@/lib/agents/types";
 
 // Types
 export interface VideoData {
@@ -70,14 +72,15 @@ export interface VideoTrendAnalysisResult {
   trendScore: number;
 }
 
-// Initialize Gemini client
-const getGeminiClient = () => {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GOOGLE_AI_API_KEY is not configured");
+// Singleton agent instance
+let visualTrendAgent: VisualTrendAgent | null = null;
+
+function getVisualTrendAgent(): VisualTrendAgent {
+  if (!visualTrendAgent) {
+    visualTrendAgent = createVisualTrendAgent();
   }
-  return new GoogleGenAI({ apiKey });
-};
+  return visualTrendAgent;
+}
 
 /**
  * Video Trend Analyzer Class
@@ -86,11 +89,20 @@ export class VideoTrendAnalyzer {
   private videos: VideoData[];
   private searchQuery: string;
   private maxVideosToAnalyze: number;
+  private agentContext: AgentContext;
 
-  constructor(videos: VideoData[], searchQuery: string, maxVideos: number = 5) {
+  constructor(videos: VideoData[], searchQuery: string, maxVideos: number = 5, language: 'ko' | 'en' = 'ko') {
     this.videos = videos;
     this.searchQuery = searchQuery;
     this.maxVideosToAnalyze = maxVideos;
+    this.agentContext = {
+      workflow: {
+        artistName: searchQuery,
+        platform: 'tiktok',
+        language,
+        sessionId: `video-trend-${Date.now()}`,
+      },
+    };
   }
 
   /**
@@ -304,7 +316,7 @@ export class VideoTrendAnalyzer {
   }
 
   /**
-   * Generate prompt templates from patterns
+   * Generate prompt templates from patterns using VisualTrendAgent
    */
   async generatePromptTemplates(
     stylePatterns: StylePatterns,
@@ -312,54 +324,43 @@ export class VideoTrendAnalyzer {
     analyses: TikTokAnalysisResult[]
   ): Promise<PromptTemplate[]> {
     try {
-      const ai = getGeminiClient();
+      const agent = getVisualTrendAgent();
 
-      // Collect existing suggested prompts
-      const existingPrompts = analyses
-        .map((a) => a.suggested_prompt)
-        .filter((p) => p && p.length > 20)
-        .slice(0, 3);
+      // Convert TikTokAnalysisResult to VisualTrendAgent input format
+      const videoAnalyses = analyses.map((a) => ({
+        id: a.video_url || `video-${Date.now()}`,
+        style_analysis: {
+          visual_style: a.style_analysis?.visual_style || 'modern',
+          color_palette: a.style_analysis?.color_palette || [],
+          lighting: a.style_analysis?.lighting || 'natural',
+          mood: a.style_analysis?.mood || 'engaging',
+          composition: a.style_analysis?.composition || 'centered',
+        },
+        content_analysis: a.content_analysis ? {
+          main_subject: a.content_analysis.main_subject || '',
+          setting: a.content_analysis.setting || '',
+          props: a.content_analysis.props || [],
+        } : undefined,
+        technical: a.prompt_elements?.technical_suggestions ? {
+          brightness: 0.7,
+          complexity: 0.5,
+          suggested_motion: a.style_analysis?.camera_movement?.[0] || 'dynamic',
+        } : undefined,
+      }));
 
-      const prompt = `You are a video generation prompt expert. Based on this analysis of trending TikTok videos for "${this.searchQuery}":
+      const result = await agent.aggregateAnalyses(videoAnalyses, this.agentContext);
 
-Visual Styles: ${stylePatterns.dominantStyles.join(", ")}
-Lighting: ${stylePatterns.lightingPatterns.join(", ")}
-Camera Movements: ${stylePatterns.cameraMovements.join(", ")}
-Common Subjects: ${contentPatterns.commonSubjects.join(", ")}
-Settings: ${contentPatterns.settingTypes.join(", ")}
-
-Example prompts from top videos:
-${existingPrompts.map((p, i) => `${i + 1}. ${p?.slice(0, 150)}`).join("\n")}
-
-Generate 3 video generation prompt templates for creating similar content.
-Each template should be usable with AI video generation tools.
-Use [brackets] for customizable parts.
-
-Return ONLY valid JSON:
-{
-  "templates": [
-    {
-      "template": "Your prompt template here with [customizable parts]",
-      "style": "Brief style description",
-      "useCase": "When to use this template"
-    }
-  ]
-}`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-
-      const responseText = response.text || "";
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return (parsed.templates || []).slice(0, 5);
+      if (!result.success || !result.data?.promptTemplates) {
+        console.error("[VideoTrendAnalyzer] Agent prompt generation failed:", result.error);
+        return this.fallbackPromptTemplates(stylePatterns, contentPatterns);
       }
 
-      return this.fallbackPromptTemplates(stylePatterns, contentPatterns);
+      // Convert agent output to PromptTemplate format
+      return result.data.promptTemplates.map((t) => ({
+        template: t.template,
+        style: t.style,
+        useCase: `Confidence: ${Math.round(t.confidence * 100)}%`,
+      })).slice(0, 5);
     } catch (error) {
       console.error("[VideoTrendAnalyzer] Error generating prompt templates:", error);
       return this.fallbackPromptTemplates(stylePatterns, contentPatterns);
@@ -595,8 +596,9 @@ Return ONLY valid JSON:
 export async function analyzeVideoTrends(
   videos: VideoData[],
   searchQuery: string,
-  maxVideos: number = 5
+  maxVideos: number = 5,
+  language: 'ko' | 'en' = 'ko'
 ): Promise<VideoTrendAnalysisResult> {
-  const analyzer = new VideoTrendAnalyzer(videos, searchQuery, maxVideos);
+  const analyzer = new VideoTrendAnalyzer(videos, searchQuery, maxVideos, language);
   return analyzer.analyze();
 }

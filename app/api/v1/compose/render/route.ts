@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
-import { submitRenderToModal, ModalRenderRequest } from '@/lib/modal/client';
+import { submitRenderToModal, ModalRenderRequest, isLocalMode } from '@/lib/modal/client';
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
@@ -252,6 +252,9 @@ export async function POST(request: NextRequest) {
 
     console.log('[Compose Render] Modal response:', modalResponse);
 
+    // Determine render backend for status display
+    const renderBackend = isLocalMode() ? 'local' : 'modal';
+
     // Store modal call_id and image URLs in database for status polling and retry
     await prisma.videoGeneration.update({
       where: { id: generationId },
@@ -260,18 +263,21 @@ export async function POST(request: NextRequest) {
           composeData,
           modalCallId: modalResponse.call_id,
           imageUrls: images.map(img => img.url), // Store for retry functionality
+          renderBackend, // 'local' or 'modal' for status display
         },
       }
     });
 
+    const backendLabel = renderBackend === 'local' ? 'Local (CPU)' : 'Modal (CPU)';
     return NextResponse.json({
       jobId: generationId,
       generationId,
       status: 'queued',
-      message: 'Render job queued on Modal (CPU)',
+      message: `Render job queued on ${backendLabel}`,
       modalCallId: modalResponse.call_id,
       estimatedSeconds: targetDuration > 0 ? targetDuration * 5 : 45, // CPU takes longer
-      outputKey
+      outputKey,
+      renderBackend,
     });
   } catch (error) {
     console.error('Render start error:', error);

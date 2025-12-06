@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { v4 as uuidv4 } from "uuid";
-import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
 
@@ -10,7 +9,11 @@ import { Prisma } from "@prisma/client";
 import { analyzeAudio, type AudioAnalysis } from "@/lib/audio-analyzer";
 import { generateImage, type ImageGenerationParams } from "@/lib/imagen";
 import { generateVideo, type VeoGenerationParams, getVeoConfig } from "@/lib/veo";
-import { generateImagePromptForI2V, generateVideoPromptForI2V } from "@/lib/gemini-prompt";
+// Agent-based prompt generation for I2V workflow
+import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
+// Agent for image analysis and Veo3 prompt personalization
+import { getVeo3PersonalizeAgent, type AnalyzeImagesInput } from "@/lib/agents/analyzers/veo3-personalize";
+import type { AgentContext } from "@/lib/agents/types";
 // Use Modal for audio composition (GPU-accelerated)
 import { composeVideoWithAudioModal, type AudioComposeRequest } from "@/lib/modal/client";
 import { generateS3Key } from "@/lib/storage";
@@ -24,67 +27,6 @@ const s3Client = new S3Client({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
   },
 });
-
-// Initialize Google GenAI client
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "",
-});
-
-// Gemini SDK call - fast, no thinking or search
-async function callGemini(
-  contents: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }>,
-  model: string = "gemini-flash-latest"
-): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
-
-  console.log(`[PERSONALIZE] Calling Gemini SDK: ${model}`);
-  const startTime = Date.now();
-
-  // Build parts array for the SDK
-  const parts = contents.map((c) => {
-    if (c.inlineData) {
-      return {
-        inlineData: {
-          mimeType: c.inlineData.mimeType,
-          data: c.inlineData.data,
-        },
-      };
-    }
-    return { text: c.text || "" };
-  });
-
-  try {
-    const response = await ai.models.generateContentStream({
-      model,
-      contents: [
-        {
-          role: "user",
-          parts,
-        },
-      ],
-    });
-
-    // Collect streamed response
-    let fullText = "";
-    for await (const chunk of response) {
-      if (chunk.text) {
-        fullText += chunk.text;
-      }
-    }
-
-    console.log(`[PERSONALIZE] Gemini response: ${fullText.length} chars in ${Date.now() - startTime}ms`);
-
-    if (!fullText || fullText.trim() === "") {
-      console.error("[PERSONALIZE] Warning: Gemini returned empty response");
-    }
-
-    return fullText;
-  } catch (error) {
-    console.error(`[PERSONALIZE] Gemini SDK error:`, error);
-    throw error;
-  }
-}
 
 // ============================================================================
 // Types
@@ -520,96 +462,78 @@ async function handleAnalyze(request: AnalyzeRequest): Promise<NextResponse> {
       );
     }
 
-    // Build context string
-    const contextStr = buildContextString(context);
-    console.log(`[API] 📝 Context built (${contextStr.length} chars)`);
-    console.log(`[API] 🤖 Calling Gemini for analysis...`);
+    // Build context for agent
+    console.log(`[API] 📝 Building context for agent...`);
+    console.log(`[API] 🤖 Calling Veo3PersonalizeAgent for analysis...`);
 
-    // Build the analysis prompt
-    const analysisPrompt = `You are a creative director specializing in viral TikTok and short-form video content.
+    // Prepare input for agent
+    const agentInput: AnalyzeImagesInput = {
+      campaignName: context.campaignName,
+      artistName: context.artistName,
+      selectedIdea: context.selectedIdea ? {
+        title: context.selectedIdea.title,
+        description: context.selectedIdea.description,
+        hook: context.selectedIdea.hook,
+        optimizedPrompt: context.selectedIdea.optimizedPrompt,
+      } : undefined,
+      hashtags: context.hashtags || [],
+      keywords: context.keywords || [],
+      performanceMetrics: context.performanceMetrics ? {
+        avgViews: context.performanceMetrics.avgViews,
+        avgEngagement: context.performanceMetrics.avgEngagement,
+        viralBenchmark: context.performanceMetrics.viralBenchmark,
+      } : undefined,
+      aiInsights: context.aiInsights,
+    };
 
-## Task
-Analyze the provided image(s) and create 3 unique creative directions for a Veo3 AI-generated video that incorporates these images with the user's campaign context.
+    // Prepare images for agent
+    const agentImages = validImageData.map((img) => ({
+      base64: img.base64,
+      mimeType: img.mimeType,
+    }));
 
-## Campaign Context
-${contextStr}
+    // Create agent context
+    const agentContext: AgentContext = {
+      workflow: {
+        artistName: context.artistName || context.campaignName,
+        platform: 'tiktok',
+        language: 'ko',
+        sessionId: `personalize-analyze-${Date.now()}`,
+      },
+    };
 
-## Image Analysis Instructions
-For each provided image:
-1. Identify key visual elements (subjects, objects, colors, composition)
-2. Detect the mood and atmosphere
-3. Note any brand elements, products, or merchandise
-4. Consider how it could be featured in a video (prominently, as background, color extraction, style reference)
+    // Call agent
+    const agentStart = Date.now();
+    console.log(`[API] 🌐 Sending to Veo3PersonalizeAgent (${agentImages.length} images)...`);
+    const agent = getVeo3PersonalizeAgent();
+    const result = await agent.analyzeImages(agentImages, agentInput, agentContext);
+    console.log(`[API] ✅ Agent responded in ${Date.now() - agentStart}ms`);
 
-## Output Requirements
-Return ONLY valid JSON in this exact format:
-
-{
-  "imageAnalysis": {
-    "summary": "Brief overall summary of what the images contain",
-    "detectedElements": ["element1", "element2", "element3"],
-    "colorPalette": ["#hex1", "#hex2", "#hex3"],
-    "mood": "overall mood description"
-  },
-  "variations": [
-    {
-      "title": "Short catchy title (max 40 chars)",
-      "concept": "2-3 sentence description of the creative direction",
-      "imageUsage": "How the images are incorporated (featured prominently, background element, style reference, color palette extraction)",
-      "mood": "Mood/tone description",
-      "cameraWork": "Suggested camera movements and techniques",
-      "suggestedPromptPreview": "A 50-word preview of what the final Veo3 prompt would look like",
-      "confidence": "high" or "medium" or "low"
-    }
-  ]
-}
-
-## Guidelines
-1. Each variation should be DISTINCTLY different in approach
-2. First variation: Feature the images/products prominently in the scene
-3. Second variation: Use images as style/aesthetic inspiration (cinematic storytelling)
-4. Third variation: Abstract/artistic interpretation using colors and mood from images
-5. Consider viral TikTok trends and engagement patterns
-6. Ensure concepts are feasible for AI video generation
-7. Return ONLY the JSON object, no other text or markdown`;
-
-    // Build contents array with images
-    const contents: { inlineData?: { mimeType: string; data: string }; text?: string }[] = [];
-
-    // Add images
-    for (const imgData of validImageData) {
-      contents.push({
-        inlineData: {
-          mimeType: imgData.mimeType,
-          data: imgData.base64,
-        },
-      });
+    // Handle agent result
+    if (!result.success || !result.data) {
+      console.error(`[API] ❌ Agent error: ${result.error}`);
+      throw new Error(result.error || 'Failed to analyze images');
     }
 
-    // Add the prompt
-    contents.push({ text: analysisPrompt });
+    const parsed = result.data;
 
-    // Call Gemini SDK
-    const geminiStart = Date.now();
-    console.log(`[API] 🌐 Sending to Gemini (${validImageData.length} images, ${contents.length} parts)...`);
-    const responseText = await callGemini(contents);
-    console.log(`[API] ✅ Gemini responded in ${Date.now() - geminiStart}ms`);
-    console.log(`[API]    Response length: ${responseText.length} chars`);
+    // Add IDs to variations
+    const variationsWithIds = parsed.variations.map((v) => ({
+      ...v,
+      id: uuidv4(),
+    }));
 
-    // Parse response
-    console.log(`[API] 🔄 Parsing response...`);
-    const parsed = parseAnalysisResponse(responseText);
     console.log(`[API] ✅ Analysis complete!`);
-    console.log(`[API]    Variations: ${parsed.variations.length}`);
+    console.log(`[API]    Variations: ${variationsWithIds.length}`);
     console.log(`[API]    Image analysis summary: ${parsed.imageAnalysis.summary?.slice(0, 50)}...`);
     console.log(`[API] ⏱️ Total time: ${Date.now() - startTime}ms`);
     console.log("=".repeat(60));
 
     return NextResponse.json({
       success: true,
-      variations: parsed.variations,
+      variations: variationsWithIds,
       imageAnalysis: parsed.imageAnalysis,
-      analysisPromptUsed: analysisPrompt,  // Return the prompt for stashing
+      analysisPromptUsed: '[Agent-based analysis]',  // Agent uses internal prompts
     } as AnalyzeResponse);
   } catch (error) {
     console.error("[PERSONALIZE] Analysis error:", error);
@@ -634,95 +558,84 @@ async function handleFinalize(request: FinalizeRequest): Promise<NextResponse> {
   try {
     console.log(`[PERSONALIZE] FINALIZE START - variation: ${selectedVariation.title}`);
 
-    // Build context string
-    const contextStr = buildContextString(context);
-
     // Build image descriptions for the prompt
     const imageDescriptions = images
       .map((img, i) => `Image ${i + 1}${img.name ? ` (${img.name})` : ""}: ${img.type || "reference"} image`)
       .join("\n");
 
-    // Build the finalization prompt
-    const finalizePrompt = `You are a Veo3 AI video generation prompt expert.
+    // Prepare input for agent
+    const agentInput: AnalyzeImagesInput = {
+      campaignName: context.campaignName,
+      artistName: context.artistName,
+      selectedIdea: context.selectedIdea ? {
+        title: context.selectedIdea.title,
+        description: context.selectedIdea.description,
+        hook: context.selectedIdea.hook,
+        optimizedPrompt: context.selectedIdea.optimizedPrompt,
+      } : undefined,
+      hashtags: context.hashtags || [],
+      keywords: context.keywords || [],
+      performanceMetrics: context.performanceMetrics ? {
+        avgViews: context.performanceMetrics.avgViews,
+        avgEngagement: context.performanceMetrics.avgEngagement,
+        viralBenchmark: context.performanceMetrics.viralBenchmark,
+      } : undefined,
+      aiInsights: context.aiInsights,
+    };
 
-## Task
-Create the FINAL optimized prompt for Veo3 video generation based on the selected creative direction.
-
-## Selected Creative Direction
-Title: ${selectedVariation.title}
-Concept: ${selectedVariation.concept}
-Image Usage: ${selectedVariation.imageUsage}
-Mood: ${selectedVariation.mood}
-Camera Work: ${selectedVariation.cameraWork}
-${userFeedback ? `\nUser's Additional Notes: ${userFeedback}` : ""}
-
-## Campaign Context
-${contextStr}
-
-## Reference Images
-${imageDescriptions}
-
-## Output Requirements
-Return ONLY valid JSON in this exact format:
-
-{
-  "finalPrompt": "The complete, detailed Veo3 video generation prompt (300-500 words). Include: scene description, lighting, camera movements, transitions, mood, pacing, and how the reference images/products are incorporated. Be extremely specific and cinematic.",
-  "metadata": {
-    "duration": "5s" or "8s" (recommended video length),
-    "aspectRatio": "9:16" (vertical/TikTok) or "16:9" (horizontal) or "1:1" (square),
-    "style": "Primary visual style (e.g., cinematic, documentary, artistic, commercial)",
-    "recommendedSettings": {
-      "fps": 24 or 30 or 60,
-      "resolution": "1080p" or "4K"
-    }
-  }
-}
-
-## Veo3 Prompt Guidelines
-1. Start with the main subject/action
-2. Describe camera movement (dolly, pan, tilt, zoom, tracking shot)
-3. Specify lighting (golden hour, studio, neon, natural)
-4. Include atmosphere/mood descriptors
-5. Detail any products/merchandise appearance
-6. Add temporal progression (what happens from start to end)
-7. Include style references if applicable
-8. End with quality modifiers (cinematic, professional, high-quality)
-
-Return ONLY the JSON object, no markdown or extra text.`;
-
-    // Prepare images for context (if vision helps with finalization)
-    const contents: { inlineData?: { mimeType: string; data: string }; text?: string }[] = [];
+    // Create agent context
+    const agentContext: AgentContext = {
+      workflow: {
+        artistName: context.artistName || context.campaignName,
+        platform: 'tiktok',
+        language: 'ko',
+        sessionId: `personalize-finalize-${Date.now()}`,
+      },
+    };
 
     // Optionally include first image for visual reference
+    let imageData: { base64: string; mimeType: string } | undefined;
     if (images.length > 0) {
       const firstImg = images[0];
-      let imageData: { base64: string; mimeType: string } | null = null;
-
-      // Use provided base64 if available, otherwise fetch
       if (firstImg.base64 && firstImg.mimeType) {
         imageData = { base64: firstImg.base64, mimeType: firstImg.mimeType };
       } else {
-        imageData = await fetchImageAsBase64(firstImg.url);
-      }
-
-      if (imageData) {
-        contents.push({
-          inlineData: {
-            mimeType: imageData.mimeType,
-            data: imageData.base64,
-          },
-        });
+        const fetched = await fetchImageAsBase64(firstImg.url);
+        if (fetched) {
+          imageData = fetched;
+        }
       }
     }
 
-    contents.push({ text: finalizePrompt });
+    // Call agent
+    console.log(`[PERSONALIZE] 🤖 Calling Veo3PersonalizeAgent for finalization...`);
+    const agent = getVeo3PersonalizeAgent();
+    const result = await agent.finalizePrompt(
+      {
+        selectedVariation: {
+          title: selectedVariation.title,
+          concept: selectedVariation.concept,
+          imageUsage: selectedVariation.imageUsage,
+          mood: selectedVariation.mood,
+          cameraWork: selectedVariation.cameraWork,
+          suggestedPromptPreview: selectedVariation.suggestedPromptPreview,
+          confidence: selectedVariation.confidence,
+        },
+        context: agentInput,
+        imageDescriptions,
+        userFeedback,
+      },
+      agentContext,
+      imageData
+    );
 
-    // Call Gemini SDK
-    const responseText = await callGemini(contents);
-    console.log("[PERSONALIZE] Gemini finalize raw response:", responseText.slice(0, 500));
+    // Handle agent result
+    if (!result.success || !result.data) {
+      console.error(`[PERSONALIZE] ❌ Agent error: ${result.error}`);
+      throw new Error(result.error || 'Failed to finalize prompt');
+    }
 
-    // Parse response
-    const parsed = parseFinalizeResponse(responseText);
+    const parsed = result.data;
     console.log("[PERSONALIZE] Parsed finalPrompt:", parsed.finalPrompt?.slice(0, 100));
     console.log("[PERSONALIZE] Parsed metadata:", JSON.stringify(parsed.metadata));
 
@@ -732,11 +645,14 @@ Return ONLY the JSON object, no markdown or extra text.`;
       console.log("[PERSONALIZE] Celebrity names detected and replaced:", sanitized.replacements);
     }
 
+    // Build a summary of what was sent to the agent for logging/stashing
+    const promptSummary = `[Agent: Veo3PersonalizeAgent.finalizePrompt] Variation: ${selectedVariation.title}, Mood: ${selectedVariation.mood}, Images: ${imageDescriptions?.length || 0}`;
+
     return NextResponse.json({
       success: true,
       veo3Prompt: sanitized.sanitizedText,       // The final Veo3 video generation prompt (sanitized)
       metadata: parsed.metadata,
-      finalizePromptUsed: finalizePrompt,   // Return the prompt for stashing
+      finalizePromptUsed: promptSummary,   // Return the prompt summary for stashing
     } as FinalizeResponse);
   } catch (error) {
     console.error("[PERSONALIZE] Finalization error:", error);
@@ -933,7 +849,7 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
     // ──────────────────────────────────────────────────────────────────────
     // Step 2b: Generate optimized IMAGE PROMPT from the personalized veo3Prompt
     // The veo3Prompt was already optimized via analyze + finalize flow
-    // Now we convert it into an image-specific prompt
+    // Now we convert it into an image-specific prompt using I2V Specialist Agent
     // ──────────────────────────────────────────────────────────────────────
     console.log(`[GENERATE]    Step 2b: Creating image prompt from personalized veo3Prompt...`);
 
@@ -944,16 +860,26 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
       imageDescriptionForGen = `Product/asset reference: ${imageNames}`;
     }
 
-    // Use the PERSONALIZED veo3Prompt to generate an image-specific prompt
-    const imagePromptResult = await generateImagePromptForI2V({
-      videoPrompt: veo3Prompt,  // Already personalized from analyze+finalize
-      imageDescription: imageDescriptionForGen,
-      style: style,
-      aspectRatio: aspectRatio,
-    });
+    // Create I2V Specialist Agent and context
+    const i2vAgent = createI2VSpecialistAgent();
+    const agentContext: AgentContext = {
+      workflow: {
+        artistName: context?.artistName || "Brand",
+        platform: "tiktok",
+        language: "ko",
+        sessionId: `generate-${Date.now()}`,
+      },
+    };
 
-    const imagePrompt = imagePromptResult.success && imagePromptResult.imagePrompt
-      ? imagePromptResult.imagePrompt
+    // Use I2V Specialist Agent to generate an image-specific prompt
+    const imagePromptResult = await i2vAgent.generateImagePrompt(
+      `${veo3Prompt}. ${imageDescriptionForGen}`,  // Already personalized from analyze+finalize
+      agentContext,
+      { style: style || "cinematic" }
+    );
+
+    const imagePrompt = imagePromptResult.success && imagePromptResult.data?.prompt
+      ? imagePromptResult.data.prompt
       : veo3Prompt;
 
     console.log(`[GENERATE]      ✓ Image prompt created: ${imagePrompt.slice(0, 100)}...`);
@@ -1030,6 +956,7 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
 
     // ========================================================================
     // STEP 2b: Generate Video Prompt with Animation Instructions
+    // Using I2V Specialist Agent for video prompt optimization
     // ========================================================================
     console.log("[GENERATE] 🎬 Step 2b: Generating video prompt with animation...");
 
@@ -1037,18 +964,21 @@ async function handleGenerate(request: GenerateRequest): Promise<NextResponse> {
     const videoImageDescription = imageDescription ||
       (hasUserImages ? `Reference: ${images.map(img => img.name || "image").join(", ")}` : "");
 
-    const videoPromptResult = await generateVideoPromptForI2V(
+    // Use I2V Specialist Agent to generate video prompt with animation
+    const videoPromptResult = await i2vAgent.generateVideoPrompt(
       {
-        videoPrompt: veo3Prompt,
-        imageDescription: videoImageDescription,
-        style: style,
-        aspectRatio: aspectRatio,
+        visual_style: style || "cinematic",
+        color_palette: [],
+        mood: "engaging, dynamic",
+        main_subject: videoImageDescription || "main subject",
       },
-      generatedImageBase64 ? "Image ready for animation" : undefined
+      `${veo3Prompt}. ${videoImageDescription}`,
+      agentContext,
+      { duration: durationSeconds, style: style }
     );
 
-    const finalVideoPrompt = videoPromptResult.success && videoPromptResult.videoPrompt
-      ? videoPromptResult.videoPrompt
+    const finalVideoPrompt = videoPromptResult.success && videoPromptResult.data?.prompt
+      ? videoPromptResult.data.prompt
       : veo3Prompt;
 
     console.log(`[GENERATE]    Video prompt: ${finalVideoPrompt.slice(0, 80)}...`);

@@ -1,10 +1,40 @@
+/**
+ * Analyze Generate Ideas API
+ * ==========================
+ * Uses CreativeDirectorAgent for trend-following content idea generation
+ */
+
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { v4 as uuidv4 } from "uuid";
+import { createCreativeDirectorAgent } from "@/lib/agents/creators/creative-director";
+import { AgentContext } from "@/lib/agents/types";
 
 // ============================================================================
 // Types
 // ============================================================================
+
+// Video content for trend analysis
+interface InspirationVideo {
+  id: string;
+  description?: string;
+  hashtags?: string[];
+  stats?: {
+    playCount?: number;
+    likeCount?: number;
+    commentCount?: number;
+    shareCount?: number;
+  };
+  engagementRate?: number;
+}
+
+// AI insights from discover phase
+interface TrendInsights {
+  summary?: string;
+  contentStrategy?: string[];
+  videoIdeas?: string[];
+  targetAudience?: string[];
+  bestPostingTimes?: string[];
+}
 
 interface GenerateIdeasRequest {
   user_idea: string;
@@ -12,12 +42,17 @@ interface GenerateIdeasRequest {
   hashtags: string[];
   target_audience: string[];
   content_goals: string[];
-  inspiration_count: number;
+  // Rich trend data (instead of just a count)
+  inspiration_videos?: InspirationVideo[];
+  trend_insights?: TrendInsights;
   performance_metrics?: {
     avgViews: number;
     avgEngagement: number;
     viralBenchmark: number;
   } | null;
+  // Artist/Brand context
+  artistName?: string;
+  language?: "ko" | "en";
 }
 
 interface ContentIdea {
@@ -43,14 +78,6 @@ interface GenerateIdeasResponse {
 }
 
 // ============================================================================
-// Gemini AI Configuration
-// ============================================================================
-
-const ai = new GoogleGenAI({
-  apiKey: process.env.GOOGLE_AI_API_KEY,
-});
-
-// ============================================================================
 // POST Handler
 // ============================================================================
 
@@ -64,53 +91,86 @@ export async function POST(request: NextRequest) {
       hashtags,
       target_audience,
       content_goals,
-      inspiration_count,
+      inspiration_videos,
+      trend_insights,
       performance_metrics,
+      artistName = "Brand",
+      language = "ko",
     } = body;
 
-    // Build the prompt for Gemini
-    const prompt = buildPrompt({
-      user_idea,
+    // Build strategy from trend data
+    const strategy = buildStrategyFromTrends({
       keywords,
       hashtags,
-      target_audience,
-      content_goals,
-      inspiration_count,
-      performance_metrics,
+      inspiration_videos,
+      trend_insights,
     });
 
-    // Call Gemini API
-    const tools = [{ googleSearch: {} }];
-    const config = {
-      tools,
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
+    // Create agent and context
+    const creativeDirector = createCreativeDirectorAgent();
+
+    const agentContext: AgentContext = {
+      workflow: {
+        artistName,
+        platform: "tiktok",
+        language,
+        sessionId: `analyze-ideas-${Date.now()}`,
+      },
+      discover: {
+        contentStrategy: strategy,
+        inspirationVideos: inspiration_videos,
+        trendInsights: trend_insights,
       },
     };
 
-    const response = await ai.models.generateContentStream({
-      model: "gemini-3-pro-preview",
-      config,
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: prompt }],
-        },
-      ],
-    });
+    // Execute agent
+    const agentResult = await creativeDirector.execute(
+      {
+        userIdea: user_idea || undefined,
+        strategy: strategy,
+        audience: target_audience.length > 0 ? target_audience.join(", ") : undefined,
+        goals: content_goals.length > 0 ? content_goals : undefined,
+        benchmarks: performance_metrics ? {
+          avgViews: performance_metrics.avgViews,
+          avgEngagement: performance_metrics.avgEngagement,
+          topPerformers: extractTopPerformers(inspiration_videos),
+        } : undefined,
+      },
+      agentContext
+    );
 
-    // Collect all chunks from the stream
-    let responseText = "";
-    for await (const chunk of response) {
-      responseText += chunk.text || "";
+    // Check if agent execution was successful
+    if (!agentResult.success || !agentResult.data) {
+      console.error("Agent execution failed:", agentResult.error);
+      return NextResponse.json(
+        {
+          success: false,
+          error: agentResult.error || "Failed to generate ideas",
+        },
+        { status: 500 }
+      );
     }
-    const parsedResponse = parseGeminiResponse(responseText);
+
+    const output = agentResult.data;
+
+    // Transform agent output to API response format
+    const ideas: ContentIdea[] = output.ideas.map((idea) => ({
+      id: uuidv4(),
+      type: "ai_video" as const,
+      title: idea.title,
+      hook: idea.hook,
+      description: idea.description,
+      estimatedEngagement: idea.estimatedEngagement,
+      optimizedPrompt: idea.optimizedPrompt,
+      suggestedMusic: idea.suggestedMusic,
+      scriptOutline: idea.scriptOutline,
+    }));
 
     return NextResponse.json({
       success: true,
-      ideas: parsedResponse.ideas,
-      optimized_hashtags: parsedResponse.optimizedHashtags,
-      content_strategy: parsedResponse.contentStrategy,
+      ideas,
+      optimized_hashtags: output.optimizedHashtags,
+      content_strategy: output.contentStrategy,
     } as GenerateIdeasResponse);
   } catch (error) {
     console.error("Generate ideas error:", error);
@@ -128,165 +188,114 @@ export async function POST(request: NextRequest) {
 // Helper Functions
 // ============================================================================
 
-function buildPrompt(params: GenerateIdeasRequest): string {
-  const {
-    user_idea,
-    keywords,
-    hashtags,
-    target_audience,
-    content_goals,
-    inspiration_count,
-    performance_metrics,
-  } = params;
-
-  let prompt = `You are a creative content strategist specializing in viral TikTok and short-form video content. Generate 3-4 unique content ideas based on the following inputs.
-
-## User's Concept
-${user_idea || "No specific idea provided - suggest trending content ideas"}
-
-## Trend Context
-- Keywords: ${keywords.length > 0 ? keywords.join(", ") : "None specified"}
-- Selected Hashtags: ${hashtags.length > 0 ? hashtags.map((h) => h.startsWith("#") ? h : `#${h}`).join(" ") : "None specified"}
-- Saved Inspiration Videos: ${inspiration_count} videos saved for reference
-
-## Target Audience
-${target_audience.length > 0 ? target_audience.join(", ") : "General audience"}
-
-## Content Goals
-${content_goals.length > 0 ? content_goals.join(", ") : "Engagement and awareness"}
-`;
-
-  if (performance_metrics) {
-    prompt += `
-## Performance Benchmarks (from trend analysis)
-- Average Views: ${Math.round(performance_metrics.avgViews).toLocaleString()}
-- Average Engagement Rate: ${performance_metrics.avgEngagement.toFixed(2)}%
-- Viral Benchmark: ${Math.round(performance_metrics.viralBenchmark).toLocaleString()}+ views
-`;
-  }
-
-  prompt += `
-## Output Requirements
-Generate your response in the following JSON format (return ONLY valid JSON, no markdown):
-
-{
-  "ideas": [
-    {
-      "type": "ai_video",
-      "title": "Short catchy title (max 50 chars)",
-      "hook": "Opening hook/caption that grabs attention (max 100 chars)",
-      "description": "Brief description of the concept (2-3 sentences)",
-      "estimatedEngagement": "high" or "medium" or "low",
-      "optimizedPrompt": "Detailed VEO AI video generation prompt (cinematic, professional quality, specific visual details, 200+ words)",
-      "suggestedMusic": {
-        "bpm": number (80-140),
-        "genre": "genre name"
-      },
-      "scriptOutline": ["Scene 1 description", "Scene 2 description", ...]
-    }
-  ],
-  "optimizedHashtags": ["hashtag1", "hashtag2", ...],
-  "contentStrategy": "Brief overall strategy recommendation (1-2 sentences)"
-}
-
-Guidelines:
-1. ALL ideas must be "ai_video" type - focus on cinematic, visually stunning video concepts that AI can generate
-2. The optimizedPrompt must be highly detailed and specific for VEO AI video generation (camera movements, lighting, style, mood, etc.)
-3. Include trending elements from the keywords/hashtags
-4. Consider the target audience in tone and style
-5. Optimized hashtags should include a mix of popular and niche tags (without # prefix)
-6. Return ONLY the JSON object, no other text`;
-
-  return prompt;
-}
-
-function parseGeminiResponse(responseText: string): {
-  ideas: ContentIdea[];
-  optimizedHashtags: string[];
-  contentStrategy: string;
+/**
+ * Build strategy object from trend data for the agent
+ */
+function buildStrategyFromTrends(params: {
+  keywords: string[];
+  hashtags: string[];
+  inspiration_videos?: InspirationVideo[];
+  trend_insights?: TrendInsights;
+}): {
+  contentThemes: Array<{ theme: string; priority: number; rationale: string }>;
+  visualGuidelines: {
+    styles: string[];
+    colors: string[];
+    pace: string;
+    effects: string[];
+  };
+  captionGuidelines: {
+    hooks: string[];
+    ctas: string[];
+    hashtags: string[];
+  };
 } {
-  try {
-    // Try to extract JSON from the response
-    let jsonStr = responseText;
+  const { keywords, hashtags, inspiration_videos, trend_insights } = params;
 
-    // Remove markdown code blocks if present
-    const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[1];
-    }
+  // Extract themes from keywords and trend insights
+  const themes: Array<{ theme: string; priority: number; rationale: string }> = [];
 
-    // Try to find JSON object in the text
-    const jsonObjectMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (jsonObjectMatch) {
-      jsonStr = jsonObjectMatch[0];
-    }
+  // Add keyword-based themes
+  keywords.slice(0, 3).forEach((keyword, index) => {
+    themes.push({
+      theme: keyword,
+      priority: 5 - index,
+      rationale: `Trending keyword from TikTok analysis`,
+    });
+  });
 
-    const parsed = JSON.parse(jsonStr);
-
-    // Add IDs to ideas
-    const ideas: ContentIdea[] = (parsed.ideas || []).map((idea: Omit<ContentIdea, "id">) => ({
-      ...idea,
-      id: uuidv4(),
-    }));
-
-    return {
-      ideas,
-      optimizedHashtags: parsed.optimizedHashtags || [],
-      contentStrategy: parsed.contentStrategy || "",
-    };
-  } catch (error) {
-    console.error("Failed to parse Gemini response:", error);
-    console.error("Response text:", responseText);
-
-    // Return fallback ideas if parsing fails
-    return {
-      ideas: [
-        {
-          id: uuidv4(),
-          type: "ai_video",
-          title: "Trending Dance Challenge",
-          hook: "POV: When the beat drops and you can't help but dance",
-          description:
-            "A high-energy dance video capturing trending choreography with dynamic camera movements and vibrant lighting.",
-          estimatedEngagement: "high",
-          optimizedPrompt:
-            "A cinematic TikTok-style video of a young dancer performing trending choreography. The scene features dynamic camera movements, smooth transitions, and professional lighting. Shot in 9:16 vertical format, 60fps, with energetic and youthful atmosphere. The background is modern and clean, with subtle lighting effects that sync with the rhythm.",
-          suggestedMusic: {
-            bpm: 120,
-            genre: "Pop/Dance",
-          },
-          scriptOutline: [
-            "Opening: Quick transition into dance pose",
-            "Main: Choreography sequence with dynamic angles",
-            "Climax: Signature move with slow-motion effect",
-            "Ending: Freeze frame with call-to-action",
-          ],
-        },
-        {
-          id: uuidv4(),
-          type: "ai_video",
-          title: "Cinematic Lifestyle Moment",
-          hook: "This is what living your best life looks like...",
-          description:
-            "A visually stunning cinematic video showcasing aspirational lifestyle moments with dramatic lighting and smooth camera movements.",
-          estimatedEngagement: "high",
-          optimizedPrompt:
-            "Cinematic lifestyle video with golden hour lighting, smooth dolly movements, and bokeh backgrounds. Professional color grading with warm tones. Shot in 9:16 vertical format at 24fps for film-like quality. Slow motion sequences highlighting key moments with dramatic depth of field.",
-          suggestedMusic: {
-            bpm: 100,
-            genre: "Cinematic/Ambient",
-          },
-          scriptOutline: [
-            "Opening: Dramatic establishing shot",
-            "Build-up: Series of lifestyle moments",
-            "Climax: Hero shot with slow motion",
-            "Ending: Inspirational closing frame",
-          ],
-        },
-      ],
-      optimizedHashtags: ["fyp", "viral", "trending", "foryou"],
-      contentStrategy:
-        "Focus on creating visually stunning AI-generated video content that captures trending moments with cinematic quality.",
-    };
+  // Add themes from trend insights
+  if (trend_insights?.videoIdeas) {
+    trend_insights.videoIdeas.slice(0, 2).forEach((idea, index) => {
+      themes.push({
+        theme: idea,
+        priority: 3 - index,
+        rationale: "AI-suggested trend-based idea",
+      });
+    });
   }
+
+  // Extract hooks from inspiration videos
+  const hooks: string[] = [];
+  if (inspiration_videos) {
+    inspiration_videos.slice(0, 5).forEach((video) => {
+      if (video.description) {
+        // Extract first sentence as potential hook
+        const firstSentence = video.description.split(/[.!?\n]/)[0]?.trim();
+        if (firstSentence && firstSentence.length < 100) {
+          hooks.push(firstSentence);
+        }
+      }
+    });
+  }
+
+  // Default hooks if none extracted
+  if (hooks.length === 0) {
+    hooks.push(
+      "POV: ...",
+      "Wait for it...",
+      "이거 실화야?",
+      "Nobody expected this"
+    );
+  }
+
+  return {
+    contentThemes: themes.length > 0 ? themes : [
+      { theme: "Trending content", priority: 5, rationale: "General TikTok trends" }
+    ],
+    visualGuidelines: {
+      styles: ["TikTok native", "vertical 9:16", "fast-paced"],
+      colors: ["vibrant", "high contrast"],
+      pace: "fast",
+      effects: ["zoom", "transitions", "text overlays"],
+    },
+    captionGuidelines: {
+      hooks: hooks.slice(0, 5),
+      ctas: [
+        "Follow for more!",
+        "팔로우하고 더 보기!",
+        "Comment below!",
+        "Save this!",
+      ],
+      hashtags: hashtags.slice(0, 10),
+    },
+  };
+}
+
+/**
+ * Extract top performer descriptions from inspiration videos
+ */
+function extractTopPerformers(videos?: InspirationVideo[]): string[] {
+  if (!videos || videos.length === 0) return [];
+
+  return videos
+    .filter((v) => v.description && v.stats?.playCount)
+    .sort((a, b) => (b.stats?.playCount || 0) - (a.stats?.playCount || 0))
+    .slice(0, 3)
+    .map((v) => {
+      const views = v.stats?.playCount
+        ? `${(v.stats.playCount / 1000000).toFixed(1)}M views`
+        : "";
+      return `${v.description?.slice(0, 100)}... (${views})`;
+    });
 }

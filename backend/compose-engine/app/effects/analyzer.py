@@ -1,4 +1,7 @@
-"""Prompt Analyzer - Analyzes prompts to extract mood, genre, and keywords using Gemini."""
+"""Prompt Analyzer - Analyzes prompts to extract mood, genre, and keywords using Gemini.
+
+Now uses database-backed prompts via PromptLoader for easy management.
+"""
 
 import os
 import json
@@ -10,8 +13,34 @@ from functools import lru_cache
 import google.generativeai as genai
 
 from .registry import get_registry, Intensity
+from ..services.prompt_loader import get_prompt_loader, PromptLoader
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SuggestedColors:
+    """AI-suggested colors for overlay effects."""
+
+    primary: str  # Hex color (e.g., "#FF6B35")
+    secondary: str  # Hex color
+    accent: str  # Hex color
+
+    def to_dict(self) -> Dict[str, str]:
+        return {
+            "primary": self.primary,
+            "secondary": self.secondary,
+            "accent": self.accent,
+        }
+
+    def to_rgb(self, color_key: str = "primary") -> tuple:
+        """Convert hex color to normalized RGB tuple (0.0-1.0)."""
+        hex_color = getattr(self, color_key, self.primary)
+        hex_color = hex_color.lstrip("#")
+        r = int(hex_color[0:2], 16) / 255.0
+        g = int(hex_color[2:4], 16) / 255.0
+        b = int(hex_color[4:6], 16) / 255.0
+        return (r, g, b)
 
 
 @dataclass
@@ -24,6 +53,7 @@ class PromptAnalysis:
     intensity: Intensity
     reasoning: str
     language: str  # detected language
+    suggested_colors: Optional[SuggestedColors] = None  # AI-suggested colors for overlays
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -33,11 +63,15 @@ class PromptAnalysis:
             "intensity": self.intensity,
             "reasoning": self.reasoning,
             "language": self.language,
+            "suggested_colors": self.suggested_colors.to_dict() if self.suggested_colors else None,
         }
 
 
 class PromptAnalyzer:
-    """Analyzes user prompts to extract video characteristics for effect selection."""
+    """Analyzes user prompts to extract video characteristics for effect selection.
+
+    Now uses database-backed prompts via PromptLoader.
+    """
 
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
@@ -53,15 +87,41 @@ class PromptAnalyzer:
         self._available_moods = registry.moods
         self._available_genres = registry.genres
 
+        # Initialize prompt loader
+        self.prompt_loader = get_prompt_loader()
+        self._prompt_config: Optional[Dict[str, Any]] = None
+
+    def _get_prompt_config(self) -> Dict[str, Any]:
+        """Get prompt configuration from database (with caching)."""
+        if self._prompt_config is None:
+            try:
+                self._prompt_config = self.prompt_loader.get_prompt_sync('compose-effect-analyzer')
+            except Exception as e:
+                logger.warning(f"Failed to load prompt from database: {e}")
+                self._prompt_config = {}
+        return self._prompt_config
+
     def _build_system_prompt(self) -> str:
-        """Build the system prompt for analysis."""
-        return f"""You are a video production expert who analyzes user prompts to determine the best video style.
+        """Build the system prompt for analysis.
+
+        Loads from database if available, falls back to default.
+        """
+        # Try to get system prompt from database
+        prompt_config = self._get_prompt_config()
+        db_system_prompt = prompt_config.get('system_prompt', '')
+
+        # Use database prompt if available, otherwise use default
+        base_prompt = db_system_prompt if db_system_prompt else \
+            "You are a video production expert who analyzes user prompts to determine the best video style."
+
+        return f"""{base_prompt}
 
 Your task is to analyze the given prompt and extract:
 1. **Moods**: The emotional atmosphere of the video (choose from: {', '.join(self._available_moods)})
 2. **Genres**: The video style category (choose from: {', '.join(self._available_genres)})
 3. **Keywords**: Key descriptive words from the prompt that help identify the style
 4. **Intensity**: How dynamic/energetic the video should be (low, medium, high)
+5. **Suggested Colors**: Three harmonious colors that match the mood and style of the video
 
 Rules:
 - Select 2-4 moods that best match the prompt
@@ -69,6 +129,11 @@ Rules:
 - Extract 5-10 keywords from the prompt that describe the desired style
 - Determine intensity based on words like "빠른/fast", "신나는/energetic" = high, "차분한/calm", "부드러운/soft" = low
 - Provide brief reasoning for your choices
+- For suggested_colors, choose colors that:
+  - primary: Main accent color for overlays (based on mood - warm orange for energetic, cool blue for calm, etc.)
+  - secondary: Complementary color for gradients and transitions
+  - accent: Highlight color for sparkles, light leaks, and effects
+  - Use hex format like "#FF6B35"
 
 Respond ONLY with valid JSON in this exact format:
 {{
@@ -77,7 +142,12 @@ Respond ONLY with valid JSON in this exact format:
   "keywords": ["keyword1", "keyword2", ...],
   "intensity": "low|medium|high",
   "reasoning": "Brief explanation of why these were chosen",
-  "language": "ko|en"
+  "language": "ko|en",
+  "suggested_colors": {{
+    "primary": "#HEXCODE",
+    "secondary": "#HEXCODE",
+    "accent": "#HEXCODE"
+  }}
 }}"""
 
     async def analyze(self, prompt: str, bpm: Optional[int] = None) -> PromptAnalysis:
@@ -141,6 +211,20 @@ Respond ONLY with valid JSON in this exact format:
             if intensity not in ["low", "medium", "high"]:
                 intensity = "medium"
 
+            # Parse suggested colors
+            suggested_colors = None
+            colors_data = result.get("suggested_colors")
+            if colors_data and isinstance(colors_data, dict):
+                try:
+                    suggested_colors = SuggestedColors(
+                        primary=colors_data.get("primary", "#FF6B35"),
+                        secondary=colors_data.get("secondary", "#F7C59F"),
+                        accent=colors_data.get("accent", "#EFEFEF"),
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to parse suggested_colors: {e}")
+                    suggested_colors = self._default_colors_for_moods(valid_moods)
+
             return PromptAnalysis(
                 moods=valid_moods,
                 genres=valid_genres,
@@ -148,6 +232,7 @@ Respond ONLY with valid JSON in this exact format:
                 intensity=intensity,
                 reasoning=result.get("reasoning", ""),
                 language=result.get("language", "en"),
+                suggested_colors=suggested_colors,
             )
 
         except json.JSONDecodeError as e:
@@ -178,6 +263,35 @@ Respond ONLY with valid JSON in this exact format:
             asyncio.set_event_loop(loop)
 
         return loop.run_until_complete(self.analyze(prompt, bpm))
+
+    def _default_colors_for_moods(self, moods: List[str]) -> SuggestedColors:
+        """Generate default colors based on mood keywords."""
+        # Mood-to-color mapping
+        mood_colors = {
+            "energetic": ("#FF6B35", "#F7C59F", "#FFE66D"),  # Orange/warm
+            "calm": ("#5B8DEE", "#A8D0E6", "#E8F4F8"),  # Blue/cool
+            "dramatic": ("#8B0000", "#2C003E", "#FFD700"),  # Deep red/purple/gold
+            "playful": ("#FF69B4", "#87CEEB", "#FFD700"),  # Pink/sky/gold
+            "elegant": ("#D4AF37", "#2C2C2C", "#F5F5DC"),  # Gold/black/cream
+            "romantic": ("#FF6B6B", "#FFC0CB", "#FFE4E1"),  # Coral/pink/blush
+            "dark": ("#1A1A2E", "#16213E", "#4A4E69"),  # Dark blues
+            "bright": ("#FFD93D", "#6BCB77", "#4D96FF"),  # Yellow/green/blue
+            "mysterious": ("#6B5B95", "#483D8B", "#9370DB"),  # Purples
+            "modern": ("#00D9FF", "#7B68EE", "#FF6B6B"),  # Cyan/purple/coral
+        }
+
+        # Find first matching mood
+        for mood in moods:
+            if mood in mood_colors:
+                primary, secondary, accent = mood_colors[mood]
+                return SuggestedColors(primary=primary, secondary=secondary, accent=accent)
+
+        # Default modern colors
+        return SuggestedColors(
+            primary="#FF6B35",
+            secondary="#F7C59F",
+            accent="#EFEFEF"
+        )
 
     def _fallback_analysis(self, prompt: str) -> PromptAnalysis:
         """
@@ -247,13 +361,18 @@ Respond ONLY with valid JSON in this exact format:
         words = prompt.replace(",", " ").replace(".", " ").split()
         keywords = [w for w in words if len(w) > 1 and w.lower() not in common_words][:10]
 
+        # Generate colors based on detected moods
+        final_moods = moods[:4] if moods else ["modern"]
+        suggested_colors = self._default_colors_for_moods(final_moods)
+
         return PromptAnalysis(
-            moods=moods[:4],
+            moods=final_moods,
             genres=genres[:3],
             keywords=keywords,
             intensity=intensity,
             reasoning="Fallback analysis using keyword matching",
             language="ko" if any(ord(c) >= 0xAC00 and ord(c) <= 0xD7A3 for c in prompt) else "en",
+            suggested_colors=suggested_colors,
         )
 
 

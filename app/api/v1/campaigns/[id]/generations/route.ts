@@ -9,7 +9,8 @@ import { analyzeAudio } from "@/lib/audio-analyzer";
 import { composeVideoWithAudioModal, type AudioComposeRequest } from "@/lib/modal/client";
 import { generateS3Key } from "@/lib/storage";
 import { generateImage, convertAspectRatioForImagen } from "@/lib/imagen";
-import { generateImagePromptForI2V, generateVideoPromptForI2V } from "@/lib/gemini-prompt";
+import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
+import type { AgentContext } from "@/lib/agents/types";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -68,6 +69,17 @@ async function startVideoGeneration(
       let generatedImageBase64: string | undefined;
       let geminiVideoPrompt: string | undefined;  // Will hold VEO-optimized prompt with animation instructions
 
+      // Create I2V Specialist Agent for prompt generation
+      const i2vAgent = createI2VSpecialistAgent();
+      const agentContext: AgentContext = {
+        workflow: {
+          artistName: "Brand",
+          platform: "tiktok",
+          language: "ko",
+          sessionId: `generation-${generationId}`,
+        },
+      };
+
       console.log(`[Generation ${generationId}] ═══════════════════════════════════════════════════════`);
       console.log(`[Generation ${generationId}] MANDATORY I2V MODE: Starting image generation step...`);
 
@@ -103,20 +115,22 @@ async function startVideoGeneration(
           data: { progress: 25 },
         });
 
-        // Generate video prompt with animation instructions
+        // Generate video prompt with animation instructions using I2V Specialist Agent
         console.log(`[Generation ${generationId}] Generating video prompt with animation instructions...`);
-        const videoPromptResult = await generateVideoPromptForI2V(
+        const videoPromptResult = await i2vAgent.generateVideoPrompt(
           {
-            videoPrompt: params.prompt,
-            imageDescription: params.imageDescription,
-            style: params.style,
-            aspectRatio: params.aspectRatio,
+            visual_style: params.style || "cinematic",
+            color_palette: [],
+            mood: "dynamic",
+            main_subject: params.imageDescription,
           },
-          params.imageDescription  // Use image description as context
+          `${params.prompt}. ${params.imageDescription}`,
+          agentContext,
+          { duration: params.durationSeconds || 8, style: params.style }
         );
 
-        if (videoPromptResult.success && videoPromptResult.videoPrompt) {
-          geminiVideoPrompt = videoPromptResult.videoPrompt;
+        if (videoPromptResult.success && videoPromptResult.data?.prompt) {
+          geminiVideoPrompt = videoPromptResult.data.prompt;
           console.log(`[Generation ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
         } else {
           console.warn(`[Generation ${generationId}] Gemini video prompt generation failed: ${videoPromptResult.error}`);
@@ -131,16 +145,15 @@ async function startVideoGeneration(
         // No preview image - MUST generate new image with Gemini 3 Pro + user's reference
         console.log(`[Generation ${generationId}] No preview image - generating with Gemini 3 Pro...`);
 
-        // Step 2a: Use Gemini to generate optimized image prompt
-        console.log(`[Generation ${generationId}] Step 2a: Generating image prompt with Gemini...`);
-        const imagePromptResult = await generateImagePromptForI2V({
-          videoPrompt: params.prompt,
-          imageDescription: params.imageDescription,
-          style: params.style,
-          aspectRatio: params.aspectRatio,
-        });
+        // Step 2a: Use I2V Specialist Agent to generate optimized image prompt
+        console.log(`[Generation ${generationId}] Step 2a: Generating image prompt with I2V Agent...`);
+        const imagePromptResult = await i2vAgent.generateImagePrompt(
+          `${params.prompt}. ${params.imageDescription}`,
+          agentContext,
+          { style: params.style }
+        );
 
-        if (!imagePromptResult.success || !imagePromptResult.imagePrompt) {
+        if (!imagePromptResult.success || !imagePromptResult.data?.prompt) {
           // FAIL - Cannot continue without image in mandatory I2V mode
           const errorMsg = `Image prompt generation failed: ${imagePromptResult.error}`;
           console.error(`[Generation ${generationId}] ${errorMsg}`);
@@ -155,7 +168,7 @@ async function startVideoGeneration(
           return;
         }
 
-        const geminiImagePrompt = imagePromptResult.imagePrompt;
+        const geminiImagePrompt = imagePromptResult.data.prompt;
         console.log(`[Generation ${generationId}] Gemini image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
 
         await prisma.videoGeneration.update({
@@ -203,20 +216,22 @@ async function startVideoGeneration(
           data: { progress: 25 },
         });
 
-        // Step 2c: Use Gemini to generate video prompt WITH animation instructions
+        // Step 2c: Use I2V Specialist Agent to generate video prompt WITH animation instructions
         console.log(`[Generation ${generationId}] Step 2c: Generating video prompt with animation instructions...`);
-        const videoPromptResult = await generateVideoPromptForI2V(
+        const videoPromptResult = await i2vAgent.generateVideoPrompt(
           {
-            videoPrompt: params.prompt,
-            imageDescription: params.imageDescription,
-            style: params.style,
-            aspectRatio: params.aspectRatio,
+            visual_style: params.style || "cinematic",
+            color_palette: [],
+            mood: "dynamic",
+            main_subject: params.imageDescription,
           },
-          geminiImagePrompt  // Pass the image prompt as context
+          `${params.prompt}. ${params.imageDescription}`,
+          agentContext,
+          { duration: params.durationSeconds || 8, style: params.style }
         );
 
-        if (videoPromptResult.success && videoPromptResult.videoPrompt) {
-          geminiVideoPrompt = videoPromptResult.videoPrompt;
+        if (videoPromptResult.success && videoPromptResult.data?.prompt) {
+          geminiVideoPrompt = videoPromptResult.data.prompt;
           console.log(`[Generation ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
         } else {
           console.warn(`[Generation ${generationId}] Gemini video prompt failed: ${videoPromptResult.error}`);
@@ -438,6 +453,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
     if (generationType) {
       where.generationType = generationType;
+      // Ensure AI filter excludes compose videos (which may have wrong default generationType)
+      // Ensure COMPOSE filter only includes compose videos
+      if (generationType === 'AI') {
+        where.id = { not: { startsWith: 'compose-' } };
+      } else if (generationType === 'COMPOSE') {
+        where.id = { startsWith: 'compose-' };
+      }
     }
 
     const total = await prisma.videoGeneration.count({ where });

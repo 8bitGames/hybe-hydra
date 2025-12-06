@@ -14,6 +14,7 @@ import {
   Label,
   AssetList,
   AssetStats,
+  AllAssetsResponse,
   MerchandiseList,
   MerchandiseItem,
 } from "./campaigns-api";
@@ -39,6 +40,8 @@ export const queryKeys = {
   artists: ["artists"] as const,
 
   // Assets
+  allAssets: (params?: { page?: number; type?: string; campaign_id?: string; search?: string }) =>
+    ["assets", "all", params] as const,
   assets: (campaignId: string) => ["assets", campaignId] as const,
   assetsList: (campaignId: string, params?: { page?: number; type?: string }) =>
     ["assets", campaignId, "list", params] as const,
@@ -320,6 +323,24 @@ export function useCreateArtist() {
 }
 
 // Assets
+
+// Get all assets across all campaigns
+export function useAllAssets(
+  params?: { page?: number; page_size?: number; type?: string; campaign_id?: string; search?: string }
+) {
+  return useQuery({
+    queryKey: queryKeys.allAssets(params),
+    queryFn: async () => {
+      const response = await assetsApi.getAll(params);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data!;
+    },
+  });
+}
+
+// Get assets for a specific campaign
 export function useAssets(
   campaignId: string,
   params?: { page?: number; page_size?: number; type?: string }
@@ -616,6 +637,87 @@ export function useComposeVideos(params?: {
     queryFn: async () => {
       return composeApi.getComposedVideos(params);
     },
+    staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+// All Videos - AI videos from all campaigns (for /videos page)
+export interface AllVideoItem {
+  id: string;
+  campaign_id: string;
+  campaign_name: string;
+  artist_name: string;
+  prompt: string;
+  duration_seconds: number;
+  aspect_ratio: string;
+  status: string;
+  output_url: string | null;
+  composed_output_url: string | null;
+  created_at: string;
+  updated_at: string;
+  generation_type: "AI" | "COMPOSE";
+  quality_score: number | null;
+}
+
+export interface AllVideosResponse {
+  items: AllVideoItem[];
+  total: number;
+}
+
+export function useAllAIVideos() {
+  // First get all campaigns
+  const { data: campaignData } = useCampaigns({ page_size: 100 });
+  const campaigns = campaignData?.items || [];
+
+  return useQuery({
+    queryKey: ["all-videos", "ai", campaigns.map(c => c.id)],
+    queryFn: async (): Promise<AllVideosResponse> => {
+      if (campaigns.length === 0) {
+        return { items: [], total: 0 };
+      }
+
+      const results = await Promise.all(
+        campaigns.map(async (campaign) => {
+          try {
+            const response = await videoApi.getAll(campaign.id, {
+              page_size: 100,
+              generation_type: "AI",
+            });
+            if (response.data) {
+              return response.data.items.map((video) => ({
+                id: video.id,
+                campaign_id: video.campaign_id,
+                campaign_name: campaign.name,
+                artist_name: campaign.artist?.name || campaign.artist?.stage_name || "Unknown",
+                prompt: video.prompt,
+                duration_seconds: video.duration_seconds,
+                aspect_ratio: video.aspect_ratio,
+                status: video.status,
+                output_url: video.output_url,
+                composed_output_url: video.composed_output_url || null,
+                created_at: video.created_at,
+                updated_at: video.updated_at,
+                generation_type: "AI" as const,
+                quality_score: video.quality_score,
+              }));
+            }
+            return [];
+          } catch {
+            return [];
+          }
+        })
+      );
+
+      const allVideos = results.flat().sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      return {
+        items: allVideos,
+        total: allVideos.length,
+      };
+    },
+    enabled: campaigns.length > 0,
     staleTime: 60 * 1000, // 1 minute
   });
 }

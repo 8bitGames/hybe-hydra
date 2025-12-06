@@ -2,16 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserFromHeader } from "@/lib/auth";
 import { searchTikTok } from "@/lib/tiktok-rapidapi";
 import { prisma } from "@/lib/db/prisma";
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { batchCacheImagesToS3 } from "@/lib/storage";
 import { batchGetTikTokThumbnails } from "@/lib/tiktok-oembed";
+import { getKeywordInsightsAgent } from "@/lib/agents/analyzers/keyword-insights";
+import type { AgentContext } from "@/lib/agents/types";
 
 const CACHE_DURATION_HOURS = 24;
-
-// Initialize Gemini AI
-const ai = new GoogleGenAI({
-  apiKey: process.env.GOOGLE_AI_API_KEY,
-});
 
 interface VideoStats {
   playCount: number;
@@ -213,7 +209,7 @@ function extractEmojis(descriptions: string[]): { emoji: string; count: number }
     .slice(0, 15);
 }
 
-// Generate AI insights using Gemini
+// Generate AI insights using KeywordInsightsAgent
 async function generateAIInsights(
   keyword: string,
   analysisData: {
@@ -227,75 +223,44 @@ async function generateAIInsights(
   }
 ): Promise<KeywordAnalysis["aiInsights"]> {
   try {
-    const prompt = `You are a TikTok content strategist analyzing trending data for the keyword "${keyword}".
-
-Based on this analysis data:
-- Total Videos Analyzed: ${analysisData.totalVideos}
-- Average Engagement Rate: ${analysisData.avgEngagementRate.toFixed(2)}%
-- Top Hashtags: ${analysisData.topHashtags.slice(0, 10).map(h => `#${h.tag} (${h.count} videos, ${h.avgEngagement.toFixed(1)}% engagement)`).join(", ")}
-- Viral Video Captions: ${analysisData.viralDescriptions.slice(0, 5).map(d => `"${d.slice(0, 100)}"`).join("; ")}
-- Common Phrases: ${analysisData.commonPhrases.slice(0, 5).map(p => `"${p.pattern}" (${p.count}x)`).join(", ")}
-- Popular Emojis: ${analysisData.emojiUsage.slice(0, 10).map(e => e.emoji).join(" ")}
-- Top Creators: ${analysisData.topCreators.slice(0, 5).map(c => `@${c.name} (${c.avgEngagement.toFixed(1)}% engagement)`).join(", ")}
-
-Provide a comprehensive analysis in JSON format with these exact keys:
-{
-  "summary": "2-3 sentence executive summary of the trend's current state and opportunity",
-  "contentStrategy": ["5 specific, actionable content strategies based on what's working"],
-  "hashtagStrategy": ["5 strategic hashtag recommendations with reasoning"],
-  "captionTemplates": ["3 caption templates that follow viral patterns - use [brackets] for customizable parts"],
-  "videoIdeas": ["5 specific video concepts that would likely perform well"],
-  "bestPostingAdvice": "Specific advice about timing, frequency, and approach",
-  "audienceInsights": "Who is engaging with this content and what they want",
-  "trendPrediction": "Where this trend is heading and how to stay ahead"
-}
-
-Be specific, data-driven, and actionable. Use insights from the actual data provided.`;
-
-    const tools = [{ googleSearch: {} }];
-    const config = {
-      tools,
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
+    const agent = getKeywordInsightsAgent();
+    const context: AgentContext = {
+      workflow: {
+        artistName: keyword,
+        platform: 'tiktok',
+        language: 'ko',
+        sessionId: `keyword-analysis-${Date.now()}`,
       },
     };
 
-    const response = await ai.models.generateContentStream({
-      model: "gemini-3-pro-preview",
-      config,
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: prompt }],
-        },
-      ],
-    });
+    const result = await agent.analyze({
+      keyword,
+      totalVideos: analysisData.totalVideos,
+      avgEngagementRate: analysisData.avgEngagementRate,
+      topHashtags: analysisData.topHashtags,
+      viralDescriptions: analysisData.viralDescriptions,
+      commonPhrases: analysisData.commonPhrases,
+      topCreators: analysisData.topCreators,
+      emojiUsage: analysisData.emojiUsage,
+    }, context);
 
-    // Collect all chunks from the stream
-    let text = "";
-    for await (const chunk of response) {
-      text += chunk.text || "";
-    }
-
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
+    if (result.success && result.data) {
       return {
-        summary: parsed.summary || "",
-        contentStrategy: Array.isArray(parsed.contentStrategy) ? parsed.contentStrategy : [],
-        hashtagStrategy: Array.isArray(parsed.hashtagStrategy) ? parsed.hashtagStrategy : [],
-        captionTemplates: Array.isArray(parsed.captionTemplates) ? parsed.captionTemplates : [],
-        videoIdeas: Array.isArray(parsed.videoIdeas) ? parsed.videoIdeas : [],
-        bestPostingAdvice: parsed.bestPostingAdvice || "",
-        audienceInsights: parsed.audienceInsights || "",
-        trendPrediction: parsed.trendPrediction || "",
+        summary: result.data.summary || "",
+        contentStrategy: result.data.contentStrategy || [],
+        hashtagStrategy: result.data.hashtagStrategy || [],
+        captionTemplates: result.data.captionTemplates || [],
+        videoIdeas: result.data.videoIdeas || [],
+        bestPostingAdvice: result.data.bestPostingAdvice || "",
+        audienceInsights: result.data.audienceInsights || "",
+        trendPrediction: result.data.trendPrediction || "",
       };
     }
 
+    console.warn("[KEYWORD-ANALYSIS] Agent returned no data:", result.error);
     return undefined;
   } catch (error) {
-    console.error("[KEYWORD-ANALYSIS] Gemini AI error:", error);
+    console.error("[KEYWORD-ANALYSIS] KeywordInsightsAgent error:", error);
     return undefined;
   }
 }
@@ -441,11 +406,30 @@ function analyzeVideos(videos: any[], keyword: string): KeywordAnalysis {
     .slice(0, 10);
 
   // Recommended hashtags (high engagement + moderate usage)
-  const recommendedHashtags = topHashtags
+  // Try strict filter first, then relax if no results
+  let recommendedHashtags = topHashtags
     .filter((h) => h.count >= 2 && h.avgEngagement > sortedByEngagement[medianIndex].engagementRate)
     .sort((a, b) => b.avgEngagement - a.avgEngagement)
     .slice(0, 10)
     .map((h) => h.tag);
+
+  // Fallback 1: If empty, try with just count >= 1 and above average engagement
+  if (recommendedHashtags.length === 0) {
+    const avgEngagement = analyzedVideos.reduce((sum, v) => sum + v.engagementRate, 0) / totalVideos;
+    recommendedHashtags = topHashtags
+      .filter((h) => h.avgEngagement >= avgEngagement)
+      .sort((a, b) => b.avgEngagement - a.avgEngagement)
+      .slice(0, 10)
+      .map((h) => h.tag);
+  }
+
+  // Fallback 2: If still empty, just use top hashtags by engagement
+  if (recommendedHashtags.length === 0) {
+    recommendedHashtags = topHashtags
+      .sort((a, b) => b.avgEngagement - a.avgEngagement)
+      .slice(0, 10)
+      .map((h) => h.tag);
+  }
 
   // Content Patterns
   const descriptions = analyzedVideos.map((v) => v.description);

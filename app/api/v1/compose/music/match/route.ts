@@ -86,13 +86,18 @@ export async function POST(request: NextRequest) {
       const assetGenre = metadata.genre || metadata.audioGenre || null;
       const assetEnergy = metadata.energy || metadata.audioEnergy || 0.5;
       const hasRealBpm = !!(metadata.bpm || metadata.audioBpm);
+      const hasRealVibe = !!(metadata.vibe || metadata.audioVibe);
 
-      // Calculate match score
-      let matchScore = 0.5;
+      // Calculate match score (0-100%)
+      // - Vibe match: 35%
+      // - BPM match: 40%
+      // - Duration match: 15%
+      // - Analysis bonus: 10%
+      let matchScore = 0;
 
-      // Vibe match (40%)
+      // Vibe match (35%)
       if (assetVibe && assetVibe.toLowerCase() === vibe.toLowerCase()) {
-        matchScore += 0.4;
+        matchScore += 35;
       } else if (assetVibe) {
         // Partial match based on vibe similarity
         const vibeMap: Record<string, string[]> = {
@@ -103,34 +108,42 @@ export async function POST(request: NextRequest) {
         };
         const similarVibes = vibeMap[vibe.toLowerCase()] || [];
         if (similarVibes.some(v => assetVibe.toLowerCase().includes(v))) {
-          matchScore += 0.2;
+          matchScore += 20;
         }
+      } else {
+        // No vibe data - give base score
+        matchScore += 10;
       }
 
       // BPM match (40%)
       if (hasRealBpm) {
         // Use actual BPM data for precise matching
         if (assetBpm >= bpmRange.min && assetBpm <= bpmRange.max) {
-          matchScore += 0.4;
+          matchScore += 40;
         } else {
           // Partial score based on how close the BPM is
           const midBpm = (bpmRange.min + bpmRange.max) / 2;
           const distance = Math.abs(assetBpm - midBpm);
           const maxDistance = 50;
           if (distance < maxDistance) {
-            matchScore += 0.4 * (1 - distance / maxDistance);
+            matchScore += Math.round(40 * (1 - distance / maxDistance));
           }
         }
       } else {
-        // No real BPM data - give moderate score since we estimated based on vibe
-        matchScore += 0.25;
+        // No real BPM data - give low base score
+        matchScore += 15;
       }
 
-      // Duration match (20%)
+      // Duration match (15%)
       if (assetDuration >= minDuration) {
-        matchScore += 0.2;
+        matchScore += 15;
       } else if (assetDuration >= minDuration * 0.8) {
-        matchScore += 0.1;
+        matchScore += 8;
+      }
+
+      // Analysis bonus (10%) - reward assets that have been properly analyzed
+      if (hasRealBpm && hasRealVibe) {
+        matchScore += 10;
       }
 
       return {
@@ -142,7 +155,7 @@ export async function POST(request: NextRequest) {
         genre: assetGenre,
         duration: assetDuration,
         energy: assetEnergy,
-        matchScore: Math.round(matchScore * 100) / 100,
+        matchScore: Math.min(100, Math.max(0, matchScore)), // Clamp to 0-100
         fileSize: asset.fileSize
       };
     });

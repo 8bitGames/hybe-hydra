@@ -156,7 +156,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({
         status: 'processing',
         progress: estimatedProgress,
-        currentStep: 'Rendering on Modal (CPU)',
+        currentStep: `Rendering on ${(metadata?.renderBackend as string) === 'local' ? 'Local' : 'Modal'} (CPU)`,
         outputUrl: null,
         error: null
       });

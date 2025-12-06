@@ -1,10 +1,13 @@
+/**
+ * Suggest Publish Content API
+ * ==========================
+ * Uses PublishOptimizerAgent for platform-specific content optimization
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { getUserFromHeader } from "@/lib/auth";
-import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || "",
-});
+import { createPublishOptimizerAgent } from "@/lib/agents/publishers/publish-optimizer";
+import type { AgentContext } from "@/lib/agents/types";
 
 interface PublishContextMetadata {
   // From Discover stage
@@ -56,127 +59,75 @@ export async function POST(request: NextRequest) {
       language?: "en" | "ko";
     } = body;
 
-    // Build context prompt
-    const contextParts: string[] = [];
+    // Build content description from context
+    const contentDescription = buildContentDescription(context);
 
-    if (context.campaignName) {
-      contextParts.push(`Campaign: ${context.campaignName}`);
-    }
-    if (context.artistName) {
-      contextParts.push(`Artist: ${context.artistName}`);
-    }
-    if (context.userIdea) {
-      contextParts.push(`Original Idea: ${context.userIdea}`);
-    }
-    if (context.targetAudience?.length) {
-      contextParts.push(`Target Audience: ${context.targetAudience.join(", ")}`);
-    }
-    if (context.contentGoals?.length) {
-      contextParts.push(`Content Goals: ${context.contentGoals.join(", ")}`);
-    }
-    if (context.selectedIdea) {
-      contextParts.push(`Selected Concept: ${context.selectedIdea.title} - ${context.selectedIdea.hook}`);
-      contextParts.push(`Description: ${context.selectedIdea.description}`);
-    }
-    if (context.trendKeywords?.length) {
-      contextParts.push(`Trending Keywords: ${context.trendKeywords.join(", ")}`);
-    }
-    if (context.hashtags?.length) {
-      contextParts.push(`Reference Hashtags: ${context.hashtags.join(", ")}`);
-    }
-    if (context.prompt) {
-      contextParts.push(`Video Prompt: ${context.prompt}`);
-    }
-    if (context.generationType) {
-      contextParts.push(`Generation Type: ${context.generationType}`);
-    }
-    if (context.duration) {
-      contextParts.push(`Video Duration: ${context.duration}s`);
-    }
+    // Create agent and context
+    const publishOptimizer = createPublishOptimizerAgent();
 
-    const platformCharLimits: Record<string, number> = {
-      tiktok: 2200,
-      instagram: 2200,
-      youtube: 500,
+    const agentContext: AgentContext = {
+      workflow: {
+        artistName: context.artistName || "Brand",
+        platform: platform === "youtube" ? "youtube_shorts" : platform,
+        language,
+        sessionId: `publish-${Date.now()}`,
+      },
     };
 
-    const platformHashtagLimits: Record<string, number> = {
-      tiktok: 8,
-      instagram: 30,
-      youtube: 15,
-    };
+    // Map platform for agent
+    const agentPlatform = platform === "youtube" ? "youtube_shorts" : platform;
 
-    const systemPrompt = `You are a social media content expert specializing in ${platform.toUpperCase()} short-form video content.
-Generate engaging captions and optimized hashtags for maximum discoverability and engagement.
-
-Guidelines:
-- Caption should be ${language === "ko" ? "in Korean" : "in English"}
-- Caption must be under ${platformCharLimits[platform]} characters
-- Include a hook in the first line to capture attention
-- Use emojis strategically but not excessively
-- End with a call-to-action or question for engagement
-- Generate exactly ${platformHashtagLimits[platform]} relevant hashtags
-- Mix popular hashtags with niche-specific ones
-- Hashtags should be relevant to the content and trending
-
-IMPORTANT: Respond ONLY with valid JSON in this exact format:
-{
-  "caption": "Your engaging caption here with hook and CTA",
-  "hashtags": ["hashtag1", "hashtag2", "hashtag3", ...],
-  "reasoning": "Brief explanation of your choices"
-}`;
-
-    const userPrompt = `Generate an optimized ${platform} caption and hashtags based on this video content context:
-
-${contextParts.join("\n")}
-
-Remember to respond ONLY with valid JSON.`;
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-lite",
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: systemPrompt + "\n\n" + userPrompt }],
+    // Execute agent
+    const agentResult = await publishOptimizer.execute(
+      {
+        content: {
+          title: context.selectedIdea?.title,
+          description: contentDescription,
+          hashtags: context.hashtags || [],
         },
-      ],
-    });
+        platform: agentPlatform as "tiktok" | "instagram" | "youtube_shorts" | "all",
+        targetAudience: {
+          region: language === "ko" ? "KR" : "US",
+          interests: context.targetAudience,
+        },
+        publishingGoal: mapGoalToAgent(context.contentGoals),
+      },
+      agentContext
+    );
 
-    const text = response.text || "";
-
-    // Extract JSON from response
-    let result: { caption: string; hashtags: string[]; reasoning?: string };
-
-    try {
-      // Try to parse the entire response as JSON
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error("No JSON found in response");
-      }
-    } catch (parseError) {
-      console.error("Failed to parse Gemini response:", parseError);
-      console.log("Raw response:", text);
+    // Check if agent execution was successful
+    if (!agentResult.success || !agentResult.data) {
+      console.error("Agent execution failed:", agentResult.error);
 
       // Fallback response
-      result = {
+      return NextResponse.json({
+        success: true,
         caption: context.selectedIdea?.hook || context.userIdea || "Check out this video!",
-        hashtags: context.hashtags?.slice(0, platformHashtagLimits[platform]) || ["fyp", "viral", "trending"],
-        reasoning: "Fallback response due to parsing error",
-      };
+        hashtags: context.hashtags?.slice(0, getHashtagLimit(platform)) || ["fyp", "viral", "trending"],
+        reasoning: "Fallback response due to agent error",
+        platform,
+        language,
+      });
     }
 
+    const output = agentResult.data;
+
     // Clean up hashtags (remove # if present)
-    const cleanedHashtags = result.hashtags.map((h) => h.replace(/^#/, "").toLowerCase());
+    const cleanedHashtags = output.optimizedContent.hashtags.map((h) =>
+      h.replace(/^#/, "").toLowerCase()
+    );
 
     return NextResponse.json({
       success: true,
-      caption: result.caption,
-      hashtags: cleanedHashtags,
-      reasoning: result.reasoning,
+      caption: output.optimizedContent.description,
+      hashtags: cleanedHashtags.slice(0, getHashtagLimit(platform)),
+      callToAction: output.optimizedContent.callToAction,
+      reasoning: `Optimized for ${output.predictedPerformance.engagementRate} engagement rate with ${output.predictedPerformance.viralProbability} viral probability`,
       platform,
       language,
+      // Additional data from agent
+      bestPostingTimes: output.publishingStrategy.bestTimes,
+      platformSettings: output.platformSpecific,
     });
   } catch (error) {
     console.error("AI suggest publish content error:", error);
@@ -188,4 +139,69 @@ Remember to respond ONLY with valid JSON.`;
       { status: 500 }
     );
   }
+}
+
+// Helper Functions
+
+function buildContentDescription(context: PublishContextMetadata): string {
+  const parts: string[] = [];
+
+  if (context.selectedIdea) {
+    parts.push(`Concept: ${context.selectedIdea.title} - ${context.selectedIdea.hook}`);
+    parts.push(context.selectedIdea.description);
+  }
+
+  if (context.userIdea) {
+    parts.push(`Original idea: ${context.userIdea}`);
+  }
+
+  if (context.prompt) {
+    parts.push(`Video prompt: ${context.prompt}`);
+  }
+
+  if (context.trendKeywords?.length) {
+    parts.push(`Trending keywords: ${context.trendKeywords.join(", ")}`);
+  }
+
+  if (context.duration) {
+    parts.push(`Duration: ${context.duration}s`);
+  }
+
+  return parts.join(". ") || "Short-form video content";
+}
+
+function mapGoalToAgent(
+  goals?: string[]
+): "engagement" | "reach" | "conversion" | "brand_awareness" {
+  if (!goals?.length) return "engagement";
+
+  const goalMap: Record<string, "engagement" | "reach" | "conversion" | "brand_awareness"> = {
+    engagement: "engagement",
+    reach: "reach",
+    awareness: "brand_awareness",
+    brand_awareness: "brand_awareness",
+    conversion: "conversion",
+    sales: "conversion",
+    virality: "reach",
+  };
+
+  for (const goal of goals) {
+    const lowerGoal = goal.toLowerCase();
+    for (const [key, value] of Object.entries(goalMap)) {
+      if (lowerGoal.includes(key)) {
+        return value;
+      }
+    }
+  }
+
+  return "engagement";
+}
+
+function getHashtagLimit(platform: string): number {
+  const limits: Record<string, number> = {
+    tiktok: 8,
+    instagram: 30,
+    youtube: 15,
+  };
+  return limits[platform] || 8;
 }

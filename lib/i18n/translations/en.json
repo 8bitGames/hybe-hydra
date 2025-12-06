@@ -1013,5 +1013,55 @@
       "quickModeInfo": "Select images and music to quickly generate videos",
       "needMoreControl": "Need more control?"
     }
+  },
+  "workflow": {
+    "discover": {
+      "title": "Discover Trends",
+      "subtitle": "Collect trend data to build the foundation for AI content generation",
+      "subtitleHint": "Keywords, hashtags, and inspiration you collect will be used for custom prompt generation",
+      "searchPlaceholder": "Keyword or #hashtag (max 3)...",
+      "analyze": "Analyze",
+      "trending": "Live Trending",
+      "proceed": "Proceed to Analyze",
+      "savedInspiration": "Saved Inspiration",
+      "dataWillBeUsed": "This data will be used for AI prompt generation"
+    },
+    "analyze": {
+      "title": "Analyze Content",
+      "subtitle": "Generate AI content ideas using collected trend data",
+      "campaign": "Campaign",
+      "yourIdea": "Your Idea",
+      "ideaPlaceholder": "Describe the video you want to create...\nExample: A bright, cheerful video dancing on the beach",
+      "targetAudience": "Target Audience",
+      "contentGoals": "Content Goals",
+      "generateIdeas": "Generate AI Ideas",
+      "generating": "Generating...",
+      "aiIdeas": "AI Content Ideas",
+      "selectedIdea": "Selected Idea",
+      "proceed": "Proceed to Create",
+      "back": "Back to Discover",
+      "contextPanel": {
+        "title": "Data for AI Generation",
+        "description": "The following data will be reflected in custom content idea generation",
+        "emptyTitle": "Collect trends from Discover stage",
+        "emptyDescription": "Keywords, hashtags, and inspiration videos become ingredients for AI generation",
+        "goToDiscover": "Go to Discover",
+        "edit": "Edit",
+        "keywords": "Keywords",
+        "hashtags": "Hashtags",
+        "savedInspiration": "Saved Inspiration",
+        "avgViews": "Avg Views",
+        "engagement": "Engagement",
+        "viralBar": "Viral Bar"
+      },
+      "generateButton": {
+        "contextInfo": "{{keywords}} keywords + {{inspiration}} inspiration used"
+      },
+      "dataFlow": {
+        "trends": "Trend Data",
+        "aiAnalysis": "AI Analysis",
+        "customPrompt": "Custom Prompt"
+      }
+    }
   }
 }

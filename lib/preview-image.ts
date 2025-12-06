@@ -7,12 +7,8 @@
 
 import { v4 as uuidv4 } from "uuid";
 import { generateImage, convertAspectRatioForImagen, generateTwoStepComposition } from "@/lib/imagen";
-import {
-  generateImagePromptForI2V,
-  generateBackgroundPromptForEditing,
-  generateSceneWithPlaceholderPrompt,
-  generateCompositePrompt,
-} from "@/lib/gemini-prompt";
+import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
+import type { AgentContext } from "@/lib/agents/types";
 import { uploadToS3 } from "@/lib/storage";
 
 // ============================================================================
@@ -78,20 +74,31 @@ export async function generateDirectPreviewImage(
 
   console.log(`${logPrefix} Using DIRECT mode`);
 
+  // Create I2V Specialist Agent and context
+  const i2vAgent = createI2VSpecialistAgent();
+  const agentContext: AgentContext = {
+    workflow: {
+      artistName: "Brand",
+      platform: "tiktok",
+      language: "ko",
+      sessionId: `preview-${Date.now()}`,
+    },
+  };
+
   // Step 1: Generate appropriate prompt based on whether we have a reference image
   let geminiImagePrompt: string;
 
   if (product_image_url) {
     // Reference image provided → generate BACKGROUND-ONLY prompt
     console.log(`${logPrefix} Step 1: Generating BACKGROUND-ONLY prompt (reference image mode)...`);
-    const backgroundPromptResult = await generateBackgroundPromptForEditing({
-      sceneDescription: video_prompt,
-      productUsage: image_description,
-      style,
-      aspectRatio: aspect_ratio,
-    });
+    const backgroundPromptResult = await i2vAgent.generateBackgroundForEditing(
+      video_prompt,
+      image_description,
+      agentContext,
+      { style, aspectRatio: aspect_ratio }
+    );
 
-    if (!backgroundPromptResult.success || !backgroundPromptResult.imagePrompt) {
+    if (!backgroundPromptResult.success || !backgroundPromptResult.data?.prompt) {
       console.error(`${logPrefix} Background prompt generation failed: ${backgroundPromptResult.error}`);
       return {
         success: false,
@@ -105,20 +112,19 @@ export async function generateDirectPreviewImage(
       };
     }
 
-    geminiImagePrompt = backgroundPromptResult.imagePrompt;
+    geminiImagePrompt = backgroundPromptResult.data.prompt;
     console.log(`${logPrefix} Background-only prompt: ${geminiImagePrompt.slice(0, 150)}...`);
   } else {
     // No reference image → generate full prompt with product description
     console.log(`${logPrefix} Step 1: Generating full image prompt (no reference image)...`);
-    const imagePromptResult = await generateImagePromptForI2V({
-      videoPrompt: video_prompt,
-      imageDescription: image_description,
-      style,
-      aspectRatio: aspect_ratio,
-    });
+    const imagePromptResult = await i2vAgent.generateImagePrompt(
+      `${video_prompt}. ${image_description}`,
+      agentContext,
+      { style }
+    );
 
-    if (!imagePromptResult.success || !imagePromptResult.imagePrompt) {
-      console.error(`${logPrefix} Gemini image prompt failed: ${imagePromptResult.error}`);
+    if (!imagePromptResult.success || !imagePromptResult.data?.prompt) {
+      console.error(`${logPrefix} Image prompt generation failed: ${imagePromptResult.error}`);
       return {
         success: false,
         preview_id: previewId,
@@ -131,7 +137,7 @@ export async function generateDirectPreviewImage(
       };
     }
 
-    geminiImagePrompt = imagePromptResult.imagePrompt;
+    geminiImagePrompt = imagePromptResult.data.prompt;
     console.log(`${logPrefix} Full image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
   }
 
@@ -247,17 +253,27 @@ export async function generateTwoStepPreviewImage(
 
   console.log(`${logPrefix} Using TWO-STEP composition mode`);
 
+  // Create I2V Specialist Agent and context
+  const i2vAgent = createI2VSpecialistAgent();
+  const agentContext: AgentContext = {
+    workflow: {
+      artistName: "Brand",
+      platform: "tiktok",
+      language: "ko",
+      sessionId: `preview-twostep-${Date.now()}`,
+    },
+  };
+
   // Step 1: Generate scene prompt with placeholder
   console.log(`${logPrefix} Step 1: Generating scene with placeholder prompt...`);
-  const scenePromptResult = await generateSceneWithPlaceholderPrompt({
-    sceneDescription: video_prompt,
-    productDescription: image_description,
-    handPose: hand_pose,
-    style,
-    aspectRatio: aspect_ratio,
-  });
+  const scenePromptResult = await i2vAgent.generateSceneWithPlaceholder(
+    video_prompt,
+    image_description,
+    agentContext,
+    { handPose: hand_pose, style, aspectRatio: aspect_ratio }
+  );
 
-  if (!scenePromptResult.success || !scenePromptResult.imagePrompt) {
+  if (!scenePromptResult.success || !scenePromptResult.data?.prompt) {
     console.error(`${logPrefix} Scene prompt generation failed: ${scenePromptResult.error}`);
     return {
       success: false,
@@ -273,20 +289,21 @@ export async function generateTwoStepPreviewImage(
 
   // Step 2: Generate composite prompt
   console.log(`${logPrefix} Step 2: Generating composite instructions...`);
-  const compositePromptResult = await generateCompositePrompt({
-    sceneDescription: video_prompt,
-    productDescription: image_description,
-    placementHint: `Hands ${hand_pose} the product`,
-  });
+  const compositePromptResult = await i2vAgent.generateComposite(
+    video_prompt,
+    image_description,
+    `Hands ${hand_pose} the product`,
+    agentContext
+  );
 
-  if (!compositePromptResult.success || !compositePromptResult.imagePrompt) {
+  if (!compositePromptResult.success || !compositePromptResult.data?.prompt) {
     console.error(`${logPrefix} Composite prompt generation failed: ${compositePromptResult.error}`);
     return {
       success: false,
       preview_id: previewId,
       image_url: "",
       image_base64: "",
-      gemini_image_prompt: scenePromptResult.imagePrompt,
+      gemini_image_prompt: scenePromptResult.data.prompt,
       aspect_ratio,
       composition_mode: "two_step",
       error: `Failed to generate composite prompt: ${compositePromptResult.error}`,
@@ -298,9 +315,9 @@ export async function generateTwoStepPreviewImage(
   let compositionResult;
   try {
     compositionResult = await generateTwoStepComposition({
-      scenePrompt: scenePromptResult.imagePrompt,
+      scenePrompt: scenePromptResult.data.prompt,
       productImageUrl: product_image_url,
-      compositePrompt: compositePromptResult.imagePrompt,
+      compositePrompt: compositePromptResult.data.prompt,
       aspectRatio: convertAspectRatioForImagen(aspect_ratio),
       style,
     });
@@ -311,8 +328,8 @@ export async function generateTwoStepPreviewImage(
       preview_id: previewId,
       image_url: "",
       image_base64: "",
-      gemini_image_prompt: scenePromptResult.imagePrompt,
-      composite_prompt: compositePromptResult.imagePrompt,
+      gemini_image_prompt: scenePromptResult.data.prompt,
+      composite_prompt: compositePromptResult.data.prompt,
       aspect_ratio,
       composition_mode: "two_step",
       error: `Composition failed: ${compositionError instanceof Error ? compositionError.message : "Unknown error"}`,
@@ -326,8 +343,8 @@ export async function generateTwoStepPreviewImage(
       preview_id: previewId,
       image_url: "",
       image_base64: "",
-      gemini_image_prompt: scenePromptResult.imagePrompt,
-      composite_prompt: compositePromptResult.imagePrompt,
+      gemini_image_prompt: scenePromptResult.data.prompt,
+      composite_prompt: compositePromptResult.data.prompt,
       aspect_ratio,
       composition_mode: "two_step",
       error: `Composition failed: ${compositionResult.error}`,
@@ -366,8 +383,8 @@ export async function generateTwoStepPreviewImage(
     preview_id: previewId,
     image_url: imageUrl,
     image_base64: compositionResult.finalImageBase64,
-    gemini_image_prompt: scenePromptResult.imagePrompt,
-    composite_prompt: compositePromptResult.imagePrompt,
+    gemini_image_prompt: scenePromptResult.data?.prompt || "",
+    composite_prompt: compositePromptResult.data?.prompt || "",
     aspect_ratio,
     composition_mode: "two_step",
     scene_image_url: sceneImageUrl,

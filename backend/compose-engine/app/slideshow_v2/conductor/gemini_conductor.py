@@ -3,6 +3,8 @@ Gemini 2.5 Flash AI Conductor for video composition.
 
 This module uses Gemini to analyze images, lyrics, and audio context
 to generate intelligent composition decisions.
+
+Now uses database-backed prompts via PromptLoader for easy management.
 """
 
 import os
@@ -29,6 +31,7 @@ from .schemas import (
     AVAILABLE_COLOR_GRADES,
     AVAILABLE_EFFECTS,
 )
+from ...services.prompt_loader import get_prompt_loader, PromptLoader
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,7 @@ class GeminiConductor:
     AI Conductor using Gemini 2.5 Flash.
 
     Analyzes images, lyrics, and audio to compose a complete video plan.
+    Prompts are loaded from database via PromptLoader for easy management.
     """
 
     def __init__(self, api_key: Optional[str] = None):
@@ -54,7 +58,21 @@ class GeminiConductor:
         except ImportError:
             raise ImportError("google-genai package not installed. Run: pip install google-genai")
 
-        self.model = "gemini-2.5-flash-preview-05-20"
+        self.model = "gemini-2.5-flash"
+
+        # Initialize prompt loader
+        self.prompt_loader = get_prompt_loader()
+        self._prompt_config: Optional[Dict[str, Any]] = None
+
+    def _get_prompt_config(self) -> Dict[str, Any]:
+        """Get prompt configuration from database (with caching)."""
+        if self._prompt_config is None:
+            try:
+                self._prompt_config = self.prompt_loader.get_prompt_sync('compose-conductor')
+            except Exception as e:
+                logger.warning(f"Failed to load prompt from database: {e}")
+                self._prompt_config = {}
+        return self._prompt_config
 
     async def analyze_images(
         self,
@@ -247,13 +265,20 @@ Lyrics:
 
     def _build_composition_prompt(self, context: ConductorInput) -> str:
         """Build the composition prompt for Gemini."""
+        # Get system prompt from database (with fallback)
+        prompt_config = self._get_prompt_config()
+        system_prompt = prompt_config.get('system_prompt', '')
+
         # List available options
         transitions_list = ", ".join(AVAILABLE_TRANSITIONS[:20]) + "..."
         motions_list = ", ".join(AVAILABLE_MOTIONS)
         animations_list = ", ".join(AVAILABLE_TEXT_ANIMATIONS)
         grades_list = ", ".join(AVAILABLE_COLOR_GRADES)
 
-        prompt = f"""You are an expert video editor and composer. Create a composition plan for a slideshow video.
+        # Use database system prompt if available, otherwise use default
+        base_prompt = system_prompt if system_prompt else "You are an expert video editor and composer. Create a composition plan for a slideshow video."
+
+        prompt = f"""{base_prompt}
 
 # CONTEXT
 {context.to_prompt_context()}
@@ -304,7 +329,7 @@ Respond with a JSON object matching this exact structure:
         {{
             "from_segment": 0,
             "to_segment": 1,
-            "transition": "xfade_fade",
+            "transition": "gl_fade",
             "duration": 0.5,
             "sync_to_beat": true,
             "reasoning": "Why this transition"
@@ -359,7 +384,7 @@ IMPORTANT:
         # Fix invalid transitions
         for trans in plan.transitions:
             if trans.transition not in AVAILABLE_TRANSITIONS:
-                trans.transition = "xfade_fade"  # Safe fallback
+                trans.transition = "gl_fade"  # Safe fallback
             if trans.duration < 0.1:
                 trans.duration = 0.3
             if trans.duration > 2.0:
@@ -405,7 +430,7 @@ IMPORTANT:
             transitions.append(TransitionPlan(
                 from_segment=i,
                 to_segment=i + 1,
-                transition="xfade_fade",
+                transition="gl_fade",
                 duration=0.5,
                 sync_to_beat=True,
                 reasoning="Fallback transition",

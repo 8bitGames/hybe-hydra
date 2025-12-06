@@ -27,7 +27,6 @@ import {
   Zap,
   Image,
   Library,
-  Film,
   Search,
   Lightbulb,
   ArrowRight,
@@ -112,13 +111,7 @@ const secondaryItems: NavItem[] = [
         name: { ko: "모든 영상", en: "All Videos" },
         href: "/videos",
         icon: Video,
-        description: { ko: "생성된 모든 영상 보기", en: "View all generated videos" },
-      },
-      {
-        name: { ko: "컴포즈 영상", en: "Compose Videos" },
-        href: "/compose/gallery",
-        icon: Film,
-        description: { ko: "컴포즈로 만든 영상", en: "Videos created with Compose" },
+        description: { ko: "AI 및 컴포즈 영상", en: "AI and Compose videos" },
       },
       {
         name: { ko: "에셋 관리", en: "Assets" },
