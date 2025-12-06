@@ -557,6 +557,12 @@ export async function getTikTokHashtag(
 const MODAL_AUDIO_ENDPOINT_URL = process.env.MODAL_AUDIO_ENDPOINT_URL ||
   'https://modawnai--hydra-compose-engine-audio-endpoint.modal.run';
 
+export interface SubtitleEntry {
+  text: string;
+  start: number;  // Start time in seconds
+  end: number;    // End time in seconds
+}
+
 export interface AudioComposeRequest {
   job_id?: string;
   video_url: string;
@@ -569,6 +575,9 @@ export interface AudioComposeRequest {
   original_audio_volume?: number;
   output_s3_bucket?: string;
   output_s3_key?: string;
+  // Optional subtitles/captions to overlay on video
+  // Requires video re-encoding with GPU (h264_nvenc)
+  subtitles?: SubtitleEntry[];
 }
 
 export interface AudioComposeResponse {

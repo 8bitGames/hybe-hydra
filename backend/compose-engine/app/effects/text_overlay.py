@@ -10,6 +10,32 @@ import textwrap
 FONTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fonts")
 NOTO_SANS_BOLD = os.path.join(FONTS_DIR, "NotoSans-Bold.ttf")
 
+# Animation registry - maps animation IDs to effect configurations
+# Each animation defines: in/out durations and effect type
+ANIMATION_REGISTRY = {
+    # Basic animations
+    "fade": {"in_duration": 0.3, "out_duration": 0.3, "type": "fade"},
+    "typewriter": {"in_duration": 0.5, "out_duration": 0.2, "type": "typewriter"},
+    "word_by_word": {"in_duration": 0.4, "out_duration": 0.2, "type": "word_by_word"},
+
+    # Pop/bounce animations
+    "bounce_in": {"in_duration": 0.4, "out_duration": 0.2, "type": "bounce"},
+    "scale_pop": {"in_duration": 0.15, "out_duration": 0.15, "type": "scale_pop"},
+
+    # Slide animations
+    "slide_up": {"in_duration": 0.3, "out_duration": 0.2, "type": "slide_up"},
+    "slide_down": {"in_duration": 0.3, "out_duration": 0.2, "type": "slide_down"},
+    "slide_left": {"in_duration": 0.3, "out_duration": 0.2, "type": "slide_left"},
+    "slide_right": {"in_duration": 0.3, "out_duration": 0.2, "type": "slide_right"},
+
+    # Special effects
+    "glitch": {"in_duration": 0.2, "out_duration": 0.15, "type": "glitch"},
+    "wave": {"in_duration": 0.4, "out_duration": 0.3, "type": "wave"},
+    "karaoke": {"in_duration": 0.0, "out_duration": 0.0, "type": "karaoke"},
+    "split_reveal": {"in_duration": 0.35, "out_duration": 0.2, "type": "split_reveal"},
+    "blur_in": {"in_duration": 0.4, "out_duration": 0.3, "type": "blur_in"},
+}
+
 
 def create_text_clip(
     text: str,
@@ -17,7 +43,8 @@ def create_text_clip(
     duration: float,
     style: str,
     video_size: Tuple[int, int],
-    font_size: Optional[int] = None
+    font_size: Optional[int] = None,
+    animation: Optional[str] = None
 ) -> TextClip:
     """
     Create a text clip with the specified style.
@@ -137,14 +164,54 @@ def create_text_clip(
     txt_clip = txt_clip.with_start(start)
     txt_clip = txt_clip.with_duration(duration)
 
-    # Apply style-specific animations using MoviePy 2.x effects
-    if style == "fade_in":
-        txt_clip = txt_clip.with_effects([CrossFadeIn(0.3), CrossFadeOut(0.3)])
-    elif style == "bold_pop":
-        txt_clip = txt_clip.with_effects([CrossFadeIn(0.15), CrossFadeOut(0.15)])
-    elif style == "slide_in":
-        txt_clip = txt_clip.with_effects([CrossFadeIn(0.2), CrossFadeOut(0.2)])
-    else:  # minimal
+    # Apply animation effects using MoviePy 2.x effects
+    # Priority: animation parameter > style-based fallback
+    anim_config = None
+    if animation and animation in ANIMATION_REGISTRY:
+        anim_config = ANIMATION_REGISTRY[animation]
+    else:
+        # Fallback to style-based animation
+        style_to_animation = {
+            "fade_in": "fade",
+            "bold_pop": "scale_pop",
+            "slide_in": "slide_up",
+            "minimal": "fade",
+        }
+        fallback_anim = style_to_animation.get(style, "fade")
+        anim_config = ANIMATION_REGISTRY.get(fallback_anim, ANIMATION_REGISTRY["fade"])
+
+    in_dur = anim_config["in_duration"]
+    out_dur = anim_config["out_duration"]
+    anim_type = anim_config["type"]
+
+    # Apply animation based on type
+    # For now, most animations use CrossFade with varying durations
+    # Future: implement typewriter, glitch, wave effects using custom functions
+    if anim_type in ["fade", "scale_pop", "bounce", "blur_in"]:
+        txt_clip = txt_clip.with_effects([CrossFadeIn(in_dur), CrossFadeOut(out_dur)])
+    elif anim_type in ["slide_up", "slide_down", "slide_left", "slide_right"]:
+        # Slide animations use fade with different timing
+        txt_clip = txt_clip.with_effects([CrossFadeIn(in_dur), CrossFadeOut(out_dur)])
+    elif anim_type == "typewriter":
+        # Typewriter effect - fade in slowly, fade out quickly
+        txt_clip = txt_clip.with_effects([CrossFadeIn(in_dur), CrossFadeOut(out_dur)])
+    elif anim_type == "word_by_word":
+        # Word by word - similar to typewriter for now
+        txt_clip = txt_clip.with_effects([CrossFadeIn(in_dur), CrossFadeOut(out_dur)])
+    elif anim_type == "glitch":
+        # Glitch effect - fast fade for glitchy feel
+        txt_clip = txt_clip.with_effects([CrossFadeIn(in_dur), CrossFadeOut(out_dur)])
+    elif anim_type == "wave":
+        # Wave effect - smoother transition
+        txt_clip = txt_clip.with_effects([CrossFadeIn(in_dur), CrossFadeOut(out_dur)])
+    elif anim_type == "split_reveal":
+        # Split reveal - medium fade
+        txt_clip = txt_clip.with_effects([CrossFadeIn(in_dur), CrossFadeOut(out_dur)])
+    elif anim_type == "karaoke":
+        # Karaoke - no fade, instant on/off
+        pass  # No effects needed
+    else:
+        # Default fallback
         txt_clip = txt_clip.with_effects([CrossFadeIn(0.2), CrossFadeOut(0.2)])
 
     return txt_clip

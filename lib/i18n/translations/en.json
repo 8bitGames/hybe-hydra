@@ -978,6 +978,22 @@
       }
     }
   },
+  "artist": {
+    "addArtist": "Add Artist",
+    "addArtistDescription": "Enter new artist information",
+    "name": "Name",
+    "namePlaceholder": "Enter real name",
+    "stageName": "Stage Name",
+    "stageNamePlaceholder": "Enter stage name",
+    "groupName": "Group Name",
+    "groupNamePlaceholder": "Enter group name (leave empty for solo artists)",
+    "label": "Label",
+    "selectLabel": "Select a label",
+    "description": "Description",
+    "descriptionPlaceholder": "Enter a brief description about the artist",
+    "create": "Create",
+    "createSuccess": "Artist created successfully"
+  },
   "createPage": {
     "modes": {
       "quick": {

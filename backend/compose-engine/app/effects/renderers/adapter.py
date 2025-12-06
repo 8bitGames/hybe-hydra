@@ -13,13 +13,15 @@ from moviepy import ImageClip, CompositeVideoClip, concatenate_videoclips
 from .xfade_renderer import XfadeRenderer, ClipSegment, XFADE_TRANSITIONS
 from ..registry import get_registry, EffectMetadata, BLACKLISTED_EFFECTS
 
-# Try to import GL renderer
+# Try to import GL renderer and transitions
 try:
-    from .gl_renderer import get_gl_renderer, is_gl_available, GL_TRANSITIONS
+    from .gl_renderer import get_gl_renderer, is_gl_available
+    from app.effects.glsl.gl_transitions_lib import GL_TRANSITIONS, has_transition as has_gl_transition
     GL_RENDERER_AVAILABLE = True
 except ImportError:
     GL_RENDERER_AVAILABLE = False
     GL_TRANSITIONS = {}
+    has_gl_transition = lambda x: False
 
 logger = logging.getLogger(__name__)
 
@@ -91,15 +93,31 @@ class RendererAdapter:
         """
         Determine which renderer to use for an effect.
 
+        Prioritizes GL Transitions when available for best quality.
+
         Args:
             effect_id: Effect ID from registry
 
         Returns:
             Appropriate RendererType
         """
+        # First, check if this is a GL transition (gl_ prefix)
+        if effect_id.startswith("gl_"):
+            if self._gl_available and self.prefer_gpu:
+                # Check if transition exists in GL library
+                if has_gl_transition(effect_id):
+                    return RendererType.GL_TRANSITIONS
+            # Fallback to xfade
+            return RendererType.XFADE
+
         effect = self.registry.get(effect_id)
 
         if not effect:
+            # Check if it might be a GL transition without registry entry
+            if effect_id.startswith("gl_") and has_gl_transition(effect_id):
+                if self._gl_available and self.prefer_gpu:
+                    return RendererType.GL_TRANSITIONS
+                return RendererType.XFADE
             return RendererType.MOVIEPY
 
         if effect.source == "gl-transitions":
@@ -276,79 +294,106 @@ class RendererAdapter:
         # Mapping from GL Transitions to xfade equivalents
         # NOTE: Avoid mapping to blacklisted effects (hlslice, hrslice, vuslice, vdslice, hblur)
         # DIVERSITY: Spread effects across ALL available safe xfade transitions
+        # Contains 50+ GL transitions from gl-transitions library
         gl_to_xfade = {
-            # Direct mappings - safe effects with DIVERSITY
+            # === BASIC TRANSITIONS ===
             "gl_fade": "fade",
             "gl_fadecolor": "fadeblack",
             "gl_fadegrayscale": "fadegrays",
-            "gl_crosswarp": "dissolve",
-            "gl_dreamy": "smoothleft",       # Smooth transition (diverse)
-            "gl_pixelize": "pixelize",
-            "gl_circleopen": "circleopen",
-            "gl_directionalwipe": "wipeleft",
-            "gl_cube": "diagtl",
-            "gl_doorway": "vertopen",
-            "gl_linearblur": "smoothright",  # Smooth transition (diverse)
-            "gl_radial": "radial",
-            "gl_windowslice": "wiperight",   # Wipe variant (diverse)
-            "gl_squeeze": "squeezeh",
-            "gl_crosszoom": "zoomin",
-            "gl_swap": "slideright",
-            "gl_mosaic": "rectcrop",         # Different crop effect (diverse)
-            "gl_burn": "fadeblack",
-            "gl_colorphase": "fadegrays",
-            "gl_glitchdisplace": "circlecrop", # Circle crop (diverse)
-            "gl_hexagonalize": "pixelize",
-            "gl_kaleidoscope": "radial",
-            "gl_morph": "distance",          # Distance blend (diverse)
-            "gl_perlin": "smoothup",         # Smooth variant (diverse)
-            "gl_polkadotscurtain": "circleclose", # Circle variant (diverse)
-            "gl_ripple": "smoothdown",       # Smooth variant (diverse)
-            "gl_rotate_scale_fade": "zoomin",
-            "gl_swirl": "diagtr",            # Diagonal variant (diverse)
-            "gl_wind": "slideleft",
-            "gl_windowblinds": "horzopen",   # Horizontal open (diverse)
-            # Additional mappings for common GL effects - DIVERSE
-            "gl_displacement": "wipeup",     # Wipe variant (diverse)
-            "gl_flyeye": "squeezev",         # Squeeze variant (diverse)
-            "gl_heart": "circleopen",
-            "gl_powerKaleido": "diagbl",     # Diagonal variant (diverse)
-            "gl_static": "fadewhite",        # Fade variant (diverse)
-            "gl_undulating": "wipedown",     # Wipe variant (diverse)
-            "gl_simpleZoom": "zoomin",
-            "gl_directional": "slideup",     # Slide variant (diverse)
-            "gl_bowTie": "vertclose",        # Vert variant (diverse)
-            "gl_colorphaseRotate": "diagbr", # Diagonal variant (diverse)
-            # Additional diverse mappings for more GL effects
-            "gl_angular": "wipetl",
-            "gl_bounce": "slidedown",
-            "gl_butterflywavescrawler": "horzclose",
-            "gl_circle": "circleopen",
-            "gl_colordistance": "distance",
-            "gl_crosshatch": "rectcrop",
-            "gl_directionalscaled": "wipetr",
-            "gl_directionalwarp": "wipebl",
-            "gl_doomscreenmelt": "smoothdown",
-            "gl_dreamy_zoom": "zoomin",
-            "gl_film_burn": "fadeblack",
-            "gl_gridflip": "diagtl",
-            "gl_inverted_page_curl": "wipebr",
-            "gl_leftright": "slideright",
-            "gl_luminance_melt": "fadegrays",
-            "gl_multiply_blend": "dissolve",
-            "gl_overexposure": "fadewhite",
-            "gl_pinwheel": "radial",
-            "gl_polar_function": "circleclose",
-            "gl_randomsquares": "pixelize",
-            "gl_rotate": "radial",
-            "gl_squareswipe": "rectcrop",
-            "gl_stereo_viewer": "horzopen",
-            "gl_waterdrop": "circlecrop",
-            "gl_wipedown": "wipedown",
+
+            # === WIPE TRANSITIONS ===
             "gl_wipeleft": "wipeleft",
             "gl_wiperight": "wiperight",
             "gl_wipeup": "wipeup",
+            "gl_wipedown": "wipedown",
+            "gl_directionalwipe": "wipeleft",
+            "gl_windowslice": "wiperight",
+            "gl_directional": "slideup",
+
+            # === SLIDE TRANSITIONS ===
+            "gl_slideright": "slideright",
+            "gl_slideleft": "slideleft",
+            "gl_swap": "slideright",
+            "gl_leftright": "slideright",
+            "gl_wind": "slideleft",
+
+            # === CIRCLE TRANSITIONS ===
+            "gl_circle": "circleopen",
+            "gl_circleopen": "circleopen",
+            "gl_circleclose": "circleclose",
+            "gl_heart": "circleopen",
             "gl_zoomincircles": "circleopen",
+            "gl_polar_function": "circleclose",
+            "gl_waterdrop": "circlecrop",
+
+            # === ZOOM TRANSITIONS ===
+            "gl_zoomin": "zoomin",
+            "gl_crosszoom": "zoomin",
+            "gl_simpleZoom": "zoomin",
+            "gl_dreamy_zoom": "zoomin",
+            "gl_rotate_scale_fade": "zoomin",
+
+            # === ROTATION TRANSITIONS ===
+            "gl_pinwheel": "radial",
+            "gl_radial": "radial",
+            "gl_rotate": "radial",
+            "gl_swirl": "diagtr",
+            "gl_kaleidoscope": "radial",
+            "gl_powerKaleido": "diagbl",
+            "gl_angular": "wipetl",
+
+            # === 3D/CUBE TRANSITIONS ===
+            "gl_cube": "diagtl",
+            "gl_doorway": "vertopen",
+            "gl_stereo_viewer": "horzopen",
+            "gl_bowtiehorizontal": "horzopen",
+            "gl_bowtievertical": "vertopen",
+            "gl_bowTie": "vertclose",
+
+            # === PIXEL/MOSAIC TRANSITIONS ===
+            "gl_pixelize": "pixelize",
+            "gl_mosaic": "rectcrop",
+            "gl_randomsquares": "pixelize",
+            "gl_hexagonalize": "pixelize",
+            "gl_crosshatch": "rectcrop",
+            "gl_squareswipe": "rectcrop",
+            "gl_gridflip": "diagtl",
+
+            # === DISTORTION TRANSITIONS ===
+            "gl_crosswarp": "dissolve",
+            "gl_dreamy": "smoothleft",
+            "gl_morph": "distance",
+            "gl_ripple": "smoothdown",
+            "gl_squeeze": "squeezeh",
+            "gl_butterflywavescrawler": "horzclose",
+            "gl_undulating": "wipedown",
+            "gl_colordistance": "distance",
+            "gl_perlin": "smoothup",
+            "gl_doomscreenmelt": "smoothdown",
+            "gl_linearblur": "smoothright",
+            "gl_flyeye": "squeezev",
+
+            # === GLITCH TRANSITIONS ===
+            "gl_glitchdisplace": "circlecrop",
+            "gl_glitchmemories": "dissolve",
+            "gl_static": "fadewhite",
+            "gl_tvstatic": "fadewhite",
+
+            # === SPECIAL EFFECTS ===
+            "gl_burn": "fadeblack",
+            "gl_film_burn": "fadeblack",
+            "gl_overexposure": "fadewhite",
+            "gl_colorphase": "fadegrays",
+            "gl_colorphaseRotate": "diagbr",
+            "gl_luminance_melt": "fadegrays",
+            "gl_multiply_blend": "dissolve",
+            "gl_displacement": "wipeup",
+            "gl_inverted_page_curl": "wipebr",
+            "gl_directionalscaled": "wipetr",
+            "gl_directionalwarp": "wipebl",
+            "gl_bounce": "slidedown",
+            "gl_polkadotscurtain": "circleclose",
+            "gl_windowblinds": "horzopen",
         }
 
         # Try direct mapping

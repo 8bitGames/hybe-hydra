@@ -19,16 +19,12 @@ const getClient = () => {
 export type VeoModel = "veo-3.1-fast-generate-preview" | "veo-3.1-generate-preview" | "veo-2.0-generate-001";
 
 // ============================================================================
-// VEO Mode Configuration (3-tier system)
+// VEO Mode Configuration
 // ============================================================================
-// VEO_MODE environment variable:
-// - "production" (default): Uses veo-3.1-generate-preview (highest quality)
-// - "fast": Uses veo-3.1-fast-generate-preview (faster, lower cost)
-// - "sample": Returns sample videos without calling API (for testing)
-//
-// Backwards compatibility:
-// - VEO_USE_FAST_MODEL=true → fast mode
-// - VEO_MOCK_MODE=true → sample mode
+// VEO_MODE: production (default) | fast | sample
+// - production: veo-3.1-generate-preview (highest quality)
+// - fast: veo-3.1-fast-generate-preview (faster, lower cost)
+// - sample: Returns sample videos without API call (for testing)
 // ============================================================================
 
 export type VeoModeType = "production" | "fast" | "sample";
@@ -41,38 +37,34 @@ export interface VeoConfig {
 }
 
 /**
- * Get current VEO configuration based on environment variables
- * Priority: VEO_MODE > VEO_MOCK_MODE > VEO_USE_FAST_MODEL
+ * Get current VEO configuration based on VEO_MODE environment variable
  */
 export function getVeoConfig(): VeoConfig {
-  const veoMode = process.env.VEO_MODE?.toLowerCase();
+  const veoMode = process.env.VEO_MODE?.toLowerCase() as VeoModeType | undefined;
 
-  // Priority 1: Check VEO_MODE
-  if (veoMode === "sample" || process.env.VEO_MOCK_MODE === "true") {
-    return {
-      mode: "sample",
-      model: "veo-3.1-generate-preview", // Not used in sample mode
-      isSampleMode: true,
-      description: "Sample mode - returning pre-made test videos",
-    };
+  switch (veoMode) {
+    case "sample":
+      return {
+        mode: "sample",
+        model: "veo-3.1-generate-preview",
+        isSampleMode: true,
+        description: "Sample mode - returning pre-made test videos",
+      };
+    case "fast":
+      return {
+        mode: "fast",
+        model: "veo-3.1-fast-generate-preview",
+        isSampleMode: false,
+        description: "Fast mode - using veo-3.1-fast-generate-preview",
+      };
+    default:
+      return {
+        mode: "production",
+        model: "veo-3.1-generate-preview",
+        isSampleMode: false,
+        description: "Production mode - using veo-3.1-generate-preview",
+      };
   }
-
-  if (veoMode === "fast" || process.env.VEO_USE_FAST_MODEL === "true") {
-    return {
-      mode: "fast",
-      model: "veo-3.1-fast-generate-preview",
-      isSampleMode: false,
-      description: "Fast mode - using veo-3.1-fast-generate-preview",
-    };
-  }
-
-  // Default: production mode
-  return {
-    mode: "production",
-    model: "veo-3.1-generate-preview",
-    isSampleMode: false,
-    description: "Production mode - using veo-3.1-generate-preview",
-  };
 }
 
 /**
@@ -523,37 +515,28 @@ function buildVideoPrompt(params: VeoGenerationParams): string {
   return prompt;
 }
 
+// Sample video URL for testing (from our S3 bucket)
+const SAMPLE_VIDEO_URL = "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/campaigns/campaign-carly-hummingbird-tour/72afa814-70c9-429e-8a66-392fc143f86c.mp4";
+
 /**
  * Generate mock video for development/testing
+ * Uses a pre-existing video from our S3 bucket to avoid API costs
  */
 function generateMockVideo(params: VeoGenerationParams): VeoGenerationResult {
-  const mockId = Math.random().toString(36).substring(2, 15);
   const aspectRatio = params.aspectRatio || "16:9";
 
-  // Use sample videos from various sources for testing
-  const sampleVideos = [
-    "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-    "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-    "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-    "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-    "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
-    "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
-  ];
-
-  // Pick a random sample video
-  const mockVideoUrl = sampleVideos[Math.floor(Math.random() * sampleVideos.length)];
-
-  console.log(`[VEO-MOCK] Generated mock video for prompt: "${params.prompt.slice(0, 50)}..."`);
-  console.log(`[VEO-MOCK] Mock URL: ${mockVideoUrl}`);
+  console.log(`[VEO-SAMPLE] Sample mode - returning pre-made video`);
+  console.log(`[VEO-SAMPLE] Prompt would have been: "${params.prompt.slice(0, 50)}..."`);
+  console.log(`[VEO-SAMPLE] Using sample URL: ${SAMPLE_VIDEO_URL}`);
 
   return {
     success: true,
-    videoUrl: mockVideoUrl,
+    videoUrl: SAMPLE_VIDEO_URL,
     metadata: {
       duration: params.durationSeconds || 8,
       resolution: aspectRatio === "9:16" ? "1080x1920" : "1920x1080",
       format: "mp4",
-      model: params.model || "mock",
+      model: "sample",
     },
   };
 }
@@ -566,7 +549,7 @@ export async function checkGenerationStatus(operationName: string): Promise<VeoJ
     return {
       status: "completed",
       progress: 100,
-      videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+      videoUrl: SAMPLE_VIDEO_URL,
     };
   }
 

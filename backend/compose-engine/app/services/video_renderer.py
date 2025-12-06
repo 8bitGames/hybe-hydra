@@ -158,17 +158,28 @@ class VideoRenderer:
             )
 
             # ============================================================
-            # STEP 6: APPLY TRANSITIONS (AI-powered or preset-based)
+            # STEP 6: GET AI EFFECTS (for transitions and text animations)
             # ============================================================
-            await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
-
+            ai_effects = None
             if request.settings.use_ai_effects:
-                # Use AI-selected effects
-                video = await self._apply_ai_transitions(
-                    clips=clips,
+                ai_effects = await self._get_ai_effects(
                     settings=request.settings,
                     num_images=len(image_paths),
                     bpm=audio_analysis.bpm,
+                    job_id=job_id
+                )
+                logger.info(f"[{job_id}] AI effects - transitions: {len(ai_effects.transitions)}, text_animations: {len(ai_effects.text_animations)}")
+
+            # ============================================================
+            # STEP 7: APPLY TRANSITIONS (AI-powered or preset-based)
+            # ============================================================
+            await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
+
+            if request.settings.use_ai_effects and ai_effects:
+                # Use AI-selected effects
+                video = await self._apply_ai_transitions_with_effects(
+                    clips=clips,
+                    ai_effects=ai_effects,
                     preset=preset,
                     job_dir=job_dir,
                     job_id=job_id
@@ -180,21 +191,24 @@ class VideoRenderer:
                 video = transition_func(clips, duration=preset.transition_duration)
 
             # ============================================================
-            # STEP 7: ADD TEXT OVERLAYS
+            # STEP 8: ADD TEXT OVERLAYS (with AI-selected animations)
             # ============================================================
             await self._update_progress(progress_callback, job_id, 65, "Adding text overlays")
 
             video_duration = video.duration
             if request.script and request.script.lines:
                 adjusted_script = self._adjust_script_timings(request.script, video_duration, job_id)
+                # Pass AI-selected text animations if available
+                text_animations = ai_effects.text_animations if ai_effects else None
                 video = self._add_text_overlays(
                     video, adjusted_script,
                     request.settings.text_style.value,
-                    request.settings.aspect_ratio.value
+                    request.settings.aspect_ratio.value,
+                    text_animations=text_animations
                 )
 
             # ============================================================
-            # STEP 8: ADD AUDIO WITH TIKTOK HOOK
+            # STEP 9: ADD AUDIO WITH TIKTOK HOOK
             # ============================================================
             await self._update_progress(progress_callback, job_id, 75, "Adding audio")
 
@@ -203,13 +217,13 @@ class VideoRenderer:
             )
 
             # ============================================================
-            # STEP 9: COLOR GRADING
+            # STEP 10: COLOR GRADING
             # ============================================================
             await self._update_progress(progress_callback, job_id, 80, "Color grading")
             video = filters.apply_color_grade(video, request.settings.color_grade.value)
 
             # ============================================================
-            # STEP 10: GPU RENDER WITH OPTIMIZED NVENC
+            # STEP 11: GPU RENDER WITH OPTIMIZED NVENC
             # ============================================================
             await self._update_progress(progress_callback, job_id, 85, "Rendering video")
 
@@ -219,7 +233,7 @@ class VideoRenderer:
             await self._render_with_nvenc(video, output_path, temp_audiofile, job_id)
 
             # ============================================================
-            # STEP 11: CLEANUP AND UPLOAD
+            # STEP 12: CLEANUP AND UPLOAD
             # ============================================================
             self._cleanup_clips(video, clips, audio_clips_to_close)
 
@@ -659,6 +673,75 @@ class VideoRenderer:
             transition_func = transitions.get_transition(effect_preset)
             return transition_func(clips, duration=preset.transition_duration)
 
+    async def _apply_ai_transitions_with_effects(
+        self,
+        clips: List[ImageClip],
+        ai_effects: AIEffectSelection,
+        preset,
+        job_dir: str,
+        job_id: str
+    ) -> CompositeVideoClip:
+        """
+        Apply AI-selected transitions using pre-fetched effects.
+
+        This is a variant of _apply_ai_transitions that takes already-fetched
+        AI effects to allow sharing between transitions and text animations.
+        """
+        try:
+            if not ai_effects.transitions:
+                # Fallback to default preset if no AI transitions
+                logger.warning(f"[{job_id}] No AI transitions selected, using preset fallback")
+                transition_func = transitions.get_transition(preset.transition_type)
+                return transition_func(clips, duration=preset.transition_duration)
+
+            # Build transition specs from AI selections
+            # Ensure each transition uses a different effect for variety
+            transition_specs = []
+            num_transitions_needed = len(clips) - 1
+            available_effects = ai_effects.transitions.copy()
+
+            for i in range(num_transitions_needed):
+                if available_effects:
+                    # Use each effect once before repeating
+                    effect_id = available_effects.pop(0)
+                    # Refill when exhausted (only if we need more than available)
+                    if not available_effects and i < num_transitions_needed - 1:
+                        available_effects = ai_effects.transitions.copy()
+                else:
+                    # Fallback to cycling if something goes wrong
+                    effect_id = ai_effects.transitions[i % len(ai_effects.transitions)]
+
+                transition_specs.append(TransitionSpec(
+                    effect_id=effect_id,
+                    duration=preset.transition_duration
+                ))
+
+            # Log all transitions to verify diversity
+            all_effects = [t.effect_id for t in transition_specs]
+            print(f"[VIDEO_RENDERER][{job_id}] About to apply {len(transition_specs)} AI transitions: {all_effects}")
+            logger.info(f"[{job_id}] Applying {len(transition_specs)} AI transitions: {all_effects}")
+
+            # Use renderer adapter (with xfade fallback)
+            video = self.renderer_adapter.apply_transitions_to_clips(
+                clips=clips,
+                transitions=transition_specs,
+                temp_dir=job_dir,
+                job_id=job_id
+            )
+
+            if video is not None:
+                return video
+
+            # Fallback if adapter fails
+            logger.warning(f"[{job_id}] Renderer adapter failed, using MoviePy fallback")
+            transition_func = transitions.get_transition("crossfade")
+            return transition_func(clips, duration=preset.transition_duration)
+
+        except Exception as e:
+            logger.error(f"[{job_id}] AI transition error: {e}, using preset fallback")
+            transition_func = transitions.get_transition(preset.transition_type)
+            return transition_func(clips, duration=preset.transition_duration)
+
     async def _get_ai_effects(
         self,
         settings: RenderSettings,
@@ -877,9 +960,10 @@ class VideoRenderer:
         video: CompositeVideoClip,
         script: ScriptData,
         style: str,
-        aspect_ratio: str
+        aspect_ratio: str,
+        text_animations: Optional[List[str]] = None
     ) -> CompositeVideoClip:
-        """Add script text as overlays."""
+        """Add script text as overlays with AI-selected animations."""
         sizes = {
             "9:16": (1080, 1920),
             "16:9": (1920, 1080),
@@ -888,19 +972,31 @@ class VideoRenderer:
         video_size = sizes.get(aspect_ratio, (1080, 1920))
 
         text_clips = [video]
-        for line in script.lines:
+        num_lines = len(script.lines)
+
+        for idx, line in enumerate(script.lines):
             try:
+                # Select animation for this line
+                # Cycle through available animations for variety
+                animation = None
+                if text_animations and len(text_animations) > 0:
+                    animation = text_animations[idx % len(text_animations)]
+
                 txt_clip = text_overlay.create_text_clip(
                     text=line.text,
                     start=line.timing,
                     duration=line.duration,
                     style=style,
-                    video_size=video_size
+                    video_size=video_size,
+                    animation=animation
                 )
                 text_clips.append(txt_clip)
             except Exception as e:
                 logger.error(f"Failed to create text clip: {e}")
                 continue
+
+        if text_animations:
+            logger.info(f"Applied text animations: {text_animations} to {num_lines} lines")
 
         return CompositeVideoClip(text_clips)
 

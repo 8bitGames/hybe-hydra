@@ -117,11 +117,32 @@ export interface MerchandiseList {
   pages: number;
 }
 
+// Label type
+export interface Label {
+  id: string;
+  name: string;
+  code: string;
+  created_at: string;
+}
+
+// Labels API
+export const labelsApi = {
+  getAll: () => api.get<{ labels: Label[]; total: number }>("/api/v1/labels"),
+};
+
 // Artists API
 export const artistsApi = {
   getAll: () => api.get<Artist[]>("/api/v1/artists"),
 
   getById: (id: string) => api.get<Artist>(`/api/v1/artists/${id}`),
+
+  create: (data: {
+    name: string;
+    label_id: string;
+    stage_name?: string;
+    group_name?: string;
+    profile_description?: string;
+  }) => api.post<Artist>("/api/v1/artists", data),
 };
 
 // Campaigns API

@@ -3,6 +3,8 @@ import { getUserFromHeader } from "@/lib/auth";
 import { searchTikTok } from "@/lib/tiktok-rapidapi";
 import { prisma } from "@/lib/db/prisma";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { batchCacheImagesToS3 } from "@/lib/storage";
+import { batchGetTikTokThumbnails } from "@/lib/tiktok-oembed";
 
 const CACHE_DURATION_HOURS = 24;
 
@@ -816,8 +818,52 @@ export async function GET(request: NextRequest) {
             } as any;
           }
 
+          // Get stable thumbnail URLs via oEmbed API (signed CDN URLs fail with 403)
+          const videoUrls = result.videos
+            .map((v) => v.videoUrl)
+            .filter((url): url is string => !!url && url.includes("tiktok.com"));
+
+          let oembedThumbnailMap = new Map<string, string>();
+          let cachedUrlMap = new Map<string, string>();
+
+          if (videoUrls.length > 0) {
+            console.log(`[KEYWORD-ANALYSIS] Getting ${videoUrls.length} thumbnails via oEmbed...`);
+            try {
+              // Step 1: Get stable thumbnail URLs from oEmbed API
+              oembedThumbnailMap = await batchGetTikTokThumbnails(videoUrls, 5);
+              console.log(`[KEYWORD-ANALYSIS] Got ${oembedThumbnailMap.size} oEmbed thumbnails`);
+
+              // Step 2: Cache oEmbed thumbnails to S3 (these URLs work from server)
+              const oembedUrls = Array.from(oembedThumbnailMap.values());
+              if (oembedUrls.length > 0) {
+                console.log(`[KEYWORD-ANALYSIS] Caching ${oembedUrls.length} thumbnails to S3...`);
+                const s3Map = await batchCacheImagesToS3(oembedUrls, "cache/keyword-analysis");
+                console.log(`[KEYWORD-ANALYSIS] Cached ${s3Map.size} thumbnails to S3`);
+
+                // Build videoUrl -> S3 URL map
+                for (const [videoUrl, oembedUrl] of oembedThumbnailMap) {
+                  const s3Url = s3Map.get(oembedUrl);
+                  if (s3Url) {
+                    cachedUrlMap.set(videoUrl, s3Url);
+                  }
+                }
+              }
+            } catch (cacheError) {
+              console.warn("[KEYWORD-ANALYSIS] Thumbnail caching failed (non-fatal):", cacheError);
+            }
+          }
+
+          // Update videos with cached S3 URLs (fallback to oEmbed URL, then original)
+          const videosWithCachedThumbnails = result.videos.map((v) => ({
+            ...v,
+            thumbnailUrl:
+              cachedUrlMap.get(v.videoUrl) ||
+              oembedThumbnailMap.get(v.videoUrl) ||
+              v.thumbnailUrl,
+          }));
+
           // Analyze videos
-          const analysis = analyzeVideos(result.videos, keyword);
+          const analysis = analyzeVideos(videosWithCachedThumbnails, keyword);
 
           // Generate AI insights using Gemini
           console.log(`[KEYWORD-ANALYSIS] Generating AI insights for: ${keyword}`);

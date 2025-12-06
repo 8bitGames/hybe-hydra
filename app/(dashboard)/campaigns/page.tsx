@@ -31,13 +31,16 @@ import {
   ChevronRight,
   X,
   BarChart3,
+  UserPlus,
 } from "lucide-react";
+import { AddArtistModal } from "@/components/features/artist/AddArtistModal";
 
 export default function CampaignsPage() {
   const { language } = useI18n();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [artistFilter, setArtistFilter] = useState<string>("");
+  const [addArtistModalOpen, setAddArtistModalOpen] = useState(false);
 
   // Use TanStack Query for data fetching with caching
   const { data: campaignsData, isLoading: campaignsLoading } = useCampaigns({
@@ -115,26 +118,37 @@ export default function CampaignsPage() {
           </SelectContent>
         </Select>
 
-        <Select
-          value={artistFilter}
-          onValueChange={(value) => {
-            setArtistFilter(value === "all" ? "" : value);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-[180px] h-10 text-base">
-            <SelectValue placeholder={language === "ko" ? "모든 아티스트" : "All Artists"} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" className="text-base">{language === "ko" ? "모든 아티스트" : "All Artists"}</SelectItem>
-            {artists.map((artist) => (
-              <SelectItem key={artist.id} value={artist.id} className="text-base">
-                {artist.stage_name || artist.name}
-                {artist.group_name ? ` (${artist.group_name})` : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-1">
+          <Select
+            value={artistFilter}
+            onValueChange={(value) => {
+              setArtistFilter(value === "all" ? "" : value);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-[180px] h-10 text-base">
+              <SelectValue placeholder={language === "ko" ? "모든 아티스트" : "All Artists"} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="text-base">{language === "ko" ? "모든 아티스트" : "All Artists"}</SelectItem>
+              {artists.map((artist) => (
+                <SelectItem key={artist.id} value={artist.id} className="text-base">
+                  {artist.stage_name || artist.name}
+                  {artist.group_name ? ` (${artist.group_name})` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-10 w-10"
+            onClick={() => setAddArtistModalOpen(true)}
+            title={language === "ko" ? "아티스트 추가" : "Add Artist"}
+          >
+            <UserPlus className="h-4 w-4" />
+          </Button>
+        </div>
 
         {hasFilters && (
           <Button variant="ghost" onClick={clearFilters} className="text-base">
@@ -276,6 +290,12 @@ export default function CampaignsPage() {
           </>
         )}
       </div>
+
+      {/* Add Artist Modal */}
+      <AddArtistModal
+        open={addArtistModalOpen}
+        onOpenChange={setAddArtistModalOpen}
+      />
     </div>
   );
 }

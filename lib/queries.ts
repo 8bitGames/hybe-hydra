@@ -5,11 +5,13 @@ import { api } from "./api";
 import {
   campaignsApi,
   artistsApi,
+  labelsApi,
   assetsApi,
   merchandiseApi,
   Campaign,
   CampaignList,
   Artist,
+  Label,
   AssetList,
   AssetStats,
   MerchandiseList,
@@ -29,6 +31,9 @@ export const queryKeys = {
   campaignsList: (params?: { page?: number; status?: string; artist_id?: string }) =>
     ["campaigns", "list", params] as const,
   campaign: (id: string) => ["campaigns", id] as const,
+
+  // Labels
+  labels: ["labels"] as const,
 
   // Artists
   artists: ["artists"] as const,
@@ -261,6 +266,21 @@ export function useDeleteCampaign() {
   });
 }
 
+// Labels
+export function useLabels() {
+  return useQuery({
+    queryKey: queryKeys.labels,
+    queryFn: async () => {
+      const response = await labelsApi.getAll();
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data!.labels;
+    },
+    staleTime: 60 * 60 * 1000, // 1 hour - labels rarely change
+  });
+}
+
 // Artists
 export function useArtists() {
   return useQuery({
@@ -273,6 +293,29 @@ export function useArtists() {
       return response.data!;
     },
     staleTime: 10 * 60 * 1000, // 10 minutes - artists don't change often
+  });
+}
+
+export function useCreateArtist() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: {
+      name: string;
+      label_id: string;
+      stage_name?: string;
+      group_name?: string;
+      profile_description?: string;
+    }) => {
+      const response = await artistsApi.create(data);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data!;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.artists });
+    },
   });
 }
 

@@ -159,6 +159,10 @@ RUN pip3 install --no-cache-dir \
     PyOpenGL==3.1.7
 ENV PYOPENGL_PLATFORM=osmesa
 
+# AI Effect Selection (Gemini API)
+RUN pip3 install --no-cache-dir \
+    google-generativeai==0.8.3
+
 # =============================================================================
 # STEP 5: Verify all installations work together
 # =============================================================================

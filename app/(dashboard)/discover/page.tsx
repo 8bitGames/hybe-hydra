@@ -720,6 +720,7 @@ export default function DiscoverPage() {
     removeDiscoverKeyword,
     toggleDiscoverHashtag,
     addInspiration,
+    updateInspiration,
     removeInspiration,
     setDiscoverPerformanceMetrics,
     setDiscoverAiInsights,
@@ -736,6 +737,7 @@ export default function DiscoverPage() {
       removeDiscoverKeyword: state.removeDiscoverKeyword,
       toggleDiscoverHashtag: state.toggleDiscoverHashtag,
       addInspiration: state.addInspiration,
+      updateInspiration: state.updateInspiration,
       removeInspiration: state.removeInspiration,
       setDiscoverPerformanceMetrics: state.setDiscoverPerformanceMetrics,
       setDiscoverAiInsights: state.setDiscoverAiInsights,
@@ -958,7 +960,7 @@ export default function DiscoverPage() {
   );
 
   const handleSaveInspiration = useCallback(
-    (video: KeywordAnalysis["videos"][0]) => {
+    async (video: KeywordAnalysis["videos"][0]) => {
       if (savedIds.has(video.id)) {
         removeInspiration(video.id);
         toast.success(
@@ -966,6 +968,7 @@ export default function DiscoverPage() {
           language === "ko" ? "영감에서 제거되었습니다" : "Removed from inspiration"
         );
       } else {
+        // First, add inspiration with original thumbnail URL
         addInspiration({
           id: video.id,
           videoUrl: video.videoUrl,
@@ -980,9 +983,38 @@ export default function DiscoverPage() {
           language === "ko" ? "저장됨" : "Saved",
           language === "ko" ? "영감에 저장되었습니다" : "Saved to inspiration"
         );
+
+        // Then, cache thumbnail to S3 in background (don't block UI)
+        if (video.thumbnailUrl && video.thumbnailUrl.startsWith("http")) {
+          // Skip if already an S3 URL
+          if (video.thumbnailUrl.includes(".s3.") && video.thumbnailUrl.includes("amazonaws.com")) {
+            return;
+          }
+
+          try {
+            const response = await fetch("/api/v1/inspiration/cache-thumbnail", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                thumbnailUrl: video.thumbnailUrl,
+                videoId: video.id,
+              }),
+            });
+
+            const result = await response.json();
+            if (result.success && result.cachedUrl) {
+              // Update the inspiration with cached S3 URL
+              updateInspiration(video.id, { thumbnailUrl: result.cachedUrl });
+              console.log(`[Discover] Thumbnail cached to S3 for video ${video.id}`);
+            }
+          } catch (error) {
+            // Silent fail - original URL will still work via proxy
+            console.warn(`[Discover] Failed to cache thumbnail for video ${video.id}:`, error);
+          }
+        }
       }
     },
-    [savedIds, addInspiration, removeInspiration, language, toast]
+    [savedIds, addInspiration, updateInspiration, removeInspiration, language, toast]
   );
 
   const handleProceedToAnalyze = () => {

@@ -175,6 +175,14 @@ export default function PublishingPage() {
           hashtags: post.hashtags || [],
           videoUrl: post.generation?.output_url || post.thumbnail_url,
         }));
+
+        // Sort by most recent first (publishedAt > scheduledAt > id)
+        allPosts.sort((a, b) => {
+          const dateA = a.publishedAt || a.scheduledAt || "";
+          const dateB = b.publishedAt || b.scheduledAt || "";
+          return new Date(dateB).getTime() - new Date(dateA).getTime();
+        });
+
         setPosts(allPosts);
       }
     } catch (err) {
@@ -188,9 +196,14 @@ export default function PublishingPage() {
     loadData();
   }, [loadData]);
 
-  const scheduledPosts = posts.filter(p => p.status === "SCHEDULED");
+  // Filter and sort each category (most recent first)
+  const scheduledPosts = posts
+    .filter(p => p.status === "SCHEDULED")
+    .sort((a, b) => new Date(b.scheduledAt || "").getTime() - new Date(a.scheduledAt || "").getTime());
   const publishingPosts = posts.filter(p => p.status === "PUBLISHING");
-  const publishedPosts = posts.filter(p => p.status === "PUBLISHED");
+  const publishedPosts = posts
+    .filter(p => p.status === "PUBLISHED")
+    .sort((a, b) => new Date(b.publishedAt || "").getTime() - new Date(a.publishedAt || "").getTime());
   const failedPosts = posts.filter(p => p.status === "FAILED");
   const cancelledPosts = posts.filter(p => p.status === "CANCELLED");
 

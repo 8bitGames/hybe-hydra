@@ -520,6 +520,7 @@ def collect_trends_endpoint(request_data: dict):
 def compose_audio(request_data: dict) -> dict:
     """
     Compose video with audio track using FFmpeg.
+    Optionally adds subtitles/captions overlay.
 
     Args:
         request_data: Dictionary containing:
@@ -533,6 +534,8 @@ def compose_audio(request_data: dict) -> dict:
             - original_audio_volume: Original audio volume if mixing
             - output_s3_bucket: S3 bucket for output
             - output_s3_key: S3 key for output
+            - subtitles: Optional list of subtitle entries:
+                [{ "text": "가사 텍스트", "start": 0.0, "end": 3.0 }, ...]
 
     Returns:
         Dictionary with status, output_url, duration, error
@@ -559,6 +562,7 @@ def compose_audio(request_data: dict) -> dict:
         original_audio_volume = request_data.get("original_audio_volume", 0.3)
         output_s3_bucket = request_data.get("output_s3_bucket")
         output_s3_key = request_data.get("output_s3_key")
+        subtitles = request_data.get("subtitles", [])  # [{"text": "...", "start": 0.0, "end": 3.0}]
 
         # FFmpeg path (jellyfin-ffmpeg)
         ffmpeg_path = os.environ.get("FFMPEG_BINARY", "/usr/lib/jellyfin-ffmpeg/ffmpeg")
@@ -628,20 +632,84 @@ def compose_audio(request_data: dict) -> dict:
             else:
                 complex_filter = f"[1:a]{','.join(audio_filters)}[aout]"
 
+            # Build video filter for subtitles if provided
+            video_filters = []
+            if subtitles:
+                print(f"[{job_id}] Adding {len(subtitles)} subtitle lines")
+                # Noto Sans CJK for Korean/CJK support (installed via fonts-noto-cjk)
+                font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
+                fallback_font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+                # Check which font exists
+                import os.path
+                if os.path.exists(font_path):
+                    selected_font = font_path
+                elif os.path.exists(fallback_font):
+                    selected_font = fallback_font
+                else:
+                    selected_font = "Sans"  # System default
+
+                print(f"[{job_id}] Using font: {selected_font}")
+
+                for idx, sub in enumerate(subtitles):
+                    text = sub.get("text", "").replace("'", "\\'").replace(":", "\\:")
+                    start = float(sub.get("start", 0))
+                    end = float(sub.get("end", start + 3))
+
+                    # FFmpeg drawtext filter for each subtitle
+                    # Position at bottom 18% (TikTok safe zone)
+                    # White text with black outline for visibility
+                    drawtext = (
+                        f"drawtext=fontfile='{selected_font}'"
+                        f":text='{text}'"
+                        f":fontsize=48"
+                        f":fontcolor=white"
+                        f":borderw=3"
+                        f":bordercolor=black"
+                        f":x=(w-text_w)/2"
+                        f":y=h-h*0.18"
+                        f":enable='between(t,{start},{end})'"
+                    )
+                    video_filters.append(drawtext)
+
             # FFmpeg command
-            cmd = [
-                ffmpeg_path, "-y",
-                "-i", str(video_path),
-                "-i", str(audio_path),
-                "-filter_complex", complex_filter,
-                "-map", "0:v",
-                "-map", "[aout]",
-                "-c:v", "copy",  # Copy video codec (fast)
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-shortest",
-                str(output_path)
-            ]
+            if video_filters:
+                # When adding subtitles, we need to re-encode video
+                # Note: drawtext filter needs CPU frames, so we decode on CPU
+                # but use GPU (h264_nvenc) for encoding which is the slow part
+                video_filter_str = ",".join(video_filters)
+                full_complex_filter = f"[0:v]{video_filter_str}[vout];{complex_filter}"
+
+                cmd = [
+                    ffmpeg_path, "-y",
+                    "-i", str(video_path),
+                    "-i", str(audio_path),
+                    "-filter_complex", full_complex_filter,
+                    "-map", "[vout]",
+                    "-map", "[aout]",
+                    "-c:v", "h264_nvenc",  # GPU encoding (5-10x faster than CPU)
+                    "-preset", "p4",  # Balanced speed/quality
+                    "-b:v", "8M",  # 8 Mbps video bitrate
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-shortest",
+                    str(output_path)
+                ]
+            else:
+                # No subtitles - just copy video (fast)
+                cmd = [
+                    ffmpeg_path, "-y",
+                    "-i", str(video_path),
+                    "-i", str(audio_path),
+                    "-filter_complex", complex_filter,
+                    "-map", "0:v",
+                    "-map", "[aout]",
+                    "-c:v", "copy",  # Copy video codec (fast)
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-shortest",
+                    str(output_path)
+                ]
 
             print(f"[{job_id}] Running FFmpeg...")
             result = subprocess.run(cmd, capture_output=True, text=True)

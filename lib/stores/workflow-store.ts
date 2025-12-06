@@ -255,6 +255,7 @@ interface WorkflowState {
   setDiscoverHashtags: (hashtags: string[]) => void;
   toggleDiscoverHashtag: (hashtag: string) => void;
   addInspiration: (video: TrendVideo) => void;
+  updateInspiration: (videoId: string, updates: Partial<TrendVideo>) => void;
   removeInspiration: (videoId: string) => void;
   setDiscoverPerformanceMetrics: (metrics: DiscoverData["performanceMetrics"]) => void;
   setDiscoverAiInsights: (insights: string[]) => void;
@@ -460,6 +461,16 @@ export const useWorkflowStore = create<WorkflowState>()(
               savedInspiration: state.discover.savedInspiration.some((v) => v.id === video.id)
                 ? state.discover.savedInspiration
                 : [...state.discover.savedInspiration, video],
+            },
+          })),
+
+        updateInspiration: (videoId, updates) =>
+          set((state) => ({
+            discover: {
+              ...state.discover,
+              savedInspiration: state.discover.savedInspiration.map((v) =>
+                v.id === videoId ? { ...v, ...updates } : v
+              ),
             },
           })),
 
