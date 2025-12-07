@@ -20,14 +20,14 @@ import type {
 
 export interface GeminiClientConfig extends ModelClientConfig {
   model: 'gemini-2.5-flash' | 'gemini-3-pro-preview';
-  thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
+  thinkingLevel?: 'low' | 'high';  // Gemini 3 Pro only
   enableGoogleSearch?: boolean;
 }
 
 // Model name mapping - use stable model names
 const MODEL_MAP: Record<string, string> = {
   'gemini-2.5-flash': 'gemini-2.5-flash',
-  'gemini-3-pro-preview': 'gemini-2.5-pro-preview-06-05', // Actual model ID
+  'gemini-3-pro-preview': 'gemini-3-pro-preview',
 };
 
 export class GeminiClient implements IModelClient {
@@ -79,11 +79,11 @@ export class GeminiClient implements IModelClient {
       generationConfig.responseMimeType = 'application/json';
     }
 
-    // Build thinking config for Gemini 3 Pro
+    // Build thinkingConfig for Gemini 3 Pro
     let thinkingConfig: Record<string, unknown> | undefined;
-    if (this.config.thinkingLevel && this.config.model.includes('3-pro')) {
+    if (this.config.thinkingLevel && this.config.model === 'gemini-3-pro-preview') {
       thinkingConfig = {
-        thinkingMode: this.config.thinkingLevel,
+        thinkingLevel: this.config.thinkingLevel,
       };
     }
 
@@ -242,7 +242,7 @@ export function createGeminiClient(
       model: 'gemini-3-pro-preview',
       temperature: 0.7,
       maxTokens: 16384,
-      thinkingLevel: 'HIGH',
+      thinkingLevel: 'high',
       enableGoogleSearch: true,
     },
   };
