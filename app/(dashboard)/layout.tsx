@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { useAuthStore } from "@/lib/auth-store";
 import { ToastProvider } from "@/components/ui/toast";
 import { I18nProvider, LanguageSwitcher, useI18n } from "@/lib/i18n";
@@ -60,13 +59,7 @@ function DashboardContent({
             </SheetTrigger>
             <SheetContent side="left" className="w-72">
               <div className="flex items-center gap-2 mb-6">
-                <Image
-                  src="/Vector.png"
-                  alt="HYDRA"
-                  width={200}
-                  height={200}
-                  className="h-16 w-auto"
-                />
+                <span className="text-3xl font-bold tracking-tight">HYDRA</span>
               </div>
               <MainNavigation mobile />
             </SheetContent>
@@ -74,13 +67,7 @@ function DashboardContent({
 
           {/* Logo */}
           <Link href="/home" className="flex items-center gap-2">
-            <Image
-              src="/Vector.png"
-              alt="HYDRA"
-              width={200}
-              height={200}
-              className="h-20 w-auto"
-            />
+            <span className="text-3xl font-bold tracking-tight">HYDRA</span>
           </Link>
 
           {/* Navigation */}

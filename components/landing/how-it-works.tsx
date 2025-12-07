@@ -9,12 +9,19 @@ import {
 } from "@phosphor-icons/react";
 import { type Language, getTranslation } from "@/lib/i18n/landing";
 import { TracingBeam } from "@/components/ui/tracing-beam";
+import {
+  WorkflowResearchMockup,
+  WorkflowCreateMockup,
+  WorkflowReviewMockup,
+  WorkflowPublishMockup,
+} from "./feature-mockups";
 
 interface HowItWorksSectionProps {
   lang: Language;
 }
 
 const stepIcons = [MagnifyingGlass, Sparkle, CheckSquare, PaperPlaneTilt];
+const stepMockups = [WorkflowResearchMockup, WorkflowCreateMockup, WorkflowReviewMockup, WorkflowPublishMockup];
 
 export function HowItWorksSection({ lang }: HowItWorksSectionProps) {
   const t = getTranslation(lang);
@@ -47,9 +54,10 @@ export function HowItWorksSection({ lang }: HowItWorksSectionProps) {
         {/* Desktop Timeline with TracingBeam */}
         <div className="hidden lg:block">
           <TracingBeam className="px-6">
-            <div className="max-w-4xl mx-auto space-y-24">
+            <div className="max-w-5xl mx-auto space-y-20">
               {t.howItWorks.steps.map((step, index) => {
                 const Icon = stepIcons[index];
+                const MockupComponent = stepMockups[index];
                 return (
                   <motion.div
                     key={index}
@@ -61,24 +69,30 @@ export function HowItWorksSection({ lang }: HowItWorksSectionProps) {
                   >
                     <div className="flex items-start gap-8">
                       {/* Number */}
-                      <div className="flex-shrink-0 w-20 h-20 bg-zinc-900 border-2 border-zinc-700 rounded-2xl flex items-center justify-center">
-                        <span className="text-2xl font-bold text-white">{step.number}</span>
+                      <div className="flex-shrink-0 w-16 h-16 bg-zinc-900 border-2 border-zinc-700 rounded-2xl flex items-center justify-center">
+                        <span className="text-xl font-bold text-white">{step.number}</span>
                       </div>
 
                       {/* Content */}
-                      <div className="flex-1 pt-2">
+                      <div className="flex-1">
                         <div className="flex items-center gap-4 mb-4">
-                          <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                            <Icon size={24} className="text-black" weight="bold" />
+                          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center">
+                            <Icon size={20} className="text-black" weight="bold" />
                           </div>
                           <div>
-                            <h3 className="text-2xl font-bold text-white">{step.title}</h3>
-                            <p className="text-zinc-400">{step.subtitle}</p>
+                            <h3 className="text-xl font-bold text-white">{step.title}</h3>
+                            <p className="text-zinc-400 text-sm">{step.subtitle}</p>
                           </div>
                         </div>
-                        <p className="text-zinc-500 text-lg leading-relaxed pl-16">
+                        <p className="text-zinc-500 text-sm leading-relaxed mb-4 pl-14">
                           {step.description}
                         </p>
+                        {/* Mockup */}
+                        <div className="pl-14">
+                          <div className="max-w-md">
+                            <MockupComponent />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -92,6 +106,7 @@ export function HowItWorksSection({ lang }: HowItWorksSectionProps) {
         <div className="lg:hidden space-y-8">
           {t.howItWorks.steps.map((step, index) => {
             const Icon = stepIcons[index];
+            const MockupComponent = stepMockups[index];
             return (
               <motion.div
                 key={index}
@@ -99,12 +114,12 @@ export function HowItWorksSection({ lang }: HowItWorksSectionProps) {
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.5, delay: index * 0.1 }}
-                className="flex gap-6"
+                className="flex gap-4"
               >
                 {/* Left - Number & Line */}
                 <div className="flex flex-col items-center">
-                  <div className="w-14 h-14 bg-zinc-900 border-2 border-zinc-700 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <span className="text-lg font-bold text-white">{step.number}</span>
+                  <div className="w-12 h-12 bg-zinc-900 border-2 border-zinc-700 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <span className="text-base font-bold text-white">{step.number}</span>
                   </div>
                   {index < t.howItWorks.steps.length - 1 && (
                     <div className="w-0.5 h-full bg-gradient-to-b from-zinc-700 to-transparent mt-4" />
@@ -113,16 +128,20 @@ export function HowItWorksSection({ lang }: HowItWorksSectionProps) {
 
                 {/* Right - Content */}
                 <div className="pb-8 flex-1">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center">
-                      <Icon size={20} className="text-black" weight="bold" />
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
+                      <Icon size={16} className="text-black" weight="bold" />
                     </div>
-                    <h3 className="text-lg font-bold text-white">{step.title}</h3>
+                    <h3 className="text-base font-bold text-white">{step.title}</h3>
                   </div>
-                  <p className="text-zinc-400 text-sm mb-2">{step.subtitle}</p>
-                  <p className="text-zinc-500 text-sm leading-relaxed">
+                  <p className="text-zinc-400 text-xs mb-1">{step.subtitle}</p>
+                  <p className="text-zinc-500 text-xs leading-relaxed mb-3">
                     {step.description}
                   </p>
+                  {/* Mobile Mockup */}
+                  <div className="w-full">
+                    <MockupComponent />
+                  </div>
                 </div>
               </motion.div>
             );

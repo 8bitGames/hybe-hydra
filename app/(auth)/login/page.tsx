@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { useAuthStore } from "@/lib/auth-store";
 import { useI18n } from "@/lib/i18n";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,16 +50,7 @@ export default function LoginPage() {
       <div className="max-w-md w-full">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <Image
-              src="/Vector.png"
-              alt="HYDRA"
-              width={800}
-              height={800}
-              className="h-32 w-auto object-contain"
-              priority
-            />
-          </div>
+          <h1 className="text-5xl font-bold tracking-tight text-black">HYDRA</h1>
         </div>
 
         {/* Login Form */}

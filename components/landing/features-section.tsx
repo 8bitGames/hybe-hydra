@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "motion/react";
-import Image from "next/image";
 import {
   MagnifyingGlass,
   Fingerprint,
@@ -14,6 +13,14 @@ import {
 import { type Language, getTranslation } from "@/lib/i18n/landing";
 import { BentoGrid, BentoGridItem } from "@/components/ui/bento-grid";
 import { cn } from "@/lib/utils";
+import {
+  TrendIntelligenceMockup,
+  BrandIPMockup,
+  MassGenerationMockup,
+  OneClickPublishMockup,
+  HyperpersonalizationMockup,
+  AEOGEOMockup,
+} from "./feature-mockups";
 
 interface FeaturesSectionProps {
   lang: Language;
@@ -23,52 +30,45 @@ const featureConfig = [
   {
     key: "trendIntelligence" as const,
     icon: MagnifyingGlass,
-    image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
+    MockupComponent: TrendIntelligenceMockup,
     className: "md:col-span-2",
   },
   {
     key: "brandIP" as const,
     icon: Fingerprint,
-    image: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80",
+    MockupComponent: BrandIPMockup,
     className: "md:col-span-1",
   },
   {
     key: "massGeneration" as const,
     icon: Stack,
-    image: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80",
+    MockupComponent: MassGenerationMockup,
     className: "md:col-span-1",
   },
   {
     key: "oneClickPublish" as const,
     icon: RocketLaunch,
-    image: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&q=80",
+    MockupComponent: OneClickPublishMockup,
     className: "md:col-span-2",
   },
   {
     key: "hyperpersonalization" as const,
     icon: Globe,
-    image: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80",
+    MockupComponent: HyperpersonalizationMockup,
     className: "md:col-span-1",
   },
   {
     key: "aeoGeo" as const,
     icon: ChartLineUp,
-    image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80",
+    MockupComponent: AEOGEOMockup,
     className: "md:col-span-2",
   },
 ];
 
-function FeatureHeader({ image, label }: { image: string; label: string }) {
+function FeatureHeader({ MockupComponent }: { MockupComponent: React.ComponentType }) {
   return (
-    <div className="relative w-full h-32 rounded-xl overflow-hidden bg-zinc-800">
-      <Image
-        src={image}
-        alt={label}
-        fill
-        unoptimized
-        className="object-cover grayscale group-hover/bento:grayscale-0 transition-all duration-500"
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+    <div className="w-full h-40 rounded-xl overflow-hidden">
+      <MockupComponent />
     </div>
   );
 }
@@ -122,7 +122,7 @@ export function FeaturesSection({ lang }: FeaturesSectionProps) {
                     </ul>
                   </div>
                 }
-                header={<FeatureHeader image={feature.image} label={featureData.label} />}
+                header={<FeatureHeader MockupComponent={feature.MockupComponent} />}
                 icon={
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-8 h-8 bg-[#F7F91D] rounded-lg flex items-center justify-center">
