@@ -80,7 +80,7 @@ export const CreativeDirectorConfig: AgentConfig<CreativeDirectorInput, Creative
     options: {
       temperature: 0.7,
       maxTokens: 16384,
-      thinkingLevel: 'HIGH',
+      thinkingLevel: 'high',
       tools: [{ type: 'google_search' }],
     },
   },

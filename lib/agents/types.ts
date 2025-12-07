@@ -37,7 +37,7 @@ export interface ModelOptions {
   presencePenalty?: number;
   frequencyPenalty?: number;
   // Gemini 3 Pro specific
-  thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
+  thinkingLevel?: 'low' | 'high';
   // Tools
   tools?: AgentTool[];
 }
