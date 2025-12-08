@@ -7,7 +7,7 @@
       "assets": "에셋",
       "create": "생성",
       "generate": "AI 생성",
-      "compose": "컴포즈",
+      "fastCut": "패스트 컷",
       "videos": "영상",
       "publish": "배포",
       "analytics": "분석",
@@ -195,7 +195,7 @@
       "기능은-237": "기능은",
       "관리됩니다-238": "관리됩니다"
     },
-    "compose-mode": {
+    "fast-cut-mode": {
       "트렌딩-239": "트렌딩",
       "영상에-240": "영상에",
       "매칭-241": "매칭",
@@ -666,7 +666,7 @@
     "celebrityDetected": "유명인 감지됨",
     "celebrityWarningMessage": "가 감지되어 얼굴이 자동으로 교체됩니다."
   },
-  "compose": {
+  "fastCut": {
     "enterPrompt": "프롬프트를 입력해주세요",
     "minImagesRequired": "최소 1개 이상의 이미지가 필요합니다",
     "renderFailed": "렌더링에 실패했습니다",
@@ -726,7 +726,7 @@
       },
       "navigation": {
         "back": "이전 단계로 돌아갑니다",
-        "cancel": "컴포즈 생성을 취소하고 캠페인 페이지로 돌아갑니다",
+        "cancel": "패스트 컷 생성을 취소하고 캠페인 페이지로 돌아갑니다",
         "startOver": "모든 설정을 초기화하고 처음부터 다시 시작합니다",
         "next": "다음 단계로 진행합니다",
         "generate": "선택한 설정으로 최종 영상을 생성합니다"
@@ -775,7 +775,7 @@
       "createMoreFromThis": "이 영상으로 더 만들기",
       "aiVariation": "AI 변형",
       "styleChanges": "스타일 변경",
-      "composeVariation": "Compose 변형",
+      "fastCutVariation": "Fast Cut 변형",
       "musicEffects": "음악/이펙트",
       "successTitle": "발행 예약 완료!",
       "successDescription": "{count}개의 영상이 TikTok에 예약되었습니다",
@@ -1077,8 +1077,8 @@
       "generate": {
         "name": "AI 생성"
       },
-      "compose": {
-        "name": "컴포즈"
+      "fastCut": {
+        "name": "패스트 컷"
       },
       "batch": {
         "name": "일괄 생성"

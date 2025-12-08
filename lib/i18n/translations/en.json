@@ -7,7 +7,7 @@
       "assets": "Assets",
       "create": "Create",
       "generate": "AI Generate",
-      "compose": "Compose",
+      "fastCut": "Fast Cut",
       "videos": "Videos",
       "publish": "Publish",
       "analytics": "Analytics",
@@ -195,7 +195,7 @@
       "기능은-237": "Feature is",
       "관리됩니다-238": "Managed"
     },
-    "compose-mode": {
+    "fast-cut-mode": {
       "트렌딩-239": "Trending",
       "영상에-240": "On the video",
       "매칭-241": "Matching",
@@ -666,7 +666,7 @@
     "celebrityDetected": "Celebrity Detected",
     "celebrityWarningMessage": "detected - face will be automatically replaced."
   },
-  "compose": {
+  "fastCut": {
     "enterPrompt": "Please enter a prompt",
     "minImagesRequired": "At least 1 image is required",
     "renderFailed": "Rendering failed",
@@ -726,7 +726,7 @@
       },
       "navigation": {
         "back": "Go back to previous step",
-        "cancel": "Cancel compose creation and return to campaign page",
+        "cancel": "Cancel fast cut creation and return to campaign page",
         "startOver": "Reset all settings and start from the beginning",
         "next": "Proceed to next step",
         "generate": "Generate final video with selected settings"
@@ -775,7 +775,7 @@
       "createMoreFromThis": "Create More From This",
       "aiVariation": "AI Variation",
       "styleChanges": "Style changes",
-      "composeVariation": "Compose Variation",
+      "fastCutVariation": "Fast Cut Variation",
       "musicEffects": "Music/Effects",
       "successTitle": "Successfully Scheduled!",
       "successDescription": "{count} video(s) scheduled to TikTok",
@@ -1077,8 +1077,8 @@
       "generate": {
         "name": "AI Generate"
       },
-      "compose": {
-        "name": "Compose"
+      "fastCut": {
+        "name": "Fast Cut"
       },
       "batch": {
         "name": "Batch Create"

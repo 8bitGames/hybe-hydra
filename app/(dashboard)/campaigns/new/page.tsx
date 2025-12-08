@@ -118,7 +118,7 @@ export default function NewCampaignPage() {
 
   return (
     <TooltipProvider>
-      <div className="min-h-[calc(100vh-4rem)] flex flex-col">
+      <div className="min-h-[calc(100vh-4rem)] flex flex-col py-6 px-[7%]">
         {/* Header */}
         <div className="mb-8">
           <Link

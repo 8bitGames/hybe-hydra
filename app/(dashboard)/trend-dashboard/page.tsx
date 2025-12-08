@@ -1474,7 +1474,7 @@ export default function TrendDashboardPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b bg-background/95 backdrop-blur sticky top-0 z-10">
-        <div className="px-6 py-4 flex items-center justify-between">
+        <div className="px-[7%] py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center">
               <BarChart3 className="h-5 w-5 text-white" />
@@ -1541,7 +1541,7 @@ export default function TrendDashboardPage() {
 
       {/* Error Alert */}
       {error && (
-        <div className="px-6 pt-4">
+        <div className="px-[7%] pt-4">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
@@ -1550,7 +1550,7 @@ export default function TrendDashboardPage() {
       )}
 
       {/* Main Content */}
-      <div className="p-6 space-y-6">
+      <div className="py-6 px-[7%] space-y-6">
         {/* Row 1: Content Summary */}
         <Card>
           <CardHeader className="pb-3">
