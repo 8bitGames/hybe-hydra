@@ -8,6 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   Music,
@@ -22,6 +27,7 @@ import {
   SkipForward,
   Volume2,
   VolumeX,
+  HelpCircle,
 } from "lucide-react";
 import {
   ScriptGenerationResponse,
@@ -62,7 +68,19 @@ export function ComposeMusicStep({
   onUnskipMusic,
   onNext,
 }: ComposeMusicStepProps) {
-  const { language } = useI18n();
+  const { language, translate } = useI18n();
+
+  // Helper for tooltip icon
+  const TooltipIcon = ({ tooltipKey }: { tooltipKey: string }) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <HelpCircle className="h-3.5 w-3.5 text-neutral-400 hover:text-neutral-600 cursor-help ml-1.5" />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[280px]">
+        <p className="text-xs">{translate(tooltipKey)}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
 
   // Fetch all campaign audio assets for reference
   const { data: audioAssetsData } = useAssets(campaignId, {
@@ -106,14 +124,21 @@ export function ComposeMusicStep({
         <div className="flex items-center gap-2">
           {/* Skip Music Button */}
           {!musicSkipped && !selectedAudio && (
-            <Button
-              variant="outline"
-              onClick={onSkipMusic}
-              className="border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-            >
-              <SkipForward className="h-4 w-4 mr-1" />
-              {language === "ko" ? "건너뛰기" : "Skip"}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  onClick={onSkipMusic}
+                  className="border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+                >
+                  <SkipForward className="h-4 w-4 mr-1" />
+                  {language === "ko" ? "건너뛰기" : "Skip"}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[240px]">
+                <p className="text-xs">{translate("compose.tooltips.music.skipMusic")}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
 
           {/* Next Step Button - Prominent position */}
@@ -190,8 +215,9 @@ export function ComposeMusicStep({
       {/* Music Matches */}
       {!musicSkipped && !matchingMusic && audioMatches.length > 0 && (
         <div className="space-y-3">
-          <Label className="text-sm font-medium text-neutral-700">
+          <Label className="text-sm font-medium text-neutral-700 flex items-center">
             {language === "ko" ? "추천 음악" : "Recommended Music"} ({audioMatches.length})
+            <TooltipIcon tooltipKey="compose.tooltips.music.selectMusic" />
           </Label>
           <ScrollArea className="h-[280px] pr-4">
             <div className="space-y-2">
@@ -246,14 +272,21 @@ export function ComposeMusicStep({
                     </div>
 
                     {/* Match Score */}
-                    <Badge
-                      className={cn(
-                        "shrink-0",
-                        getMatchScoreColor(audio.matchScore)
-                      )}
-                    >
-                      {Math.round(audio.matchScore)}% match
-                    </Badge>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge
+                          className={cn(
+                            "shrink-0 cursor-help",
+                            getMatchScoreColor(audio.matchScore)
+                          )}
+                        >
+                          {Math.round(audio.matchScore)}% match
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-[240px]">
+                        <p className="text-xs">{translate("compose.tooltips.music.matchScore")}</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 );
               })}
@@ -308,8 +341,9 @@ export function ComposeMusicStep({
           {/* Audio Start Time Slider */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium text-neutral-700">
+              <Label className="text-sm font-medium text-neutral-700 flex items-center">
                 {language === "ko" ? "시작 시간" : "Start Time"}
+                <TooltipIcon tooltipKey="compose.tooltips.music.startTime" />
               </Label>
               <span className="text-sm text-neutral-500 font-mono">
                 {formatDuration(audioStartTime)}
@@ -335,6 +369,7 @@ export function ComposeMusicStep({
               <h4 className="text-xs font-semibold text-neutral-600 uppercase tracking-wide flex items-center gap-1">
                 <Zap className="h-3 w-3" />
                 {language === "ko" ? "AI 추천" : "AI Recommendation"}
+                <TooltipIcon tooltipKey="compose.tooltips.music.aiRecommendation" />
               </h4>
               <div className="grid grid-cols-2 gap-3">
                 <div>

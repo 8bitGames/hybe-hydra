@@ -18,6 +18,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -75,14 +77,18 @@ export default function AllVideosPage() {
   const [selectedVideo, setSelectedVideo] = useState<FullVideoGeneration | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
+  // Delete state
+  const [deleteVideoId, setDeleteVideoId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // Fetch compose videos with pagination
-  const { data: composeData, isLoading: loadingCompose } = useComposeVideos({
+  const { data: composeData, isLoading: loadingCompose, refetch: refetchCompose } = useComposeVideos({
     page,
     page_size: pageSize,
   });
 
   // Fetch AI videos from all campaigns
-  const { data: aiData, isLoading: loadingAI } = useAllAIVideos();
+  const { data: aiData, isLoading: loadingAI, refetch: refetchAI } = useAllAIVideos();
 
   const composeVideos = composeData?.items || [];
   const aiVideos = aiData?.items || [];
@@ -137,6 +143,13 @@ export default function AllVideosPage() {
     loadFailed: language === "ko" ? "영상 정보를 불러올 수 없습니다" : "Failed to load video details",
     openInNewTab: language === "ko" ? "새 탭에서 열기" : "Open in New Tab",
     createSimilar: language === "ko" ? "유사하게 만들기" : "Create Similar",
+    deleteConfirm: language === "ko" ? "정말 이 영상을 삭제하시겠습니까?" : "Are you sure you want to delete this video?",
+    deleteConfirmTitle: language === "ko" ? "영상 삭제" : "Delete Video",
+    deleting: language === "ko" ? "삭제 중..." : "Deleting...",
+    deleteSuccess: language === "ko" ? "영상이 삭제되었습니다" : "Video deleted",
+    deleteFailed: language === "ko" ? "삭제에 실패했습니다" : "Failed to delete video",
+    confirm: language === "ko" ? "확인" : "Confirm",
+    cancel: language === "ko" ? "취소" : "Cancel",
   };
 
   const handleDownload = async (url: string, filename: string) => {
@@ -155,6 +168,22 @@ export default function AllVideosPage() {
       console.error('Download failed:', error);
       // Fallback: open in new tab
       window.open(url, '_blank');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteVideoId) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/api/v1/generations/${deleteVideoId}?force=true`);
+      setDeleteVideoId(null);
+      // Refresh data
+      refetchCompose();
+      refetchAI();
+    } catch (error) {
+      console.error('Delete failed:', error);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -483,7 +512,13 @@ export default function AllVideosPage() {
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive">
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteVideoId(video.id);
+                            }}
+                          >
                             <Trash2 className="h-4 w-4 mr-2" />
                             {t.delete}
                           </DropdownMenuItem>
@@ -757,6 +792,42 @@ export default function AllVideosPage() {
               {t.loadFailed}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteVideoId} onOpenChange={(open) => !open && setDeleteVideoId(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t.deleteConfirmTitle}</DialogTitle>
+            <DialogDescription>{t.deleteConfirm}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteVideoId(null)}
+              disabled={deleting}
+            >
+              {t.cancel}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <>
+                  <Spinner className="h-4 w-4 mr-2" />
+                  {t.deleting}
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {t.delete}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

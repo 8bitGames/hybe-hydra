@@ -33,7 +33,7 @@ import {
   BarChart3,
   UserPlus,
 } from "lucide-react";
-import { AddArtistModal } from "@/components/features/artist/AddArtistModal";
+import { ArtistModal } from "@/components/features/artist/ArtistModal";
 
 export default function CampaignsPage() {
   const { language } = useI18n();
@@ -291,8 +291,8 @@ export default function CampaignsPage() {
         )}
       </div>
 
-      {/* Add Artist Modal */}
-      <AddArtistModal
+      {/* Artist Modal */}
+      <ArtistModal
         open={addArtistModalOpen}
         onOpenChange={setAddArtistModalOpen}
       />

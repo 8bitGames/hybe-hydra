@@ -31,6 +31,12 @@ BLACKLISTED_EFFECTS = {
     "xfade_rectcrop",  # Rectangle crop - causes horizontal stripes
     "rectcrop",        # Raw name
 
+    # Burn effects - shows solid orange color instead of image during middle progress
+    "gl_burn",         # Burns to orange color, making images invisible at progress 0.33-0.66
+
+    # Missing shader effects - these are in catalog but have no GLSL code
+    "gl_overexposure", # No shader code exists, falls back incorrectly
+
     # Other problematic effects
     "gl_windowslice",  # Window slice - similar issues
 }

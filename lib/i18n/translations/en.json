@@ -669,7 +669,69 @@
   "compose": {
     "enterPrompt": "Please enter a prompt",
     "minImagesRequired": "At least 1 image is required",
-    "renderFailed": "Rendering failed"
+    "renderFailed": "Rendering failed",
+    "tooltips": {
+      "steps": {
+        "script": "AI generates a script matching your video concept",
+        "images": "Select and arrange images according to the script timeline",
+        "music": "Select background music that matches the mood and BPM",
+        "effects": "Set effect presets and TikTok SEO, then generate your video"
+      },
+      "script": {
+        "prompt": "Describe the topic, mood, and style of your video. AI will generate a script based on this",
+        "aspectRatio": "Select the aspect ratio. 9:16 for TikTok/Reels, 16:9 for YouTube",
+        "searchKeywords": "Keywords used for image search. Automatically added when generating script",
+        "generateScript": "AI generates script, timeline, and keywords based on your prompt",
+        "regenerateScript": "Generate a new script",
+        "timeline": "Text and display time for each scene. Click to edit",
+        "vibe": "The overall mood of the video analyzed by AI",
+        "bpmRange": "Recommended BPM range for music. Music within this range will be auto-matched"
+      },
+      "images": {
+        "selectImages": "Select at least 3 images. Drag to reorder",
+        "searchButton": "Search images from campaign assets by keyword",
+        "uploadButton": "Upload new images",
+        "removeImage": "Remove selected image",
+        "timeline": "Selected images are displayed according to the script timeline"
+      },
+      "music": {
+        "skipMusic": "Generate video without background music",
+        "selectMusic": "Select music again",
+        "matchScore": "Shows how well the music matches the script's mood and BPM",
+        "startTime": "Set where the music starts. Drag the slider to adjust",
+        "aiRecommendation": "AI recommends the optimal starting point",
+        "bpm": "Music BPM (beats per minute). Compare with script recommendation",
+        "duration": "Total length of the music"
+      },
+      "effects": {
+        "preset": "Select the effect style for your video. Refer to AI recommendation",
+        "generateVideo": "Generate final video with selected settings",
+        "seo": {
+          "description": "Description for TikTok posting. Include keywords naturally",
+          "hashtags": "Related hashtags. Click to remove or use + to add",
+          "primaryKeyword": "Main keyword for search visibility",
+          "searchIntent": "Purpose of viewers finding this video (tutorial, discovery, entertainment, etc.)"
+        },
+        "preview": "Preview of the first frame. Actual video may vary based on effects",
+        "summary": {
+          "images": "Number of selected images",
+          "bpm": "BPM of selected music",
+          "ratio": "Video aspect ratio",
+          "vibe": "Overall mood of the video"
+        }
+      },
+      "context": {
+        "idea": "The content idea you're currently working on",
+        "campaign": "Generate video using assets from the current campaign"
+      },
+      "navigation": {
+        "back": "Go back to previous step",
+        "cancel": "Cancel compose creation and return to campaign page",
+        "startOver": "Reset all settings and start from the beginning",
+        "next": "Proceed to next step",
+        "generate": "Generate final video with selected settings"
+      }
+    }
   },
   "publish": {
     "total": "Total",

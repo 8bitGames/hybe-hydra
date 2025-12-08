@@ -229,8 +229,8 @@ function ContextPanel() {
         </h3>
         <p className="text-sm text-neutral-500 mb-4 max-w-xs">
           {language === "ko"
-            ? "분석 단계에서 아이디어를 선택하거나 발견 단계에서 트렌드를 수집하세요"
-            : "Select an idea from Analyze or collect trends from Discover"}
+            ? "분석 단계에서 아이디어를 선택하거나 시작 단계에서 트렌드를 수집하세요"
+            : "Select an idea from Analyze or collect trends from Start"}
         </p>
         <div className="flex gap-2">
           <Button
@@ -240,7 +240,7 @@ function ContextPanel() {
             className="border-neutral-300"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
-            {language === "ko" ? "발견으로" : "Discover"}
+            {language === "ko" ? "시작으로" : "Start"}
           </Button>
           <Button
             variant="outline"
@@ -318,6 +318,18 @@ function ContextPanel() {
                 </Badge>
               )}
             </div>
+
+            {/* Compose recommendation hint */}
+            {selectedIdea.type === "compose" && (
+              <div className="mt-3 p-2 bg-neutral-100 rounded-md">
+                <p className="text-[11px] text-neutral-600 flex items-center gap-1.5">
+                  <Images className="h-3 w-3" />
+                  {language === "ko"
+                    ? "이 아이디어는 컴포즈 영상에 최적화되어 있습니다"
+                    : "This idea is optimized for Compose Video"}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -941,9 +953,6 @@ function CreateMethodCards({
   const { language } = useI18n();
   const { analyze } = useWorkflowStore();
 
-  // Highlight recommended method based on selected idea
-  const recommendedMethod = analyze.selectedIdea?.type === "compose" ? "compose" : "ai";
-
   return (
     <div className="space-y-3">
       {/* AI Generated Video */}
@@ -973,11 +982,6 @@ function CreateMethodCards({
               <Badge variant="outline" className="text-[9px] border-neutral-300">
                 Veo3
               </Badge>
-              {recommendedMethod === "ai" && (
-                <Badge className="text-[9px] bg-neutral-900 text-white">
-                  {language === "ko" ? "추천" : "Recommended"}
-                </Badge>
-              )}
             </div>
             <p className="text-xs text-neutral-500 mb-3">
               {language === "ko"
@@ -1045,11 +1049,6 @@ function CreateMethodCards({
               <h4 className="text-sm font-semibold text-neutral-900">
                 {language === "ko" ? "컴포즈 영상" : "Compose Video"}
               </h4>
-              {recommendedMethod === "compose" && (
-                <Badge className="text-[9px] bg-neutral-900 text-white">
-                  {language === "ko" ? "추천" : "Recommended"}
-                </Badge>
-              )}
             </div>
             <p className="text-xs text-neutral-500 mb-3">
               {language === "ko"
@@ -1202,13 +1201,36 @@ export default function CreatePage() {
       return;
     }
 
-    // Music and images are now optional - proceed to personalization modal
+    // Check if we have a prompt from the analyze step
+    const hasPrompt =
+      analyze.selectedIdea?.optimizedPrompt ||
+      analyze.optimizedPrompt ||
+      analyze.userIdea ||
+      analyze.selectedIdea?.description;
+
+    if (!hasPrompt) {
+      console.log("[Veo3] No prompt available from analyze step");
+      toast.warning(
+        language === "ko" ? "프롬프트 필요" : "Prompt needed",
+        language === "ko"
+          ? "먼저 Analyze 단계에서 아이디어를 선택하거나 프롬프트를 입력하세요"
+          : "Please select an idea or enter a prompt in the Analyze step first"
+      );
+      return;
+    }
+
+    // Proceed to personalization modal
     console.log("[Veo3] Proceeding to personalization modal");
     console.log("[Veo3] Audio:", audioAsset?.name || "None");
     console.log("[Veo3] Images:", imageAssets.length > 0 ? imageAssets.map(a => a.url) : "None");
+    console.log("[Veo3] Prompt source:",
+      analyze.selectedIdea?.optimizedPrompt ? "selectedIdea.optimizedPrompt" :
+      analyze.optimizedPrompt ? "analyze.optimizedPrompt" :
+      analyze.userIdea ? "analyze.userIdea" : "selectedIdea.description"
+    );
     setShowPersonalizeModal(true);
     console.log("[Veo3] showPersonalizeModal set to true");
-  }, [selectedCampaignId, audioAsset, imageAssets.length, language, toast]);
+  }, [selectedCampaignId, audioAsset, imageAssets.length, analyze, language, toast]);
 
   // Helper function to convert File to base64
   const fileToBase64 = useCallback((file: File): Promise<string> => {
@@ -1373,7 +1395,7 @@ export default function CreatePage() {
 
   // Build context for personalization modal
   const personalizationContext = useMemo(() => {
-    const { selectedIdea, campaignName, hashtags: analyzeHashtags } = analyze;
+    const { selectedIdea, campaignName, hashtags: analyzeHashtags, optimizedPrompt, userIdea } = analyze;
     const { keywords, selectedHashtags, performanceMetrics, aiInsights } = useWorkflowStore.getState().discover;
 
     return {
@@ -1384,6 +1406,7 @@ export default function CreatePage() {
       artistName: selectedCampaign?.artist_name,
       performanceMetrics: performanceMetrics || null,
       aiInsights: aiInsights || null,
+      optimizedPrompt: optimizedPrompt || userIdea || "", // Pass the analyzed prompt or userIdea as fallback
     };
   }, [analyze, selectedCampaignName, selectedCampaign]);
 
@@ -1563,8 +1586,8 @@ export default function CreatePage() {
                 </Label>
                 <InfoButton
                   content={language === "ko"
-                    ? "영상 제작에 사용할 음악과 이미지를 선택합니다. 캠페인 에셋에서 선택하거나 새로 업로드할 수 있습니다. 음악과 이미지는 선택사항입니다."
-                    : "Select music and images for video creation. Choose from campaign assets or upload new files. Music and images are optional."}
+                    ? "영상 제작에 사용할 음악과 이미지를 선택합니다. 새로 업로드할 수 있습니다. 음악과 이미지는 선택사항입니다."
+                    : "Select music and images for video creation. Upload new files. Music and images are optional."}
                   side="bottom"
                 />
                 <span className="text-xs text-neutral-400">
@@ -1576,8 +1599,8 @@ export default function CreatePage() {
                 imageAssets={imageAssets}
                 onAudioChange={setAudioAsset}
                 onImagesChange={setImageAssets}
-                campaignAssets={campaignAssets}
-                isLoadingAssets={isLoadingAssets}
+                campaignAssets={[]}
+                isLoadingAssets={false}
               />
             </div>
           </div>

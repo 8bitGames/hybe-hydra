@@ -109,12 +109,15 @@ class SlideshowRenderer:
                 progress_callback(0.1, "Preparing segments...")
             segment_videos = self._render_segments(timeline)
 
-            # Step 2: Apply transitions
+            # Step 2: Concatenate videos (transitions disabled)
             if progress_callback:
-                progress_callback(0.4, "Applying transitions...")
-            video_with_transitions = self._apply_transitions(
-                segment_videos, timeline.transitions
-            )
+                progress_callback(0.4, "Concatenating videos...")
+            # NO TRANSITIONS: Simply concatenate segment videos directly
+            # Transitions disabled per user request
+            if len(segment_videos) == 1:
+                video_with_transitions = segment_videos[0]
+            else:
+                video_with_transitions = self._concat_videos(segment_videos)
 
             # Step 3: Render captions
             if progress_callback:

@@ -106,11 +106,13 @@ function ContextReceptionPanel() {
   const [recreationPrompt, setRecreationPrompt] = useState<string | null>(null);
 
   // Get both discover state and start source, plus setAnalyzeUserIdea for applying recreation prompt
-  const { discover, startSource, setAnalyzeUserIdea } = useWorkflowStore(
+  const { discover, startSource, setAnalyzeUserIdea, setAnalyzeRecreationMode, resetWorkflow } = useWorkflowStore(
     useShallow((state) => ({
       discover: state.discover,
       startSource: state.start.source,
       setAnalyzeUserIdea: state.setAnalyzeUserIdea,
+      setAnalyzeRecreationMode: state.setAnalyzeRecreationMode,
+      resetWorkflow: state.resetWorkflow,
     }))
   );
 
@@ -155,23 +157,30 @@ function ContextReceptionPanel() {
     }
   }, [recreationPrompt, language, toastSuccess, toastError]);
 
-  // Apply recreation prompt to user idea input
+  // Apply recreation prompt to user idea input (uses fullPrompt for complete recreation)
   const handleApplyPrompt = useCallback(() => {
     if (!videoSource) return;
 
     const result = generateRecreationPrompt(videoSource, {
       language: language as "ko" | "en",
-      includeHashtags: false,
+      includeHashtags: true,
       emphasisLevel: "exact",
     });
 
-    // Set the main prompt as the user idea
-    setAnalyzeUserIdea(result.mainPrompt);
+    // Set the FULL prompt for complete video recreation (ignores trend data when generating)
+    setAnalyzeUserIdea(result.fullPrompt);
+    setAnalyzeRecreationMode(true);  // Enable recreation mode to ignore trend data
     toastSuccess(
       language === "ko" ? "적용됨" : "Applied",
-      language === "ko" ? "재현 프롬프트가 아이디어에 적용되었습니다" : "Recreation prompt applied to idea"
+      language === "ko" ? "재현 프롬프트가 아이디어에 적용되었습니다 (트렌드 데이터 무시)" : "Recreation prompt applied (trend data will be ignored)"
     );
-  }, [videoSource, language, setAnalyzeUserIdea, toastSuccess]);
+  }, [videoSource, language, setAnalyzeUserIdea, setAnalyzeRecreationMode, toastSuccess]);
+
+  // Clear all workflow data and go back to start
+  const handleClearAndRestart = useCallback(() => {
+    resetWorkflow();
+    goToStart();
+  }, [resetWorkflow, goToStart]);
 
   // Debug logging
   console.log("[ContextReceptionPanel] Source type:", startSource?.type);
@@ -231,11 +240,12 @@ function ContextReceptionPanel() {
         </h3>
         <Button
           variant="ghost"
-          size="sm"
-          onClick={goToStart}
-          className="h-7 px-2 text-xs text-neutral-500"
+          size="icon"
+          onClick={handleClearAndRestart}
+          className="h-7 w-7 text-neutral-400 hover:text-neutral-600"
+          title={language === "ko" ? "초기화하고 다시 시작" : "Clear and restart"}
         >
-          {language === "ko" ? "수정" : "Edit"}
+          <X className="h-4 w-4" />
         </Button>
       </div>
       {/* Data usage description */}
@@ -258,9 +268,17 @@ function ContextReceptionPanel() {
         {/* Keywords (from video hashtags or trend keywords) */}
         {displayKeywords.length > 0 && (
           <div>
-            <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-1">
-              {language === "ko" ? "키워드" : "Keywords"}
-            </p>
+            <div className="flex items-center gap-1 mb-1">
+              <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+                {language === "ko" ? "키워드" : "Keywords"}
+              </p>
+              <InfoButton
+                content={language === "ko"
+                  ? "영상에서 추출된 핵심 키워드와 해시태그입니다. AI가 이 키워드들을 분석하여 관련성 높은 콘텐츠 아이디어를 제안합니다."
+                  : "Core keywords and hashtags extracted from the video. AI analyzes these to suggest highly relevant content ideas."}
+                size="sm"
+              />
+            </div>
             <div className="flex flex-wrap gap-1">
               {displayKeywords.map((k) => (
                 <Badge
@@ -324,16 +342,32 @@ function ContextReceptionPanel() {
         {/* AI Video Analysis (for video source) */}
         {isVideoSource && videoSource?.aiAnalysis && (
           <div className="pt-2 border-t border-neutral-200 space-y-2">
-            <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
-              {language === "ko" ? "AI 영상 분석" : "AI Video Analysis"}
-            </p>
+            <div className="flex items-center gap-1">
+              <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+                {language === "ko" ? "AI 영상 분석" : "AI Video Analysis"}
+              </p>
+              <InfoButton
+                content={language === "ko"
+                  ? "AI가 TikTok 영상을 분석하여 추출한 핵심 정보입니다. 훅, 스타일, 분위기 등 영상의 특징을 파악하여 비슷한 스타일의 콘텐츠를 만들 수 있습니다."
+                  : "Key information extracted by AI analysis of the TikTok video. Captures video characteristics like hooks, style, and mood to help create similar content."}
+                size="sm"
+              />
+            </div>
 
             {/* Hook Analysis */}
             {videoSource.aiAnalysis.hookAnalysis && (
               <div>
-                <p className="text-[10px] text-neutral-400 mb-1">
+                <div className="flex items-center gap-1 mb-1">
+                <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "훅 분석" : "Hook Analysis"}
                 </p>
+                <InfoButton
+                  content={language === "ko"
+                    ? "영상의 첫 장면이나 시작 부분을 분석한 결과입니다. 시청자의 관심을 끄는 핵심 요소를 파악하여 더 효과적인 도입부를 만들 수 있어요."
+                    : "Analysis of the video's opening scene. Identifies key elements that capture viewer attention to help create more effective intros."}
+                  size="sm"
+                />
+              </div>
                 <p className="text-xs text-neutral-600 line-clamp-2">
                   {videoSource.aiAnalysis.hookAnalysis}
                 </p>
@@ -343,9 +377,17 @@ function ContextReceptionPanel() {
             {/* Style Analysis */}
             {videoSource.aiAnalysis.styleAnalysis && (
               <div>
-                <p className="text-[10px] text-neutral-400 mb-1">
+                <div className="flex items-center gap-1 mb-1">
+                <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "스타일 분석" : "Style Analysis"}
                 </p>
+                <InfoButton
+                  content={language === "ko"
+                    ? "영상의 전반적인 시각적 스타일, 색감, 분위기, 촬영 기법 등을 분석한 결과입니다. 비슷한 느낌의 콘텐츠를 만드는 데 참고할 수 있어요."
+                    : "Analysis of the video's overall visual style, colors, mood, and filming techniques. Use as reference to create content with similar vibes."}
+                  size="sm"
+                />
+              </div>
                 <p className="text-xs text-neutral-600 line-clamp-2">
                   {videoSource.aiAnalysis.styleAnalysis}
                 </p>
@@ -355,9 +397,17 @@ function ContextReceptionPanel() {
             {/* Concept Details */}
             {videoSource.aiAnalysis.conceptDetails && (
               <div>
-                <p className="text-[10px] text-neutral-400 mb-1">
+                <div className="flex items-center gap-1 mb-1">
+                <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "컨셉 요소" : "Concept Elements"}
                 </p>
+                <InfoButton
+                  content={language === "ko"
+                    ? "영상의 핵심 컨셉 요소들입니다. 비주얼 스타일(시각적 특징), 무드(분위기), 페이스(영상 속도감)를 태그로 정리했습니다."
+                    : "Key concept elements of the video. Summarizes visual style, mood, and pace as tags for quick reference."}
+                  size="sm"
+                />
+              </div>
                 <div className="flex flex-wrap gap-1">
                   {videoSource.aiAnalysis.conceptDetails.visualStyle && (
                     <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600">
@@ -381,9 +431,17 @@ function ContextReceptionPanel() {
             {/* Suggested Approach */}
             {videoSource.aiAnalysis.suggestedApproach && (
               <div>
-                <p className="text-[10px] text-neutral-400 mb-1">
+                <div className="flex items-center gap-1 mb-1">
+                <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "추천 접근법" : "Suggested Approach"}
                 </p>
+                <InfoButton
+                  content={language === "ko"
+                    ? "이 영상 스타일을 활용한 콘텐츠 제작 방향을 AI가 제안합니다. 비슷한 분위기와 구성으로 새로운 콘텐츠를 만들 때 참고하세요."
+                    : "AI-suggested approach for creating content using this video's style. Reference when making new content with similar mood and composition."}
+                  size="sm"
+                />
+              </div>
                 <p className="text-xs text-neutral-600 line-clamp-2">
                   {videoSource.aiAnalysis.suggestedApproach}
                 </p>
@@ -806,6 +864,7 @@ export default function AnalyzePage() {
   const discover = useWorkflowStore((state) => state.discover);
   const analyze = useWorkflowStore((state) => state.analyze);
   const setAnalyzeUserIdea = useWorkflowStore((state) => state.setAnalyzeUserIdea);
+  const setAnalyzeRecreationMode = useWorkflowStore((state) => state.setAnalyzeRecreationMode);
   const setAnalyzeAiIdeas = useWorkflowStore((state) => state.setAnalyzeAiIdeas);
   const removeAnalyzeIdea = useWorkflowStore((state) => state.removeAnalyzeIdea);
   const selectAnalyzeIdea = useWorkflowStore((state) => state.selectAnalyzeIdea);
@@ -835,52 +894,61 @@ export default function AnalyzePage() {
     setIsGenerating(true);
 
     try {
-      // Transform saved inspiration to include rich content data
-      const inspirationVideos: InspirationVideo[] = discover.savedInspiration.map((video) => ({
-        id: video.id,
-        description: video.description,
-        hashtags: video.hashtags,
-        stats: video.stats,
-        engagementRate: video.engagementRate,
-      }));
+      // In recreation mode, ignore trend data to focus on recreating the exact video concept
+      const isRecreationMode = analyze.isRecreationMode;
 
-      // Also include viral videos from trend analysis
-      if (discover.trendAnalysis?.viralVideos) {
-        discover.trendAnalysis.viralVideos.forEach((video) => {
-          // Only add if not already in saved inspiration
-          if (!inspirationVideos.find(v => v.id === video.id)) {
-            inspirationVideos.push({
-              id: video.id,
-              description: video.description,
-              hashtags: video.hashtags,
-              stats: video.stats,
-              engagementRate: video.engagementRate,
-            });
-          }
-        });
+      // Transform saved inspiration to include rich content data (skip in recreation mode)
+      let inspirationVideos: InspirationVideo[] = [];
+      let trendInsights: TrendInsights | undefined = undefined;
+
+      if (!isRecreationMode) {
+        inspirationVideos = discover.savedInspiration.map((video) => ({
+          id: video.id,
+          description: video.description,
+          hashtags: video.hashtags,
+          stats: video.stats,
+          engagementRate: video.engagementRate,
+        }));
+
+        // Also include viral videos from trend analysis
+        if (discover.trendAnalysis?.viralVideos) {
+          discover.trendAnalysis.viralVideos.forEach((video) => {
+            // Only add if not already in saved inspiration
+            if (!inspirationVideos.find(v => v.id === video.id)) {
+              inspirationVideos.push({
+                id: video.id,
+                description: video.description,
+                hashtags: video.hashtags,
+                stats: video.stats,
+                engagementRate: video.engagementRate,
+              });
+            }
+          });
+        }
+
+        // Extract AI insights from discover phase
+        trendInsights = discover.aiInsights ? {
+          summary: discover.aiInsights.summary,
+          contentStrategy: discover.aiInsights.contentStrategy,
+          videoIdeas: discover.aiInsights.videoIdeas,
+          targetAudience: discover.aiInsights.targetAudience,
+          bestPostingTimes: discover.aiInsights.bestPostingTimes,
+        } : undefined;
       }
-
-      // Extract AI insights from discover phase
-      const trendInsights: TrendInsights | undefined = discover.aiInsights ? {
-        summary: discover.aiInsights.summary,
-        contentStrategy: discover.aiInsights.contentStrategy,
-        videoIdeas: discover.aiInsights.videoIdeas,
-        targetAudience: discover.aiInsights.targetAudience,
-        bestPostingTimes: discover.aiInsights.bestPostingTimes,
-      } : undefined;
 
       const request: GenerateIdeasRequest = {
         user_idea: analyze.userIdea,
-        keywords: discover.keywords,
-        hashtags: analyze.hashtags,
+        // In recreation mode, don't send keywords/hashtags to avoid diluting the exact concept
+        keywords: isRecreationMode ? [] : discover.keywords,
+        hashtags: isRecreationMode ? [] : analyze.hashtags,
         target_audience: analyze.targetAudience,
         content_goals: analyze.contentGoals,
         campaign_description: analyze.campaignDescription,  // Central context for prompts - campaign concept/goal
         genre: analyze.campaignGenre,  // Music genre for viral content generation
-        // Pass rich trend data instead of just count
+        // Pass rich trend data only in non-recreation mode
         inspiration_videos: inspirationVideos,
         trend_insights: trendInsights,
-        performance_metrics: discover.performanceMetrics,
+        performance_metrics: isRecreationMode ? null : discover.performanceMetrics,
         language: language,
       };
 
@@ -999,19 +1067,37 @@ export default function AnalyzePage() {
                   <Label className="text-xs font-medium text-neutral-700">
                     {t.yourIdea}
                   </Label>
+                  {analyze.isRecreationMode && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-neutral-900 text-white">
+                      {language === "ko" ? "재현 모드" : "Recreation Mode"}
+                    </Badge>
+                  )}
                   <InfoButton
-                    content={language === "ko"
-                      ? "만들고 싶은 영상에 대한 아이디어를 자유롭게 입력하세요. AI가 트렌드 데이터와 함께 분석하여 최적화된 콘텐츠 아이디어를 제안합니다. 구체적일수록 더 좋은 결과를 얻을 수 있어요."
-                      : "Freely describe your video idea. AI will analyze it with trend data to suggest optimized content ideas. The more specific, the better results you'll get."}
+                    content={analyze.isRecreationMode
+                      ? (language === "ko"
+                        ? "재현 모드: 선택한 영상의 컨셉과 스타일을 정확히 재현합니다. 트렌드 데이터는 무시됩니다. 수정하면 일반 모드로 전환됩니다."
+                        : "Recreation Mode: Exactly recreates the selected video's concept and style. Trend data will be ignored. Editing will switch to normal mode.")
+                      : (language === "ko"
+                        ? "만들고 싶은 영상에 대한 아이디어를 자유롭게 입력하세요. AI가 트렌드 데이터와 함께 분석하여 최적화된 콘텐츠 아이디어를 제안합니다. 구체적일수록 더 좋은 결과를 얻을 수 있어요."
+                        : "Freely describe your video idea. AI will analyze it with trend data to suggest optimized content ideas. The more specific, the better results you'll get.")}
                     side="bottom"
                   />
                 </div>
                 <textarea
                   value={analyze.userIdea}
-                  onChange={(e) => setAnalyzeUserIdea(e.target.value)}
+                  onChange={(e) => {
+                    setAnalyzeUserIdea(e.target.value);
+                    // Reset recreation mode when user manually edits
+                    if (analyze.isRecreationMode) {
+                      setAnalyzeRecreationMode(false);
+                    }
+                  }}
                   placeholder={t.ideaPlaceholder}
                   rows={4}
-                  className="w-full px-3 py-2.5 bg-white border border-neutral-200 rounded-lg text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/20 resize-none"
+                  className={cn(
+                    "w-full px-3 py-2.5 bg-white border rounded-lg text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/20 resize-none",
+                    analyze.isRecreationMode ? "border-neutral-400" : "border-neutral-200"
+                  )}
                 />
               </div>
 

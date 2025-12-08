@@ -129,7 +129,7 @@ export default function PublishingPage() {
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState("publishing");
   const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
 
   useEffect(() => {
@@ -312,12 +312,10 @@ export default function PublishingPage() {
             <Clock className="h-4 w-4" />
             {language === "ko" ? "예약됨" : "Scheduled"} ({scheduledPosts.length})
           </TabsTrigger>
-          {publishingPosts.length > 0 && (
-            <TabsTrigger value="publishing" className="gap-2">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              {language === "ko" ? "발행 중" : "Publishing"} ({publishingPosts.length})
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="publishing" className="gap-2">
+            <RefreshCw className={cn("h-4 w-4", publishingPosts.length > 0 && "animate-spin")} />
+            {language === "ko" ? "발행 중" : "Publishing"} ({publishingPosts.length})
+          </TabsTrigger>
           <TabsTrigger value="published" className="gap-2">
             <CheckCircle className="h-4 w-4" />
             {language === "ko" ? "발행됨" : "Published"} ({publishedPosts.length})

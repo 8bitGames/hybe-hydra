@@ -1,708 +1,1097 @@
 "use client";
 
-import { useState, useRef } from "react";
+import React, { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { assetsApi } from "@/lib/campaigns-api";
-import {
-  useCampaign,
-  useAssets,
-  useAssetsStats,
-  useUpdateCampaign,
-  useDeleteAsset,
-  useInvalidateQueries,
-} from "@/lib/queries";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { api } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { saveBridgePrompt, BridgePromptData } from "@/lib/bridge-storage";
+import { useI18n } from "@/lib/i18n";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  ChevronLeft,
   Play,
+  Clock,
+  History,
+  FileText,
+  Link2,
   LayoutGrid,
-  Calendar,
-  Pencil,
-  Upload,
-  Image,
-  Video,
-  Music,
-  FolderOpen,
+  Send,
+  Star,
+  Copy,
   ExternalLink,
-  Trash2,
-  ChevronRight,
-  X,
-  Check,
-  Package,
+  TrendingUp,
+  Eye,
+  Heart,
+  MessageCircle,
+  Share2,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  Sparkles,
+  RotateCcw,
+  Search,
+  Calendar,
+  Zap,
+  Hash,
 } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
 
-type AssetFilter = "all" | "image" | "video" | "audio" | "goods";
-type MerchandiseType = "album" | "photocard" | "lightstick" | "apparel" | "accessory" | "other";
+// Types
+interface WorkspaceData {
+  campaign: {
+    id: string;
+    name: string;
+    status: string;
+    artist: { id: string; name: string; group: string | null };
+    asset_count: number;
+    generation_count: number;
+    created_at: string;
+  };
+  stats: {
+    generations: {
+      total: number;
+      completed: number;
+      processing: number;
+      failed: number;
+      avg_quality: number | null;
+      high_quality: number;
+    };
+    publishing: {
+      total: number;
+      published: number;
+      scheduled: number;
+      total_views: number;
+      total_likes: number;
+    };
+    prompts: {
+      unique_count: number;
+      most_successful: Array<{
+        original_input: string;
+        avg_quality_score: number | null;
+        success_count: number;
+      }>;
+    };
+    trends: {
+      unique_count: number;
+      top_trends: Array<{
+        keyword: string;
+        usage_count: number;
+        avg_score: number | null;
+      }>;
+    };
+  };
+  timeline: Array<{
+    id: string;
+    type: "generation" | "publish" | "asset";
+    date: string;
+    data: Record<string, unknown>;
+  }>;
+  prompts: Array<{
+    original_input: string;
+    veo_prompt: string;
+    trend_keywords: string[];
+    prompt_analysis: { intent?: string; trend_applied?: string[] } | null;
+    generation_count: number;
+    success_count: number;
+    success_rate: number;
+    avg_quality_score: number | null;
+    first_used: string;
+    last_used: string;
+  }>;
+  trends: Array<{
+    keyword: string;
+    usage_count: number;
+    success_count: number;
+    avg_score: number | null;
+  }>;
+  reference_urls: Array<{
+    url: string;
+    title?: string;
+    platform?: string;
+    hashtags?: string[];
+    used_count: number;
+    first_used: string;
+  }>;
+  generations: Array<{
+    id: string;
+    prompt: string;
+    original_input: string | null;
+    trend_keywords: string[];
+    prompt_analysis: Record<string, unknown> | null;
+    status: string;
+    output_url: string | null;
+    composed_output_url: string | null;
+    quality_score: number | null;
+    is_favorite: boolean;
+    tags: string[];
+    duration_seconds: number;
+    aspect_ratio: string;
+    reference_image: { id: string; s3_url: string; thumbnail_url: string | null } | null;
+    merchandise_refs: Array<{
+      context: string;
+      merchandise: { id: string; name: string; name_ko: string | null; type: string } | null;
+    }>;
+    created_at: string;
+  }>;
+  publishing: Array<{
+    id: string;
+    platform: string;
+    status: string;
+    account_name: string;
+    generation_id: string | null;
+    caption: string | null;
+    scheduled_at: string | null;
+    published_at: string | null;
+    published_url: string | null;
+    view_count: number | null;
+    like_count: number | null;
+    comment_count: number | null;
+    share_count: number | null;
+    engagement_rate: number | null;
+    created_at: string;
+  }>;
+}
 
-const MERCHANDISE_TYPES: { value: MerchandiseType; label: string; labelKo: string }[] = [
-  { value: "album", label: "Album", labelKo: "Albums" },
-  { value: "photocard", label: "Photocard", labelKo: "Photocards" },
-  { value: "lightstick", label: "Lightstick", labelKo: "Lightsticks" },
-  { value: "apparel", label: "Apparel", labelKo: "Apparel" },
-  { value: "accessory", label: "Accessory", labelKo: "Accessories" },
-  { value: "other", label: "Other", labelKo: "Other" },
-];
+// Utility functions
+const formatNumber = (num: number | null | undefined): string => {
+  if (num === null || num === undefined) return "-";
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+  return num.toLocaleString();
+};
 
-export default function CampaignDetailPage() {
+const formatDate = (dateStr: string): string => {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case "completed":
+    case "published":
+      return <CheckCircle className="w-4 h-4 text-green-500" />;
+    case "processing":
+    case "publishing":
+      return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+    case "failed":
+      return <XCircle className="w-4 h-4 text-red-500" />;
+    case "scheduled":
+      return <Clock className="w-4 h-4 text-yellow-500" />;
+    default:
+      return <Clock className="w-4 h-4 text-muted-foreground" />;
+  }
+};
+
+const getPlatformIcon = (platform: string) => {
+  switch (platform) {
+    case "TIKTOK":
+      return "🎵";
+    case "YOUTUBE":
+      return "📺";
+    case "INSTAGRAM":
+      return "📸";
+    case "TWITTER":
+      return "🐦";
+    default:
+      return "📱";
+  }
+};
+
+const getGradeColor = (score: number | null) => {
+  if (score === null) return "bg-muted text-muted-foreground";
+  if (score >= 90) return "bg-gradient-to-r from-yellow-400 to-amber-500 text-black";
+  if (score >= 80) return "bg-green-500 text-white";
+  if (score >= 70) return "bg-blue-500 text-white";
+  if (score >= 60) return "bg-orange-500 text-white";
+  return "bg-red-500 text-white";
+};
+
+const getGrade = (score: number | null) => {
+  if (score === null) return "-";
+  if (score >= 90) return "S";
+  if (score >= 80) return "A";
+  if (score >= 70) return "B";
+  if (score >= 60) return "C";
+  return "D";
+};
+
+/**
+ * Campaign Analytics Page (Default View)
+ * 캠페인 분석 페이지 (기본 뷰)
+ */
+export default function CampaignAnalyticsPage() {
   const params = useParams();
   const router = useRouter();
   const { t } = useI18n();
   const campaignId = params.id as string;
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
-  const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
-  const [page, setPage] = useState(1);
-  const [editMode, setEditMode] = useState(false);
-  const [editData, setEditData] = useState({ name: "", description: "", status: "" });
+  const [activeTab, setActiveTab] = useState("timeline");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedVideo, setSelectedVideo] = useState<WorkspaceData["generations"][0] | null>(null);
 
-  // Upload dialog state
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [uploadAsGoods, setUploadAsGoods] = useState(false);
-  const [selectedMerchType, setSelectedMerchType] = useState<MerchandiseType>("album");
-
-  // Use TanStack Query for data fetching with caching
-  const { data: campaign, isLoading: campaignLoading, error: campaignError } = useCampaign(campaignId);
-  const { data: assetsData, isLoading: assetsLoading, refetch: refetchAssets } = useAssets(campaignId, {
-    page,
-    page_size: 20,
-    type: assetFilter === "all" ? undefined : assetFilter,
+  // Use TanStack Query for workspace data with caching
+  const { data, isLoading: loading, error: queryError, refetch } = useQuery({
+    queryKey: ["workspace", campaignId],
+    queryFn: async () => {
+      const response = await api.get<WorkspaceData>(`/api/v1/campaigns/${campaignId}/workspace`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data!;
+    },
+    enabled: !!campaignId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
-  const { data: stats } = useAssetsStats(campaignId);
-  const updateCampaignMutation = useUpdateCampaign();
-  const deleteAssetMutation = useDeleteAsset();
-  const { invalidateAssets } = useInvalidateQueries();
 
-  const assets = assetsData?.items || [];
-  const totalPages = assetsData?.pages || 1;
-  const loading = campaignLoading || assetsLoading;
+  const error = queryError?.message || null;
+  const loadWorkspace = () => refetch();
 
-  // Initialize edit data when campaign loads
-  if (campaign && editData.name === "" && editData.status === "") {
-    setEditData({
-      name: campaign.name,
-      description: campaign.description || "",
-      status: campaign.status,
-    });
-  }
-
-  // Redirect if campaign not found
-  if (campaignError) {
-    router.push("/campaigns");
-  }
-
-  const loadAssets = () => {
-    refetchAssets();
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const fileArray = Array.from(files);
-    const hasImageFiles = fileArray.some((f) => f.type.startsWith("image/"));
-
-    if (hasImageFiles) {
-      // Show dialog to let user choose if uploading as goods
-      setPendingFiles(fileArray);
-      setUploadAsGoods(false);
-      setSelectedMerchType("album");
-      setUploadDialogOpen(true);
-    } else {
-      // Non-image files: upload directly
-      handleUploadFiles(fileArray, false);
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const handleUploadFiles = async (
-    files: File[],
-    asGoods: boolean,
-    merchType?: MerchandiseType
-  ) => {
-    setUploading(true);
-    setUploadDialogOpen(false);
-    const uploadPromises: Promise<void>[] = [];
-
-    for (const file of files) {
-      const fileId = `${file.name}-${Date.now()}`;
-      setUploadProgress((prev) => ({ ...prev, [fileId]: 0 }));
-
-      const promise = (async () => {
-        try {
-          setUploadProgress((prev) => ({ ...prev, [fileId]: 50 }));
-
-          // Determine upload options
-          const isImageFile = file.type.startsWith("image/");
-          const options = asGoods && isImageFile
-            ? { assetType: "goods" as const, merchandiseType: merchType }
-            : undefined;
-
-          const result = await assetsApi.upload(campaignId, file, options);
-
-          if (result.error) {
-            console.error(`Failed to upload ${file.name}:`, result.error.message);
-            setUploadProgress((prev) => ({ ...prev, [fileId]: -1 }));
-          } else {
-            setUploadProgress((prev) => ({ ...prev, [fileId]: 100 }));
-          }
-        } catch (error) {
-          console.error(`Failed to upload ${file.name}:`, error);
-          setUploadProgress((prev) => ({ ...prev, [fileId]: -1 }));
-        }
-      })();
-
-      uploadPromises.push(promise);
-    }
-
-    await Promise.all(uploadPromises);
-
-    setTimeout(() => {
-      setUploadProgress({});
-    }, 2000);
-
-    await loadAssets();
-    setUploading(false);
-    setPendingFiles([]);
-  };
-
-  const handleUploadDialogConfirm = () => {
-    handleUploadFiles(
-      pendingFiles,
-      uploadAsGoods,
-      uploadAsGoods ? selectedMerchType : undefined
-    );
-  };
-
-  const handleUploadDialogCancel = () => {
-    setUploadDialogOpen(false);
-    setPendingFiles([]);
-  };
-
-  const handleDeleteAsset = async (assetId: string, filename: string) => {
-    if (!confirm(`Delete "${filename}"?`)) return;
-
-    deleteAssetMutation.mutate(
-      { id: assetId, campaignId },
-      { onSuccess: () => loadAssets() }
-    );
-  };
-
-  const handleUpdateCampaign = async () => {
-    if (!campaign) return;
-
-    updateCampaignMutation.mutate(
-      {
-        id: campaign.id,
-        data: {
-          name: editData.name,
-          description: editData.description || undefined,
-          status: editData.status,
+  // Navigate to Bridge with prompt context
+  const handleReusePrompt = (prompt: WorkspaceData["prompts"][0]) => {
+    // Create bridge prompt data for reuse
+    const bridgeData: BridgePromptData = {
+      campaignId,
+      originalPrompt: prompt.original_input,
+      transformedPrompt: {
+        status: "success",
+        veo_prompt: prompt.veo_prompt,
+        negative_prompt: "",
+        analysis: {
+          intent: prompt.prompt_analysis?.intent || "Recreating previous prompt",
+          trend_applied: prompt.trend_keywords,
+          suggestions: [],
+          safety_check: {
+            passed: true,
+            concerns: [],
+          },
+        },
+        technical_settings: {
+          aspect_ratio: "9:16",
+          fps: 30,
+          duration_seconds: 5,
+          guidance_scale: 7.5,
         },
       },
-      { onSuccess: () => setEditMode(false) }
-    );
+      selectedTrends: prompt.trend_keywords,
+      timestamp: Date.now(),
+    };
+
+    saveBridgePrompt(bridgeData);
+    router.push(`/campaigns/${campaignId}/generate`);
   };
 
-  const statusVariants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-    draft: "secondary",
-    active: "default",
-    completed: "outline",
-    archived: "outline",
-  };
-
-  const getAssetIcon = (type: string) => {
-    switch (type) {
-      case "image":
-        return <Image className="h-8 w-8" />;
-      case "video":
-        return <Video className="h-8 w-8" />;
-      case "audio":
-        return <Music className="h-8 w-8" />;
-      default:
-        return <FolderOpen className="h-8 w-8" />;
+  // Copy prompt to clipboard
+  const handleCopyPrompt = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error("Failed to copy:", err);
     }
   };
 
-  const formatFileSize = (bytes: number | null) => {
-    if (!bytes) return "-";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  // Navigate to Bridge with trend
+  const handleUseTrend = (keyword: string) => {
+    router.push(`/bridge?trend=${encodeURIComponent(keyword)}&campaign=${campaignId}`);
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Spinner className="h-8 w-8" />
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <Spinner className="h-12 w-12 mx-auto mb-4" />
+          <p className="text-muted-foreground">{t.workspace.loading}</p>
+        </div>
       </div>
     );
   }
 
-  if (!campaign) {
-    return null;
+  if (error || !data) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <p className="text-muted-foreground mb-4">{error || t.workspace.loadError}</p>
+            <Button onClick={loadWorkspace}>{t.workspace.tryAgain}</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
+  const { campaign, stats, timeline, prompts, trends, reference_urls, generations, publishing } = data;
+
+  // Filter generations based on search and status
+  const filteredGenerations = generations.filter((gen) => {
+    if (statusFilter !== "all" && gen.status !== statusFilter) return false;
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      return (
+        gen.prompt.toLowerCase().includes(query) ||
+        gen.original_input?.toLowerCase().includes(query) ||
+        gen.trend_keywords?.some((t) => t.toLowerCase().includes(query))
+      );
+    }
+    return true;
+  });
+
   return (
-    <div className="space-y-6">
-      {/* Campaign Info Card */}
-      <Card>
-        <CardContent className="pt-6">
-          {editMode ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Campaign Name</Label>
-                <Input
-                  id="name"
-                  value={editData.name}
-                  onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                />
+    <div className="space-y-6 pb-8">
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-500/10 rounded-lg">
+                <Sparkles className="h-5 w-5 text-purple-500" />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Input
-                  id="description"
-                  value={editData.description}
-                  onChange={(e) => setEditData({ ...editData, description: e.target.value })}
-                  placeholder="Enter description..."
-                />
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-40">
-                  <Select
-                    value={editData.status}
-                    onValueChange={(value) => setEditData({ ...editData, status: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="draft">Draft</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                      <SelectItem value="archived">Archived</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button onClick={handleUpdateCampaign}>
-                  <Check className="h-4 w-4 mr-1" />
-                  Save
-                </Button>
-                <Button variant="outline" onClick={() => setEditMode(false)}>
-                  <X className="h-4 w-4 mr-1" />
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-start justify-between">
               <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <h2 className="text-lg font-semibold">{campaign.name}</h2>
-                  <Badge variant={statusVariants[campaign.status]}>
-                    {campaign.status}
-                  </Badge>
-                </div>
-                {campaign.description && (
-                  <p className="text-sm text-muted-foreground mb-3">{campaign.description}</p>
-                )}
-                <div className="flex items-center gap-6 text-sm text-muted-foreground">
-                  <span>
-                    Artist: <span className="text-foreground font-medium">{campaign.artist_stage_name || campaign.artist_name}</span>
-                  </span>
-                  {campaign.start_date && (
-                    <span>
-                      Start: <span className="text-foreground">{new Date(campaign.start_date).toLocaleDateString()}</span>
-                    </span>
-                  )}
-                  {campaign.end_date && (
-                    <span>
-                      End: <span className="text-foreground">{new Date(campaign.end_date).toLocaleDateString()}</span>
-                    </span>
-                  )}
-                </div>
+                <p className="text-sm text-muted-foreground">{t.workspace.generated}</p>
+                <p className="text-2xl font-bold">{stats.generations.completed}</p>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => setEditMode(true)}>
-                <Pencil className="h-4 w-4" />
-              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Asset Stats */}
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                  <FolderOpen className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Total</p>
-                  <p className="text-xl font-bold">{stats.total}</p>
-                </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-yellow-500/10 rounded-lg">
+                <Star className="h-5 w-5 text-yellow-500" />
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                  <Image className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Images</p>
-                  <p className="text-xl font-bold">{stats.image}</p>
-                </div>
+              <div>
+                <p className="text-sm text-muted-foreground">{t.workspace.highQuality}</p>
+                <p className="text-2xl font-bold">{stats.generations.high_quality}</p>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                  <Video className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Videos</p>
-                  <p className="text-xl font-bold">{stats.video}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                  <Music className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Audio</p>
-                  <p className="text-xl font-bold">{stats.audio}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                  <Package className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Goods</p>
-                  <p className="text-xl font-bold">{stats.goods}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Asset Locker */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
-          <CardTitle>Asset Locker</CardTitle>
-          <div className="flex items-center gap-4">
-            {/* Filter */}
-            <div className="flex items-center rounded-lg border p-1">
-              {(["all", "image", "video", "audio", "goods"] as AssetFilter[]).map((filter) => (
-                <button
-                  key={filter}
-                  onClick={() => {
-                    setAssetFilter(filter);
-                    setPage(1);
-                  }}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    assetFilter === filter
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {filter === "goods" ? "Goods" : filter.charAt(0).toUpperCase() + filter.slice(1)}
-                </button>
-              ))}
             </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-500/10 rounded-lg">
+                <Send className="h-5 w-5 text-green-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">{t.workspace.published}</p>
+                <p className="text-2xl font-bold">{stats.publishing.published}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-500/10 rounded-lg">
+                <FileText className="h-5 w-5 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">{t.workspace.prompts}</p>
+                <p className="text-2xl font-bold">{stats.prompts.unique_count}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-orange-500/10 rounded-lg">
+                <Eye className="h-5 w-5 text-orange-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">{t.workspace.totalViews}</p>
+                <p className="text-2xl font-bold">{formatNumber(stats.publishing.total_views)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-500/10 rounded-lg">
+                <Heart className="h-5 w-5 text-red-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">{t.workspace.totalLikes}</p>
+                <p className="text-2xl font-bold">{formatNumber(stats.publishing.total_likes)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-            {/* Upload Button */}
-            <Button asChild>
-              <label className="cursor-pointer">
-                <Upload className="h-4 w-4 mr-2" />
-                Upload
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/*,video/*,audio/*"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </label>
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-6">
-          {/* Upload Progress */}
-          {Object.entries(uploadProgress).length > 0 && (
-            <div className="mb-6 space-y-2">
-              {Object.entries(uploadProgress).map(([fileId, progress]) => (
-                <div key={fileId} className="flex items-center gap-3">
-                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+      {/* Main Content Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="timeline" className="flex items-center gap-2">
+            <History className="h-4 w-4" />
+            <span className="hidden sm:inline">{t.workspace.timeline}</span>
+          </TabsTrigger>
+          <TabsTrigger value="prompts" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            <span className="hidden sm:inline">{t.workspace.prompts}</span>
+          </TabsTrigger>
+          <TabsTrigger value="references" className="flex items-center gap-2">
+            <Link2 className="h-4 w-4" />
+            <span className="hidden sm:inline">{t.workspace.references}</span>
+          </TabsTrigger>
+          <TabsTrigger value="gallery" className="flex items-center gap-2">
+            <LayoutGrid className="h-4 w-4" />
+            <span className="hidden sm:inline">{t.workspace.gallery}</span>
+          </TabsTrigger>
+          <TabsTrigger value="publishing" className="flex items-center gap-2">
+            <Send className="h-4 w-4" />
+            <span className="hidden sm:inline">{t.workspace.publishing}</span>
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Timeline Tab */}
+        <TabsContent value="timeline" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t.workspace.workHistory}</CardTitle>
+              <CardDescription>{t.workspace.chronologicalView}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {timeline.length === 0 ? (
+                <div className="text-center py-12">
+                  <History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">{t.workspace.noActivityYet}</p>
+                  <Link href={`/campaigns/${campaignId}/generate`}>
+                    <Button className="mt-4">{t.workspace.startGenerating}</Button>
+                  </Link>
+                </div>
+              ) : (
+                <div className="relative">
+                  <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
+                  <div className="space-y-6">
+                    {timeline.map((item) => (
+                      <div key={`${item.type}-${item.id}`} className="relative pl-10">
+                        <div className="absolute left-2 w-5 h-5 bg-background border-2 border-border rounded-full flex items-center justify-center">
+                          {item.type === "generation" ? (
+                            <Sparkles className="h-3 w-3 text-purple-500" />
+                          ) : (
+                            <Send className="h-3 w-3 text-green-500" />
+                          )}
+                        </div>
+                        <div className="bg-muted/50 rounded-lg p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                {getStatusIcon((item.data as { status?: string }).status || "")}
+                                <span className="text-sm font-medium capitalize">
+                                  {item.type === "generation" ? t.workspace.videoGeneration : t.workspace.published}
+                                </span>
+                                <Badge variant="outline" className="text-xs">
+                                  {(item.data as { status?: string }).status}
+                                </Badge>
+                              </div>
+                              {item.type === "generation" && (
+                                <p className="text-sm text-muted-foreground line-clamp-2">
+                                  {(item.data as { original_input?: string; prompt?: string }).original_input ||
+                                    (item.data as { prompt?: string }).prompt}
+                                </p>
+                              )}
+                              {item.type === "publish" && (
+                                <p className="text-sm text-muted-foreground">
+                                  {getPlatformIcon((item.data as { platform?: string }).platform || "")}{" "}
+                                  {(item.data as { account_name?: string }).account_name}
+                                </p>
+                              )}
+                              <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {formatDate(item.date)}
+                                </span>
+                                {item.type === "generation" &&
+                                  (item.data as { quality_score?: number }).quality_score && (
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${getGradeColor(
+                                        (item.data as { quality_score?: number }).quality_score ?? null
+                                      )}`}
+                                    >
+                                      {getGrade((item.data as { quality_score?: number }).quality_score ?? null)}
+                                    </span>
+                                  )}
+                                {((item.data as { trend_keywords?: string[] }).trend_keywords?.length ?? 0) > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <Hash className="h-3 w-3" />
+                                    {((item.data as { trend_keywords?: string[] }).trend_keywords ?? []).slice(0, 2).join(", ")}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {item.type === "generation" && ((item.data as { composed_output_url?: string }).composed_output_url || (item.data as { output_url?: string }).output_url) && (
+                              <div className="w-16 h-16 bg-muted rounded overflow-hidden flex-shrink-0">
+                                <video
+                                  src={(item.data as { composed_output_url?: string; output_url?: string }).composed_output_url || (item.data as { output_url: string }).output_url}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Prompts Tab */}
+        <TabsContent value="prompts" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t.workspace.promptLibrary}</CardTitle>
+              <CardDescription>{t.workspace.allPromptsUsed}. {t.workspace.clickToReuse}.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {prompts.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">{t.workspace.noPromptsYet}</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {prompts.map((prompt, idx) => (
                     <div
-                      className={`h-full transition-all ${
-                        progress === -1
-                          ? "bg-destructive"
-                          : progress === 100
-                          ? "bg-green-500"
-                          : "bg-primary"
-                      }`}
-                      style={{ width: `${Math.max(0, progress)}%` }}
+                      key={idx}
+                      className="p-4 border rounded-lg hover:border-primary/50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium mb-2">{prompt.original_input}</p>
+                          {prompt.veo_prompt !== prompt.original_input && (
+                            <details className="mb-2">
+                              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                                {t.workspace.viewOptimizedPrompt}
+                              </summary>
+                              <p className="mt-2 text-sm text-muted-foreground bg-muted p-2 rounded">
+                                {prompt.veo_prompt}
+                              </p>
+                            </details>
+                          )}
+                          {prompt.trend_keywords?.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              {prompt.trend_keywords.map((keyword) => (
+                                <Badge key={keyword} variant="secondary" className="text-xs">
+                                  #{keyword}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span>{t.workspace.used} {prompt.generation_count}x</span>
+                            <span className="text-green-500">
+                              {prompt.success_rate.toFixed(0)}% {t.workspace.success}
+                            </span>
+                            {prompt.avg_quality_score && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${getGradeColor(
+                                  prompt.avg_quality_score
+                                )}`}
+                              >
+                                {t.workspace.avg}: {getGrade(prompt.avg_quality_score)}
+                              </span>
+                            )}
+                            <span>{t.workspace.last}: {formatDate(prompt.last_used)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCopyPrompt(prompt.veo_prompt)}
+                            title={t.workspace.copyPrompt}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleReusePrompt(prompt)}
+                          >
+                            <RotateCcw className="h-4 w-4 mr-1" />
+                            {t.workspace.reuse}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* References Tab */}
+        <TabsContent value="references" className="mt-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Trends Used */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  {t.workspace.trendsUsed}
+                </CardTitle>
+                <CardDescription>{t.workspace.keywordsApplied}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {trends.length === 0 ? (
+                  <div className="text-center py-8">
+                    <TrendingUp className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">{t.workspace.noTrendsUsed}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {trends.map((trend) => (
+                      <div
+                        key={trend.keyword}
+                        className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Hash className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium">{trend.keyword}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {t.workspace.used} {trend.usage_count}x • {trend.success_count} {t.workspace.successful}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {trend.avg_score && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${getGradeColor(
+                                trend.avg_score
+                              )}`}
+                            >
+                              {getGrade(trend.avg_score)}
+                            </span>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleUseTrend(trend.keyword)}
+                          >
+                            <Zap className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Reference URLs */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Link2 className="h-5 w-5" />
+                  {t.workspace.referenceUrls}
+                </CardTitle>
+                <CardDescription>{t.workspace.externalLinks}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {reference_urls.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Link2 className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">{t.workspace.noReferenceUrls}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {reference_urls.map((ref, idx) => (
+                      <div key={idx} className="p-3 bg-muted/50 rounded-lg">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">
+                              {ref.title || ref.url}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">{ref.url}</p>
+                            {ref.hashtags && ref.hashtags.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {ref.hashtags.slice(0, 3).map((tag) => (
+                                  <Badge key={tag} variant="outline" className="text-[10px]">
+                                    #{tag}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {t.workspace.used} {ref.used_count}x • First: {formatDate(ref.first_used)}
+                            </p>
+                          </div>
+                          <a href={ref.url} target="_blank" rel="noopener noreferrer">
+                            <Button variant="ghost" size="icon">
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Gallery Tab */}
+        <TabsContent value="gallery" className="mt-6">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <CardTitle>{t.workspace.generatedVideos}</CardTitle>
+                  <CardDescription>{t.workspace.allVideosGenerated}</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder={t.workspace.searchPrompts}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9 w-[200px]"
                     />
                   </div>
-                  <span className="text-sm text-muted-foreground w-16 text-right">
-                    {progress === -1 ? "Failed" : progress === 100 ? "Done" : `${progress}%`}
-                  </span>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="h-10 px-3 border rounded-md bg-background text-sm"
+                  >
+                    <option value="all">{t.workspace.allStatus}</option>
+                    <option value="completed">{t.generation.status.completed}</option>
+                    <option value="processing">{t.generation.status.processing}</option>
+                    <option value="failed">{t.generation.status.failed}</option>
+                  </select>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Content Grid */}
-          {uploading && assets.length === 0 ? (
-            <div className="text-center py-12">
-              <Spinner className="h-8 w-8 mx-auto" />
-              <p className="text-muted-foreground mt-4">Uploading...</p>
-            </div>
-          ) : assets.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mx-auto mb-4">
-                {assetFilter === "goods" ? (
-                  <Package className="h-6 w-6 text-muted-foreground" />
-                ) : (
-                  <Upload className="h-6 w-6 text-muted-foreground" />
-                )}
               </div>
-              <h3 className="font-medium mb-2">
-                {assetFilter === "goods" ? "No goods yet" : "No assets yet"}
-              </h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                {assetFilter === "goods"
-                  ? "Upload images and select 'Goods' type to add merchandise"
-                  : "Upload images, videos, or audio files to get started"}
-              </p>
-              <Button asChild>
-                <label className="cursor-pointer">
-                  Upload Assets
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,video/*,audio/*"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                </label>
-              </Button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {assets.map((asset) => (
-                <div
-                  key={asset.id}
-                  className="group relative rounded-xl overflow-hidden border bg-muted/30 hover:border-primary/50 transition-colors"
-                >
-                  {/* Thumbnail */}
-                  <div className="aspect-square flex items-center justify-center bg-muted">
-                    {(asset.type === "image" || asset.type === "goods") && asset.s3_url ? (
-                      <img
-                        src={asset.s3_url}
-                        alt={asset.original_filename}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="text-muted-foreground">{getAssetIcon(asset.type)}</div>
-                    )}
-                  </div>
-
-                  {/* Info */}
-                  <div className="p-3">
-                    <p className="text-sm font-medium truncate" title={asset.original_filename}>
-                      {asset.original_filename}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {asset.type === "goods" && asset.merchandise_type
-                        ? asset.merchandise_type.charAt(0).toUpperCase() + asset.merchandise_type.slice(1)
-                        : formatFileSize(asset.file_size)}
-                    </p>
-                  </div>
-
-                  {/* Actions Overlay */}
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                    {asset.s3_url && (
-                      <a
-                        href={asset.s3_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-2 bg-white/20 rounded-lg hover:bg-white/30 transition-colors"
-                      >
-                        <ExternalLink className="h-5 w-5 text-white" />
-                      </a>
-                    )}
-                    <button
-                      onClick={() => handleDeleteAsset(asset.id, asset.original_filename)}
-                      className="p-2 bg-destructive/20 rounded-lg hover:bg-destructive/30 transition-colors"
+            </CardHeader>
+            <CardContent>
+              {filteredGenerations.length === 0 ? (
+                <div className="text-center py-12">
+                  <LayoutGrid className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">{t.workspace.noVideosFound}</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {filteredGenerations.map((gen) => (
+                    <div
+                      key={gen.id}
+                      className="group relative bg-muted rounded-lg overflow-hidden border hover:border-primary/50 transition-colors cursor-pointer"
+                      onClick={() => (gen.composed_output_url || gen.output_url) && setSelectedVideo(gen)}
                     >
-                      <Trash2 className="h-5 w-5 text-white" />
-                    </button>
-                  </div>
+                      <div className="aspect-[9/16] relative">
+                        {(gen.composed_output_url || gen.output_url) ? (
+                          <video
+                            src={gen.composed_output_url || gen.output_url || ""}
+                            className="w-full h-full object-cover"
+                            muted
+                            playsInline
+                            onMouseEnter={(e) => (e.target as HTMLVideoElement).play()}
+                            onMouseLeave={(e) => {
+                              const video = e.target as HTMLVideoElement;
+                              video.pause();
+                              video.currentTime = 0;
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            {gen.status === "processing" ? (
+                              <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
+                            ) : gen.status === "failed" ? (
+                              <XCircle className="h-8 w-8 text-red-500" />
+                            ) : (
+                              <Play className="h-8 w-8 text-muted-foreground" />
+                            )}
+                          </div>
+                        )}
 
-                  {/* Type Badge */}
-                  <div className="absolute top-2 left-2">
-                    <Badge variant="secondary" className="text-xs capitalize">
-                      {asset.type === "goods" && asset.merchandise_type
-                        ? asset.merchandise_type
-                        : asset.type}
-                    </Badge>
-                  </div>
+                        {/* Status badge */}
+                        <Badge
+                          variant={
+                            gen.status === "completed"
+                              ? "default"
+                              : gen.status === "failed"
+                              ? "destructive"
+                              : "secondary"
+                          }
+                          className="absolute top-2 left-2 text-xs"
+                        >
+                          {gen.status}
+                        </Badge>
+
+                        {/* Quality score */}
+                        {gen.quality_score && (
+                          <span
+                            className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-xs font-bold ${getGradeColor(
+                              gen.quality_score
+                            )}`}
+                          >
+                            {getGrade(gen.quality_score)}
+                          </span>
+                        )}
+
+                        {/* Favorite */}
+                        {gen.is_favorite && (
+                          <Star className="absolute bottom-2 right-2 h-4 w-4 text-yellow-500 fill-yellow-500" />
+                        )}
+                      </div>
+
+                      {/* Info */}
+                      <div className="p-2">
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {gen.original_input || gen.prompt}
+                        </p>
+                        {gen.trend_keywords?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {gen.trend_keywords?.slice(0, 2).map((tag) => (
+                              <span key={tag} className="text-[10px] text-primary">
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          {formatDate(gen.created_at)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6 pt-6 border-t">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(page - 1)}
-                disabled={page === 1}
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Previous
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                Page {page} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(page + 1)}
-                disabled={page === totalPages}
-              >
-                Next
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        {/* Publishing Tab */}
+        <TabsContent value="publishing" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t.workspace.publishedContent}</CardTitle>
+              <CardDescription>{t.workspace.snsStatus}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {publishing.length === 0 ? (
+                <div className="text-center py-12">
+                  <Send className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">{t.workspace.noPublishedContent}</p>
+                  <Link href={`/campaigns/${campaignId}/publish`}>
+                    <Button className="mt-4">{t.workspace.publishContent}</Button>
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {publishing.map((post) => (
+                    <div
+                      key={post.id}
+                      className="flex items-center gap-4 p-4 border rounded-lg"
+                    >
+                      <div className="text-3xl">{getPlatformIcon(post.platform)}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          {getStatusIcon(post.status)}
+                          <span className="font-medium">{post.account_name}</span>
+                          <Badge variant="outline" className="capitalize">
+                            {post.status}
+                          </Badge>
+                        </div>
+                        {post.caption && (
+                          <p className="text-sm text-muted-foreground line-clamp-1 mb-1">
+                            {post.caption}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          {post.published_at ? (
+                            <span>Published: {formatDate(post.published_at)}</span>
+                          ) : post.scheduled_at ? (
+                            <span>Scheduled: {formatDate(post.scheduled_at)}</span>
+                          ) : null}
+                        </div>
+                      </div>
 
-      {/* Upload Type Dialog */}
-      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Upload Asset Type</DialogTitle>
-            <DialogDescription>
-              You&apos;re uploading {pendingFiles.length} image file{pendingFiles.length > 1 ? "s" : ""}.
-              Choose how to categorize them.
-            </DialogDescription>
-          </DialogHeader>
+                      {/* Performance Metrics */}
+                      {post.status === "published" && (
+                        <div className="flex items-center gap-4 text-sm">
+                          <div className="text-center">
+                            <Eye className="h-4 w-4 mx-auto text-muted-foreground" />
+                            <p className="font-medium">{formatNumber(post.view_count)}</p>
+                          </div>
+                          <div className="text-center">
+                            <Heart className="h-4 w-4 mx-auto text-red-500" />
+                            <p className="font-medium">{formatNumber(post.like_count)}</p>
+                          </div>
+                          <div className="text-center">
+                            <MessageCircle className="h-4 w-4 mx-auto text-blue-500" />
+                            <p className="font-medium">{formatNumber(post.comment_count)}</p>
+                          </div>
+                          <div className="text-center">
+                            <Share2 className="h-4 w-4 mx-auto text-green-500" />
+                            <p className="font-medium">{formatNumber(post.share_count)}</p>
+                          </div>
+                          {post.engagement_rate && (
+                            <div className="text-center">
+                              <TrendingUp className="h-4 w-4 mx-auto text-purple-500" />
+                              <p className="font-medium">{post.engagement_rate.toFixed(2)}%</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
-          <div className="space-y-4 py-4">
-            {/* Asset Type Selection */}
-            <div className="flex gap-4">
-              <button
-                onClick={() => setUploadAsGoods(false)}
-                className={`flex-1 p-4 border rounded-lg text-center transition-colors ${
-                  !uploadAsGoods
-                    ? "border-primary bg-primary/5"
-                    : "border-muted hover:border-muted-foreground/50"
-                }`}
-              >
-                <Image className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                <p className="font-medium">Image</p>
-                <p className="text-xs text-muted-foreground mt-1">Regular image asset</p>
-              </button>
-              <button
-                onClick={() => setUploadAsGoods(true)}
-                className={`flex-1 p-4 border rounded-lg text-center transition-colors ${
-                  uploadAsGoods
-                    ? "border-primary bg-primary/5"
-                    : "border-muted hover:border-muted-foreground/50"
-                }`}
-              >
-                <Package className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                <p className="font-medium">Goods</p>
-                <p className="text-xs text-muted-foreground mt-1">Merchandise / Product</p>
-              </button>
-            </div>
+                      {/* External Link */}
+                      {post.published_url && (
+                        <a href={post.published_url} target="_blank" rel="noopener noreferrer">
+                          <Button variant="ghost" size="icon">
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
-            {/* Merchandise Type Selection (when Goods selected) */}
-            {uploadAsGoods && (
-              <div className="space-y-2">
-                <Label>Merchandise Type</Label>
-                <Select
-                  value={selectedMerchType}
-                  onValueChange={(value) => setSelectedMerchType(value as MerchandiseType)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MERCHANDISE_TYPES.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+      {/* Video Preview Modal */}
+      <Dialog open={!!selectedVideo} onOpenChange={(open) => !open && setSelectedVideo(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          {selectedVideo && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Play className="h-5 w-5" />
+                  {t.workspace.videoPreview}
+                  {selectedVideo.quality_score && (
+                    <span
+                      className={`ml-2 px-2 py-0.5 rounded text-sm font-bold ${getGradeColor(
+                        selectedVideo.quality_score
+                      )}`}
+                    >
+                      {getGrade(selectedVideo.quality_score)}
+                    </span>
+                  )}
+                  {selectedVideo.is_favorite && (
+                    <Star className="h-5 w-5 text-yellow-500 fill-yellow-500" />
+                  )}
+                </DialogTitle>
+                <DialogDescription>
+                  {selectedVideo.original_input || selectedVideo.prompt}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                {/* Video Player */}
+                <div className="relative bg-black rounded-lg overflow-hidden">
+                  <video
+                    src={selectedVideo.composed_output_url || selectedVideo.output_url || ""}
+                    controls
+                    autoPlay
+                    className="w-full max-h-[60vh] object-contain"
+                  />
+                  {selectedVideo.composed_output_url && (
+                    <Badge className="absolute bottom-2 left-2 bg-green-600">
+                      {t.workspace.withAudio}
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Video Details */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-sm">{t.workspace.details}</h4>
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      <p>{t.workspace.duration}: {selectedVideo.duration_seconds}s</p>
+                      <p>{t.workspace.aspectRatio}: {selectedVideo.aspect_ratio}</p>
+                      <p>{t.workspace.created}: {formatDate(selectedVideo.created_at)}</p>
+                      <p className="flex items-center gap-1">
+                        {t.workspace.status}: {getStatusIcon(selectedVideo.status)}
+                        <span className="capitalize">{selectedVideo.status}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedVideo.trend_keywords?.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-sm">{t.workspace.trendsApplied}</h4>
+                      <div className="flex flex-wrap gap-1">
+                        {selectedVideo.trend_keywords.map((tag) => (
+                          <Badge key={tag} variant="secondary" className="text-xs">
+                            #{tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Reference Image */}
+                {selectedVideo.reference_image && (
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-sm">{t.workspace.referenceImage}</h4>
+                    <img
+                      src={selectedVideo.reference_image.thumbnail_url || selectedVideo.reference_image.s3_url}
+                      alt="Reference"
+                      className="h-24 rounded-lg object-cover"
+                    />
+                  </div>
+                )}
+
+                {/* Merchandise References */}
+                {selectedVideo.merchandise_refs?.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-sm">{t.workspace.merchandise}</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedVideo.merchandise_refs.map((ref, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
+                          {ref.merchandise?.name || ref.context}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-2 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleCopyPrompt(selectedVideo.prompt)}
+                  >
+                    <Copy className="h-4 w-4 mr-1" />
+                    {t.workspace.copyPrompt}
+                  </Button>
+                  <Link href={`/campaigns/${campaignId}/generate`}>
+                    <Button size="sm">
+                      <RotateCcw className="h-4 w-4 mr-1" />
+                      {t.workspace.generateSimilar}
+                    </Button>
+                  </Link>
+                </div>
               </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={handleUploadDialogCancel}>
-              Cancel
-            </Button>
-            <Button onClick={handleUploadDialogConfirm}>
-              <Upload className="h-4 w-4 mr-2" />
-              Upload {uploadAsGoods ? "as Goods" : "as Image"}
-            </Button>
-          </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

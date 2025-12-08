@@ -15,6 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   Sparkles,
@@ -24,9 +29,9 @@ import {
   Check,
   Hash,
   X,
-  Plus,
   AlertCircle,
   ChevronRight,
+  HelpCircle,
 } from "lucide-react";
 import {
   ScriptGenerationResponse,
@@ -35,6 +40,7 @@ import {
   TikTokSEO,
   EFFECT_PRESETS,
 } from "@/lib/compose-api";
+import { KeywordInputPopover } from "@/components/ui/keyword-input-popover";
 
 interface ComposeEffectStepProps {
   scriptData: ScriptGenerationResponse | null;
@@ -63,7 +69,19 @@ export function ComposeEffectStep({
   rendering,
   onStartRender,
 }: ComposeEffectStepProps) {
-  const { language } = useI18n();
+  const { language, translate } = useI18n();
+
+  // Helper for tooltip icon
+  const TooltipIcon = ({ tooltipKey }: { tooltipKey: string }) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <HelpCircle className="h-3.5 w-3.5 text-neutral-400 hover:text-neutral-600 cursor-help ml-1.5" />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[280px]">
+        <p className="text-xs">{translate(tooltipKey)}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
 
   // Collect all SEO hashtags
   const allHashtags = useMemo(() => {
@@ -131,23 +149,30 @@ export function ComposeEffectStep({
 
         {/* Generate Button - Prominent position */}
         {isReady && (
-          <Button
-            onClick={onStartRender}
-            disabled={rendering}
-            className="bg-neutral-900 text-white hover:bg-neutral-800"
-          >
-            {rendering ? (
-              <>
-                <Sparkles className="h-4 w-4 mr-1 animate-spin" />
-                {language === "ko" ? "생성 중..." : "Generating..."}
-              </>
-            ) : (
-              <>
-                {language === "ko" ? "영상 생성" : "Generate Video"}
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </>
-            )}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={onStartRender}
+                disabled={rendering}
+                className="bg-neutral-900 text-white hover:bg-neutral-800"
+              >
+                {rendering ? (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-1 animate-spin" />
+                    {language === "ko" ? "생성 중..." : "Generating..."}
+                  </>
+                ) : (
+                  <>
+                    {language === "ko" ? "영상 생성" : "Generate Video"}
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[280px]">
+              <p className="text-xs">{translate("compose.tooltips.effects.generateVideo")}</p>
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
 
@@ -198,8 +223,9 @@ export function ComposeEffectStep({
 
       {/* Effect Preset Selection */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium text-neutral-700">
+        <Label className="text-sm font-medium text-neutral-700 flex items-center">
           {language === "ko" ? "효과 프리셋" : "Effect Preset"}
+          <TooltipIcon tooltipKey="compose.tooltips.effects.preset" />
         </Label>
         <Select value={effectPreset} onValueChange={setEffectPreset}>
           <SelectTrigger className="w-full bg-neutral-50 border-neutral-200">
@@ -239,8 +265,9 @@ export function ComposeEffectStep({
 
           {/* Description */}
           <div className="space-y-2">
-            <Label className="text-xs text-neutral-500">
+            <Label className="text-xs text-neutral-500 flex items-center">
               {language === "ko" ? "설명" : "Description"}
+              <TooltipIcon tooltipKey="compose.tooltips.effects.seo.description" />
             </Label>
             <Textarea
               value={tiktokSEO.description}
@@ -251,8 +278,9 @@ export function ComposeEffectStep({
 
           {/* Hashtags */}
           <div className="space-y-2">
-            <Label className="text-xs text-neutral-500">
+            <Label className="text-xs text-neutral-500 flex items-center">
               {language === "ko" ? "해시태그" : "Hashtags"}
+              <TooltipIcon tooltipKey="compose.tooltips.effects.seo.hashtags" />
             </Label>
             <div className="flex flex-wrap gap-1.5 p-3 bg-neutral-50 border border-neutral-200 rounded-lg min-h-[48px]">
               {allHashtags.map((tag, idx) => (
@@ -270,25 +298,20 @@ export function ComposeEffectStep({
                   </button>
                 </Badge>
               ))}
-              <button
-                onClick={() => {
-                  const tag = window.prompt(
-                    language === "ko" ? "새 해시태그:" : "New hashtag:"
-                  );
-                  if (tag) addHashtag(tag);
-                }}
-                className="flex items-center gap-1 px-2 py-0.5 text-xs text-neutral-500 border border-dashed border-neutral-300 rounded-full hover:border-neutral-400"
-              >
-                <Plus className="h-3 w-3" />
-              </button>
+              <KeywordInputPopover
+                onAdd={addHashtag}
+                placeholder={language === "ko" ? "새 해시태그..." : "New hashtag..."}
+                buttonText=""
+              />
             </div>
           </div>
 
           {/* Keywords & Search Intent */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label className="text-xs text-neutral-500">
+              <Label className="text-xs text-neutral-500 flex items-center">
                 {language === "ko" ? "주요 키워드" : "Primary Keyword"}
+                <TooltipIcon tooltipKey="compose.tooltips.effects.seo.primaryKeyword" />
               </Label>
               <Input
                 value={tiktokSEO.keywords.primary}
@@ -302,8 +325,9 @@ export function ComposeEffectStep({
               />
             </div>
             <div>
-              <Label className="text-xs text-neutral-500">
+              <Label className="text-xs text-neutral-500 flex items-center">
                 {language === "ko" ? "검색 의도" : "Search Intent"}
+                <TooltipIcon tooltipKey="compose.tooltips.effects.seo.searchIntent" />
               </Label>
               <Select
                 value={tiktokSEO.searchIntent}
@@ -335,6 +359,7 @@ export function ComposeEffectStep({
           <Label className="text-sm font-medium text-neutral-700 flex items-center gap-2">
             <Film className="h-4 w-4" />
             {language === "ko" ? "첫 프레임 미리보기" : "First Frame Preview"}
+            <TooltipIcon tooltipKey="compose.tooltips.effects.preview" />
           </Label>
           <div className="relative w-full max-w-[280px] mx-auto">
             <div

@@ -8,6 +8,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -15,16 +20,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { HelpCircle } from "lucide-react";
 import {
   Sparkles,
   X,
-  Plus,
   Timer,
   Hash,
   FileText,
   Search,
 } from "lucide-react";
 import { ScriptGenerationResponse, TikTokSEO, ASPECT_RATIOS } from "@/lib/compose-api";
+import { KeywordInputPopover } from "@/components/ui/keyword-input-popover";
 
 interface ComposeScriptStepProps {
   prompt: string;
@@ -40,6 +46,8 @@ interface ComposeScriptStepProps {
   tiktokSEO: TikTokSEO | null;
   setTiktokSEO: (seo: TikTokSEO | null) => void;
   onGenerateScript: () => void;
+  keywordPopoverOpen?: boolean;
+  onKeywordPopoverOpenChange?: (open: boolean) => void;
 }
 
 export function ComposeScriptStep({
@@ -56,8 +64,22 @@ export function ComposeScriptStep({
   tiktokSEO,
   setTiktokSEO,
   onGenerateScript,
+  keywordPopoverOpen,
+  onKeywordPopoverOpenChange,
 }: ComposeScriptStepProps) {
-  const { language } = useI18n();
+  const { language, translate } = useI18n();
+
+  // Helper for tooltip icon
+  const TooltipIcon = ({ tooltipKey }: { tooltipKey: string }) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <HelpCircle className="h-3.5 w-3.5 text-neutral-400 hover:text-neutral-600 cursor-help ml-1.5" />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[280px]">
+        <p className="text-xs">{translate(tooltipKey)}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
 
   // Keyword management
   const addKeyword = (keyword: string) => {
@@ -121,8 +143,9 @@ export function ComposeScriptStep({
 
       {/* Prompt Input */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium text-neutral-700">
+        <Label className="text-sm font-medium text-neutral-700 flex items-center">
           {language === "ko" ? "영상 컨셉 프롬프트" : "Video Concept Prompt"}
+          <TooltipIcon tooltipKey="compose.tooltips.script.prompt" />
         </Label>
         <Textarea
           value={prompt}
@@ -138,8 +161,9 @@ export function ComposeScriptStep({
 
       {/* Aspect Ratio */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium text-neutral-700">
+        <Label className="text-sm font-medium text-neutral-700 flex items-center">
           {language === "ko" ? "화면 비율" : "Aspect Ratio"}
+          <TooltipIcon tooltipKey="compose.tooltips.script.aspectRatio" />
         </Label>
         <Select value={aspectRatio} onValueChange={setAspectRatio}>
           <SelectTrigger className="w-full bg-neutral-50 border-neutral-200">
@@ -160,6 +184,7 @@ export function ComposeScriptStep({
         <Label className="text-sm font-medium text-neutral-700 flex items-center gap-2">
           <Search className="h-4 w-4" />
           {language === "ko" ? "검색 키워드" : "Search Keywords"}
+          <TooltipIcon tooltipKey="compose.tooltips.script.searchKeywords" />
         </Label>
         <div className="flex flex-wrap gap-2 p-3 bg-neutral-50 border border-neutral-200 rounded-lg min-h-[60px]">
           {editableKeywords.map((keyword) => (
@@ -186,18 +211,13 @@ export function ComposeScriptStep({
               </button>
             </Badge>
           ))}
-          <button
-            onClick={() => {
-              const kw = window.prompt(
-                language === "ko" ? "새 키워드 입력:" : "Enter new keyword:"
-              );
-              if (kw) addKeyword(kw);
-            }}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-neutral-500 border border-dashed border-neutral-300 rounded-full hover:border-neutral-400 hover:text-neutral-600"
-          >
-            <Plus className="h-3 w-3" />
-            {language === "ko" ? "추가" : "Add"}
-          </button>
+          <KeywordInputPopover
+            onAdd={addKeyword}
+            placeholder={language === "ko" ? "새 키워드 입력..." : "Enter new keyword..."}
+            buttonText={language === "ko" ? "추가" : "Add"}
+            open={keywordPopoverOpen}
+            onOpenChange={onKeywordPopoverOpenChange}
+          />
         </div>
         <p className="text-xs text-neutral-400">
           {language === "ko"
@@ -207,23 +227,30 @@ export function ComposeScriptStep({
       </div>
 
       {/* Generate Button */}
-      <Button
-        onClick={onGenerateScript}
-        disabled={generatingScript || !prompt.trim()}
-        className="w-full bg-neutral-900 text-white hover:bg-neutral-800 h-12"
-      >
-        {generatingScript ? (
-          <>
-            <Sparkles className="h-5 w-5 mr-2 animate-spin" />
-            {language === "ko" ? "스크립트 생성 중..." : "Generating Script..."}
-          </>
-        ) : (
-          <>
-            <Sparkles className="h-5 w-5 mr-2" />
-            {language === "ko" ? "AI 스크립트 생성" : "Generate AI Script"}
-          </>
-        )}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            onClick={onGenerateScript}
+            disabled={generatingScript || !prompt.trim()}
+            className="w-full bg-neutral-900 text-white hover:bg-neutral-800 h-12"
+          >
+            {generatingScript ? (
+              <>
+                <Sparkles className="h-5 w-5 mr-2 animate-spin" />
+                {language === "ko" ? "스크립트 생성 중..." : "Generating Script..."}
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-5 w-5 mr-2" />
+                {language === "ko" ? "AI 스크립트 생성" : "Generate AI Script"}
+              </>
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-[280px]">
+          <p className="text-xs">{translate("compose.tooltips.script.generateScript")}</p>
+        </TooltipContent>
+      </Tooltip>
 
       {/* Script Result */}
       {scriptData && (
@@ -234,12 +261,26 @@ export function ComposeScriptStep({
               {language === "ko" ? "생성된 스크립트" : "Generated Script"}
             </h3>
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs border-neutral-300">
-                {scriptData.vibe}
-              </Badge>
-              <Badge variant="outline" className="text-xs border-neutral-300">
-                {scriptData.suggestedBpmRange.min}-{scriptData.suggestedBpmRange.max} BPM
-              </Badge>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="text-xs border-neutral-300 cursor-help">
+                    {scriptData.vibe}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[240px]">
+                  <p className="text-xs">{translate("compose.tooltips.script.vibe")}</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="text-xs border-neutral-300 cursor-help">
+                    {scriptData.suggestedBpmRange.min}-{scriptData.suggestedBpmRange.max} BPM
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[240px]">
+                  <p className="text-xs">{translate("compose.tooltips.script.bpmRange")}</p>
+                </TooltipContent>
+              </Tooltip>
             </div>
           </div>
 
@@ -311,16 +352,18 @@ export function ComposeScriptStep({
           <div className="space-y-3">
             {/* Description */}
             <div>
-              <Label className="text-xs text-neutral-500 mb-1">
+              <Label className="text-xs text-neutral-500 mb-1 flex items-center">
                 {language === "ko" ? "설명" : "Description"}
+                <TooltipIcon tooltipKey="compose.tooltips.effects.seo.description" />
               </Label>
               <p className="text-sm text-neutral-700">{tiktokSEO.description}</p>
             </div>
 
             {/* Hashtags */}
             <div>
-              <Label className="text-xs text-neutral-500 mb-1">
+              <Label className="text-xs text-neutral-500 mb-1 flex items-center">
                 {language === "ko" ? "해시태그" : "Hashtags"}
+                <TooltipIcon tooltipKey="compose.tooltips.effects.seo.hashtags" />
               </Label>
               <div className="flex flex-wrap gap-1.5">
                 {allSEOHashtags.map((tag, idx) => (

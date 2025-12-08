@@ -10,6 +10,11 @@ import { useToast } from "@/components/ui/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   composeApi,
@@ -37,7 +42,18 @@ import {
   Sparkles,
   RotateCcw,
   AlertCircle,
+  Search,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // Step Components
 import { ComposeScriptStep } from "./ComposeScriptStep";
@@ -50,7 +66,7 @@ import { ComposeEffectStep } from "./ComposeEffectStep";
 // ============================================================================
 
 type ComposeStep = 1 | 2 | 3 | 4;
-type ImageSourceMode = "assets_only" | "search_only" | "mixed";
+type ImageSourceMode = "search_only" | "mixed";
 
 interface InlineComposeFlowProps {
   campaignId: string;
@@ -335,7 +351,12 @@ function StepNavigation({
   musicSkipped: boolean;
   onStepClick: (step: ComposeStep) => void;
 }) {
-  const { language } = useI18n();
+  const { language, translate } = useI18n();
+
+  // Get tooltip key for each step
+  const getStepTooltipKey = (stepKey: string) => {
+    return `compose.tooltips.steps.${stepKey}`;
+  };
 
   const isStepComplete = (step: ComposeStep): boolean => {
     switch (step) {
@@ -354,30 +375,38 @@ function StepNavigation({
         const isActive = step.step === currentStep;
         const isComplete = isStepComplete(step.step);
         const isAccessible = step.step <= currentStep || isComplete;
+        // Map render step key to effects for tooltip
+        const tooltipStepKey = step.key === "render" ? "effects" : step.key;
 
         return (
-          <button
-            key={step.step}
-            onClick={() => isAccessible && onStepClick(step.step)}
-            disabled={!isAccessible}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all",
-              isActive
-                ? "bg-white text-neutral-900 shadow-sm"
-                : isComplete
-                ? "text-neutral-700 hover:bg-neutral-50"
-                : "text-neutral-400 cursor-not-allowed"
-            )}
-          >
-            {isComplete ? (
-              <Check className="w-4 h-4 text-neutral-900" />
-            ) : (
-              <Icon className="w-4 h-4" />
-            )}
-            <span className="hidden sm:inline">
-              {language === "ko" ? step.labelKo : step.labelEn}
-            </span>
-          </button>
+          <Tooltip key={step.step}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => isAccessible && onStepClick(step.step)}
+                disabled={!isAccessible}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all",
+                  isActive
+                    ? "bg-white text-neutral-900 shadow-sm"
+                    : isComplete
+                    ? "text-neutral-700 hover:bg-neutral-50"
+                    : "text-neutral-400 cursor-not-allowed"
+                )}
+              >
+                {isComplete ? (
+                  <Check className="w-4 h-4 text-neutral-900" />
+                ) : (
+                  <Icon className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">
+                  {language === "ko" ? step.labelKo : step.labelEn}
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[240px]">
+              <p className="text-xs">{translate(getStepTooltipKey(tooltipStepKey))}</p>
+            </TooltipContent>
+          </Tooltip>
         );
       })}
     </div>
@@ -394,7 +423,7 @@ export function InlineComposeFlow({
   onBack,
 }: InlineComposeFlowProps) {
   const router = useRouter();
-  const { language } = useI18n();
+  const { language, translate } = useI18n();
   const toast = useToast();
 
   const { discover, analyze, setCreateType } = useWorkflowStore(
@@ -405,32 +434,11 @@ export function InlineComposeFlow({
     }))
   );
 
-  // Fetch campaign assets
-  const { data: imageAssetsData, isLoading: imageAssetsLoading } = useAssets(campaignId, {
-    type: "image",
-    page_size: 100,
-  });
+  // Fetch campaign audio assets
   const { data: audioAssetsData, isLoading: audioAssetsLoading } = useAssets(campaignId, {
     type: "audio",
     page_size: 100,
   });
-
-  // Convert campaign assets to ImageCandidate format
-  const assetImages: ImageCandidate[] = useMemo(() => {
-    const items = imageAssetsData?.items || [];
-    return items.map((asset, idx) => ({
-      id: `asset-${asset.id}`,
-      sourceUrl: asset.s3_url,
-      thumbnailUrl: asset.thumbnail_url || asset.s3_url,
-      sourceTitle: asset.original_filename,
-      sourceDomain: "Campaign Asset",
-      width: (asset.metadata?.width as number) || 1080,
-      height: (asset.metadata?.height as number) || 1920,
-      isSelected: false,
-      sortOrder: idx,
-      qualityScore: 0.9,
-    }));
-  }, [imageAssetsData]);
 
   // ========================================
   // Core State
@@ -459,8 +467,6 @@ export function InlineComposeFlow({
   const [imageCandidates, setImageCandidates] = useState<ImageCandidate[]>([]);
   const [selectedImages, setSelectedImages] = useState<ImageCandidate[]>([]);
   const [generationId, setGenerationId] = useState<string | null>(null);
-  // Default to "search_only" so user sees web search results where auto-selection happens
-  // If campaign has assets, will switch to "mixed" after assets load
   const [imageSourceMode, setImageSourceMode] = useState<ImageSourceMode>("search_only");
 
   // Step 3: Music state
@@ -479,6 +485,11 @@ export function InlineComposeFlow({
   // TikTok SEO state
   const [tiktokSEO, setTiktokSEO] = useState<TikTokSEO | null>(null);
 
+  // Keyword suggestion dialog state (shown before script generation)
+  const [showKeywordSuggestionDialog, setShowKeywordSuggestionDialog] = useState(false);
+  const [autoSearchWithAIKeyword, setAutoSearchWithAIKeyword] = useState(false);
+  const [keywordPopoverOpen, setKeywordPopoverOpen] = useState(false);
+
   // ========================================
   // Effects
   // ========================================
@@ -487,13 +498,6 @@ export function InlineComposeFlow({
   useEffect(() => {
     setCreateType("compose");
   }, [setCreateType]);
-
-  // Switch to "mixed" mode when campaign assets become available
-  useEffect(() => {
-    if (assetImages.length > 0 && imageSourceMode === "search_only") {
-      setImageSourceMode("mixed");
-    }
-  }, [assetImages.length, imageSourceMode]);
 
   // ========================================
   // Step 1: Script Generation
@@ -505,6 +509,18 @@ export function InlineComposeFlow({
       return;
     }
 
+    // Check if no keywords are selected - ask user first
+    if (selectedSearchKeywords.size === 0) {
+      setShowKeywordSuggestionDialog(true);
+      return;
+    }
+
+    // Keywords exist, proceed with generation
+    await executeScriptGeneration(true);
+  };
+
+  // Actual script generation logic
+  const executeScriptGeneration = async (shouldAutoSearch: boolean) => {
     setError("");
     setGeneratingScript(true);
 
@@ -540,15 +556,32 @@ export function InlineComposeFlow({
       // Auto-advance to step 2
       setCurrentStep(2);
 
-      // Auto-search images if keywords exist
-      if (userKeywords.length > 0) {
-        await handleSearchImages(userKeywords, newGenerationId);
+      // Auto-search images based on user's choice
+      if (shouldAutoSearch && mergedKeywords.length > 0) {
+        // Use the best AI keyword for search
+        const bestKeyword = mergedKeywords[0];
+        setSelectedSearchKeywords(new Set([bestKeyword]));
+        await handleSearchImages([bestKeyword], newGenerationId);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Script generation failed");
     } finally {
       setGeneratingScript(false);
     }
+  };
+
+  // Handle keyword suggestion confirmation - YES, auto-search with AI keyword
+  const handleKeywordSuggestionConfirm = async () => {
+    setShowKeywordSuggestionDialog(false);
+    await executeScriptGeneration(true);
+  };
+
+  // Handle keyword suggestion cancel - NO, go back and let user add keywords manually
+  const handleKeywordSuggestionCancel = () => {
+    setShowKeywordSuggestionDialog(false);
+    // Open the keyword input popover automatically
+    setKeywordPopoverOpen(true);
+    // Don't generate script - let user add keywords first
   };
 
   // ========================================
@@ -888,6 +921,8 @@ export function InlineComposeFlow({
                 tiktokSEO={tiktokSEO}
                 setTiktokSEO={setTiktokSEO}
                 onGenerateScript={handleGenerateScript}
+                keywordPopoverOpen={keywordPopoverOpen}
+                onKeywordPopoverOpenChange={setKeywordPopoverOpen}
               />
             )}
 
@@ -895,11 +930,9 @@ export function InlineComposeFlow({
               <ComposeImageStep
                 imageSourceMode={imageSourceMode}
                 setImageSourceMode={setImageSourceMode}
-                assetImages={assetImages}
                 imageCandidates={imageCandidates}
                 selectedImages={selectedImages}
                 searchingImages={searchingImages}
-                loadingAssets={imageAssetsLoading}
                 editableKeywords={editableKeywords}
                 selectedSearchKeywords={selectedSearchKeywords}
                 setSelectedSearchKeywords={setSelectedSearchKeywords}
@@ -976,27 +1009,43 @@ export function InlineComposeFlow({
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleBack}
-              className="border-neutral-300"
-            >
-              <ChevronLeft className="h-4 w-4 mr-2" />
-              {currentStep === 1
-                ? language === "ko" ? "취소" : "Cancel"
-                : language === "ko" ? "이전" : "Back"}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  onClick={handleBack}
+                  className="border-neutral-300"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-2" />
+                  {currentStep === 1
+                    ? language === "ko" ? "취소" : "Cancel"
+                    : language === "ko" ? "이전" : "Back"}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[240px]">
+                <p className="text-xs">
+                  {translate(currentStep === 1 ? "compose.tooltips.navigation.cancel" : "compose.tooltips.navigation.back")}
+                </p>
+              </TooltipContent>
+            </Tooltip>
 
             {/* Soft Reset Button - Only show after step 1 */}
             {currentStep > 1 && (
-              <Button
-                variant="ghost"
-                onClick={handleSoftReset}
-                className="text-neutral-500 hover:text-neutral-700"
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                {language === "ko" ? "처음부터" : "Start Over"}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    onClick={handleSoftReset}
+                    className="text-neutral-500 hover:text-neutral-700"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    {language === "ko" ? "처음부터" : "Start Over"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[240px]">
+                  <p className="text-xs">{translate("compose.tooltips.navigation.startOver")}</p>
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
 
@@ -1016,38 +1065,77 @@ export function InlineComposeFlow({
           </div>
 
           {currentStep < 4 ? (
-            <Button
-              onClick={handleNext}
-              disabled={!canProceed()}
-              className={cn(
-                "bg-neutral-900 text-white hover:bg-neutral-800",
-                !canProceed() && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              {language === "ko" ? "다음" : "Next"}
-              <ChevronRight className="h-4 w-4 ml-2" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleNext}
+                  disabled={!canProceed()}
+                  className={cn(
+                    "bg-neutral-900 text-white hover:bg-neutral-800",
+                    !canProceed() && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  {language === "ko" ? "다음" : "Next"}
+                  <ChevronRight className="h-4 w-4 ml-2" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[240px]">
+                <p className="text-xs">{translate("compose.tooltips.navigation.next")}</p>
+              </TooltipContent>
+            </Tooltip>
           ) : (
-            <Button
-              onClick={handleStartRender}
-              disabled={rendering || (!selectedAudio && !musicSkipped) || selectedImages.length < 3}
-              className="bg-neutral-900 text-white hover:bg-neutral-800"
-            >
-              {rendering ? (
-                <>
-                  <Sparkles className="h-4 w-4 mr-2 animate-pulse" />
-                  {language === "ko" ? "생성 중..." : "Generating..."}
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4 mr-2" />
-                  {language === "ko" ? "컴포즈 영상 생성" : "Generate Compose"}
-                </>
-              )}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleStartRender}
+                  disabled={rendering || (!selectedAudio && !musicSkipped) || selectedImages.length < 3}
+                  className="bg-neutral-900 text-white hover:bg-neutral-800"
+                >
+                  {rendering ? (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-2 animate-pulse" />
+                      {language === "ko" ? "생성 중..." : "Generating..."}
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      {language === "ko" ? "컴포즈 영상 생성" : "Generate Compose"}
+                    </>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[240px]">
+                <p className="text-xs">{translate("compose.tooltips.navigation.generate")}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
       </div>
+
+      {/* Keyword Suggestion Dialog - shown before script generation */}
+      <AlertDialog open={showKeywordSuggestionDialog} onOpenChange={setShowKeywordSuggestionDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5" />
+              {language === "ko" ? "검색 키워드 없음" : "No Search Keywords"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {language === "ko"
+                ? "검색 키워드가 선택되지 않았습니다. AI가 생성하는 키워드 중 가장 적합한 것으로 자동 검색할까요?"
+                : "No search keywords were selected. Would you like to auto-search with the best AI-generated keyword?"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleKeywordSuggestionCancel}>
+              {language === "ko" ? "직접 입력할게요" : "I'll add keywords myself"}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleKeywordSuggestionConfirm}>
+              {language === "ko" ? "네, AI 키워드로 검색" : "Yes, search with AI keyword"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

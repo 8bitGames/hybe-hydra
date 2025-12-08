@@ -74,20 +74,27 @@ export async function POST(request: NextRequest) {
     const cachedResults = await getCachedSearchResults(cacheKey);
 
     if (cachedResults) {
-      console.log(`[Image Search] ✅ CACHE HIT for: ${keywords.join(', ')}`);
-      // Update IDs for this generation (cache stores generic IDs)
-      const candidates = (cachedResults.candidates as ImageCandidate[]).map((c, idx) => ({
-        ...c,
-        id: `${generationId}-img-${idx}`,
-        sortOrder: idx,
-      }));
-      return NextResponse.json({
-        candidates,
-        totalFound: cachedResults.totalFound,
-        filtered: cachedResults.filtered,
-        filterReasons: cachedResults.filterReasons,
-        fromCache: true,
-      });
+      const cachedCandidates = cachedResults.candidates as ImageCandidate[];
+      // Skip cache if too few results (likely outdated or incomplete)
+      const minCachedResults = 5;
+      if (cachedCandidates.length < minCachedResults) {
+        console.log(`[Image Search] ⚠️ CACHE STALE - only ${cachedCandidates.length} results, refreshing...`);
+      } else {
+        console.log(`[Image Search] ✅ CACHE HIT for: ${keywords.join(', ')} (${cachedCandidates.length} results)`);
+        // Update IDs for this generation (cache stores generic IDs)
+        const candidates = cachedCandidates.map((c, idx) => ({
+          ...c,
+          id: `${generationId}-img-${idx}`,
+          sortOrder: idx,
+        }));
+        return NextResponse.json({
+          candidates,
+          totalFound: cachedResults.totalFound,
+          filtered: cachedResults.filtered,
+          filterReasons: cachedResults.filterReasons,
+          fromCache: true,
+        });
+      }
     }
 
     // =====================================================
@@ -109,24 +116,23 @@ export async function POST(request: NextRequest) {
 
     // Filter by minimum dimensions and calculate quality scores
     let filteredCount = 0;
+    let blockedCount = 0;
+    let lowResCount = 0;
     const candidates: ImageCandidate[] = [];
 
-    // Domains that block hotlinking - skip entirely
+    // Only block domains that definitely won't work (CDN with auth tokens)
     const blockedDomains = [
-      'lookaside.instagram.com',
-      'lookaside.fbsbx.com',
-      'scontent.instagram.com',
-      'scontent-',
-      'tiktok.com/api',
-      'tiktokcdn.com',
+      'lookaside.fbsbx.com',  // Facebook CDN with auth
+      'scontent-',           // Facebook/Instagram CDN
     ];
 
     for (let i = 0; i < searchResults.length && candidates.length < maxImages; i++) {
       const result = searchResults[i];
 
-      // Skip hotlink-protected URLs entirely
+      // Skip only definitely blocked URLs
       if (blockedDomains.some(d => result.link?.includes(d))) {
         console.log(`[Image Search] Skipping blocked domain: ${result.link?.substring(0, 50)}...`);
+        blockedCount++;
         filteredCount++;
         continue;
       }
@@ -134,8 +140,9 @@ export async function POST(request: NextRequest) {
       const width = result.image?.width || 0;
       const height = result.image?.height || 0;
 
-      // Filter by minimum dimensions
-      if (width < minWidth || height < minHeight) {
+      // Relaxed filter - only skip very small images
+      if (width < 100 || height < 100) {
+        lowResCount++;
         filteredCount++;
         continue;
       }
@@ -162,12 +169,15 @@ export async function POST(request: NextRequest) {
       c.sortOrder = idx;
     });
 
+    console.log(`[Image Search] Results: ${candidates.length} passed, ${filteredCount} filtered (blocked: ${blockedCount}, low-res: ${lowResCount})`);
+
     const response = {
       candidates,
       totalFound: searchResults.length,
       filtered: filteredCount,
       filterReasons: {
-        low_resolution: filteredCount
+        blocked_domain: blockedCount,
+        low_resolution: lowResCount
       }
     };
 

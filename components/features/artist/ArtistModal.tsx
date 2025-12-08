@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useI18n } from "@/lib/i18n";
-import { useLabels, useCreateArtist } from "@/lib/queries";
+import { useLabels, useCreateArtist, useUpdateArtist } from "@/lib/queries";
 import {
   Dialog,
   DialogContent,
@@ -15,24 +15,33 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
+import { UserPlus, Pencil } from "lucide-react";
+import type { Artist } from "@/lib/campaigns-api";
 
 const BIG_MACHINE_CODE = "BIGMACHINE";
 
-interface AddArtistModalProps {
+interface ArtistModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  /** If provided, modal opens in edit mode */
+  artist?: Artist | null;
 }
 
-export function AddArtistModal({
+export function ArtistModal({
   open,
   onOpenChange,
   onSuccess,
-}: AddArtistModalProps) {
+  artist,
+}: ArtistModalProps) {
   const { t, language } = useI18n();
-  const artist = t.artist;
+  const artistT = t.artist;
   const { data: labels = [], isLoading: labelsLoading } = useLabels();
   const createArtistMutation = useCreateArtist();
+  const updateArtistMutation = useUpdateArtist();
+
+  const isEditMode = !!artist;
+  const isPending = createArtistMutation.isPending || updateArtistMutation.isPending;
 
   const [formData, setFormData] = useState({
     name: "",
@@ -47,14 +56,41 @@ export function AddArtistModal({
   // Auto-select Big Machine label when labels are loaded
   const bigMachineLabel = labels.find((l) => l.code === BIG_MACHINE_CODE);
 
+  // Initialize form data when modal opens
   useEffect(() => {
-    if (bigMachineLabel && !formData.label_id) {
+    if (open) {
+      if (artist) {
+        // Edit mode - populate with existing data
+        setFormData({
+          name: artist.name || "",
+          stage_name: artist.stage_name || "",
+          group_name: artist.group_name || "",
+          label_id: artist.label_id || "",
+          profile_description: artist.profile_description || "",
+        });
+      } else {
+        // Create mode - reset form
+        setFormData({
+          name: "",
+          stage_name: "",
+          group_name: "",
+          label_id: bigMachineLabel?.id || "",
+          profile_description: "",
+        });
+      }
+      setErrors({});
+    }
+  }, [open, artist, bigMachineLabel?.id]);
+
+  // Auto-select Big Machine label for create mode
+  useEffect(() => {
+    if (!isEditMode && bigMachineLabel && !formData.label_id) {
       setFormData((prev) => ({ ...prev, label_id: bigMachineLabel.id }));
     }
-  }, [bigMachineLabel, formData.label_id]);
+  }, [bigMachineLabel, formData.label_id, isEditMode]);
 
   const handleClose = () => {
-    if (!createArtistMutation.isPending) {
+    if (!isPending) {
       setFormData({
         name: "",
         stage_name: "",
@@ -74,8 +110,8 @@ export function AddArtistModal({
       newErrors.name = language === "ko" ? "이름은 필수입니다" : "Name is required";
     }
 
-    // Label is auto-set to Big Machine, validate it exists
-    if (!formData.label_id && !bigMachineLabel) {
+    // Label validation for create mode
+    if (!isEditMode && !formData.label_id && !bigMachineLabel) {
       newErrors.label_id = language === "ko" ? "레이블을 찾을 수 없습니다" : "Label not found";
     }
 
@@ -88,25 +124,39 @@ export function AddArtistModal({
 
     if (!validate()) return;
 
-    const labelId = formData.label_id || bigMachineLabel?.id;
-    if (!labelId) return;
-
     try {
-      await createArtistMutation.mutateAsync({
-        name: formData.name.trim(),
-        label_id: labelId,
-        stage_name: formData.stage_name.trim() || undefined,
-        group_name: formData.group_name.trim() || undefined,
-        profile_description: formData.profile_description.trim() || undefined,
-      });
+      if (isEditMode && artist) {
+        // Update existing artist
+        await updateArtistMutation.mutateAsync({
+          id: artist.id,
+          data: {
+            name: formData.name.trim(),
+            stage_name: formData.stage_name.trim() || undefined,
+            group_name: formData.group_name.trim() || undefined,
+            profile_description: formData.profile_description.trim() || undefined,
+          },
+        });
+      } else {
+        // Create new artist
+        const labelId = formData.label_id || bigMachineLabel?.id;
+        if (!labelId) return;
+
+        await createArtistMutation.mutateAsync({
+          name: formData.name.trim(),
+          label_id: labelId,
+          stage_name: formData.stage_name.trim() || undefined,
+          group_name: formData.group_name.trim() || undefined,
+          profile_description: formData.profile_description.trim() || undefined,
+        });
+      }
 
       handleClose();
       onSuccess?.();
     } catch {
       setErrors({
-        submit: language === "ko"
-          ? "아티스트 생성에 실패했습니다"
-          : "Failed to create artist",
+        submit: isEditMode
+          ? (language === "ko" ? "아티스트 수정에 실패했습니다" : "Failed to update artist")
+          : (language === "ko" ? "아티스트 생성에 실패했습니다" : "Failed to create artist"),
       });
     }
   };
@@ -115,11 +165,23 @@ export function AddArtistModal({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="text-xl">
-            {artist.addArtist}
+          <DialogTitle className="text-xl flex items-center gap-2">
+            {isEditMode ? (
+              <>
+                <Pencil className="h-5 w-5" />
+                {language === "ko" ? "아티스트 수정" : "Edit Artist"}
+              </>
+            ) : (
+              <>
+                <UserPlus className="h-5 w-5" />
+                {artistT.addArtist}
+              </>
+            )}
           </DialogTitle>
           <DialogDescription>
-            {artist.addArtistDescription}
+            {isEditMode
+              ? (language === "ko" ? "아티스트 정보를 수정합니다" : "Update artist information")
+              : artistT.addArtistDescription}
           </DialogDescription>
         </DialogHeader>
 
@@ -127,7 +189,7 @@ export function AddArtistModal({
           {/* Name (Required) */}
           <div className="space-y-2">
             <Label htmlFor="name" className="text-base">
-              {artist.name} <span className="text-destructive">*</span>
+              {artistT.name} <span className="text-destructive">*</span>
             </Label>
             <Input
               id="name"
@@ -135,7 +197,7 @@ export function AddArtistModal({
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, name: e.target.value }))
               }
-              placeholder={artist.namePlaceholder}
+              placeholder={artistT.namePlaceholder}
               className="h-10 text-base"
               aria-invalid={!!errors.name}
             />
@@ -147,7 +209,7 @@ export function AddArtistModal({
           {/* Stage Name */}
           <div className="space-y-2">
             <Label htmlFor="stage_name" className="text-base">
-              {artist.stageName}
+              {artistT.stageName}
             </Label>
             <Input
               id="stage_name"
@@ -155,7 +217,7 @@ export function AddArtistModal({
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, stage_name: e.target.value }))
               }
-              placeholder={artist.stageNamePlaceholder}
+              placeholder={artistT.stageNamePlaceholder}
               className="h-10 text-base"
             />
           </div>
@@ -163,7 +225,7 @@ export function AddArtistModal({
           {/* Group Name */}
           <div className="space-y-2">
             <Label htmlFor="group_name" className="text-base">
-              {artist.groupName}
+              {artistT.groupName}
             </Label>
             <Input
               id="group_name"
@@ -171,15 +233,15 @@ export function AddArtistModal({
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, group_name: e.target.value }))
               }
-              placeholder={artist.groupNamePlaceholder}
+              placeholder={artistT.groupNamePlaceholder}
               className="h-10 text-base"
             />
           </div>
 
-          {/* Label (Fixed to Big Machine) */}
+          {/* Label (Fixed to Big Machine for create, shown for edit) */}
           <div className="space-y-2">
             <Label htmlFor="label_id" className="text-base">
-              {artist.label}
+              {artistT.label}
             </Label>
             {labelsLoading ? (
               <div className="flex items-center gap-2 h-10">
@@ -190,7 +252,7 @@ export function AddArtistModal({
               </div>
             ) : (
               <Input
-                value={bigMachineLabel?.name || "Big Machine Records"}
+                value={isEditMode ? (artist?.label_name || "") : (bigMachineLabel?.name || "Big Machine Records")}
                 disabled
                 className="h-10 text-base bg-muted"
               />
@@ -200,7 +262,7 @@ export function AddArtistModal({
           {/* Profile Description */}
           <div className="space-y-2">
             <Label htmlFor="profile_description" className="text-base">
-              {artist.description}
+              {artistT.description}
             </Label>
             <Textarea
               id="profile_description"
@@ -211,7 +273,7 @@ export function AddArtistModal({
                   profile_description: e.target.value,
                 }))
               }
-              placeholder={artist.descriptionPlaceholder}
+              placeholder={artistT.descriptionPlaceholder}
               className="text-base min-h-[80px]"
             />
           </div>
@@ -227,23 +289,33 @@ export function AddArtistModal({
               type="button"
               variant="outline"
               onClick={handleClose}
-              disabled={createArtistMutation.isPending}
+              disabled={isPending}
               className="text-base"
             >
               {t.common.cancel}
             </Button>
             <Button
               type="submit"
-              disabled={createArtistMutation.isPending || labelsLoading}
+              disabled={isPending || labelsLoading}
               className="text-base"
             >
-              {createArtistMutation.isPending ? (
+              {isPending ? (
                 <>
                   <Spinner className="h-4 w-4 mr-2" />
-                  {language === "ko" ? "생성 중..." : "Creating..."}
+                  {isEditMode
+                    ? (language === "ko" ? "수정 중..." : "Updating...")
+                    : (language === "ko" ? "생성 중..." : "Creating...")}
+                </>
+              ) : isEditMode ? (
+                <>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  {language === "ko" ? "수정" : "Update"}
                 </>
               ) : (
-                artist.create
+                <>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  {artistT.create}
+                </>
               )}
             </Button>
           </div>
@@ -252,3 +324,6 @@ export function AddArtistModal({
     </Dialog>
   );
 }
+
+// Backwards compatibility export
+export { ArtistModal as AddArtistModal };

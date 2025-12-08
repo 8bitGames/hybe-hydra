@@ -49,6 +49,7 @@ export interface GroundingSearchResult {
 
 /**
  * Search for images using Google Custom Search API
+ * Supports pagination to fetch more than 10 results
  */
 export async function searchImages(
   query: string,
@@ -58,13 +59,17 @@ export async function searchImages(
     imageType?: "photo" | "face" | "clipart" | "lineart" | "animated";
     imageSize?: "huge" | "icon" | "large" | "medium" | "small" | "xlarge" | "xxlarge";
     rights?: string;
+    gl?: string;  // Geolocation: "kr", "us", "jp", etc.
+    hl?: string;  // Language: "ko", "en", "ja", etc.
   } = {}
 ): Promise<ImageSearchResult[]> {
   const {
     maxResults = 10,
     safeSearch = "medium",
-    imageType = "photo",
-    imageSize = "huge",  // Maximum size option in Google CSE
+    imageType,  // undefined = no filter (all image types)
+    imageSize,  // undefined = no filter (all sizes)
+    gl,         // undefined = no geolocation filter
+    hl,         // undefined = no language filter
   } = options;
 
   if (!GOOGLE_CSE_API_KEY || !GOOGLE_CSE_ID) {
@@ -73,47 +78,70 @@ export async function searchImages(
     return [];
   }
 
-  const params = new URLSearchParams({
-    key: GOOGLE_CSE_API_KEY,
-    cx: GOOGLE_CSE_ID,
-    q: query,
-    searchType: "image",
-    num: String(Math.min(maxResults, 10)), // API max is 10 per request
-    safe: safeSearch,
-    imgType: imageType,
-    imgSize: imageSize,
-  });
+  const allResults: ImageSearchResult[] = [];
+  const pagesNeeded = Math.ceil(maxResults / 10);  // Google API returns max 10 per request
+  const maxPages = Math.min(pagesNeeded, 3);  // Limit to 3 pages (30 results) to save API quota
 
-  try {
-    const url = `https://www.googleapis.com/customsearch/v1?${params.toString()}`;
-    console.log(`[Google CSE] Searching: "${query}" (size: ${imageSize})`);
+  for (let page = 0; page < maxPages && allResults.length < maxResults; page++) {
+    const startIndex = page * 10 + 1;  // Google uses 1-based indexing
+    const numToFetch = Math.min(10, maxResults - allResults.length);
 
-    const response = await fetch(url);
+    const params = new URLSearchParams({
+      key: GOOGLE_CSE_API_KEY,
+      cx: GOOGLE_CSE_ID,
+      q: query,
+      searchType: "image",
+      num: String(numToFetch),
+      start: String(startIndex),
+      safe: safeSearch,
+    });
+    // Add optional filters only if specified
+    if (imageType) params.set("imgType", imageType);
+    if (imageSize) params.set("imgSize", imageSize);
+    if (gl) params.set("gl", gl);  // Geolocation filter
+    if (hl) params.set("hl", hl);  // Language filter
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("[Google CSE] API error:", response.status, error);
-      throw new Error(`Google CSE API error: ${response.status}`);
+    try {
+      const url = `https://www.googleapis.com/customsearch/v1?${params.toString()}`;
+      console.log(`[Google CSE] Searching: "${query}" (page ${page + 1}, start: ${startIndex})`);
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error("[Google CSE] API error:", response.status, error);
+        // Don't throw, just break the loop and return what we have
+        break;
+      }
+
+      const data: ImageSearchResponse = await response.json();
+      console.log(`[Google CSE] Page ${page + 1}: Found ${data.items?.length || 0} results for "${query}"`);
+
+      if (data.items && data.items.length > 0) {
+        allResults.push(...data.items);
+
+        // Log first result only on first page
+        if (page === 0) {
+          const first = data.items[0];
+          console.log(`[Google CSE] First result: ${first.image?.width}x${first.image?.height}`);
+        }
+      } else {
+        // No more results available
+        break;
+      }
+
+      // Small delay between pages to avoid rate limiting
+      if (page < maxPages - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    } catch (error) {
+      console.error("[Google CSE] Search error:", error);
+      break;
     }
-
-    const data: ImageSearchResponse = await response.json();
-    console.log(`[Google CSE] Found ${data.items?.length || 0} results for "${query}"`);
-
-    if (data.items && data.items.length > 0) {
-      // Log first result in detail to understand the structure
-      const first = data.items[0];
-      console.log(`[Google CSE] First result detail:`);
-      console.log(`  - Original URL: ${first.link}`);
-      console.log(`  - Thumbnail URL: ${first.image?.thumbnailLink}`);
-      console.log(`  - Reported size: ${first.image?.width}x${first.image?.height}`);
-      console.log(`  - Thumbnail size: ${first.image?.thumbnailWidth}x${first.image?.thumbnailHeight}`);
-    }
-
-    return data.items || [];
-  } catch (error) {
-    console.error("[Google CSE] Search error:", error);
-    return [];
   }
+
+  console.log(`[Google CSE] Total collected: ${allResults.length} results for "${query}"`);
+  return allResults;
 }
 
 /**

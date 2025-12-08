@@ -374,6 +374,22 @@ export const previewImageApi = {
       "/api/v1/ai/generate-preview-image",
       data as unknown as Record<string, unknown>
     ),
+
+  // Generate image prompt only (without generating the actual image)
+  // Used to preview the I2V agent's output before generating
+  generateImagePrompt: (data: {
+    video_prompt: string;
+    image_description?: string;
+    style?: string;
+    aspect_ratio?: string;
+  }) =>
+    api.post<{
+      success: boolean;
+      image_prompt: string;
+      style_notes: string;
+      technical_specs: { aspectRatio?: string };
+      consistency_markers: string[];
+    }>("/api/v1/ai/generate-image-prompt", data as unknown as Record<string, unknown>),
 };
 
 // Prompt Alchemist API

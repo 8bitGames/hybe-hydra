@@ -6,29 +6,32 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   Search,
   Check,
   X,
-  Library,
   Globe,
   Sparkles,
   AlertCircle,
   ChevronRight,
+  HelpCircle,
 } from "lucide-react";
 import { ImageCandidate } from "@/lib/compose-api";
 
-type ImageSourceMode = "assets_only" | "search_only" | "mixed";
+type ImageSourceMode = "search_only" | "mixed";
 
 interface ComposeImageStepProps {
   imageSourceMode: ImageSourceMode;
   setImageSourceMode: (mode: ImageSourceMode) => void;
-  assetImages: ImageCandidate[];
   imageCandidates: ImageCandidate[];
   selectedImages: ImageCandidate[];
   searchingImages: boolean;
-  loadingAssets: boolean;
   editableKeywords: string[];
   selectedSearchKeywords: Set<string>;
   setSelectedSearchKeywords: (keywords: Set<string>) => void;
@@ -40,11 +43,9 @@ interface ComposeImageStepProps {
 export function ComposeImageStep({
   imageSourceMode,
   setImageSourceMode,
-  assetImages,
   imageCandidates,
   selectedImages,
   searchingImages,
-  loadingAssets,
   editableKeywords,
   selectedSearchKeywords,
   setSelectedSearchKeywords,
@@ -52,7 +53,19 @@ export function ComposeImageStep({
   onSearchImages,
   onNext,
 }: ComposeImageStepProps) {
-  const { language } = useI18n();
+  const { language, translate } = useI18n();
+
+  // Helper for tooltip icon
+  const TooltipIcon = ({ tooltipKey }: { tooltipKey: string }) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <HelpCircle className="h-3.5 w-3.5 text-neutral-400 hover:text-neutral-600 cursor-help ml-1.5" />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[280px]">
+        <p className="text-xs">{translate(tooltipKey)}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
 
   const toggleKeywordSelection = (keyword: string) => {
     const newSet = new Set(selectedSearchKeywords);
@@ -185,8 +198,9 @@ export function ComposeImageStep({
             {selectedImages.length}
           </div>
           <div>
-            <p className="text-sm font-medium text-neutral-900">
+            <p className="text-sm font-medium text-neutral-900 flex items-center">
               {language === "ko" ? "선택된 이미지" : "Selected Images"}
+              <TooltipIcon tooltipKey="compose.tooltips.images.selectImages" />
             </p>
             <p className="text-xs text-neutral-500">
               {selectedImages.length < 3
@@ -220,17 +234,7 @@ export function ComposeImageStep({
         value={imageSourceMode}
         onValueChange={(v) => setImageSourceMode(v as ImageSourceMode)}
       >
-        <TabsList className="grid w-full grid-cols-3 bg-neutral-100">
-          <TabsTrigger
-            value="assets_only"
-            className="data-[state=active]:bg-white"
-          >
-            <Library className="h-4 w-4 mr-2" />
-            {language === "ko" ? "에셋" : "Assets"}
-            {assetImages.length > 0 && (
-              <span className="ml-1 text-[10px] text-neutral-500">({assetImages.length})</span>
-            )}
-          </TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2 bg-neutral-100">
           <TabsTrigger
             value="search_only"
             className="data-[state=active]:bg-white"
@@ -250,39 +254,6 @@ export function ComposeImageStep({
           </TabsTrigger>
         </TabsList>
 
-        {/* Campaign Assets */}
-        <TabsContent value="assets_only" className="mt-4">
-          {loadingAssets ? (
-            <div className="flex items-center justify-center h-48 text-neutral-400">
-              {language === "ko" ? "에셋 로딩 중..." : "Loading assets..."}
-            </div>
-          ) : assetImages.length > 0 ? (
-            <ScrollArea className="h-[400px] pr-4">
-              {renderImageGrid(assetImages)}
-            </ScrollArea>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-48 text-neutral-400">
-              <Library className="h-12 w-12 mb-2 text-neutral-300" />
-              <p className="font-medium">{language === "ko" ? "캠페인 이미지 없음" : "No campaign images"}</p>
-              <p className="text-xs mt-2 text-neutral-400">
-                {language === "ko"
-                  ? "\"웹 검색\" 탭에서 이미지를 검색하세요"
-                  : "Search for images in the \"Web Search\" tab"}
-              </p>
-              {imageCandidates.length > 0 && (
-                <button
-                  onClick={() => setImageSourceMode("search_only")}
-                  className="mt-3 px-3 py-1.5 bg-neutral-900 text-white text-xs rounded-lg hover:bg-neutral-800"
-                >
-                  {language === "ko"
-                    ? `웹 검색 결과 보기 (${imageCandidates.length})`
-                    : `View Web Results (${imageCandidates.length})`}
-                </button>
-              )}
-            </div>
-          )}
-        </TabsContent>
-
         {/* Web Search */}
         <TabsContent value="search_only" className="mt-4 space-y-4">
           {/* Search Keywords Selection */}
@@ -290,6 +261,7 @@ export function ComposeImageStep({
             <Label className="text-sm font-medium text-neutral-700 flex items-center gap-2">
               <Search className="h-4 w-4" />
               {language === "ko" ? "검색할 키워드 선택" : "Select Keywords to Search"}
+              <TooltipIcon tooltipKey="compose.tooltips.images.searchButton" />
             </Label>
             <div className="flex flex-wrap gap-2 p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
               {editableKeywords.map((keyword) => (
@@ -330,7 +302,7 @@ export function ComposeImageStep({
 
           {/* Search Results */}
           {imageCandidates.length > 0 ? (
-            <ScrollArea className="h-[300px] pr-4">
+            <ScrollArea className="h-[480px] pr-4">
               {renderImageGrid(imageCandidates, true)}
             </ScrollArea>
           ) : !searchingImages ? (
@@ -347,45 +319,6 @@ export function ComposeImageStep({
 
         {/* Mixed Mode */}
         <TabsContent value="mixed" className="mt-4 space-y-6">
-          {/* Campaign Assets Section */}
-          {assetImages.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-neutral-700 mb-3 flex items-center gap-2">
-                <Library className="h-4 w-4" />
-                {language === "ko" ? "캠페인 에셋" : "Campaign Assets"}
-                <span className="text-neutral-400 font-normal">({assetImages.length})</span>
-              </h3>
-              <div className="grid grid-cols-6 gap-2">
-                {assetImages.slice(0, 6).map((image) => {
-                  const isSelected = selectedImages.some((i) => i.id === image.id);
-                  return (
-                    <div
-                      key={image.id}
-                      onClick={() => onToggleSelection(image)}
-                      className={cn(
-                        "relative aspect-square rounded-lg overflow-hidden cursor-pointer border-2 transition-all",
-                        isSelected
-                          ? "border-neutral-900"
-                          : "border-transparent hover:border-neutral-300"
-                      )}
-                    >
-                      <img
-                        src={image.thumbnailUrl || image.sourceUrl}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                      {isSelected && (
-                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                          <Check className="h-4 w-4 text-white" />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* Web Search Section */}
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -406,7 +339,7 @@ export function ComposeImageStep({
             </div>
 
             {imageCandidates.length > 0 ? (
-              <ScrollArea className="h-[250px] pr-4">
+              <ScrollArea className="h-[480px] pr-4">
                 {renderImageGrid(imageCandidates, true)}
               </ScrollArea>
             ) : (
@@ -423,7 +356,10 @@ export function ComposeImageStep({
       {/* Selected Images Preview - Always visible */}
       <div className="space-y-2 border-t border-neutral-200 pt-4">
         <Label className="text-sm font-medium text-neutral-700 flex items-center justify-between">
-          <span>{language === "ko" ? "선택된 이미지 순서" : "Selected Image Order"}</span>
+          <span className="flex items-center">
+            {language === "ko" ? "선택된 이미지 순서" : "Selected Image Order"}
+            <TooltipIcon tooltipKey="compose.tooltips.images.timeline" />
+          </span>
           <span className="text-xs text-neutral-400">
             {selectedImages.length}/10 {language === "ko" ? "선택됨" : "selected"}
           </span>

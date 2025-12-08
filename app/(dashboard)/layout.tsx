@@ -66,7 +66,7 @@ function DashboardContent({
           </Sheet>
 
           {/* Logo */}
-          <Link href="/home" className="flex items-center gap-2">
+          <Link href="/trend-dashboard" className="flex items-center gap-2">
             <span className="text-3xl font-bold tracking-tight">HYDRA</span>
           </Link>
 

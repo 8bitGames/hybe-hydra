@@ -176,6 +176,7 @@ export interface AnalyzeData {
   campaignDescription: string | null;  // Campaign concept/goal - central context for all prompts
   campaignGenre: string | null;  // Music genre for content generation (e.g., pop, hiphop, ballad)
   userIdea: string;
+  isRecreationMode: boolean;  // When true, ignore trend data and focus on recreating the video concept
   targetAudience: string[];
   contentGoals: string[];
   aiGeneratedIdeas: ContentIdea[];
@@ -389,6 +390,7 @@ interface WorkflowState {
   // Actions - Analyze
   setAnalyzeCampaign: (id: string | null, name: string | null, description?: string | null, genre?: string | null) => void;
   setAnalyzeUserIdea: (idea: string) => void;
+  setAnalyzeRecreationMode: (mode: boolean) => void;
   setAnalyzeTargetAudience: (audience: string[]) => void;
   setAnalyzeContentGoals: (goals: string[]) => void;
   setAnalyzeAiIdeas: (ideas: ContentIdea[]) => void;
@@ -473,6 +475,7 @@ const initialAnalyzeData: AnalyzeData = {
   campaignDescription: null,
   campaignGenre: null,
   userIdea: "",
+  isRecreationMode: false,
   targetAudience: [],
   contentGoals: [],
   aiGeneratedIdeas: [],
@@ -762,6 +765,11 @@ export const useWorkflowStore = create<WorkflowState>()(
             analyze: { ...state.analyze, userIdea: idea },
           })),
 
+        setAnalyzeRecreationMode: (mode) =>
+          set((state) => ({
+            analyze: { ...state.analyze, isRecreationMode: mode },
+          })),
+
         setAnalyzeTargetAudience: (audience) =>
           set((state) => ({
             analyze: { ...state.analyze, targetAudience: audience },
@@ -1039,6 +1047,7 @@ export const useWorkflowStore = create<WorkflowState>()(
           const startSource = state.start.source;
           let userIdea = "";
           let hashtags = state.start.selectedHashtags;
+          let keywords: string[] = [];
 
           if (startSource?.type === "idea") {
             userIdea = startSource.idea;
@@ -1047,6 +1056,7 @@ export const useWorkflowStore = create<WorkflowState>()(
             hashtags = startSource.hashtags || hashtags;
           } else if (startSource?.type === "trends") {
             hashtags = startSource.selectedHashtags || hashtags;
+            keywords = startSource.keywords || [];
           }
 
           set({
@@ -1060,6 +1070,25 @@ export const useWorkflowStore = create<WorkflowState>()(
               hashtags: hashtags.length > 0 ? hashtags : state.analyze.hashtags,
               // Transfer performance metrics to target audience hints
               targetAudience: state.start.aiInsights?.targetAudience || state.analyze.targetAudience,
+            },
+            // Also populate discover state for ContextReceptionPanel compatibility
+            discover: {
+              ...state.discover,
+              keywords: keywords.length > 0 ? keywords : state.discover.keywords,
+              selectedHashtags: hashtags.length > 0 ? hashtags : state.discover.selectedHashtags,
+              savedInspiration: state.start.savedInspiration.length > 0
+                ? state.start.savedInspiration
+                : state.discover.savedInspiration,
+              performanceMetrics: state.start.performanceMetrics || state.discover.performanceMetrics,
+              aiInsights: state.start.aiInsights || state.discover.aiInsights,
+              trendAnalysis: startSource?.type === "trends"
+                ? {
+                    keyword: startSource.keywords.join(", "),
+                    totalVideos: startSource.analysis.totalVideos,
+                    viralVideos: startSource.analysis.viralVideos,
+                    highPerformingVideos: startSource.analysis.viralVideos,
+                  }
+                : state.discover.trendAnalysis,
             },
           });
         },

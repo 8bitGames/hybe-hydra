@@ -68,7 +68,10 @@
       "Bash(tail:*)",
       "Bash(echo:*)",
       "Bash(python:*)",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(npx tsx:*)",
+      "Bash(git -C \"e:/Github/hybe-hydra\" diff --stat)",
+      "Bash(git -C \"e:/Github/hybe-hydra\" add -A)"
     ],
     "deny": [],
     "ask": []

@@ -122,7 +122,7 @@ class VideoRenderer:
             beat_times = audio_analysis.beat_times
 
             # ============================================================
-            # STEP 3: CALCULATE TIMINGS
+            # STEP 3: CALCULATE TIMINGS (600ms per image, looping)
             # ============================================================
             await self._update_progress(progress_callback, job_id, 20, "Calculating timings")
 
@@ -132,12 +132,18 @@ class VideoRenderer:
                 request, preset, len(image_paths), audio_analysis.duration, job_id, has_audio
             )
 
-            cut_times = self.beat_sync.calculate_cuts(
-                beat_times=beat_times,
-                num_images=len(image_paths),
-                target_duration=target_duration,
-                cut_style=preset.cut_style
-            )
+            # FIXED 600ms per image with looping
+            IMAGE_DURATION = 0.6  # 600ms per image
+            num_total_clips = max(1, int(target_duration / IMAGE_DURATION))
+
+            # Create cut_times for looped images (600ms each)
+            cut_times = []
+            for i in range(num_total_clips):
+                start_time = i * IMAGE_DURATION
+                end_time = (i + 1) * IMAGE_DURATION
+                cut_times.append((start_time, end_time))
+
+            logger.info(f"[{job_id}] Using 600ms per image: {num_total_clips} clips for {target_duration:.1f}s video")
 
             # ============================================================
             # STEP 4: PARALLEL IMAGE PROCESSING
@@ -151,13 +157,19 @@ class VideoRenderer:
             )
             logger.info(f"[{job_id}] Processed {len(processed_paths)} images in parallel")
 
+            # Create looped image paths (repeat images to fill duration)
+            looped_image_paths = []
+            for i in range(num_total_clips):
+                looped_image_paths.append(processed_paths[i % len(processed_paths)])
+            logger.info(f"[{job_id}] Looped {len(processed_paths)} images into {len(looped_image_paths)} clips")
+
             # ============================================================
             # STEP 5: CREATE CLIPS (can be parallelized for large batches)
             # ============================================================
             await self._update_progress(progress_callback, job_id, 35, "Creating video clips")
 
             clips = await self._create_clips_parallel(
-                processed_paths, cut_times, preset,
+                looped_image_paths, cut_times, preset,
                 request.settings.aspect_ratio.value, beat_times, job_id
             )
 
@@ -175,15 +187,14 @@ class VideoRenderer:
                 logger.info(f"[{job_id}] AI effects - transitions: {len(ai_effects.transitions)}, text_animations: {len(ai_effects.text_animations)}")
 
             # ============================================================
-            # STEP 7: APPLY TRANSITIONS (simple crossfade only)
+            # STEP 7: CONCATENATE CLIPS (no transitions)
             # ============================================================
-            await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
+            await self._update_progress(progress_callback, job_id, 55, "Concatenating clips")
 
-            # SIMPLIFIED: Always use basic crossfade with 0.2s duration
-            # This avoids all the complex GL/xfade rendering issues
-            SIMPLE_TRANSITION_DURATION = 0.2
-            logger.info(f"[{job_id}] Applying simple crossfade transitions (duration={SIMPLE_TRANSITION_DURATION}s)")
-            video = transitions.apply_crossfade(clips, duration=SIMPLE_TRANSITION_DURATION)
+            # NO TRANSITIONS: Simply concatenate clips directly
+            # Transitions disabled per user request
+            logger.info(f"[{job_id}] Concatenating {len(clips)} clips (transitions disabled)")
+            video = concatenate_videoclips(clips, method="compose")
 
             # ============================================================
             # STEP 8: ADD TEXT OVERLAYS (with AI-selected animations)
@@ -215,42 +226,17 @@ class VideoRenderer:
                 logger.info(f"[{job_id}] Skipping audio - generating silent video")
 
             # ============================================================
-            # STEP 10: COLOR GRADING
+            # STEP 10: COLOR GRADING (DISABLED)
             # ============================================================
-            await self._update_progress(progress_callback, job_id, 78, "Color grading")
-            video = filters.apply_color_grade(video, request.settings.color_grade.value)
+            await self._update_progress(progress_callback, job_id, 78, "Skipping color grading")
+            # Color grading disabled per user request
+            logger.info(f"[{job_id}] Color grading disabled")
 
             # ============================================================
-            # STEP 11: APPLY AI-SELECTED OVERLAY EFFECTS (Dynamic Parameters)
+            # STEP 11: OVERLAY EFFECTS (DISABLED)
             # ============================================================
-            if ai_effects and ai_effects.overlays:
-                await self._update_progress(progress_callback, job_id, 82, "Adding overlay effects")
-
-                # Convert overlay IDs to filter function IDs (remove 'overlay_' prefix)
-                overlay_types = []
-                for overlay_id in ai_effects.overlays:
-                    # Map from catalog ID to generic type (e.g., "overlay_light_leak" → "light_leak")
-                    overlay_type = overlay_id.replace("overlay_", "")
-                    overlay_types.append(overlay_type)
-
-                # Extract analysis data for dynamic parameter selection
-                analysis_data = ai_effects.analysis or {}
-                moods = analysis_data.get("moods", [])
-                intensity = analysis_data.get("intensity", "medium")
-                bpm = int(audio_analysis.bpm) if audio_analysis.bpm else None
-                suggested_colors = analysis_data.get("suggested_colors")  # AI-suggested colors
-
-                logger.info(f"[{job_id}] Applying dynamic overlays: types={overlay_types}, moods={moods}, intensity={intensity}, bpm={bpm}, colors={suggested_colors}")
-
-                # Use dynamic overlay system that selects variants based on mood/audio
-                video = filters.apply_overlay_effects_dynamic(
-                    video,
-                    overlay_types=overlay_types,
-                    moods=moods,
-                    intensity=intensity,
-                    bpm=bpm,
-                    suggested_colors=suggested_colors,
-                )
+            # All overlay effects disabled per user request
+            logger.info(f"[{job_id}] Overlay effects disabled")
 
             # ============================================================
             # STEP 12: GPU RENDER WITH OPTIMIZED NVENC
@@ -448,14 +434,8 @@ class VideoRenderer:
             duration = end - start
             clip = ImageClip(img_path).with_duration(duration)
 
-            # Get diverse motion style for this clip
-            motion_style = get_motion_style(clip_index, total_clips, preset.motion_style)
-
-            clip = motion.apply_ken_burns(
-                clip,
-                style=motion_style,
-                beat_times=[t - start for t in beat_times if start <= t < end]
-            )
+            # NO EFFECTS: Simple static image clips
+            # Ken Burns motion disabled per user request
             return clip.with_start(start)
 
         total_clips = len(processed_paths)

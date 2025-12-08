@@ -322,6 +322,48 @@ export function useCreateArtist() {
   });
 }
 
+export function useUpdateArtist() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, data }: {
+      id: string;
+      data: {
+        name?: string;
+        stage_name?: string;
+        group_name?: string;
+        profile_description?: string;
+      };
+    }) => {
+      const response = await artistsApi.update(id, data);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data!;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.artists });
+    },
+  });
+}
+
+export function useDeleteArtist() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await artistsApi.delete(id);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data!;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.artists });
+    },
+  });
+}
+
 // Assets
 
 // Get all assets across all campaigns

@@ -145,6 +145,15 @@ export const artistsApi = {
     group_name?: string;
     profile_description?: string;
   }) => api.post<Artist>("/api/v1/artists", data),
+
+  update: (id: string, data: {
+    name?: string;
+    stage_name?: string;
+    group_name?: string;
+    profile_description?: string;
+  }) => api.patch<Artist>(`/api/v1/artists/${id}`, data),
+
+  delete: (id: string) => api.delete<{ success: boolean }>(`/api/v1/artists/${id}`),
 };
 
 // Campaigns API
