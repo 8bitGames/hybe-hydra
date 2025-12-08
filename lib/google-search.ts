@@ -153,6 +153,7 @@ export async function searchImagesMultiQuery(
     maxResultsPerQuery?: number;
     totalMaxResults?: number;
     safeSearch?: "off" | "medium" | "high";
+    imageSize?: "huge" | "icon" | "large" | "medium" | "small" | "xlarge" | "xxlarge";
     gl?: string;  // Geolocation
     hl?: string;  // Language
   } = {}
@@ -161,6 +162,7 @@ export async function searchImagesMultiQuery(
     maxResultsPerQuery = 5,
     totalMaxResults = 20,
     safeSearch = "medium",
+    imageSize,
     gl,
     hl,
   } = options;
@@ -174,6 +176,7 @@ export async function searchImagesMultiQuery(
     const results = await searchImages(query, {
       maxResults: maxResultsPerQuery,
       safeSearch,
+      imageSize,
       gl,
       hl,
     });

@@ -132,8 +132,22 @@ class VideoRenderer:
                 request, preset, len(image_paths), audio_analysis.duration, job_id, has_audio
             )
 
-            # FIXED 600ms per image with looping
-            IMAGE_DURATION = 0.6  # 600ms per image
+            # BPM-based image duration (400-800ms range)
+            # 1 beat = 60/BPM seconds
+            MIN_DURATION = 0.4  # 400ms
+            MAX_DURATION = 0.8  # 800ms
+            DEFAULT_DURATION = 0.6  # 600ms fallback
+
+            if audio_analysis.bpm and audio_analysis.bpm > 0:
+                # Calculate duration per beat
+                beat_duration = 60.0 / audio_analysis.bpm
+                # Clamp to 400-800ms range
+                IMAGE_DURATION = max(MIN_DURATION, min(MAX_DURATION, beat_duration))
+                logger.info(f"[{job_id}] BPM: {audio_analysis.bpm:.1f} -> {IMAGE_DURATION*1000:.0f}ms per image")
+            else:
+                IMAGE_DURATION = DEFAULT_DURATION
+                logger.info(f"[{job_id}] No BPM detected, using default {IMAGE_DURATION*1000:.0f}ms per image")
+
             num_total_clips = max(1, int(target_duration / IMAGE_DURATION))
 
             # Create cut_times for looped images (600ms each)
