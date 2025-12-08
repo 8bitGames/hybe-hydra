@@ -132,6 +132,15 @@ export function ComposeImageStep({
               </Badge>
             )}
 
+            {/* Image Size */}
+            {image.width && image.height && (
+              <Badge
+                className="absolute top-1.5 left-12 text-[9px] bg-black/60 text-white"
+              >
+                {image.width}×{image.height}
+              </Badge>
+            )}
+
             {/* Source Domain */}
             {showSource && image.sourceDomain && (
               <div className="absolute bottom-0 inset-x-0 p-1.5 bg-gradient-to-t from-black/70 to-transparent">
