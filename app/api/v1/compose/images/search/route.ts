@@ -19,6 +19,7 @@ interface ImageSearchRequest {
   minWidth?: number;
   minHeight?: number;
   safeSearch?: string;
+  language?: 'ko' | 'en';  // User's language preference
 }
 
 interface ImageCandidate {
@@ -50,8 +51,16 @@ export async function POST(request: NextRequest) {
       maxImages = 20,
       minWidth = 300,  // Very low threshold - quality score handles prioritization
       minHeight = 200,  // Allow landscape images (most Google results are wide)
-      safeSearch = 'medium'
+      safeSearch = 'medium',
+      language = 'ko'
     } = body;
+
+    // Map language to Google CSE parameters
+    const languageMapping = {
+      ko: { gl: 'kr', hl: 'ko' },  // Korean: South Korea region, Korean language
+      en: { gl: 'us', hl: 'en' },  // English: US region, English language
+    };
+    const { gl, hl } = languageMapping[language];
 
     // Check if Google Search is configured
     if (!isGoogleSearchConfigured()) {
@@ -107,6 +116,8 @@ export async function POST(request: NextRequest) {
       maxResultsPerQuery: Math.ceil(maxImages / keywords.length) + 2,
       totalMaxResults: maxImages * 2, // Get more to filter
       safeSearch: safeSearch as "off" | "medium" | "high",
+      gl,  // Region filter based on user's language
+      hl,  // Language filter based on user's language
     });
 
     // Debug: log search results

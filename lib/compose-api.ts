@@ -97,6 +97,7 @@ export interface ImageSearchRequest {
   maxImages?: number;
   minWidth?: number;
   minHeight?: number;
+  language?: 'ko' | 'en';  // User's language for region/language filtering
 }
 
 export interface ImageSearchResponse {

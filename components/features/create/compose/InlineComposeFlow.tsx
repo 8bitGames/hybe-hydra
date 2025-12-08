@@ -602,6 +602,7 @@ export function InlineComposeFlow({
         generationId: targetGenId,
         keywords: searchKeywords,
         maxImages: 30,
+        language: language as 'ko' | 'en',
       });
 
       setImageCandidates(result.candidates);

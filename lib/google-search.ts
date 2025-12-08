@@ -153,12 +153,16 @@ export async function searchImagesMultiQuery(
     maxResultsPerQuery?: number;
     totalMaxResults?: number;
     safeSearch?: "off" | "medium" | "high";
+    gl?: string;  // Geolocation
+    hl?: string;  // Language
   } = {}
 ): Promise<ImageSearchResult[]> {
   const {
     maxResultsPerQuery = 5,
     totalMaxResults = 20,
     safeSearch = "medium",
+    gl,
+    hl,
   } = options;
 
   const allResults: ImageSearchResult[] = [];
@@ -170,6 +174,8 @@ export async function searchImagesMultiQuery(
     const results = await searchImages(query, {
       maxResults: maxResultsPerQuery,
       safeSearch,
+      gl,
+      hl,
     });
 
     for (const result of results) {
