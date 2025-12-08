@@ -115,7 +115,7 @@ export const MOOD_CATEGORIES = [
 
 // Genre categories for UI
 export const GENRE_CATEGORIES = [
-  { value: 'kpop', label: 'K-POP', label_ko: '케이팝' },
+  { value: 'pop', label: 'Pop', label_ko: '팝' },
   { value: 'hiphop', label: 'Hip-Hop', label_ko: '힙합' },
   { value: 'emotional', label: 'Emotional', label_ko: '감성' },
   { value: 'corporate', label: 'Corporate', label_ko: '기업' },

@@ -451,9 +451,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Find all variations with this batch ID
+    // Find all variations with this batch ID (exclude soft-deleted)
     const generations = await prisma.videoGeneration.findMany({
       where: {
+        deletedAt: null,
         qualityMetadata: {
           path: ["batchId"],
           equals: batchId,

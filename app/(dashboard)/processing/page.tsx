@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCampaigns } from "@/lib/queries";
 import { videoApi, VideoGeneration } from "@/lib/video-api";
 import { composeApi } from "@/lib/compose-api";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWorkflowSync, useWorkflowNavigation } from "@/lib/hooks/useWorkflowNavigation";
 import { useWorkflowStore, ProcessingVideo, useWorkflowHydrated } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
@@ -37,7 +37,6 @@ import {
   Loader2,
   LayoutGrid,
   List,
-  Info,
   FileVideo,
   Maximize2,
   ThumbsUp,
@@ -66,6 +65,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { InfoButton } from "@/components/ui/info-button";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
@@ -683,17 +684,17 @@ function ProcessingVideoCard({
       )}
     >
       <CardContent className="p-0">
-        {/* Video Thumbnail */}
-        <div className="relative aspect-[9/16] bg-neutral-100" onClick={onClick}>
+        {/* Video Thumbnail - Click to view details */}
+        <div
+          className="relative aspect-[9/16] bg-neutral-100 cursor-pointer"
+          onClick={onClick}
+        >
           {video.outputUrl || video.thumbnailUrl ? (
             <LazyVideo
               src={video.outputUrl || ""}
               poster={video.thumbnailUrl || undefined}
               className="w-full h-full object-cover"
-              autoPlay={false}
-              muted
-              loop
-              playsInline
+              playOnHover={true}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
@@ -707,14 +708,6 @@ function ProcessingVideoCard({
               )}
             </div>
           )}
-
-          {/* Hover Overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all flex flex-col items-center justify-center gap-2">
-            <Button size="sm" variant="secondary" className="gap-2">
-              <Eye className="w-4 h-4" />
-              {isKorean ? "상세보기" : "View Details"}
-            </Button>
-          </div>
 
           {/* Status Badge */}
           <div className="absolute top-2 right-2">
@@ -733,41 +726,56 @@ function ProcessingVideoCard({
 
           {/* Duration Badge */}
           {video.outputUrl && (
-            <div className="absolute bottom-2 right-2 opacity-100 group-hover:opacity-0 transition-opacity">
+            <div className="absolute bottom-2 right-2">
               <Badge variant="secondary" className="bg-black/60 text-white border-0">
                 <Clock className="w-3 h-3 mr-1" />
                 {video.duration}s
               </Badge>
             </div>
           )}
-
-          {/* Selection Checkbox - all videos can be selected */}
-          <div
-            className="absolute bottom-2 left-2"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleSelect();
-            }}
-          >
-            <Checkbox
-              checked={isSelected}
-              className="h-5 w-5 bg-white border-2 data-[state=checked]:bg-neutral-900"
-            />
-          </div>
         </div>
 
-        {/* Info */}
-        <div className="p-3 space-y-1.5">
-          <p className="text-xs text-neutral-500 font-medium truncate">
-            {video.campaignName}
-          </p>
-          <p className="text-sm line-clamp-2 leading-snug">
-            {video.prompt}
-          </p>
-          <div className="flex items-center gap-2 text-xs text-neutral-400 pt-1">
+        {/* View Details Button */}
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full h-9 rounded-none border-x-0 border-t-0 border-b border-neutral-200 text-xs font-medium text-neutral-700 bg-neutral-50 hover:bg-neutral-100 gap-1.5"
+          onClick={onClick}
+        >
+          <Eye className="w-3.5 h-3.5" />
+          {isKorean ? "상세보기" : "View Details"}
+        </Button>
+
+        {/* Info - Click to select */}
+        <div
+          className={cn(
+            "p-2 space-y-1 cursor-pointer transition-colors",
+            isSelected ? "bg-neutral-100" : "hover:bg-neutral-50"
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect();
+          }}
+        >
+          <div className="flex items-start gap-2">
+            {/* Selection Checkbox */}
+            <Checkbox
+              checked={isSelected}
+              className="h-5 w-5 shrink-0 mt-0.5 border-2 border-neutral-400 data-[state=checked]:bg-neutral-900 data-[state=checked]:border-neutral-900"
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] text-neutral-500 font-medium truncate">
+                {video.campaignName}
+              </p>
+              <p className="text-xs line-clamp-2 leading-snug">
+                {video.prompt}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] text-neutral-400 pl-7">
             {video.metadata.audioName && (
               <span className="flex items-center gap-1">
-                <Music className="w-3 h-3" />
+                <Music className="w-2.5 h-2.5" />
               </span>
             )}
             <span>
@@ -778,7 +786,7 @@ function ProcessingVideoCard({
             </span>
             {video.qualityScore !== null && (
               <span className="ml-auto">
-                {isKorean ? "품질" : "Q"}: {video.qualityScore}
+                Q: {video.qualityScore}
               </span>
             )}
           </div>
@@ -790,6 +798,7 @@ function ProcessingVideoCard({
 
 export default function ProcessingPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { language } = useI18n();
   const isKorean = language === "ko";
 
@@ -1080,14 +1089,21 @@ export default function ProcessingPage() {
     try {
       // Use force=true to delete processing videos
       await videoApi.delete(selectedVideo.id, true);
+      // Remove from local state
+      removeProcessingVideo(selectedVideo.id);
+      // Remove from approvedRejectedRef to prevent restoration
+      approvedRejectedRef.current.delete(selectedVideo.id);
       // Refresh the list
       await refetchGenerations();
+      // Invalidate video caches so /videos page shows updated data
+      queryClient.invalidateQueries({ queryKey: ["all-videos"] });
+      queryClient.invalidateQueries({ queryKey: ["compose", "videos"] });
       setSelectedVideo(null);
     } catch (error) {
       console.error('Delete failed:', error);
     }
     setIsDeleting(false);
-  }, [selectedVideo, refetchGenerations]);
+  }, [selectedVideo, refetchGenerations, removeProcessingVideo, queryClient]);
 
   // Bulk action handlers - all videos are selectable (for deletion)
   const selectableVideos = useMemo(() =>
@@ -1132,10 +1148,12 @@ export default function ProcessingPage() {
     setIsBulkDeleting(true);
     const deletePromises = selectedVideos.map(async (id) => {
       try {
-        // Call API to delete from database
-        await videoApi.delete(id);
+        // Call API to delete from database (force=true to delete any status)
+        await videoApi.delete(id, true);
         // Remove from local state
         removeProcessingVideo(id);
+        // Also remove from approvedRejectedRef to prevent restoration
+        approvedRejectedRef.current.delete(id);
         return { id, success: true };
       } catch (error) {
         console.error(`Failed to delete video ${id}:`, error);
@@ -1148,7 +1166,10 @@ export default function ProcessingPage() {
     setIsBulkDeleting(false);
     // Refetch to sync with database
     refetchGenerations();
-  }, [selectedVideos, removeProcessingVideo, setSelectedProcessingVideos, refetchGenerations]);
+    // Invalidate video caches so /videos page shows updated data
+    queryClient.invalidateQueries({ queryKey: ["all-videos"] });
+    queryClient.invalidateQueries({ queryKey: ["compose", "videos"] });
+  }, [selectedVideos, removeProcessingVideo, setSelectedProcessingVideos, refetchGenerations, queryClient]);
 
   const handleBulkRetry = useCallback(async () => {
     setIsBulkRetrying(true);
@@ -1175,12 +1196,15 @@ export default function ProcessingPage() {
     setSelectedProcessingVideos([]);
   }, [setSelectedProcessingVideos]);
 
-  // Filter and sort videos
+  // Filter and sort videos - only show pre-publish videos (processing, completed, approved)
   const filteredVideos = useMemo(() => {
-    let result = [...videos];
+    // First, only include videos that are not yet rejected or failed (pre-publish stage)
+    let result = videos.filter((v) =>
+      v.status === "processing" || v.status === "completed" || v.status === "approved"
+    );
 
-    // Filter by status
-    if (filterStatus !== "all") {
+    // Filter by status (within allowed statuses)
+    if (filterStatus !== "all" && filterStatus !== "rejected" && filterStatus !== "failed") {
       result = result.filter((v) => v.status === filterStatus);
     }
 
@@ -1213,15 +1237,18 @@ export default function ProcessingPage() {
     return result;
   }, [videos, filterStatus, searchQuery, sortBy]);
 
-  // Stats
-  const stats = useMemo(() => ({
-    total: videos.length,
-    processing: videos.filter((v) => v.status === "processing").length,
-    completed: videos.filter((v) => v.status === "completed").length,
-    approved: videos.filter((v) => v.status === "approved").length,
-    rejected: videos.filter((v) => v.status === "rejected").length,
-    failed: videos.filter((v) => v.status === "failed").length,
-  }), [videos]);
+  // Stats - only count pre-publish videos
+  const stats = useMemo(() => {
+    const prePublishVideos = videos.filter((v) =>
+      v.status === "processing" || v.status === "completed" || v.status === "approved"
+    );
+    return {
+      total: prePublishVideos.length,
+      processing: videos.filter((v) => v.status === "processing").length,
+      completed: videos.filter((v) => v.status === "completed").length,
+      approved: videos.filter((v) => v.status === "approved").length,
+    };
+  }, [videos]);
 
   // Handle proceed to publish - always allowed
   const handleProceedToPublish = useCallback(() => {
@@ -1237,9 +1264,10 @@ export default function ProcessingPage() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-white">
-      {/* Header */}
-      <WorkflowHeader
+    <TooltipProvider>
+      <div className="h-full flex flex-col bg-white">
+        {/* Header */}
+        <WorkflowHeader
         onBack={goToCreate}
         onNext={handleProceedToPublish}
         canProceed={true}
@@ -1247,6 +1275,17 @@ export default function ProcessingPage() {
 
       {/* Stats Dashboard */}
       <div className="px-[7%] py-4 border-b border-neutral-200 bg-neutral-50">
+        <div className="flex items-center gap-1.5 mb-3">
+          <span className="text-sm font-medium text-neutral-700">
+            {isKorean ? "상태 현황" : "Status Overview"}
+          </span>
+          <InfoButton
+            content={isKorean
+              ? "전체: 생성된 모든 비디오 수 • 처리중: 현재 렌더링 중인 비디오 • 완료: 렌더링이 완료된 비디오 • 승인됨: 퍼블리싱을 위해 선택된 비디오"
+              : "Total: All generated videos • Processing: Videos currently rendering • Completed: Videos finished rendering • Approved: Videos selected for publishing"}
+            side="bottom"
+          />
+        </div>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-white border border-neutral-200 flex items-center justify-center">
@@ -1287,21 +1326,6 @@ export default function ProcessingPage() {
               <p className="text-lg font-bold text-emerald-600">{stats.approved}</p>
             </div>
           </div>
-          {stats.failed > 0 && (
-            <>
-              <div className="h-8 w-px bg-neutral-200" />
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-lg bg-red-50 border border-red-200 flex items-center justify-center">
-                  <XCircle className="h-4 w-4 text-red-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-neutral-500">{isKorean ? "실패" : "Failed"}</p>
-                  <p className="text-lg font-bold text-red-600">{stats.failed}</p>
-                </div>
-              </div>
-            </>
-          )}
-
           <div className="flex-1" />
 
           {/* Refresh Button */}
@@ -1362,8 +1386,6 @@ export default function ProcessingPage() {
               <SelectItem value="processing">{isKorean ? "처리중" : "Processing"}</SelectItem>
               <SelectItem value="completed">{isKorean ? "완료" : "Completed"}</SelectItem>
               <SelectItem value="approved">{isKorean ? "승인됨" : "Approved"}</SelectItem>
-              <SelectItem value="rejected">{isKorean ? "거부됨" : "Rejected"}</SelectItem>
-              <SelectItem value="failed">{isKorean ? "실패" : "Failed"}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -1429,7 +1451,7 @@ export default function ProcessingPage() {
             </Button>
           </div>
         ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
             {filteredVideos.map((video) => (
               <ProcessingVideoCard
                 key={video.id}
@@ -1649,20 +1671,21 @@ export default function ProcessingPage() {
         </div>
       )}
 
-      {/* Video Detail Modal */}
-      <VideoDetailModal
-        video={selectedVideo}
-        isOpen={!!selectedVideo}
-        onClose={() => setSelectedVideo(null)}
-        onApprove={handleApprove}
-        onReject={handleReject}
-        onRetry={handleRetry}
-        onDelete={handleDelete}
-        isApproving={isApproving}
-        isRejecting={isRejecting}
-        isRetrying={isRetrying}
-        isDeleting={isDeleting}
-      />
-    </div>
+        {/* Video Detail Modal */}
+        <VideoDetailModal
+          video={selectedVideo}
+          isOpen={!!selectedVideo}
+          onClose={() => setSelectedVideo(null)}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          onRetry={handleRetry}
+          onDelete={handleDelete}
+          isApproving={isApproving}
+          isRejecting={isRejecting}
+          isRetrying={isRetrying}
+          isDeleting={isDeleting}
+        />
+      </div>
+    </TooltipProvider>
   );
 }

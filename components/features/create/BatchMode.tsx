@@ -41,8 +41,8 @@ const batchFeatures: BilingualItem[] = [
     icon: Wand2,
   },
   {
-    ko: "파이프라인 모니터링|모든 변형 생성 작업 모니터링",
-    en: "Pipeline Monitoring|Monitor all variation generation jobs",
+    ko: "베리에이션 모니터링|모든 변형 생성 작업 모니터링",
+    en: "Variation Monitoring|Monitor all variation generation jobs",
     icon: Gauge,
   },
 ];
@@ -59,8 +59,8 @@ const batchBenefits: BilingualItem[] = [
     icon: Layers,
   },
   {
-    ko: "효율적 워크플로우|파이프라인에서 모든 작업 관리",
-    en: "Efficient Workflow|Manage all jobs from the pipeline",
+    ko: "효율적 워크플로우|베리에이션에서 모든 작업 관리",
+    en: "Efficient Workflow|Manage all jobs from the variation",
     icon: Zap,
   },
 ];
@@ -106,8 +106,8 @@ export function BatchMode({ className }: BatchModeProps) {
               </CardTitle>
               <CardDescription>
                 {pick(
-                  "여러 영상 변형을 한 번에 생성하고 파이프라인에서 관리하세요",
-                  "Generate multiple video variations at once and manage them in the pipeline"
+                  "여러 영상 변형을 한 번에 생성하고 베리에이션에서 관리하세요",
+                  "Generate multiple video variations at once and manage them in the variation page"
                 )}
               </CardDescription>
             </CardHeader>
@@ -206,17 +206,17 @@ export function BatchMode({ className }: BatchModeProps) {
                 </div>
                 <div>
                   <h3 className="font-bold text-2xl">
-                    {pick("파이프라인에서 배치 작업 시작하기", "Start Batch Operations in Pipeline")}
+                    {pick("베리에이션에서 배치 작업 시작하기", "Start Batch Operations in Variation")}
                   </h3>
                   <p className="text-muted-foreground mt-2">
                     {pick(
-                      "배치 변형 기능은 파이프라인 페이지에서 통합 관리됩니다",
-                      "Batch variation features are consolidated in the Pipeline page for a better experience"
+                      "배치 변형 기능은 베리에이션 페이지에서 통합 관리됩니다",
+                      "Batch variation features are consolidated in the Variation page for a better experience"
                     )}
                   </p>
                 </div>
                 <Button size="lg" className="h-14 text-lg px-8" onClick={handleGoToPipeline}>
-                  {pick("파이프라인으로 이동", "Go to Pipeline")}
+                  {pick("베리에이션으로 이동", "Go to Variation")}
                   <ArrowRight className="h-5 w-5 ml-2" />
                 </Button>
               </div>

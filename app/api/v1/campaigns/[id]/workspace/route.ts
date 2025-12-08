@@ -39,9 +39,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Access denied" }, { status: 403 });
     }
 
-    // Get all generations with full context
+    // Get all generations with full context (exclude soft-deleted)
     const generations = await prisma.videoGeneration.findMany({
-      where: { campaignId },
+      where: { campaignId, deletedAt: null },
       include: {
         referenceImage: {
           select: { id: true, filename: true, s3Url: true, thumbnailUrl: true },

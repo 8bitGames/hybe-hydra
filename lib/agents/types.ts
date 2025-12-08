@@ -166,6 +166,7 @@ export interface WorkflowMetadata {
   artistName: string;
   language: 'ko' | 'en';
   platform: 'tiktok' | 'instagram' | 'youtube' | 'shorts' | 'youtube_shorts';
+  genre?: string;  // Music genre for viral content generation (e.g., pop, hiphop, ballad, country)
   sessionId?: string;
   startedAt?: Date;
 }
@@ -237,6 +238,7 @@ export interface WorkflowInput {
   artistName: string;
   language: 'ko' | 'en';
   platform: 'tiktok' | 'instagram' | 'youtube' | 'shorts';
+  genre?: string;  // Music genre for viral content generation (e.g., pop, hiphop, ballad)
   userConcept?: string;
   targetAudience?: string;
   contentGoals?: string[];
@@ -422,3 +424,137 @@ export const CopywriterOutputSchema = z.object({
   readabilityScore: z.number().min(0).max(100),
 });
 export type CopywriterOutput = z.infer<typeof CopywriterOutputSchema>;
+
+// ================================
+// Reflection Pattern Types
+// ================================
+
+export interface ReflectionConfig {
+  /** Maximum number of reflection iterations (default: 3) */
+  maxIterations: number;
+  /** Minimum quality score to accept output (0-1, default: 0.7) */
+  qualityThreshold: number;
+  /** Enable verbose logging for debugging */
+  verbose?: boolean;
+  /** Custom reflection prompt template */
+  reflectionPrompt?: string;
+  /** Aspects to evaluate during reflection */
+  evaluationAspects?: ReflectionAspect[];
+}
+
+export type ReflectionAspect =
+  | 'relevance'      // Output relevance to input
+  | 'quality'        // Overall quality
+  | 'creativity'     // Creative value
+  | 'accuracy'       // Factual accuracy
+  | 'completeness'   // Completeness of response
+  | 'tone'           // Tone appropriateness
+  | 'structure';     // Output structure
+
+export interface ReflectionEvaluation {
+  /** Overall quality score (0-1) */
+  score: number;
+  /** Whether output passes quality threshold */
+  passed: boolean;
+  /** Specific feedback for improvement */
+  feedback: string;
+  /** Areas that need improvement */
+  improvementAreas: string[];
+  /** Aspect-level scores */
+  aspectScores: Record<ReflectionAspect, number>;
+}
+
+export interface ReflectionIteration {
+  /** Iteration number (1-based) */
+  iteration: number;
+  /** Output from this iteration */
+  output: unknown;
+  /** Evaluation of this iteration's output */
+  evaluation: ReflectionEvaluation;
+  /** Token usage for this iteration */
+  tokenUsage: TokenUsage;
+  /** Latency in milliseconds */
+  latencyMs: number;
+}
+
+export interface ReflectionResult<T> extends AgentResult<T> {
+  /** All reflection iterations performed */
+  iterations: ReflectionIteration[];
+  /** Total iterations performed */
+  totalIterations: number;
+  /** Whether reflection improved the output */
+  improved: boolean;
+  /** Score improvement from first to final iteration */
+  scoreImprovement: number;
+}
+
+// ================================
+// Streaming Types
+// ================================
+
+export interface StreamChunk {
+  /** Partial content */
+  content: string;
+  /** Whether this is the final chunk */
+  done: boolean;
+  /** Accumulated content so far */
+  accumulated?: string;
+}
+
+export interface StreamResult<T> {
+  /** Final parsed output */
+  data?: T;
+  /** Whether streaming succeeded */
+  success: boolean;
+  /** Error message if failed */
+  error?: string;
+  /** Total token usage */
+  tokenUsage: TokenUsage;
+  /** Total latency */
+  latencyMs: number;
+}
+
+// ================================
+// Memory System Types
+// ================================
+
+export interface AgentMemory {
+  id: string;
+  agentId: string;
+  campaignId?: string;
+  artistName?: string;
+  memoryType: MemoryType;
+  key: string;
+  value: Record<string, unknown>;
+  importance: number;
+  accessCount: number;
+  lastAccessedAt: Date;
+  createdAt: Date;
+  expiresAt?: Date;
+}
+
+export type MemoryType =
+  | 'preference'     // User/artist preferences
+  | 'pattern'        // Learned patterns
+  | 'feedback'       // User feedback
+  | 'context'        // Contextual information
+  | 'style'          // Style preferences
+  | 'performance';   // Performance metrics
+
+export interface MemoryQuery {
+  agentId: string;
+  campaignId?: string;
+  artistName?: string;
+  memoryTypes?: MemoryType[];
+  keys?: string[];
+  minImportance?: number;
+  limit?: number;
+}
+
+export interface MemoryUpdate {
+  key: string;
+  value: Record<string, unknown>;
+  memoryType: MemoryType;
+  importance?: number;
+  ttlSeconds?: number;
+}

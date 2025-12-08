@@ -2,7 +2,60 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { PublishPlatform } from "@prisma/client";
-import { cached, CacheKeys, CacheTTL, invalidatePattern } from "@/lib/cache";
+import { CacheTTL, invalidatePattern } from "@/lib/cache";
+import { refreshAccessToken } from "@/lib/tiktok";
+
+// Buffer time before token expiry to trigger refresh (5 minutes)
+const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+// Check if token needs refresh (expired or about to expire)
+function needsTokenRefresh(tokenExpiresAt: Date | null): boolean {
+  if (!tokenExpiresAt) return true;
+  return new Date().getTime() + TOKEN_REFRESH_BUFFER_MS > tokenExpiresAt.getTime();
+}
+
+// Refresh TikTok token and update database
+async function refreshTikTokToken(
+  accountId: string,
+  refreshToken: string
+): Promise<{ success: boolean; newExpiresAt?: Date; error?: string }> {
+  try {
+    const clientKey = process.env.TIKTOK_CLIENT_KEY;
+    const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
+
+    if (!clientKey || !clientSecret) {
+      return { success: false, error: "TikTok credentials not configured" };
+    }
+
+    const result = await refreshAccessToken(clientKey, clientSecret, refreshToken);
+
+    if (!result.success || !result.accessToken || !result.expiresIn) {
+      return { success: false, error: result.error || "Token refresh failed" };
+    }
+
+    const newExpiresAt = new Date(Date.now() + result.expiresIn * 1000);
+
+    // Update database with new tokens
+    await prisma.socialAccount.update({
+      where: { id: accountId },
+      data: {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        tokenExpiresAt: newExpiresAt,
+        updatedAt: new Date(),
+      },
+    });
+
+    // Invalidate cache since we updated tokens
+    await invalidatePattern("publishing:accounts:*");
+
+    console.log(`[TikTok Token Refresh] Successfully refreshed token for account ${accountId}`);
+    return { success: true, newExpiresAt };
+  } catch (error) {
+    console.error(`[TikTok Token Refresh] Error refreshing token for account ${accountId}:`, error);
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+  }
+}
 
 // GET /api/v1/publishing/accounts - List connected social accounts
 export async function GET(request: NextRequest) {
@@ -17,86 +70,96 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const platform = searchParams.get("platform") as PublishPlatform | null;
     const labelId = searchParams.get("label_id");
+    const skipRefresh = searchParams.get("skip_refresh") === "true";
 
-    // Determine which labels to query
-    const effectiveLabelIds = user.role !== "ADMIN"
-      ? user.labelIds
-      : labelId
-        ? [labelId]
-        : null; // null means all labels for admin
+    // Build where clause based on user's accessible labels
+    const whereClause: Record<string, unknown> = {
+      isActive: true,
+    };
 
-    // Create cache key based on user access and filters
-    const cacheKey = `publishing:accounts:${user.role === "ADMIN" ? "admin" : user.labelIds.sort().join(",")}:${platform || "all"}:${labelId || "all"}`;
+    // Non-admin users can only see accounts from their labels
+    if (user.role !== "ADMIN") {
+      whereClause.labelId = { in: user.labelIds };
+    } else if (labelId) {
+      whereClause.labelId = labelId;
+    }
 
-    const response = await cached(
-      cacheKey,
-      CacheTTL.MEDIUM, // 5 minutes - accounts don't change often
-      async () => {
-        // Build where clause based on user's accessible labels
-        const whereClause: Record<string, unknown> = {
-          isActive: true,
-        };
+    if (platform) {
+      whereClause.platform = platform;
+    }
 
-        // Non-admin users can only see accounts from their labels
-        if (user.role !== "ADMIN") {
-          whereClause.labelId = { in: user.labelIds };
-        } else if (labelId) {
-          whereClause.labelId = labelId;
-        }
-
-        if (platform) {
-          whereClause.platform = platform;
-        }
-
-        const accounts = await prisma.socialAccount.findMany({
-          where: whereClause,
-          orderBy: [
-            { platform: "asc" },
-            { accountName: "asc" },
-          ],
+    // Fetch accounts with refresh token for potential auto-refresh
+    const accounts = await prisma.socialAccount.findMany({
+      where: whereClause,
+      orderBy: [
+        { platform: "asc" },
+        { accountName: "asc" },
+      ],
+      select: {
+        id: true,
+        platform: true,
+        accountName: true,
+        accountId: true,
+        profileUrl: true,
+        followerCount: true,
+        isActive: true,
+        labelId: true,
+        tokenExpiresAt: true,
+        refreshToken: true, // Include for auto-refresh
+        createdAt: true,
+        updatedAt: true,
+        _count: {
           select: {
-            id: true,
-            platform: true,
-            accountName: true,
-            accountId: true,
-            profileUrl: true,
-            followerCount: true,
-            isActive: true,
-            labelId: true,
-            tokenExpiresAt: true,
-            createdAt: true,
-            updatedAt: true,
-            _count: {
-              select: {
-                scheduledPosts: true,
-              },
-            },
+            scheduledPosts: true,
           },
-        });
+        },
+      },
+    });
 
-        // Transform response
+    // Process accounts and auto-refresh TikTok tokens if needed
+    const processedAccounts = await Promise.all(
+      accounts.map(async (account) => {
+        let tokenExpiresAt = account.tokenExpiresAt;
+        let isTokenValid = tokenExpiresAt ? tokenExpiresAt > new Date() : false;
+
+        // Auto-refresh TikTok tokens if expired/expiring and not skipped
+        if (
+          !skipRefresh &&
+          account.platform === "TIKTOK" &&
+          account.refreshToken &&
+          needsTokenRefresh(account.tokenExpiresAt)
+        ) {
+          console.log(`[TikTok Token Refresh] Attempting refresh for ${account.accountName}...`);
+          const refreshResult = await refreshTikTokToken(account.id, account.refreshToken);
+
+          if (refreshResult.success && refreshResult.newExpiresAt) {
+            tokenExpiresAt = refreshResult.newExpiresAt;
+            isTokenValid = true;
+          }
+        }
+
         return {
-          accounts: accounts.map((account) => ({
-            id: account.id,
-            platform: account.platform,
-            account_name: account.accountName,
-            account_id: account.accountId,
-            profile_url: account.profileUrl,
-            follower_count: account.followerCount,
-            is_active: account.isActive,
-            label_id: account.labelId,
-            token_expires_at: account.tokenExpiresAt?.toISOString() || null,
-            scheduled_posts_count: account._count.scheduledPosts,
-            is_token_valid: account.tokenExpiresAt ? account.tokenExpiresAt > new Date() : false,
-            created_at: account.createdAt.toISOString(),
-            updated_at: account.updatedAt.toISOString(),
-          })),
-          total: accounts.length,
+          id: account.id,
+          platform: account.platform,
+          account_name: account.accountName,
+          account_id: account.accountId,
+          profile_url: account.profileUrl,
+          follower_count: account.followerCount,
+          is_active: account.isActive,
+          label_id: account.labelId,
+          token_expires_at: tokenExpiresAt?.toISOString() || null,
+          scheduled_posts_count: account._count.scheduledPosts,
+          is_token_valid: isTokenValid,
+          created_at: account.createdAt.toISOString(),
+          updated_at: account.updatedAt.toISOString(),
         };
-      }
+      })
     );
 
-    return NextResponse.json(response);
+    return NextResponse.json({
+      accounts: processedAccounts,
+      total: processedAccounts.length,
+    });
   } catch (error) {
     console.error("Get social accounts error:", error);
     return NextResponse.json(

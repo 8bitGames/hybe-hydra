@@ -53,11 +53,12 @@ export interface ModalRenderRequest {
     url: string;
     order: number;
   }>;
+  // Audio is optional - videos can be generated without background music
   audio: {
     url: string;
     start_time: number;
     duration: number | null;
-  };
+  } | null;
   script?: {
     lines: Array<{
       text: string;

@@ -114,9 +114,9 @@
       "음원-62": "Audio",
       "없음-63": "None",
       "변형-64": "Variants",
-      "파이프라인을-72": "Pipeline",
+      "파이프라인을-72": "Variation",
       "찾을-73": "Find",
-      "파이프라인-74": "Pipeline",
+      "파이프라인-74": "Variation",
       "상세-75": "Details",
       "시드-76": "Seed",
       "원본-77": "Original",
@@ -132,7 +132,7 @@
       "일부-87": "Some",
       "또는-88": "or",
       "카테고리-89": "Category",
-      "파이프라인이-90": "Pipeline(s)",
+      "파이프라인이-90": "Variation(s)",
       "영상이-91": "Video(s)",
       "있으면-92": "If",
       "글로벌-93": "Global",
@@ -186,7 +186,7 @@
       "결과-228": "Result",
       "효율적-229": "Efficient",
       "워크플로우-230": "Workflow",
-      "파이프라인에서-231": "In the pipeline",
+      "파이프라인에서-231": "In the variation",
       "배치-232": "Batch",
       "모드-233": "Mode",
       "대량-234": "Bulk",
@@ -708,7 +708,20 @@
     "saveAsDraft": "Save as Draft",
     "selectVideo": "Select Video",
     "error": "Error",
-    "viewPost": "View Post"
+    "viewPost": "View Post",
+    "variation": {
+      "createMoreFromThis": "Create More From This",
+      "aiVariation": "AI Variation",
+      "styleChanges": "Style changes",
+      "composeVariation": "Compose Variation",
+      "musicEffects": "Music/Effects",
+      "successTitle": "Successfully Scheduled!",
+      "successDescription": "{count} video(s) scheduled to TikTok",
+      "createMoreVariations": "Create More Variations",
+      "aiGeneratesNewStyles": "AI generates new style versions",
+      "viewSchedule": "View Schedule",
+      "newProject": "New Project"
+    }
   },
   "legal": {
     "common": {
@@ -1062,6 +1075,151 @@
         "aiAnalysis": "AI Analysis",
         "customPrompt": "Custom Prompt"
       }
+    }
+  },
+  "startPage": {
+    "loading": "Loading...",
+    "contentReady": {
+      "title": "Content Ready",
+      "trendDescription": "Data for the selected trend keyword is ready. AI will generate customized content based on this data.",
+      "videoDescription": "Analysis data for the selected video is ready. AI will generate content with a similar style based on this video."
+    },
+    "metrics": {
+      "videos": "Videos",
+      "avgViews": "Avg Views",
+      "engagement": "Engagement",
+      "hashtags": "Hashtags",
+      "viralScore": "Viral Score",
+      "likes": "Likes",
+      "comments": "Comments",
+      "shares": "Shares"
+    },
+    "actions": {
+      "startAnalysis": "Start Analysis",
+      "chooseDifferent": "Choose Different",
+      "continue": "Continue"
+    },
+    "entryPaths": {
+      "title": "Start New Content",
+      "subtitle": "How would you like to start?",
+      "trends": {
+        "title": "Start from Trends",
+        "description": "Select keywords from the Trend Dashboard and create data-driven content"
+      },
+      "video": {
+        "title": "Start from Video",
+        "description": "Reference a viral video you like and create content with a similar style"
+      },
+      "idea": {
+        "title": "Start with Your Idea",
+        "description": "Create content directly from your own idea without trends"
+      }
+    },
+    "recentProjects": {
+      "title": "Recent Projects",
+      "empty": "No recent projects",
+      "status": {
+        "completed": "Completed",
+        "inProgress": "In Progress",
+        "draft": "Draft"
+      },
+      "continueWork": "Continue"
+    },
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "min ago",
+      "hoursAgo": "hours ago",
+      "daysAgo": "days ago"
+    },
+    "preview": {
+      "trendData": "Trend Data Preview",
+      "videoReference": "Video Reference",
+      "topHashtags": "Top Hashtags",
+      "keywordInfo": "Keyword Info"
+    }
+  },
+  "trendDashboard": {
+    "pageTitle": "Trend Intelligence Dashboard",
+    "pageDescription": "Monitor TikTok trends based on your registered keywords",
+    "contentSummary": {
+      "title": "Content Summary",
+      "totalGenerated": "Generated Videos",
+      "highQuality": "High Quality",
+      "published": "Published",
+      "engagement": "Avg Engagement"
+    },
+    "quickActions": {
+      "title": "Quick Actions",
+      "newKeyword": "Add Keyword",
+      "analyzeTrends": "Analyze Trends",
+      "createContent": "Create Content"
+    },
+    "trackedKeywords": {
+      "title": "Tracked Keywords",
+      "empty": "No keywords registered",
+      "addKeyword": "Add Keyword",
+      "avgViews": "Avg Views",
+      "avgEngagement": "Engagement",
+      "totalVideos": "Total Videos",
+      "trending": "Trending",
+      "up": "Up",
+      "down": "Down",
+      "stable": "Stable",
+      "topHashtags": "Top Hashtags"
+    },
+    "trendOverview": {
+      "title": "Trend Overview",
+      "viewsGrowth": "Views Growth",
+      "engagementRate": "Engagement Rate",
+      "contentVolume": "Content Volume",
+      "avgViews": "Avg Views",
+      "trending": "Trending",
+      "peak": "Peak",
+      "growing": "Growing",
+      "saturation": "Saturation"
+    },
+    "crossInsights": {
+      "title": "Cross-Keyword Insights",
+      "description": "Common trends discovered across multiple keywords",
+      "sharedHashtags": "Shared Hashtags",
+      "optimalPostTime": "Optimal Post Time",
+      "audienceOverlap": "Audience Overlap",
+      "contentGaps": "Content Opportunities"
+    },
+    "searchHistory": {
+      "title": "Search History",
+      "recent": "Recent Searches",
+      "clearAll": "Clear All",
+      "noHistory": "No search history",
+      "searchedAt": "Searched at"
+    },
+    "viralVideos": {
+      "title": "Viral Videos",
+      "createFromTrend": "Create from Trend",
+      "loadMore": "Load More",
+      "remaining": "remaining",
+      "viewAll": "View All",
+      "rank": "Rank",
+      "creator": "Creator",
+      "views": "Views",
+      "engagement": "Engagement",
+      "hashtags": "Hashtags",
+      "score": "Score",
+      "actions": "Actions",
+      "createFromVideo": "Create from this video",
+      "viewOnTiktok": "View on TikTok",
+      "copyHashtags": "Copy Hashtags",
+      "featured": "Featured",
+      "trendUp": "Up",
+      "trendDown": "Down",
+      "trendStable": "Stable",
+      "noVideos": "No viral videos",
+      "allVideosTitle": "All Viral Videos",
+      "sortBy": "Sort by",
+      "sortViews": "Views",
+      "sortEngagement": "Engagement",
+      "sortScore": "Viral Score",
+      "sortRecent": "Recent"
     }
   }
 }

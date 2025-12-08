@@ -125,7 +125,7 @@ export default function PipelineManagementPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Layers className="w-6 h-6" />
-            {isKorean ? "파이프라인 관리" : "Pipeline Management"}
+            {isKorean ? "베리에이션 관리" : "Variation Management"}
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
             {isKorean
@@ -160,7 +160,7 @@ export default function PipelineManagementPage() {
           <CardContent className="pt-4">
             <div className="text-2xl font-bold">{stats.total}</div>
             <p className="text-xs text-muted-foreground">
-              {isKorean ? "전체 파이프라인" : "Total Pipelines"}
+              {isKorean ? "전체 베리에이션" : "Total Variations"}
             </p>
           </CardContent>
         </Card>
@@ -231,12 +231,12 @@ export default function PipelineManagementPage() {
           <CardContent className="py-12 text-center">
             <Layers className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">
-              {isKorean ? "파이프라인이 없습니다" : "No Pipelines Yet"}
+              {isKorean ? "베리에이션이 없습니다" : "No Variations Yet"}
             </h3>
             <p className="text-muted-foreground text-sm mb-4">
               {isKorean
-                ? "완료된 영상이 있으면 글로벌 Pipeline 페이지에서 변형을 생성할 수 있습니다"
-                : "If you have completed videos, you can create variations from the global Pipeline page"}
+                ? "완료된 영상이 있으면 글로벌 베리에이션 페이지에서 변형을 생성할 수 있습니다"
+                : "If you have completed videos, you can create variations from the global Variation page"}
             </p>
             <div className="flex items-center justify-center gap-3">
               <Button variant="outline" onClick={() => router.push(`/campaigns/${campaignId}/generate`)}>
@@ -244,7 +244,7 @@ export default function PipelineManagementPage() {
               </Button>
               <Button onClick={() => router.push("/pipeline")}>
                 <Layers className="w-4 h-4 mr-2" />
-                {isKorean ? "Pipeline으로 이동" : "Go to Pipeline"}
+                {isKorean ? "베리에이션으로 이동" : "Go to Variation"}
               </Button>
             </div>
           </CardContent>

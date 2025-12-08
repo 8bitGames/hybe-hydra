@@ -40,13 +40,9 @@ import {
   History,
   Clock,
   Trash2,
-  Info,
 } from "lucide-react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { InfoButton } from "@/components/ui/info-button";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 
 // ============================================================================
@@ -99,7 +95,7 @@ function VideoCard({ video, onSaveInspiration, isSaved, showRank = false }: Vide
       {/* Header: Rank + Author + Actions */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          {showRank && video.rank && (
+          {showRank && video.rank != null && video.rank > 0 && (
             <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-900 text-white">
               #{video.rank}
             </span>
@@ -209,7 +205,7 @@ function LiveTrendingSection({
   savedIds: Set<string>;
 }) {
   const { language } = useI18n();
-  const { data, isLoading } = useLiveTrending({ limit: 30 });
+  const { data, isLoading } = useLiveTrending({ limit: 50 });
 
   if (isLoading) {
     return (
@@ -454,30 +450,12 @@ function AnalysisResults({
           <div className="flex items-center justify-center gap-1.5 text-neutral-500 text-[10px] mb-0.5">
             <Eye className="h-2.5 w-2.5" />
             {language === "ko" ? "평균 조회" : "Avg Views"}
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className="p-0.5 rounded-full bg-neutral-200 hover:bg-neutral-300 transition-colors">
-                  <Info className="h-3 w-3 text-neutral-600" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-3" side="bottom" align="center">
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-xs text-neutral-900">
-                    {language === "ko" ? "평균 조회수" : "Average Views"}
-                  </h4>
-                  <p className="text-[11px] text-neutral-600 leading-relaxed">
-                    {language === "ko"
-                      ? "검색된 모든 영상의 조회수 평균값입니다. 해당 키워드의 일반적인 도달 범위를 나타냅니다."
-                      : "The average view count of all searched videos. Indicates typical reach for this keyword."}
-                  </p>
-                  <div className="text-[10px] text-neutral-500 pt-1 border-t border-neutral-200">
-                    💡 {language === "ko"
-                      ? "조회수가 높다고 참여율이 높은 것은 아닙니다."
-                      : "High views don't always mean high engagement."}
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
+            <InfoButton
+              content={language === "ko"
+                ? "검색된 모든 영상의 조회수 평균값입니다. 해당 키워드의 일반적인 도달 범위를 나타냅니다. 조회수가 높다고 참여율이 높은 것은 아닙니다."
+                : "The average view count of all searched videos. Indicates typical reach for this keyword. High views don't always mean high engagement."}
+              side="bottom"
+            />
           </div>
           <div className="text-sm font-bold text-black">
             {formatCount(analysis.aggregateStats.avgViews)}
@@ -489,35 +467,12 @@ function AnalysisResults({
           <div className="flex items-center justify-center gap-1.5 text-neutral-500 text-[10px] mb-0.5">
             <Zap className="h-2.5 w-2.5" />
             {language === "ko" ? "참여율" : "Engagement"}
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className="p-0.5 rounded-full bg-neutral-200 hover:bg-neutral-300 transition-colors">
-                  <Info className="h-3 w-3 text-neutral-600" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72 p-3" side="bottom" align="center">
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-xs text-neutral-900">
-                    {language === "ko" ? "참여율이란?" : "What is Engagement Rate?"}
-                  </h4>
-                  <p className="text-[11px] text-neutral-600 leading-relaxed">
-                    {language === "ko"
-                      ? "영상을 본 사람들 중 실제로 반응(좋아요, 댓글, 공유)한 비율입니다."
-                      : "The percentage of viewers who actively engaged (liked, commented, shared) with the video."}
-                  </p>
-                  <div className="bg-white rounded p-2 text-[10px] font-mono text-neutral-700 border border-neutral-200">
-                    {language === "ko"
-                      ? "(좋아요 + 댓글 + 공유) / 조회수 × 100"
-                      : "(Likes + Comments + Shares) / Views × 100"}
-                  </div>
-                  <div className="text-[10px] text-neutral-500 pt-1 border-t border-neutral-200">
-                    💡 {language === "ko"
-                      ? "참여율이 높을수록 콘텐츠 품질이 좋다는 신호입니다."
-                      : "Higher engagement indicates better content quality."}
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
+            <InfoButton
+              content={language === "ko"
+                ? "영상을 본 사람들 중 실제로 반응(좋아요, 댓글, 공유)한 비율입니다. (좋아요 + 댓글 + 공유) / 조회수 × 100. 참여율이 높을수록 콘텐츠 품질이 좋다는 신호입니다."
+                : "The percentage of viewers who actively engaged (liked, commented, shared). Formula: (Likes + Comments + Shares) / Views × 100. Higher engagement indicates better content quality."}
+              side="bottom"
+            />
           </div>
           <div className="text-sm font-bold text-black">
             {formatPercent(analysis.aggregateStats.avgEngagementRate)}
@@ -529,31 +484,12 @@ function AnalysisResults({
           <div className="flex items-center justify-center gap-1.5 text-neutral-500 text-[10px] mb-0.5">
             <Trophy className="h-2.5 w-2.5 text-amber-500" />
             {language === "ko" ? "바이럴" : "Viral"}
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className="p-0.5 rounded-full bg-neutral-200 hover:bg-neutral-300 transition-colors">
-                  <Info className="h-3 w-3 text-neutral-600" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72 p-3" side="bottom" align="center">
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-xs text-neutral-900 flex items-center gap-1">
-                    <Trophy className="h-3 w-3 text-amber-500" />
-                    {language === "ko" ? "바이럴 영상 기준" : "Viral Video Criteria"}
-                  </h4>
-                  <p className="text-[11px] text-neutral-600 leading-relaxed">
-                    {language === "ko"
-                      ? "참여율 기준 상위 10%에 해당하는 영상입니다. 이 수치 이상의 참여율을 달성하면 바이럴 가능성이 높습니다."
-                      : "Videos in the top 10% by engagement rate. Achieving this rate or higher indicates viral potential."}
-                  </p>
-                  <div className="bg-amber-50 rounded p-2 text-[10px] text-amber-800 border border-amber-200">
-                    🏆 {language === "ko"
-                      ? `이 키워드에서 ${analysis.recommendations.engagementBenchmarks.toGoViral} 이상이면 바이럴!`
-                      : `${analysis.recommendations.engagementBenchmarks.toGoViral}+ means viral for this keyword!`}
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
+            <InfoButton
+              content={language === "ko"
+                ? `참여율 기준 상위 10%에 해당하는 영상입니다. 이 수치 이상의 참여율을 달성하면 바이럴 가능성이 높습니다. 이 키워드에서 ${analysis.recommendations.engagementBenchmarks.toGoViral} 이상이면 바이럴!`
+                : `Videos in the top 10% by engagement rate. Achieving this rate or higher indicates viral potential. ${analysis.recommendations.engagementBenchmarks.toGoViral}+ means viral for this keyword!`}
+              side="bottom"
+            />
           </div>
           <div className="text-[11px] font-semibold text-black">
             {analysis.recommendations.engagementBenchmarks.toGoViral}
@@ -565,31 +501,12 @@ function AnalysisResults({
           <div className="flex items-center justify-center gap-1.5 text-neutral-500 text-[10px] mb-0.5">
             <Flame className="h-2.5 w-2.5 text-orange-500" />
             {language === "ko" ? "고성과" : "High"}
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className="p-0.5 rounded-full bg-neutral-200 hover:bg-neutral-300 transition-colors">
-                  <Info className="h-3 w-3 text-neutral-600" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72 p-3" side="bottom" align="center">
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-xs text-neutral-900 flex items-center gap-1">
-                    <Flame className="h-3 w-3 text-orange-500" />
-                    {language === "ko" ? "고성과 영상 기준" : "High Performing Criteria"}
-                  </h4>
-                  <p className="text-[11px] text-neutral-600 leading-relaxed">
-                    {language === "ko"
-                      ? "참여율 기준 상위 10~30%에 해당하는 영상입니다. 평균 이상의 좋은 성과를 보이는 콘텐츠입니다."
-                      : "Videos in the top 10-30% by engagement rate. These show above-average performance."}
-                  </p>
-                  <div className="bg-orange-50 rounded p-2 text-[10px] text-orange-800 border border-orange-200">
-                    🔥 {language === "ko"
-                      ? `이 키워드에서 ${analysis.recommendations.engagementBenchmarks.toBeHighPerforming} 이상이면 고성과!`
-                      : `${analysis.recommendations.engagementBenchmarks.toBeHighPerforming}+ means high performing!`}
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
+            <InfoButton
+              content={language === "ko"
+                ? `참여율 기준 상위 10~30%에 해당하는 영상입니다. 평균 이상의 좋은 성과를 보이는 콘텐츠입니다. 이 키워드에서 ${analysis.recommendations.engagementBenchmarks.toBeHighPerforming} 이상이면 고성과!`
+                : `Videos in the top 10-30% by engagement rate. These show above-average performance. ${analysis.recommendations.engagementBenchmarks.toBeHighPerforming}+ means high performing!`}
+              side="bottom"
+            />
           </div>
           <div className="text-[11px] font-semibold text-black">
             {analysis.recommendations.engagementBenchmarks.toBeHighPerforming}
@@ -634,7 +551,33 @@ function AnalysisResults({
             </span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {analysis.performanceTiers.highPerforming.slice(0, 10).map((video) => (
+            {analysis.performanceTiers.highPerforming.map((video) => (
+              <VideoCard
+                key={video.id}
+                video={video}
+                onSaveInspiration={onSaveInspiration}
+                isSaved={savedIds.has(video.id)}
+                showRank
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Average Videos */}
+      {analysis.performanceTiers.average.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp className="h-3.5 w-3.5 text-neutral-500" />
+            <h4 className="text-xs font-semibold text-neutral-700">
+              {language === "ko" ? "일반 영상" : "Average Videos"}
+            </h4>
+            <span className="text-[10px] text-neutral-500">
+              ({language === "ko" ? "상위 30-70%" : "Top 30-70%"})
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {analysis.performanceTiers.average.map((video) => (
               <VideoCard
                 key={video.id}
                 video={video}
@@ -972,7 +915,7 @@ export default function DiscoverPage() {
   const router = useRouter();
 
   // Sync workflow stage
-  useWorkflowSync("discover");
+  useWorkflowSync("start");
   const { proceedToAnalyze, canProceedToAnalyze } = useWorkflowNavigation();
 
   // Workflow store
@@ -1026,7 +969,7 @@ export default function DiscoverPage() {
   // Fetch keyword analysis - only when explicitly searching (not on initial load with persisted data)
   const { data: analysisData, isLoading: analysisLoading, refetch } = useKeywordAnalysis({
     keywords,
-    limit: 30,
+    limit: 50,
     // Don't auto-fetch if we already have persisted analysis for the same keyword
     enabled: isSearching && keywords.length > 0 && !trendAnalysis,
   });
@@ -1346,6 +1289,7 @@ export default function DiscoverPage() {
   };
 
   return (
+    <TooltipProvider>
     <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col bg-white">
       {/* Header */}
       <WorkflowHeader
@@ -1562,5 +1506,6 @@ export default function DiscoverPage() {
         />
       </div>
     </Tabs>
+    </TooltipProvider>
   );
 }

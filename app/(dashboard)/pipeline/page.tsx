@@ -265,7 +265,7 @@ export default function GlobalPipelinePage() {
       }
 
       setActiveTab("pipelines");
-      refetchPipelines();
+      await invalidatePipelines();
     } catch (error) {
       console.error("Failed to create auto variations:", error);
     } finally {
@@ -298,8 +298,8 @@ export default function GlobalPipelinePage() {
 
   const handleDeletePipeline = async (pipeline: PipelineItem) => {
     const confirmMessage = isKorean
-      ? `이 파이프라인의 모든 변형(${pipeline.total}개)을 삭제하시겠습니까?`
-      : `Delete all ${pipeline.total} variations in this pipeline?`;
+      ? `이 베리에이션의 모든 변형(${pipeline.total}개)을 삭제하시겠습니까?`
+      : `Delete all ${pipeline.total} variations in this group?`;
 
     if (!confirm(confirmMessage)) return;
 
@@ -309,8 +309,8 @@ export default function GlobalPipelinePage() {
       const result = await pipelineApi.deleteBatch(pipeline.campaign_id, pipeline.batch_id, true);
       console.log(`Deleted ${result.deleted} generations, ${result.failed} failed`);
 
-      // Refetch pipelines using TanStack Query
-      await refetchPipelines();
+      // Invalidate and refetch pipelines using TanStack Query
+      await invalidatePipelines();
     } catch (error) {
       console.error("Failed to delete pipeline:", error);
     } finally {
@@ -344,8 +344,8 @@ export default function GlobalPipelinePage() {
       const data = await cleanupApi.getCleanupCandidates(undefined, true);
       setCleanupData(data);
 
-      // Refresh pipelines
-      refetchPipelines();
+      // Invalidate and refresh pipelines
+      await invalidatePipelines();
     } catch (error) {
       console.error("Failed to mark stuck as failed:", error);
     } finally {
@@ -365,8 +365,8 @@ export default function GlobalPipelinePage() {
       const data = await cleanupApi.getCleanupCandidates(undefined, true);
       setCleanupData(data);
 
-      // Refresh pipelines
-      refetchPipelines();
+      // Invalidate and refresh pipelines
+      await invalidatePipelines();
     } catch (error) {
       console.error("Failed to delete orphaned:", error);
     } finally {
@@ -386,8 +386,8 @@ export default function GlobalPipelinePage() {
       const data = await cleanupApi.getCleanupCandidates(undefined, true);
       setCleanupData(data);
 
-      // Refresh pipelines
-      refetchPipelines();
+      // Invalidate and refresh pipelines
+      await invalidatePipelines();
     } catch (error) {
       console.error("Failed to delete failed generations:", error);
     } finally {
@@ -411,8 +411,8 @@ export default function GlobalPipelinePage() {
       const data = await cleanupApi.getCleanupCandidates(undefined, true);
       setCleanupData(data);
 
-      // Refresh pipelines
-      refetchPipelines();
+      // Invalidate and refresh pipelines
+      await invalidatePipelines();
     } catch (error) {
       console.error("Failed to run full cleanup:", error);
     } finally {
@@ -452,8 +452,8 @@ export default function GlobalPipelinePage() {
       .reduce((sum, p) => sum + p.total, 0);
 
     const confirmMessage = isKorean
-      ? `선택한 ${selectedPipelines.size}개 파이프라인(총 ${totalVariations}개 변형)을 삭제하시겠습니까?`
-      : `Delete ${selectedPipelines.size} pipelines (${totalVariations} total variations)?`;
+      ? `선택한 ${selectedPipelines.size}개 베리에이션(총 ${totalVariations}개 변형)을 삭제하시겠습니까?`
+      : `Delete ${selectedPipelines.size} variations (${totalVariations} total items)?`;
 
     if (!confirm(confirmMessage)) return;
 
@@ -476,8 +476,8 @@ export default function GlobalPipelinePage() {
 
     console.log(`Deleted ${deleted} pipelines, ${failed} failed`);
 
-    // Refetch pipelines using TanStack Query
-    await refetchPipelines();
+    // Invalidate and refetch pipelines using TanStack Query
+    await invalidatePipelines();
     setSelectedPipelines(new Set());
     setSelectionMode(false);
     setDeletingSelected(false);
@@ -506,7 +506,7 @@ export default function GlobalPipelinePage() {
 
       setAIVariationModalOpen(false);
       setActiveTab("pipelines");
-      refetchPipelines();
+      await invalidatePipelines();
     } catch (error) {
       console.error("Failed to create AI variations:", error);
     } finally {
@@ -538,7 +538,7 @@ export default function GlobalPipelinePage() {
 
       setComposeVariationModalOpen(false);
       setActiveTab("pipelines");
-      refetchPipelines();
+      await invalidatePipelines();
     } catch (error) {
       console.error("Failed to create Compose variations:", error);
     } finally {
@@ -670,7 +670,7 @@ export default function GlobalPipelinePage() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Layers className="w-6 h-6" />
-              {isKorean ? "변형 파이프라인" : "Variation Pipeline"}
+              {isKorean ? "베리에이션" : "Variation"}
             </h1>
             <p className="text-muted-foreground text-sm mt-1">
               {isKorean
@@ -846,7 +846,7 @@ export default function GlobalPipelinePage() {
             <TabsList className="h-10">
               <TabsTrigger value="pipelines" className="gap-2 px-4">
                 <Layers className="w-4 h-4" />
-                {isKorean ? "파이프라인" : "Pipelines"}
+                {isKorean ? "베리에이션" : "Variations"}
                 {stats.processing > 0 && (
                   <Badge variant="secondary" className="ml-1 h-5 px-1.5">
                     {stats.processing}
@@ -974,7 +974,7 @@ export default function GlobalPipelinePage() {
                 <CardContent className="py-16 text-center">
                   <Layers className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium mb-2">
-                    {isKorean ? "파이프라인이 없습니다" : "No Pipelines Yet"}
+                    {isKorean ? "베리에이션이 없습니다" : "No Variations Yet"}
                   </h3>
                   <p className="text-muted-foreground text-sm mb-6 max-w-md mx-auto">
                     {isKorean

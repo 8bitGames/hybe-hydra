@@ -276,19 +276,11 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
 
         logger.info(f"[Auto-Compose] Job {request.job_id} settings: vibe={vibe}, effect={effect_preset}, color={color_grade}, text={text_style}")
 
-        # Validate audio URL is provided
-        if not request.audio_url:
-            error_message = "Audio URL is required for compose video generation"
-            logger.error(f"[Auto-Compose] Job {request.job_id} failed: {error_message}")
-            if job_queue:
-                await job_queue.update_job(
-                    request.job_id,
-                    status="failed",
-                    error=error_message
-                )
-            if request.callback_url:
-                await send_callback(request.callback_url, request.job_id, "failed", error=error_message)
-            return
+        # Audio is now optional - log status
+        if request.audio_url:
+            logger.info(f"[Auto-Compose] Job {request.job_id} with audio: {request.audio_url[:50]}...")
+        else:
+            logger.info(f"[Auto-Compose] Job {request.job_id} without audio (silent video)")
 
         # Create render request
         s3_folder = request.campaign_id or "auto-compose"
@@ -302,14 +294,19 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
             )
             logger.info(f"[Auto-Compose] Job {request.job_id} has {len(request.script_lines)} script lines for subtitles")
 
+        # Build AudioData only if audio URL is provided
+        audio_data = None
+        if request.audio_url:
+            audio_data = AudioData(
+                url=request.audio_url,
+                start_time=0,
+                duration=None
+            )
+
         render_request = RenderRequest(
             job_id=request.job_id,
             images=images,
-            audio=AudioData(
-                url=request.audio_url or "",
-                start_time=0,
-                duration=None
-            ),
+            audio=audio_data,
             script=script_data,
             settings=RenderSettings(
                 vibe=vibe,

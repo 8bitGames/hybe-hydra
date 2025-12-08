@@ -96,17 +96,20 @@ export async function POST(request: NextRequest) {
       aiEffects,
     } = body;
 
-    // Get audio asset URL
-    const audioAsset = await prisma.asset.findUnique({
-      where: { id: audioAssetId },
-      select: { s3Url: true }
-    });
+    // Get audio asset URL (optional - audio is no longer required)
+    let audioAsset = null;
+    if (audioAssetId) {
+      audioAsset = await prisma.asset.findUnique({
+        where: { id: audioAssetId },
+        select: { s3Url: true }
+      });
 
-    if (!audioAsset) {
-      return NextResponse.json(
-        { detail: 'Audio asset not found' },
-        { status: 404 }
-      );
+      if (!audioAsset) {
+        return NextResponse.json(
+          { detail: 'Audio asset not found' },
+          { status: 404 }
+        );
+      }
     }
 
     // Build composeData to store all compose settings for variations
@@ -208,11 +211,12 @@ export async function POST(request: NextRequest) {
         url: img.url,
         order: img.order
       })),
-      audio: {
+      // Audio is optional - only include if provided
+      audio: audioAsset ? {
         url: audioAsset.s3Url,
         start_time: audioStartTime,  // Use analyzed best segment or manual adjustment
         duration: null  // Let backend auto-calculate based on vibe/images
-      },
+      } : null,
       script: script && script.lines && script.lines.length > 0
         ? { lines: script.lines }
         : null,

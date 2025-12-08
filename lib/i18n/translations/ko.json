@@ -114,9 +114,9 @@
       "음원-62": "음원",
       "없음-63": "없음",
       "변형-64": "변형",
-      "파이프라인을-72": "파이프라인을",
+      "파이프라인을-72": "베리에이션을",
       "찾을-73": "찾을",
-      "파이프라인-74": "파이프라인",
+      "파이프라인-74": "베리에이션",
       "상세-75": "상세",
       "시드-76": "시드",
       "원본-77": "원본",
@@ -132,7 +132,7 @@
       "일부-87": "일부",
       "또는-88": "또는",
       "카테고리-89": "카테고리",
-      "파이프라인이-90": "파이프라인이",
+      "파이프라인이-90": "베리에이션이",
       "영상이-91": "영상이",
       "있으면-92": "있으면",
       "글로벌-93": "글로벌",
@@ -186,7 +186,7 @@
       "결과-228": "결과",
       "효율적-229": "효율적",
       "워크플로우-230": "워크플로우",
-      "파이프라인에서-231": "파이프라인에서",
+      "파이프라인에서-231": "베리에이션에서",
       "배치-232": "배치",
       "모드-233": "모드",
       "대량-234": "대량",
@@ -708,7 +708,20 @@
     "saveAsDraft": "임시저장",
     "selectVideo": "영상 선택",
     "error": "오류",
-    "viewPost": "게시물 보기"
+    "viewPost": "게시물 보기",
+    "variation": {
+      "createMoreFromThis": "이 영상으로 더 만들기",
+      "aiVariation": "AI 변형",
+      "styleChanges": "스타일 변경",
+      "composeVariation": "Compose 변형",
+      "musicEffects": "음악/이펙트",
+      "successTitle": "발행 예약 완료!",
+      "successDescription": "{count}개의 영상이 TikTok에 예약되었습니다",
+      "createMoreVariations": "이 영상들로 변형 더 만들기",
+      "aiGeneratesNewStyles": "AI가 새로운 스타일 버전을 생성합니다",
+      "viewSchedule": "예약 현황",
+      "newProject": "새 프로젝트"
+    }
   },
   "legal": {
     "common": {
@@ -1062,6 +1075,151 @@
         "aiAnalysis": "AI 분석",
         "customPrompt": "맞춤 프롬프트"
       }
+    }
+  },
+  "startPage": {
+    "loading": "로딩 중...",
+    "contentReady": {
+      "title": "콘텐츠 준비 완료",
+      "trendDescription": "선택한 트렌드 키워드의 데이터가 준비되었습니다. 이 데이터를 기반으로 AI가 맞춤형 콘텐츠를 생성합니다.",
+      "videoDescription": "선택한 영상의 분석 데이터가 준비되었습니다. 이 영상을 참고하여 AI가 유사한 스타일의 콘텐츠를 생성합니다."
+    },
+    "metrics": {
+      "videos": "영상 수",
+      "avgViews": "평균 조회수",
+      "engagement": "참여율",
+      "hashtags": "해시태그",
+      "viralScore": "바이럴 점수",
+      "likes": "좋아요",
+      "comments": "댓글",
+      "shares": "공유"
+    },
+    "actions": {
+      "startAnalysis": "분석 시작하기",
+      "chooseDifferent": "다시 선택하기",
+      "continue": "계속하기"
+    },
+    "entryPaths": {
+      "title": "새 콘텐츠 시작하기",
+      "subtitle": "어떤 방식으로 시작하시겠어요?",
+      "trends": {
+        "title": "트렌드에서 시작하기",
+        "description": "트렌드 대시보드에서 키워드를 선택하고 데이터 기반으로 콘텐츠를 생성하세요"
+      },
+      "video": {
+        "title": "영상 참고해서 시작하기",
+        "description": "마음에 드는 바이럴 영상을 참고하여 유사한 스타일의 콘텐츠를 만들어보세요"
+      },
+      "idea": {
+        "title": "아이디어로 바로 시작",
+        "description": "트렌드 없이 나만의 아이디어로 바로 콘텐츠를 생성하세요"
+      }
+    },
+    "recentProjects": {
+      "title": "최근 프로젝트",
+      "empty": "최근 작업한 프로젝트가 없습니다",
+      "status": {
+        "completed": "완료",
+        "inProgress": "진행중",
+        "draft": "임시저장"
+      },
+      "continueWork": "계속하기"
+    },
+    "time": {
+      "justNow": "방금 전",
+      "minutesAgo": "분 전",
+      "hoursAgo": "시간 전",
+      "daysAgo": "일 전"
+    },
+    "preview": {
+      "trendData": "트렌드 데이터 미리보기",
+      "videoReference": "참고 영상",
+      "topHashtags": "인기 해시태그",
+      "keywordInfo": "키워드 정보"
+    }
+  },
+  "trendDashboard": {
+    "pageTitle": "트렌드 인텔리전스 대시보드",
+    "pageDescription": "등록된 키워드 기반으로 TikTok 트렌드를 한눈에 확인하세요",
+    "contentSummary": {
+      "title": "콘텐츠 현황",
+      "totalGenerated": "생성된 영상",
+      "highQuality": "고품질",
+      "published": "발행됨",
+      "engagement": "평균 참여율"
+    },
+    "quickActions": {
+      "title": "빠른 액션",
+      "newKeyword": "키워드 추가",
+      "analyzeTrends": "트렌드 분석",
+      "createContent": "콘텐츠 생성"
+    },
+    "trackedKeywords": {
+      "title": "등록된 키워드",
+      "empty": "등록된 키워드가 없습니다",
+      "addKeyword": "키워드 추가",
+      "avgViews": "평균 조회수",
+      "avgEngagement": "참여율",
+      "totalVideos": "총 영상 수",
+      "trending": "트렌드",
+      "up": "상승",
+      "down": "하락",
+      "stable": "유지",
+      "topHashtags": "인기 해시태그"
+    },
+    "trendOverview": {
+      "title": "트렌드 개요",
+      "viewsGrowth": "조회수 성장률",
+      "engagementRate": "참여율",
+      "contentVolume": "콘텐츠 양",
+      "avgViews": "평균 조회수",
+      "trending": "급상승",
+      "peak": "최고점",
+      "growing": "성장 중",
+      "saturation": "포화"
+    },
+    "crossInsights": {
+      "title": "크로스 키워드 인사이트",
+      "description": "여러 키워드에서 공통으로 발견되는 트렌드",
+      "sharedHashtags": "공통 해시태그",
+      "optimalPostTime": "최적 게시 시간",
+      "audienceOverlap": "청중 중복도",
+      "contentGaps": "콘텐츠 기회"
+    },
+    "searchHistory": {
+      "title": "검색 기록",
+      "recent": "최근 검색",
+      "clearAll": "전체 삭제",
+      "noHistory": "검색 기록이 없습니다",
+      "searchedAt": "검색 시간"
+    },
+    "viralVideos": {
+      "title": "바이럴 영상",
+      "createFromTrend": "이 트렌드로 생성",
+      "loadMore": "더 보기",
+      "remaining": "개 남음",
+      "viewAll": "전체 보기",
+      "rank": "순위",
+      "creator": "크리에이터",
+      "views": "조회수",
+      "engagement": "참여율",
+      "hashtags": "해시태그",
+      "score": "점수",
+      "actions": "액션",
+      "createFromVideo": "이 영상 참고해서 생성",
+      "viewOnTiktok": "TikTok에서 보기",
+      "copyHashtags": "해시태그 복사",
+      "featured": "추천",
+      "trendUp": "상승",
+      "trendDown": "하락",
+      "trendStable": "유지",
+      "noVideos": "바이럴 영상이 없습니다",
+      "allVideosTitle": "전체 바이럴 영상",
+      "sortBy": "정렬",
+      "sortViews": "조회수",
+      "sortEngagement": "참여율",
+      "sortScore": "바이럴 점수",
+      "sortRecent": "최신순"
     }
   }
 }

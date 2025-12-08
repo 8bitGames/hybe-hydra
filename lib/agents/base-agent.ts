@@ -27,9 +27,98 @@ import type {
   TokenUsage,
   ModelName,
   ModelProvider,
+  ReflectionConfig,
+  ReflectionResult,
+  ReflectionIteration,
+  ReflectionEvaluation,
+  ReflectionAspect,
+  StreamChunk,
+  StreamResult,
 } from './types';
 import { loadPromptFromDatabase, type DatabasePrompt } from './prompt-loader';
 import { getEvaluationService, type ExecutionLog } from './evaluation-service';
+import {
+  storeMemory,
+  retrieveMemories,
+  getMemory,
+  deleteMemory,
+  buildMemoryContext,
+} from './memory-service';
+import type { MemoryType, MemoryUpdate, MemoryQuery } from './types';
+
+// Default reflection configuration
+const DEFAULT_REFLECTION_CONFIG: ReflectionConfig = {
+  maxIterations: 3,
+  qualityThreshold: 0.7,
+  verbose: false,
+  evaluationAspects: ['relevance', 'quality', 'completeness'],
+};
+
+// Reflection evaluation prompt template
+const REFLECTION_EVALUATION_PROMPT = `You are a critical evaluator. Analyze the following output and provide a detailed evaluation.
+
+## Original Input:
+{{input}}
+
+## Agent Output:
+{{output}}
+
+## Evaluation Criteria:
+Evaluate on these aspects (score 0-1 for each):
+{{aspects}}
+
+## Response Format (JSON):
+{
+  "score": <overall score 0-1>,
+  "passed": <boolean - whether output meets quality standards>,
+  "feedback": "<specific feedback for improvement>",
+  "improvementAreas": ["<area1>", "<area2>"],
+  "aspectScores": {
+    {{aspectScoresFormat}}
+  }
+}
+
+Be strict but fair. Focus on actionable improvement suggestions.`;
+
+// Reflection improvement prompt template
+const REFLECTION_IMPROVEMENT_PROMPT = `You are improving your previous output based on feedback.
+
+## Original Input:
+{{input}}
+
+## Your Previous Output:
+{{previousOutput}}
+
+## Evaluation Feedback:
+Score: {{score}}/1.0
+Feedback: {{feedback}}
+Areas to improve: {{improvementAreas}}
+
+## Instructions:
+Generate an improved output that addresses the feedback. Maintain the same output format but improve the quality based on the evaluation.
+
+Respond with only the improved output in the required JSON format.`;
+
+// Memory configuration interface
+export interface MemoryConfig {
+  enabled: boolean;
+  /** Memory types to use for this agent */
+  memoryTypes?: MemoryType[];
+  /** Maximum number of memories to include in context */
+  contextLimit?: number;
+  /** Minimum importance score to include in context */
+  minImportance?: number;
+  /** Whether to automatically store learned patterns after execution */
+  autoLearn?: boolean;
+}
+
+const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
+  enabled: false,
+  memoryTypes: ['preference', 'pattern', 'style'],
+  contextLimit: 10,
+  minImportance: 0.3,
+  autoLearn: false,
+};
 
 export abstract class BaseAgent<TInput, TOutput> {
   protected config: AgentConfig<TInput, TOutput>;
@@ -38,6 +127,8 @@ export abstract class BaseAgent<TInput, TOutput> {
   protected usingDatabasePrompts: boolean = false;
   protected currentPromptVersion: number = 1;
   protected enableExecutionLogging: boolean = true;
+  protected reflectionConfig: ReflectionConfig = DEFAULT_REFLECTION_CONFIG;
+  protected memoryConfig: MemoryConfig = DEFAULT_MEMORY_CONFIG;
 
   constructor(config: AgentConfig<TInput, TOutput>) {
     this.config = config;
@@ -154,6 +245,7 @@ export abstract class BaseAgent<TInput, TOutput> {
   /**
    * Execute the agent with input and context
    * Automatically initializes from database if not already done
+   * Includes memory context when memory is enabled
    */
   async execute(
     input: TInput,
@@ -179,19 +271,30 @@ export abstract class BaseAgent<TInput, TOutput> {
       // 2. Build prompt with context
       const prompt = this.buildPrompt(validatedInput, context);
 
-      // 3. Execute model
+      // 3. Load memory context if enabled
+      const memoryContext = await this.getMemoryContextForPrompt(context);
+
+      // 4. Build system prompt with memory context
+      const systemPrompt = memoryContext
+        ? `${this.config.prompts.system}\n\n${memoryContext}`
+        : this.config.prompts.system;
+
+      // 5. Execute model
       const response = await this.modelClient.generate({
-        system: this.config.prompts.system,
+        system: systemPrompt,
         user: prompt,
         responseFormat: 'json',
       });
 
-      // 4. Parse and validate output
+      // 6. Parse and validate output
       const parsedOutput = this.parseResponse(response);
       const validatedOutput = this.validateOutput(parsedOutput);
 
-      // 5. Build successful result
+      // 7. Build successful result
       const result = this.buildResult(true, validatedOutput, undefined, response.usage, startTime);
+
+      // 8. Store learned patterns if autoLearn is enabled (non-blocking)
+      this.storeLearnedPatterns(validatedInput, validatedOutput, context);
 
       // Log execution success (non-blocking)
       if (this.enableExecutionLogging && executionId) {
@@ -225,6 +328,7 @@ export abstract class BaseAgent<TInput, TOutput> {
   /**
    * Execute with image input (for vision-capable agents)
    * Automatically initializes from database if not already done
+   * Includes memory context when memory is enabled
    */
   async executeWithImages(
     input: TInput,
@@ -242,8 +346,16 @@ export abstract class BaseAgent<TInput, TOutput> {
       const validatedInput = this.validateInput(input);
       const prompt = this.buildPrompt(validatedInput, context);
 
+      // Load memory context if enabled
+      const memoryContext = await this.getMemoryContextForPrompt(context);
+
+      // Build system prompt with memory context
+      const systemPrompt = memoryContext
+        ? `${this.config.prompts.system}\n\n${memoryContext}`
+        : this.config.prompts.system;
+
       const response = await this.modelClient.generate({
-        system: this.config.prompts.system,
+        system: systemPrompt,
         user: prompt,
         images,
         responseFormat: 'json',
@@ -251,6 +363,9 @@ export abstract class BaseAgent<TInput, TOutput> {
 
       const parsedOutput = this.parseResponse(response);
       const validatedOutput = this.validateOutput(parsedOutput);
+
+      // Store learned patterns if autoLearn is enabled (non-blocking)
+      this.storeLearnedPatterns(validatedInput, validatedOutput, context);
 
       return this.buildResult(true, validatedOutput, undefined, response.usage, startTime);
 
@@ -266,6 +381,571 @@ export abstract class BaseAgent<TInput, TOutput> {
         startTime
       );
     }
+  }
+
+  /**
+   * Execute with reflection pattern (self-improvement loop)
+   * The agent evaluates its own output and iteratively improves it
+   */
+  async executeWithReflection(
+    input: TInput,
+    context: AgentContext,
+    reflectionConfig?: Partial<ReflectionConfig>
+  ): Promise<ReflectionResult<TOutput>> {
+    const config = { ...this.reflectionConfig, ...reflectionConfig };
+    const startTime = Date.now();
+    const iterations: ReflectionIteration[] = [];
+    let totalTokenUsage: TokenUsage = { input: 0, output: 0, total: 0 };
+
+    // Auto-initialize from database if not already done
+    if (!this.isInitialized) {
+      await this.initializeFromDatabase();
+    }
+
+    if (config.verbose) {
+      console.log(`[${this.config.id}] Starting reflection loop (max ${config.maxIterations} iterations)`);
+    }
+
+    // Initial execution
+    let currentOutput: TOutput | undefined;
+    let currentResult: AgentResult<TOutput>;
+    let bestOutput: TOutput | undefined;
+    let bestScore = 0;
+    let initialScore = 0;
+
+    try {
+      // First iteration - normal execution
+      const iterationStart = Date.now();
+      currentResult = await this.execute(input, context);
+
+      if (!currentResult.success || !currentResult.data) {
+        return {
+          ...currentResult,
+          iterations: [],
+          totalIterations: 1,
+          improved: false,
+          scoreImprovement: 0,
+        };
+      }
+
+      currentOutput = currentResult.data;
+      totalTokenUsage = this.addTokenUsage(totalTokenUsage, currentResult.metadata.tokenUsage);
+
+      // Evaluate the first output
+      const firstEvaluation = await this.evaluateOutput(input, currentOutput, config);
+      totalTokenUsage = this.addTokenUsage(totalTokenUsage, firstEvaluation.tokenUsage);
+      initialScore = firstEvaluation.evaluation.score;
+      bestScore = initialScore;
+      bestOutput = currentOutput;
+
+      iterations.push({
+        iteration: 1,
+        output: currentOutput,
+        evaluation: firstEvaluation.evaluation,
+        tokenUsage: this.addTokenUsage(currentResult.metadata.tokenUsage, firstEvaluation.tokenUsage),
+        latencyMs: Date.now() - iterationStart,
+      });
+
+      if (config.verbose) {
+        console.log(`[${this.config.id}] Iteration 1: score=${firstEvaluation.evaluation.score.toFixed(2)}, passed=${firstEvaluation.evaluation.passed}`);
+      }
+
+      // If first output passes threshold, return early
+      if (firstEvaluation.evaluation.passed) {
+        return this.buildReflectionResult(
+          true,
+          currentOutput,
+          undefined,
+          totalTokenUsage,
+          startTime,
+          iterations,
+          false,
+          0
+        );
+      }
+
+      // Reflection loop
+      for (let i = 2; i <= config.maxIterations; i++) {
+        const loopStart = Date.now();
+        const previousEvaluation = iterations[iterations.length - 1].evaluation;
+
+        // Generate improved output
+        const improvedResult = await this.generateImprovedOutput(
+          input,
+          currentOutput,
+          previousEvaluation,
+          context
+        );
+
+        if (!improvedResult.success || !improvedResult.output) {
+          if (config.verbose) {
+            console.log(`[${this.config.id}] Iteration ${i}: improvement failed, using best output`);
+          }
+          break;
+        }
+
+        currentOutput = improvedResult.output;
+        totalTokenUsage = this.addTokenUsage(totalTokenUsage, improvedResult.tokenUsage);
+
+        // Evaluate improved output
+        const evaluation = await this.evaluateOutput(input, currentOutput, config);
+        totalTokenUsage = this.addTokenUsage(totalTokenUsage, evaluation.tokenUsage);
+
+        iterations.push({
+          iteration: i,
+          output: currentOutput,
+          evaluation: evaluation.evaluation,
+          tokenUsage: this.addTokenUsage(improvedResult.tokenUsage, evaluation.tokenUsage),
+          latencyMs: Date.now() - loopStart,
+        });
+
+        if (config.verbose) {
+          console.log(`[${this.config.id}] Iteration ${i}: score=${evaluation.evaluation.score.toFixed(2)}, passed=${evaluation.evaluation.passed}`);
+        }
+
+        // Track best output
+        if (evaluation.evaluation.score > bestScore) {
+          bestScore = evaluation.evaluation.score;
+          bestOutput = currentOutput;
+        }
+
+        // If passes threshold, exit loop
+        if (evaluation.evaluation.passed) {
+          break;
+        }
+      }
+
+      const scoreImprovement = bestScore - initialScore;
+      const improved = scoreImprovement > 0;
+
+      if (config.verbose) {
+        console.log(`[${this.config.id}] Reflection complete: ${iterations.length} iterations, improved=${improved}, scoreChange=${scoreImprovement.toFixed(2)}`);
+      }
+
+      return this.buildReflectionResult(
+        true,
+        bestOutput!,
+        undefined,
+        totalTokenUsage,
+        startTime,
+        iterations,
+        improved,
+        scoreImprovement
+      );
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[${this.config.id}] Reflection error:`, errorMessage);
+
+      return this.buildReflectionResult(
+        false,
+        bestOutput,
+        errorMessage,
+        totalTokenUsage,
+        startTime,
+        iterations,
+        false,
+        0
+      );
+    }
+  }
+
+  /**
+   * Execute with streaming output
+   * Returns an async generator that yields chunks
+   */
+  async *executeStream(
+    input: TInput,
+    context: AgentContext
+  ): AsyncGenerator<StreamChunk, StreamResult<TOutput>, undefined> {
+    const startTime = Date.now();
+
+    // Auto-initialize from database if not already done
+    if (!this.isInitialized) {
+      await this.initializeFromDatabase();
+    }
+
+    try {
+      // Validate input
+      const validatedInput = this.validateInput(input);
+      const prompt = this.buildPrompt(validatedInput, context);
+
+      // Check if model client supports streaming
+      if (!this.modelClient.generateStream) {
+        // Fallback to non-streaming
+        const result = await this.execute(input, context);
+        yield {
+          content: JSON.stringify(result.data),
+          done: true,
+          accumulated: JSON.stringify(result.data),
+        };
+        return {
+          data: result.data,
+          success: result.success,
+          error: result.error,
+          tokenUsage: result.metadata.tokenUsage,
+          latencyMs: result.metadata.latencyMs,
+        };
+      }
+
+      // Stream the response
+      let accumulated = '';
+      const stream = this.modelClient.generateStream({
+        system: this.config.prompts.system,
+        user: prompt,
+        responseFormat: 'json',
+      });
+
+      for await (const chunk of stream) {
+        accumulated += chunk.content;
+        yield {
+          content: chunk.content,
+          done: chunk.done,
+          accumulated,
+        };
+      }
+
+      // Parse final output
+      const parsedOutput = this.parseResponse({ content: accumulated, usage: { input: 0, output: 0, total: 0 } });
+      const validatedOutput = this.validateOutput(parsedOutput);
+
+      return {
+        data: validatedOutput,
+        success: true,
+        tokenUsage: { input: 0, output: 0, total: 0 }, // Token usage not available in streaming
+        latencyMs: Date.now() - startTime,
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[${this.config.id}] Stream error:`, errorMessage);
+
+      return {
+        success: false,
+        error: errorMessage,
+        tokenUsage: { input: 0, output: 0, total: 0 },
+        latencyMs: Date.now() - startTime,
+      };
+    }
+  }
+
+  /**
+   * Set reflection configuration
+   */
+  setReflectionConfig(config: Partial<ReflectionConfig>): void {
+    this.reflectionConfig = { ...this.reflectionConfig, ...config };
+  }
+
+  // ============================================================================
+  // Memory System Methods
+  // ============================================================================
+
+  /**
+   * Configure memory settings for this agent
+   */
+  setMemoryConfig(config: Partial<MemoryConfig>): void {
+    this.memoryConfig = { ...this.memoryConfig, ...config };
+  }
+
+  /**
+   * Enable or disable memory for this agent
+   */
+  enableMemory(enabled: boolean = true): void {
+    this.memoryConfig.enabled = enabled;
+  }
+
+  /**
+   * Store a memory for this agent
+   * @param key - Unique key for the memory
+   * @param value - Data to store
+   * @param options - Additional options like memory type, importance, TTL
+   */
+  async remember(
+    key: string,
+    value: Record<string, unknown>,
+    options?: {
+      memoryType?: MemoryType;
+      importance?: number;
+      ttlSeconds?: number;
+      campaignId?: string;
+      artistName?: string;
+    }
+  ): Promise<string | null> {
+    const memory: MemoryUpdate = {
+      key,
+      value,
+      memoryType: options?.memoryType || 'pattern',
+      importance: options?.importance,
+      ttlSeconds: options?.ttlSeconds,
+    };
+
+    return storeMemory(this.config.id, memory, {
+      campaignId: options?.campaignId,
+      artistName: options?.artistName,
+    });
+  }
+
+  /**
+   * Retrieve memories for this agent
+   * @param query - Query parameters for filtering memories
+   */
+  async recall(query?: {
+    campaignId?: string;
+    artistName?: string;
+    memoryTypes?: MemoryType[];
+    keys?: string[];
+    minImportance?: number;
+    limit?: number;
+  }): Promise<Array<{
+    key: string;
+    value: Record<string, unknown>;
+    memoryType: MemoryType;
+    importance: number;
+  }>> {
+    const memories = await retrieveMemories({
+      agentId: this.config.id,
+      campaignId: query?.campaignId,
+      artistName: query?.artistName,
+      memoryTypes: query?.memoryTypes,
+      keys: query?.keys,
+      minImportance: query?.minImportance,
+      limit: query?.limit,
+    });
+
+    return memories.map((m) => ({
+      key: m.key,
+      value: m.value,
+      memoryType: m.memoryType,
+      importance: m.importance,
+    }));
+  }
+
+  /**
+   * Get a specific memory by key
+   */
+  async recallOne(
+    key: string,
+    campaignId?: string
+  ): Promise<Record<string, unknown> | null> {
+    const memory = await getMemory(this.config.id, key, campaignId);
+    return memory?.value || null;
+  }
+
+  /**
+   * Delete a memory
+   */
+  async forget(key: string, campaignId?: string): Promise<boolean> {
+    return deleteMemory(this.config.id, key, campaignId);
+  }
+
+  /**
+   * Build memory context string for inclusion in prompts
+   * Used internally during execute() when memory is enabled
+   */
+  protected async getMemoryContextForPrompt(
+    context: AgentContext
+  ): Promise<string> {
+    if (!this.memoryConfig.enabled) {
+      return '';
+    }
+
+    try {
+      const memoryContext = await buildMemoryContext(this.config.id, {
+        campaignId: context.workflow?.campaignId,
+        artistName: context.workflow?.artistName,
+        memoryTypes: this.memoryConfig.memoryTypes,
+        limit: this.memoryConfig.contextLimit,
+      });
+
+      return memoryContext;
+    } catch (error) {
+      console.warn(`[${this.config.id}] Failed to load memory context:`, error);
+      return '';
+    }
+  }
+
+  /**
+   * Store learned patterns from successful execution
+   * Called automatically when autoLearn is enabled
+   */
+  protected async storeLearnedPatterns(
+    input: TInput,
+    output: TOutput,
+    context: AgentContext
+  ): Promise<void> {
+    if (!this.memoryConfig.enabled || !this.memoryConfig.autoLearn) {
+      return;
+    }
+
+    try {
+      // Store execution pattern (can be overridden by subclasses for custom learning)
+      const patternKey = `execution_pattern_${Date.now()}`;
+      await this.remember(
+        patternKey,
+        {
+          inputType: typeof input,
+          outputSummary: this.summarizeOutput(output),
+          timestamp: new Date().toISOString(),
+        },
+        {
+          memoryType: 'pattern',
+          importance: 0.5,
+          ttlSeconds: 7 * 24 * 60 * 60, // 7 days
+          campaignId: context.workflow?.campaignId,
+          artistName: context.workflow?.artistName,
+        }
+      );
+    } catch (error) {
+      console.warn(`[${this.config.id}] Failed to store learned patterns:`, error);
+    }
+  }
+
+  /**
+   * Summarize output for learning purposes
+   * Subclasses can override for custom summarization
+   */
+  protected summarizeOutput(output: TOutput): string {
+    if (typeof output === 'string') {
+      return output.slice(0, 200);
+    }
+    return JSON.stringify(output).slice(0, 200);
+  }
+
+  /**
+   * Evaluate output quality using LLM self-critique
+   */
+  private async evaluateOutput(
+    input: TInput,
+    output: TOutput,
+    config: ReflectionConfig
+  ): Promise<{ evaluation: ReflectionEvaluation; tokenUsage: TokenUsage }> {
+    const aspects = config.evaluationAspects || DEFAULT_REFLECTION_CONFIG.evaluationAspects!;
+    const aspectsDescription = aspects.map(a => `- ${a}: <description>`).join('\n');
+    const aspectScoresFormat = aspects.map(a => `"${a}": <score 0-1>`).join(',\n    ');
+
+    const evaluationPrompt = REFLECTION_EVALUATION_PROMPT
+      .replace('{{input}}', JSON.stringify(input, null, 2))
+      .replace('{{output}}', JSON.stringify(output, null, 2))
+      .replace('{{aspects}}', aspectsDescription)
+      .replace('{{aspectScoresFormat}}', aspectScoresFormat);
+
+    try {
+      const response = await this.modelClient.generate({
+        system: 'You are a critical evaluator that provides objective quality assessments. Always respond in valid JSON.',
+        user: evaluationPrompt,
+        responseFormat: 'json',
+      });
+
+      const parsed = this.parseResponse(response);
+      const evaluation = parsed as ReflectionEvaluation;
+
+      // Ensure passed field reflects the threshold
+      evaluation.passed = evaluation.score >= config.qualityThreshold;
+
+      return {
+        evaluation,
+        tokenUsage: response.usage,
+      };
+    } catch (error) {
+      console.warn(`[${this.config.id}] Evaluation failed, using default scores`);
+      const defaultScores: Record<ReflectionAspect, number> = {} as Record<ReflectionAspect, number>;
+      aspects.forEach(a => { defaultScores[a] = 0.5; });
+
+      return {
+        evaluation: {
+          score: 0.5,
+          passed: false,
+          feedback: 'Evaluation failed, using default assessment',
+          improvementAreas: ['Unable to evaluate'],
+          aspectScores: defaultScores,
+        },
+        tokenUsage: { input: 0, output: 0, total: 0 },
+      };
+    }
+  }
+
+  /**
+   * Generate improved output based on feedback
+   */
+  private async generateImprovedOutput(
+    input: TInput,
+    previousOutput: TOutput,
+    evaluation: ReflectionEvaluation,
+    context: AgentContext
+  ): Promise<{ success: boolean; output?: TOutput; tokenUsage: TokenUsage }> {
+    const improvementPrompt = REFLECTION_IMPROVEMENT_PROMPT
+      .replace('{{input}}', JSON.stringify(input, null, 2))
+      .replace('{{previousOutput}}', JSON.stringify(previousOutput, null, 2))
+      .replace('{{score}}', evaluation.score.toFixed(2))
+      .replace('{{feedback}}', evaluation.feedback)
+      .replace('{{improvementAreas}}', evaluation.improvementAreas.join(', '));
+
+    try {
+      const response = await this.modelClient.generate({
+        system: this.config.prompts.system,
+        user: improvementPrompt,
+        responseFormat: 'json',
+      });
+
+      const parsed = this.parseResponse(response);
+      const validated = this.validateOutput(parsed);
+
+      return {
+        success: true,
+        output: validated,
+        tokenUsage: response.usage,
+      };
+    } catch (error) {
+      console.warn(`[${this.config.id}] Improvement generation failed`);
+      return {
+        success: false,
+        tokenUsage: { input: 0, output: 0, total: 0 },
+      };
+    }
+  }
+
+  /**
+   * Build reflection result
+   */
+  private buildReflectionResult(
+    success: boolean,
+    data: TOutput | undefined,
+    error: string | undefined,
+    usage: TokenUsage,
+    startTime: number,
+    iterations: ReflectionIteration[],
+    improved: boolean,
+    scoreImprovement: number
+  ): ReflectionResult<TOutput> {
+    const metadata: AgentMetadata = {
+      agentId: this.config.id,
+      model: this.config.model.name as ModelName,
+      tokenUsage: usage,
+      latencyMs: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+    };
+
+    return {
+      success,
+      data,
+      error,
+      metadata,
+      iterations,
+      totalIterations: iterations.length,
+      improved,
+      scoreImprovement,
+    };
+  }
+
+  /**
+   * Add two token usages together
+   */
+  private addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+    return {
+      input: a.input + b.input,
+      output: a.output + b.output,
+      total: a.total + b.total,
+    };
   }
 
   /**

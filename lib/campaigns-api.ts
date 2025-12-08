@@ -25,6 +25,7 @@ export interface Campaign {
   start_date: string | null;
   end_date: string | null;
   budget_code: string | null;
+  genre: string | null;  // Music genre for content generation (e.g., pop, hiphop, ballad, country)
   created_by: string;
   created_at: string;
   updated_at: string;

@@ -40,6 +40,7 @@ interface ComposeEffectStepProps {
   scriptData: ScriptGenerationResponse | null;
   selectedImages: ImageCandidate[];
   selectedAudio: AudioMatch | null;
+  musicSkipped: boolean;
   aspectRatio: string;
   effectPreset: string;
   setEffectPreset: (preset: string) => void;
@@ -53,6 +54,7 @@ export function ComposeEffectStep({
   scriptData,
   selectedImages,
   selectedAudio,
+  musicSkipped,
   aspectRatio,
   effectPreset,
   setEffectPreset,
@@ -74,10 +76,11 @@ export function ComposeEffectStep({
     ].filter(Boolean);
   }, [tiktokSEO]);
 
-  // Check readiness
+  // Check readiness - music is ready if audio is selected OR music is skipped
   const isReady = useMemo(() => {
-    return selectedImages.length >= 3 && selectedAudio !== null && scriptData !== null;
-  }, [selectedImages, selectedAudio, scriptData]);
+    const musicReady = selectedAudio !== null || musicSkipped;
+    return selectedImages.length >= 3 && musicReady && scriptData !== null;
+  }, [selectedImages, selectedAudio, musicSkipped, scriptData]);
 
   // Update SEO description
   const updateSEODescription = (description: string) => {
@@ -164,9 +167,13 @@ export function ComposeEffectStep({
         {/* Audio */}
         <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg text-center">
           <Music className="h-5 w-5 text-neutral-500 mx-auto mb-1" />
-          <p className="text-xs text-neutral-500">BPM</p>
+          <p className="text-xs text-neutral-500">
+            {musicSkipped ? (language === "ko" ? "음악" : "Music") : "BPM"}
+          </p>
           <p className="text-lg font-bold text-neutral-900">
-            {selectedAudio?.bpm || "-"}
+            {musicSkipped
+              ? (language === "ko" ? "없음" : "None")
+              : (selectedAudio?.bpm || "-")}
           </p>
         </div>
 
@@ -359,14 +366,14 @@ export function ComposeEffectStep({
                 </Badge>
               </div>
               {/* Audio Info */}
-              {selectedAudio && (
-                <div className="absolute top-2 left-2">
-                  <Badge variant="secondary" className="bg-black/50 text-white text-[9px] backdrop-blur-sm">
-                    <Music className="h-2.5 w-2.5 mr-1" />
-                    {selectedAudio.bpm} BPM
-                  </Badge>
-                </div>
-              )}
+              <div className="absolute top-2 left-2">
+                <Badge variant="secondary" className="bg-black/50 text-white text-[9px] backdrop-blur-sm">
+                  <Music className="h-2.5 w-2.5 mr-1" />
+                  {musicSkipped
+                    ? (language === "ko" ? "음악 없음" : "No Music")
+                    : (selectedAudio?.bpm ? `${selectedAudio.bpm} BPM` : "-")}
+                </Badge>
+              </div>
             </div>
             <p className="text-[10px] text-neutral-400 text-center mt-1">
               {language === "ko"
@@ -417,9 +424,9 @@ export function ComposeEffectStep({
                   • {language === "ko" ? "이미지가 부족합니다 (최소 3장)" : "Need more images (min 3)"}
                 </li>
               )}
-              {!selectedAudio && (
+              {!selectedAudio && !musicSkipped && (
                 <li>
-                  • {language === "ko" ? "음악을 선택하세요" : "Select music"}
+                  • {language === "ko" ? "음악을 선택하거나 건너뛰세요" : "Select music or skip"}
                 </li>
               )}
               {!scriptData && (

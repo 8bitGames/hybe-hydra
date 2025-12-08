@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { InfoButton } from "@/components/ui/info-button";
 import {
   Bookmark,
   BookmarkPlus,
@@ -171,27 +172,38 @@ export function StashedPromptsPanel({
   return (
     <div className={cn("border border-neutral-200 rounded-lg bg-white", className)}>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CollapsibleTrigger asChild>
-          <button className="w-full flex items-center justify-between p-3 hover:bg-neutral-50 transition-colors rounded-t-lg">
-            <div className="flex items-center gap-2">
-              <Bookmark className="h-4 w-4 text-neutral-500" />
-              <span className="text-sm font-medium text-neutral-700">
-                {isKorean ? "저장된 프롬프트" : "Saved Prompts"}
-              </span>
-              {stashedPrompts.length > 0 && (
-                <Badge variant="secondary" className="text-[10px] bg-neutral-100">
-                  {stashedPrompts.length}
-                </Badge>
-              )}
-            </div>
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 text-neutral-400 transition-transform",
-                isOpen && "rotate-180"
-              )}
+        <div className="flex items-center">
+          <CollapsibleTrigger asChild>
+            <button className="flex-1 flex items-center justify-between p-3 hover:bg-neutral-50 transition-colors rounded-t-lg">
+              <div className="flex items-center gap-2">
+                <Bookmark className="h-4 w-4 text-neutral-500" />
+                <span className="text-sm font-medium text-neutral-700">
+                  {isKorean ? "저장된 프롬프트" : "Saved Prompts"}
+                </span>
+                {stashedPrompts.length > 0 && (
+                  <Badge variant="secondary" className="text-[10px] bg-neutral-100">
+                    {stashedPrompts.length}
+                  </Badge>
+                )}
+              </div>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 text-neutral-400 transition-transform",
+                  isOpen && "rotate-180"
+                )}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <div className="pr-3">
+            <InfoButton
+              content={isKorean
+                ? "자주 사용하는 프롬프트를 저장해두면 다른 콘텐츠 제작 시 빠르게 불러와 재사용할 수 있습니다. 캠페인, 해시태그 등의 정보도 함께 저장됩니다."
+                : "Save frequently used prompts to quickly restore and reuse them for other content creation. Campaign, hashtags, and other metadata are saved together."
+              }
+              size="sm"
             />
-          </button>
-        </CollapsibleTrigger>
+          </div>
+        </div>
 
         <CollapsibleContent>
           <div className="border-t border-neutral-200">

@@ -19,8 +19,10 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status") as CampaignStatus | null;
     const artistId = searchParams.get("artist_id");
 
-    // Build where clause
-    const where: Record<string, unknown> = {};
+    // Build where clause - exclude soft deleted campaigns
+    const where: Record<string, unknown> = {
+      deletedAt: { equals: null },
+    };
 
     // RBAC: Non-admin users can only see campaigns for their labels
     const labelKey = user.role === "ADMIN" ? "admin" : user.labelIds.sort().join(",");
@@ -118,6 +120,7 @@ async function fetchCampaignsList(
       start_date: c.startDate?.toISOString() || null,
       end_date: c.endDate?.toISOString() || null,
       budget_code: c.budgetCode,
+      genre: c.genre,
       created_by: c.createdBy,
       created_at: c.createdAt.toISOString(),
       updated_at: c.updatedAt.toISOString(),
@@ -153,7 +156,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, artist_id, description, target_countries, start_date, end_date } = body;
+    const { name, artist_id, description, target_countries, start_date, end_date, genre } = body;
 
     if (!name || !artist_id) {
       return NextResponse.json(
@@ -184,6 +187,7 @@ export async function POST(request: NextRequest) {
         targetCountries: target_countries || [],
         startDate: start_date ? new Date(start_date) : null,
         endDate: end_date ? new Date(end_date) : null,
+        genre: genre || null,  // Music genre for content generation
         createdBy: user.id,
       },
       include: {
@@ -210,6 +214,7 @@ export async function POST(request: NextRequest) {
         start_date: campaign.startDate?.toISOString() || null,
         end_date: campaign.endDate?.toISOString() || null,
         budget_code: campaign.budgetCode,
+        genre: campaign.genre,
         created_by: campaign.createdBy,
         created_at: campaign.createdAt.toISOString(),
         updated_at: campaign.updatedAt.toISOString(),

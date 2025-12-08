@@ -19,6 +19,9 @@ import {
   Sparkles,
   Zap,
   ChevronRight,
+  SkipForward,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import {
   ScriptGenerationResponse,
@@ -35,8 +38,11 @@ interface ComposeMusicStepProps {
   matchingMusic: boolean;
   analyzingAudio: boolean;
   campaignId: string;
+  musicSkipped: boolean;
   onSelectAudio: (audio: AudioMatch) => void;
   onSetAudioStartTime: (time: number) => void;
+  onSkipMusic: () => void;
+  onUnskipMusic: () => void;
   onNext?: () => void;
 }
 
@@ -49,8 +55,11 @@ export function ComposeMusicStep({
   matchingMusic,
   analyzingAudio,
   campaignId,
+  musicSkipped,
   onSelectAudio,
   onSetAudioStartTime,
+  onSkipMusic,
+  onUnskipMusic,
   onNext,
 }: ComposeMusicStepProps) {
   const { language } = useI18n();
@@ -93,16 +102,31 @@ export function ComposeMusicStep({
           </p>
         </div>
 
-        {/* Next Step Button - Prominent position */}
-        {selectedAudio && onNext && (
-          <Button
-            onClick={onNext}
-            className="bg-neutral-900 text-white hover:bg-neutral-800"
-          >
-            {language === "ko" ? "효과 & 생성" : "Effects & Generate"}
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        )}
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2">
+          {/* Skip Music Button */}
+          {!musicSkipped && !selectedAudio && (
+            <Button
+              variant="outline"
+              onClick={onSkipMusic}
+              className="border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+            >
+              <SkipForward className="h-4 w-4 mr-1" />
+              {language === "ko" ? "건너뛰기" : "Skip"}
+            </Button>
+          )}
+
+          {/* Next Step Button - Prominent position */}
+          {(selectedAudio || musicSkipped) && onNext && (
+            <Button
+              onClick={onNext}
+              className="bg-neutral-900 text-white hover:bg-neutral-800"
+            >
+              {language === "ko" ? "효과 & 생성" : "Effects & Generate"}
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Script Info Summary */}
@@ -129,8 +153,34 @@ export function ComposeMusicStep({
         </div>
       )}
 
+      {/* Music Skipped State */}
+      {musicSkipped && (
+        <div className="flex flex-col items-center justify-center h-48 bg-neutral-50 rounded-lg border border-neutral-200">
+          <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mb-4">
+            <VolumeX className="h-8 w-8 text-neutral-400" />
+          </div>
+          <p className="text-neutral-600 font-medium mb-1">
+            {language === "ko" ? "음악 없이 진행" : "Proceeding without music"}
+          </p>
+          <p className="text-sm text-neutral-400 mb-4">
+            {language === "ko"
+              ? "영상이 음원 없이 생성됩니다"
+              : "Video will be generated without background music"}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onUnskipMusic}
+            className="text-xs border-neutral-300"
+          >
+            <Volume2 className="h-3 w-3 mr-1" />
+            {language === "ko" ? "음악 다시 선택" : "Select Music"}
+          </Button>
+        </div>
+      )}
+
       {/* Loading State */}
-      {matchingMusic && (
+      {!musicSkipped && matchingMusic && (
         <div className="flex flex-col items-center justify-center h-48 text-neutral-400">
           <Music className="h-12 w-12 mb-3 animate-pulse" />
           <p>{language === "ko" ? "음악 매칭 중..." : "Matching music..."}</p>
@@ -138,7 +188,7 @@ export function ComposeMusicStep({
       )}
 
       {/* Music Matches */}
-      {!matchingMusic && audioMatches.length > 0 && (
+      {!musicSkipped && !matchingMusic && audioMatches.length > 0 && (
         <div className="space-y-3">
           <Label className="text-sm font-medium text-neutral-700">
             {language === "ko" ? "추천 음악" : "Recommended Music"} ({audioMatches.length})
@@ -213,7 +263,7 @@ export function ComposeMusicStep({
       )}
 
       {/* No Matches */}
-      {!matchingMusic && audioMatches.length === 0 && (
+      {!musicSkipped && !matchingMusic && audioMatches.length === 0 && (
         <div className="flex flex-col items-center justify-center h-48 text-neutral-400 bg-neutral-50 rounded-lg">
           <Music className="h-12 w-12 mb-3 text-neutral-300" />
           <p className="text-sm mb-3">
@@ -322,7 +372,7 @@ export function ComposeMusicStep({
       )}
 
       {/* Campaign Audio Assets (for manual selection) */}
-      {campaignAudioAssets.length > 0 && audioMatches.length === 0 && (
+      {!musicSkipped && campaignAudioAssets.length > 0 && audioMatches.length === 0 && (
         <div className="space-y-3">
           <Label className="text-sm font-medium text-neutral-700">
             {language === "ko" ? "캠페인 오디오" : "Campaign Audio"} ({campaignAudioAssets.length})

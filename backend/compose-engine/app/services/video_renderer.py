@@ -109,14 +109,16 @@ class VideoRenderer:
             image_paths, audio_path = await self._download_all_assets(
                 request.images, request.audio, job_dir
             )
-            logger.info(f"[{job_id}] Downloaded {len(image_paths)} images + audio in parallel")
+            audio_status = "with audio" if audio_path else "without audio"
+            logger.info(f"[{job_id}] Downloaded {len(image_paths)} images ({audio_status})")
 
             # ============================================================
             # STEP 2: AUDIO ANALYSIS (with caching for variations)
             # ============================================================
-            await self._update_progress(progress_callback, job_id, 15, "Analyzing audio")
+            await self._update_progress(progress_callback, job_id, 15, "Analyzing audio" if audio_path else "Calculating timings")
 
-            audio_analysis = await self._get_audio_analysis(audio_path, request.audio.url)
+            audio_url = request.audio.url if request.audio else None
+            audio_analysis = await self._get_audio_analysis(audio_path, audio_url)
             beat_times = audio_analysis.beat_times
 
             # ============================================================
@@ -125,8 +127,9 @@ class VideoRenderer:
             await self._update_progress(progress_callback, job_id, 20, "Calculating timings")
 
             preset = get_preset(request.settings.vibe.value)
+            has_audio = audio_path is not None
             target_duration = self._calculate_target_duration(
-                request, preset, len(image_paths), audio_analysis.duration, job_id
+                request, preset, len(image_paths), audio_analysis.duration, job_id, has_audio
             )
 
             cut_times = self.beat_sync.calculate_cuts(
@@ -200,13 +203,16 @@ class VideoRenderer:
                 )
 
             # ============================================================
-            # STEP 9: ADD AUDIO WITH TIKTOK HOOK
+            # STEP 9: ADD AUDIO WITH TIKTOK HOOK (if audio provided)
             # ============================================================
-            await self._update_progress(progress_callback, job_id, 75, "Adding audio")
-
-            video, audio_clips_to_close = self._add_audio_with_effects(
-                video, audio_path, request.audio, video.duration
-            )
+            audio_clips_to_close = []
+            if audio_path and request.audio:
+                await self._update_progress(progress_callback, job_id, 75, "Adding audio")
+                video, audio_clips_to_close = self._add_audio_with_effects(
+                    video, audio_path, request.audio, video.duration
+                )
+            else:
+                logger.info(f"[{job_id}] Skipping audio - generating silent video")
 
             # ============================================================
             # STEP 10: COLOR GRADING
@@ -281,16 +287,23 @@ class VideoRenderer:
     async def _download_all_assets(
         self,
         images: List[ImageData],
-        audio: AudioData,
+        audio: Optional[AudioData],
         job_dir: str
-    ) -> Tuple[List[str], str]:
-        """Download images and audio in parallel, handling failures gracefully."""
+    ) -> Tuple[List[str], Optional[str]]:
+        """Download images and audio in parallel, handling failures gracefully.
+
+        Audio is optional - if not provided, returns None for audio_path.
+        """
         sorted_images = sorted(images, key=lambda x: x.order)
 
-        # Download audio first (critical - must succeed)
-        audio_path = os.path.join(job_dir, "audio.mp3")
-        await self.s3.download_file(audio.url, audio_path)
-        logger.info(f"Audio downloaded: {audio_path}")
+        # Download audio if provided (optional)
+        audio_path = None
+        if audio and audio.url:
+            audio_path = os.path.join(job_dir, "audio.mp3")
+            await self.s3.download_file(audio.url, audio_path)
+            logger.info(f"Audio downloaded: {audio_path}")
+        else:
+            logger.info("No audio provided - generating video without background music")
 
         # Download images with error handling (some may fail due to hotlink protection)
         image_paths = []
@@ -310,8 +323,15 @@ class VideoRenderer:
         logger.info(f"Downloaded {len(image_paths)}/{len(sorted_images)} images successfully")
         return image_paths, audio_path
 
-    async def _get_audio_analysis(self, audio_path: str, audio_url: str) -> AudioAnalysis:
-        """Get audio analysis with caching (for compose variations using same audio)."""
+    async def _get_audio_analysis(self, audio_path: Optional[str], audio_url: Optional[str]) -> AudioAnalysis:
+        """Get audio analysis with caching (for compose variations using same audio).
+
+        If no audio is provided, returns default analysis with estimated beat times.
+        """
+        # If no audio, return default analysis
+        if not audio_path or not audio_url:
+            return self._create_default_audio_analysis()
+
         # Create cache key from audio URL
         cache_key = hashlib.md5(audio_url.encode()).hexdigest()
 
@@ -336,6 +356,29 @@ class VideoRenderer:
                 del _audio_cache[oldest]
 
         return analysis
+
+    def _create_default_audio_analysis(self) -> AudioAnalysis:
+        """Create default audio analysis for videos without background music.
+
+        Uses a standard 120 BPM tempo and generates evenly spaced beat times
+        for consistent timing when no audio is provided.
+        """
+        DEFAULT_BPM = 120  # Standard tempo for TikTok/social media
+        DEFAULT_DURATION = 60  # Max duration to generate beat times for
+
+        # Generate beat times at 120 BPM (every 0.5 seconds)
+        beat_interval = 60.0 / DEFAULT_BPM
+        beat_times = [i * beat_interval for i in range(int(DEFAULT_DURATION / beat_interval))]
+
+        logger.info(f"Created default audio analysis: BPM={DEFAULT_BPM}, beats={len(beat_times)}")
+
+        return AudioAnalysis(
+            bpm=DEFAULT_BPM,
+            beat_times=beat_times,
+            duration=DEFAULT_DURATION,
+            energy_profile=[0.5] * 10,  # Neutral energy
+            segments=[]
+        )
 
     async def _process_images_parallel(
         self,
@@ -444,26 +487,35 @@ class VideoRenderer:
         request: RenderRequest,
         preset,
         num_images: int,
-        audio_duration: float,
-        job_id: str
+        audio_duration: Optional[float],
+        job_id: str,
+        has_audio: bool = True
     ) -> float:
-        """Calculate optimal target duration for TikTok."""
+        """Calculate optimal target duration for TikTok.
+
+        When no audio is provided, uses target_duration from settings or
+        calculates based on number of images.
+        """
         min_duration, max_duration = preset.duration_range
         min_duration_for_images = num_images * MIN_IMAGE_DURATION
 
+        # If no audio, don't constrain by audio duration
+        effective_audio_duration = audio_duration if has_audio else max_duration
+
         if request.settings.target_duration and request.settings.target_duration > 0:
             target = max(min_duration_for_images, request.settings.target_duration)
-            target = min(target, audio_duration, max_duration)
+            target = min(target, effective_audio_duration, max_duration)
         else:
             IDEAL_PER_IMAGE = 3.0
             ideal = num_images * IDEAL_PER_IMAGE
             target = max(min_duration, min_duration_for_images, ideal)
-            target = min(target, max_duration, audio_duration)
+            target = min(target, max_duration, effective_audio_duration)
 
         if target < min_duration_for_images:
-            target = min(min_duration_for_images, audio_duration)
+            target = min(min_duration_for_images, effective_audio_duration)
 
-        logger.info(f"[{job_id}] Target duration: {target:.1f}s ({num_images} images)")
+        audio_status = "with audio" if has_audio else "no audio"
+        logger.info(f"[{job_id}] Target duration: {target:.1f}s ({num_images} images, {audio_status})")
         return target
 
     def _add_audio_with_effects(
@@ -810,7 +862,7 @@ class VideoRenderer:
             vibe_prompts = {
                 "Exciting": "energetic fast-paced dynamic video",
                 "Emotional": "emotional heartfelt touching video",
-                "Pop": "trendy K-POP style video",
+                "Pop": "trendy popular style video",
                 "Minimal": "clean minimal elegant video"
             }
             prompt = vibe_prompts.get(settings.vibe.value, "modern stylish video")
@@ -905,9 +957,16 @@ class VideoRenderer:
         if any(w in prompt_lower for w in ["vlog", "브이로그", "일상"]):
             genres.append("vlog")
 
-        # Default to common genres that match many effects
+        # Infer genre from detected moods when no explicit genre found
         if not genres:
-            genres = ["tiktok", "kpop"]
+            if "energetic" in moods or "modern" in moods:
+                genres = ["pop"]
+            elif "romantic" in moods or "calm" in moods:
+                genres = ["emotional"]
+            elif "dramatic" in moods:
+                genres = ["cinematic"]
+            else:
+                genres = ["pop"]  # Neutral fallback when no context available
 
         # Determine intensity from BPM
         intensity = "medium"

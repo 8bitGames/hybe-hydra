@@ -129,14 +129,16 @@ model Campaign {
   name            String
   description     String?
   artistId        String         @map("artist_id")
-  status          CampaignStatus @default(DRAFT)
+  status          CampaignStatus @default(ACTIVE)
   targetCountries String[]       @map("target_countries")
   startDate       DateTime?      @map("start_date")
   endDate         DateTime?      @map("end_date")
   budgetCode      String?        @map("budget_code")
+  genre           String?        @map("genre")           // Music genre for content generation (e.g., pop, hiphop, ballad, country)
   createdBy       String         @map("created_by")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
+  deletedAt       DateTime?      @map("deleted_at")  // Soft delete timestamp
 
   // Relations
   artist           Artist            @relation(fields: [artistId], references: [id])
@@ -239,6 +241,7 @@ model VideoGeneration {
   createdBy String   @map("created_by")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at") // Soft delete - null means not deleted
 
   // Relations
   campaign              Campaign?               @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -479,6 +482,47 @@ model KeywordAnalysis {
   @@map("keyword_analyses")
 }
 
+// Keyword Analysis History - daily snapshots for trend tracking
+model KeywordAnalysisHistory {
+  id       String   @id @default(uuid())
+  keyword  String
+  platform String   @default("TIKTOK")
+  date     DateTime @db.Date // Date-only for daily snapshots
+
+  // Aggregate Stats (core metrics for historical comparison)
+  totalVideos          Int    @map("total_videos")
+  totalViews           BigInt @map("total_views")
+  totalLikes           BigInt @map("total_likes")
+  totalComments        BigInt @map("total_comments")
+  totalShares          BigInt @map("total_shares")
+  avgViews             BigInt @map("avg_views")
+  avgLikes             BigInt @map("avg_likes")
+  avgComments          BigInt @map("avg_comments")
+  avgShares            BigInt @map("avg_shares")
+  avgEngagementRate    Float  @map("avg_engagement_rate")
+  medianViews          BigInt @map("median_views")
+  medianEngagementRate Float  @map("median_engagement_rate")
+
+  // Performance tier counts
+  viralVideoCount         Int @map("viral_video_count")
+  highPerformingCount     Int @map("high_performing_count")
+  averageVideoCount       Int @map("average_video_count")
+
+  // Hashtag snapshot (top hashtags of the day)
+  topHashtags Json @map("top_hashtags")
+
+  // Creator stats
+  uniqueCreators Int @map("unique_creators")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([platform, keyword, date])
+  @@index([platform])
+  @@index([keyword])
+  @@index([date])
+  @@map("keyword_analysis_history")
+}
+
 // Social Account model - stores connected social media accounts
 model SocialAccount {
   id             String          @id @default(uuid())
@@ -686,6 +730,61 @@ model StashedPromptAnalysis {
   @@index([isFavorite])
   @@index([createdAt])
   @@map("stashed_prompt_analyses")
+}
+
+// =====================================================
+// TIKTOK VIDEO ANALYSIS CACHE
+// =====================================================
+
+// TikTok Video Analysis Cache - caches video analysis results to avoid repeated API calls
+model TikTokVideoAnalysisCache {
+  id           String   @id @default(uuid())
+  videoUrl     String   @unique @map("video_url") // Original TikTok video URL
+  videoUrlHash String   @map("video_url_hash") // MD5 hash for fast lookup
+  videoId      String?  @map("video_id") // TikTok video ID extracted from URL
+
+  // Cached thumbnail in S3
+  thumbnailS3Url String? @map("thumbnail_s3_url")
+  thumbnailS3Key String? @map("thumbnail_s3_key")
+
+  // Video metadata
+  authorUsername  String? @map("author_username")
+  authorNickname  String? @map("author_nickname")
+  description     String?
+  hashtags        String[]
+  musicTitle      String? @map("music_title")
+  musicAuthor     String? @map("music_author")
+  duration        Int?
+  playCount       BigInt? @map("play_count")
+  likeCount       BigInt? @map("like_count")
+  commentCount    BigInt? @map("comment_count")
+  shareCount      BigInt? @map("share_count")
+
+  // Compose video detection
+  isPhotoPost Boolean  @default(false) @map("is_photo_post")
+  imageUrls   String[] @map("image_urls")
+  imageCount  Int      @default(0) @map("image_count")
+
+  // Full analysis results (stored as JSON)
+  styleAnalysis   Json? @map("style_analysis")   // Visual style, color palette, lighting, etc.
+  contentAnalysis Json? @map("content_analysis") // Main subject, actions, setting, etc.
+  promptElements  Json? @map("prompt_elements")  // Style keywords, mood keywords, etc.
+  suggestedPrompt String? @map("suggested_prompt")
+
+  // Detailed concept for recreation
+  conceptDetails Json? @map("concept_details")
+
+  // Cache management
+  hitCount   Int      @default(0) @map("hit_count")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  expiresAt  DateTime @map("expires_at") // TTL enforcement (7 days default)
+
+  @@index([videoUrlHash])
+  @@index([videoId])
+  @@index([lastUsedAt])
+  @@index([expiresAt])
+  @@map("tiktok_video_analysis_cache")
 }
 
 // =====================================================

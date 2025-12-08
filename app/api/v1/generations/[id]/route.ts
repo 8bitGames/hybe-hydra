@@ -42,6 +42,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
     }
 
+    // Check if soft-deleted
+    if (generation.deletedAt) {
+      return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
+    }
+
     // RBAC check - Quick Create generations (no campaign) are accessible by their creator
     if (user.role !== "ADMIN") {
       if (generation.campaign) {
@@ -290,7 +295,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    await prisma.videoGeneration.delete({ where: { id } });
+    // Soft delete - set deletedAt timestamp instead of actual deletion
+    await prisma.videoGeneration.update({
+      where: { id },
+      data: { deletedAt: new Date() }
+    });
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {

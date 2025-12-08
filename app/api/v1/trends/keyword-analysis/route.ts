@@ -574,8 +574,29 @@ function analyzeVideos(videos: any[], keyword: string): KeywordAnalysis {
   };
 }
 
+// Helper to re-assign ranks to videos based on their position
+function assignRanks<T extends { rank?: number }>(videos: T[] | null | undefined, startRank: number = 1): T[] {
+  if (!videos || !Array.isArray(videos)) return [];
+  return videos.map((v, i) => ({ ...v, rank: startRank + i }));
+}
+
 // Helper to convert DB record to API response format
 function dbToApiFormat(record: any): KeywordAnalysis {
+  // Re-assign ranks when loading from cache (ranks may be lost during JSON serialization)
+  const viralVideos = assignRanks(record.viralVideos as AnalyzedVideo[] | null, 1);
+  const viralCount = viralVideos.length;
+  const highPerformingVideos = assignRanks(record.highPerformingVideos as AnalyzedVideo[] | null, viralCount + 1);
+  const highCount = highPerformingVideos.length;
+  const averageVideos = assignRanks(record.averageVideos as AnalyzedVideo[] | null, viralCount + highCount + 1);
+
+  // Also re-assign ranks to allVideos
+  const allVideos = assignRanks(record.allVideos as AnalyzedVideo[] | null, 1);
+
+  console.log(`[KEYWORD-ANALYSIS] dbToApiFormat - viral: ${viralCount}, high: ${highCount}, avg: ${averageVideos.length}, all: ${allVideos.length}`);
+  if (viralVideos.length > 0) {
+    console.log(`[KEYWORD-ANALYSIS] First viral video rank: ${viralVideos[0].rank}`);
+  }
+
   return {
     keyword: record.keyword,
     totalVideos: record.totalVideos,
@@ -594,9 +615,9 @@ function dbToApiFormat(record: any): KeywordAnalysis {
       medianEngagementRate: record.medianEngagementRate,
     },
     performanceTiers: {
-      viral: record.viralVideos as AnalyzedVideo[],
-      highPerforming: record.highPerformingVideos as AnalyzedVideo[],
-      average: record.averageVideos as AnalyzedVideo[],
+      viral: viralVideos,
+      highPerforming: highPerformingVideos,
+      average: averageVideos,
       belowAverage: [],
     },
     hashtagInsights: {
@@ -620,9 +641,74 @@ function dbToApiFormat(record: any): KeywordAnalysis {
       contentTips: record.contentTips,
       engagementBenchmarks: record.engagementBenchmarks as any,
     },
-    videos: record.allVideos as AnalyzedVideo[],
+    videos: allVideos,
     aiInsights: record.aiInsights as KeywordAnalysis["aiInsights"],
   };
+}
+
+// Helper to save daily snapshot to history table
+async function saveAnalysisHistoryToDb(analysis: KeywordAnalysis): Promise<void> {
+  try {
+    // Get today's date at midnight (date-only for daily snapshots)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    await prisma.keywordAnalysisHistory.upsert({
+      where: {
+        platform_keyword_date: {
+          platform: "TIKTOK",
+          keyword: analysis.keyword,
+          date: today,
+        },
+      },
+      update: {
+        totalVideos: analysis.totalVideos,
+        totalViews: BigInt(analysis.aggregateStats.totalViews),
+        totalLikes: BigInt(analysis.aggregateStats.totalLikes),
+        totalComments: BigInt(analysis.aggregateStats.totalComments),
+        totalShares: BigInt(analysis.aggregateStats.totalShares),
+        avgViews: BigInt(analysis.aggregateStats.avgViews),
+        avgLikes: BigInt(analysis.aggregateStats.avgLikes),
+        avgComments: BigInt(analysis.aggregateStats.avgComments),
+        avgShares: BigInt(analysis.aggregateStats.avgShares),
+        avgEngagementRate: analysis.aggregateStats.avgEngagementRate,
+        medianViews: BigInt(analysis.aggregateStats.medianViews),
+        medianEngagementRate: analysis.aggregateStats.medianEngagementRate,
+        viralVideoCount: analysis.performanceTiers.viral.length,
+        highPerformingCount: analysis.performanceTiers.highPerforming.length,
+        averageVideoCount: analysis.performanceTiers.average.length,
+        topHashtags: analysis.hashtagInsights.topHashtags.slice(0, 10) as any,
+        uniqueCreators: analysis.creatorInsights.uniqueCreators,
+      },
+      create: {
+        platform: "TIKTOK",
+        keyword: analysis.keyword,
+        date: today,
+        totalVideos: analysis.totalVideos,
+        totalViews: BigInt(analysis.aggregateStats.totalViews),
+        totalLikes: BigInt(analysis.aggregateStats.totalLikes),
+        totalComments: BigInt(analysis.aggregateStats.totalComments),
+        totalShares: BigInt(analysis.aggregateStats.totalShares),
+        avgViews: BigInt(analysis.aggregateStats.avgViews),
+        avgLikes: BigInt(analysis.aggregateStats.avgLikes),
+        avgComments: BigInt(analysis.aggregateStats.avgComments),
+        avgShares: BigInt(analysis.aggregateStats.avgShares),
+        avgEngagementRate: analysis.aggregateStats.avgEngagementRate,
+        medianViews: BigInt(analysis.aggregateStats.medianViews),
+        medianEngagementRate: analysis.aggregateStats.medianEngagementRate,
+        viralVideoCount: analysis.performanceTiers.viral.length,
+        highPerformingCount: analysis.performanceTiers.highPerforming.length,
+        averageVideoCount: analysis.performanceTiers.average.length,
+        topHashtags: analysis.hashtagInsights.topHashtags.slice(0, 10) as any,
+        uniqueCreators: analysis.creatorInsights.uniqueCreators,
+      },
+    });
+
+    console.log(`[KEYWORD-ANALYSIS] Saved history snapshot for: ${analysis.keyword} on ${today.toISOString().split('T')[0]}`);
+  } catch (error) {
+    // Don't fail the main save if history fails
+    console.error(`[KEYWORD-ANALYSIS] Failed to save history for ${analysis.keyword}:`, error);
+  }
 }
 
 // Helper to save analysis to database
@@ -706,6 +792,9 @@ async function saveAnalysisToDb(analysis: KeywordAnalysis): Promise<void> {
       expiresAt,
     },
   });
+
+  // Also save daily snapshot to history table
+  await saveAnalysisHistoryToDb(analysis);
 }
 
 // GET /api/v1/trends/keyword-analysis?keywords=countrymusic,kpop,dance&refresh=true
@@ -720,7 +809,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const keywordsParam = searchParams.get("keywords");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "30"), 50);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
     const forceRefresh = searchParams.get("refresh") === "true";
 
     if (!keywordsParam) {

@@ -6,9 +6,98 @@ import { useState, useEffect } from "react";
 // TYPES
 // ============================================
 
-export type WorkflowStage = "discover" | "analyze" | "create" | "processing" | "publish";
+export type WorkflowStage = "start" | "analyze" | "create" | "processing" | "publish";
 
-// Discover Stage Types
+// Start Stage Types - Entry point with three paths
+export interface StartEntryPath {
+  type: "trends" | "video" | "idea";
+}
+
+// From Trends: Pre-analyzed keyword data
+export interface StartFromTrends {
+  type: "trends";
+  keywords: string[];
+  analysis: {
+    totalVideos: number;
+    avgViews: number;
+    avgEngagement: number;
+    topHashtags: string[];
+    viralVideos: TrendVideo[];
+  };
+  selectedHashtags?: string[];
+}
+
+// From Video: Single video selection for deep analysis
+export interface StartFromVideo {
+  type: "video";
+  videoId: string;
+  videoUrl: string;
+  thumbnailUrl?: string | null;
+  basicStats: {
+    playCount: number;
+    likeCount: number;
+    commentCount: number;
+    shareCount: number;
+    engagementRate: number;
+  };
+  author: {
+    id: string;
+    name: string;
+    avatar?: string;
+  };
+  description: string;
+  hashtags: string[];
+  // AI analysis will be performed on Start page
+  aiAnalysis?: {
+    hookAnalysis?: string;
+    styleAnalysis?: string;
+    structureAnalysis?: string;
+    suggestedApproach?: string;
+    // Compose video detection
+    isComposeVideo?: boolean;
+    imageCount?: number;
+    // Detailed concept for recreation
+    conceptDetails?: {
+      visualStyle?: string;
+      colorPalette?: string[];
+      lighting?: string;
+      cameraMovement?: string[];
+      transitions?: string[];
+      effects?: string[];
+      mood?: string;
+      pace?: string;
+      mainSubject?: string;
+      actions?: string[];
+      setting?: string;
+      props?: string[];
+      clothingStyle?: string;
+    };
+  };
+}
+
+// From Idea: Direct user input
+export interface StartFromIdea {
+  type: "idea";
+  idea: string;
+  keywords?: string[];
+}
+
+export type StartSource = StartFromTrends | StartFromVideo | StartFromIdea | null;
+
+export interface StartData {
+  source: StartSource;
+  // Common fields populated after entry
+  selectedHashtags: string[];
+  savedInspiration: TrendVideo[];
+  performanceMetrics: {
+    avgViews: number;
+    avgEngagement: number;
+    viralBenchmark: number;
+  } | null;
+  aiInsights: AiInsightsData | null;
+}
+
+// Trend Video Type (shared)
 export interface TrendVideo {
   id: string;
   videoUrl: string;
@@ -46,6 +135,7 @@ export interface AiInsightsData {
   bestPostingTimes?: string[];
 }
 
+// Legacy DiscoverData - kept for backward compatibility during migration
 export interface DiscoverData {
   keywords: string[];
   selectedHashtags: string[];
@@ -83,6 +173,8 @@ export interface ContentIdea {
 export interface AnalyzeData {
   campaignId: string | null;
   campaignName: string | null;
+  campaignDescription: string | null;  // Campaign concept/goal - central context for all prompts
+  campaignGenre: string | null;  // Music genre for content generation (e.g., pop, hiphop, ballad)
   userIdea: string;
   targetAudience: string[];
   contentGoals: string[];
@@ -251,7 +343,8 @@ interface WorkflowState {
   completedStages: WorkflowStage[];
 
   // Stage data
-  discover: DiscoverData;
+  start: StartData;
+  discover: DiscoverData; // Legacy - kept for backward compatibility
   analyze: AnalyzeData;
   create: CreateData;
   processing: ProcessingData;
@@ -265,7 +358,21 @@ interface WorkflowState {
   markStageCompleted: (stage: WorkflowStage) => void;
   resetWorkflow: () => void;
 
-  // Actions - Discover
+  // Actions - Start (new workflow entry point)
+  setStartSource: (source: StartSource) => void;
+  setStartFromTrends: (data: Omit<StartFromTrends, "type">) => void;
+  setStartFromVideo: (data: Omit<StartFromVideo, "type">) => void;
+  setStartFromIdea: (data: Omit<StartFromIdea, "type">) => void;
+  updateVideoAiAnalysis: (analysis: StartFromVideo["aiAnalysis"]) => void;
+  setStartHashtags: (hashtags: string[]) => void;
+  toggleStartHashtag: (hashtag: string) => void;
+  addStartInspiration: (video: TrendVideo) => void;
+  removeStartInspiration: (videoId: string) => void;
+  setStartPerformanceMetrics: (metrics: StartData["performanceMetrics"]) => void;
+  setStartAiInsights: (insights: AiInsightsData | null) => void;
+  clearStartData: () => void;
+
+  // Actions - Discover (legacy - kept for backward compatibility)
   setDiscoverKeywords: (keywords: string[]) => void;
   addDiscoverKeyword: (keyword: string) => void;
   removeDiscoverKeyword: (keyword: string) => void;
@@ -280,7 +387,7 @@ interface WorkflowState {
   clearDiscoverAnalysis: () => void;
 
   // Actions - Analyze
-  setAnalyzeCampaign: (id: string | null, name: string | null) => void;
+  setAnalyzeCampaign: (id: string | null, name: string | null, description?: string | null, genre?: string | null) => void;
   setAnalyzeUserIdea: (idea: string) => void;
   setAnalyzeTargetAudience: (audience: string[]) => void;
   setAnalyzeContentGoals: (goals: string[]) => void;
@@ -343,6 +450,14 @@ interface WorkflowState {
 // INITIAL STATE
 // ============================================
 
+const initialStartData: StartData = {
+  source: null,
+  selectedHashtags: [],
+  savedInspiration: [],
+  performanceMetrics: null,
+  aiInsights: null,
+};
+
 const initialDiscoverData: DiscoverData = {
   keywords: [],
   selectedHashtags: [],
@@ -355,6 +470,8 @@ const initialDiscoverData: DiscoverData = {
 const initialAnalyzeData: AnalyzeData = {
   campaignId: null,
   campaignName: null,
+  campaignDescription: null,
+  campaignGenre: null,
   userIdea: "",
   targetAudience: [],
   contentGoals: [],
@@ -402,8 +519,9 @@ export const useWorkflowStore = create<WorkflowState>()(
     persist(
       (set, get) => ({
         // Initial state
-        currentStage: "discover",
+        currentStage: "start",
         completedStages: [],
+        start: initialStartData,
         discover: initialDiscoverData,
         analyze: initialAnalyzeData,
         create: initialCreateData,
@@ -423,8 +541,9 @@ export const useWorkflowStore = create<WorkflowState>()(
 
         resetWorkflow: () =>
           set({
-            currentStage: "discover",
+            currentStage: "start",
             completedStages: [],
+            start: initialStartData,
             discover: initialDiscoverData,
             analyze: initialAnalyzeData,
             create: initialCreateData,
@@ -432,7 +551,112 @@ export const useWorkflowStore = create<WorkflowState>()(
             publish: initialPublishData,
           }),
 
-        // Discover Actions
+        // Start Actions (new workflow entry point)
+        setStartSource: (source) =>
+          set((state) => ({
+            start: { ...state.start, source },
+          })),
+
+        setStartFromTrends: (data) =>
+          set((state) => ({
+            start: {
+              ...state.start,
+              source: { type: "trends" as const, ...data },
+              selectedHashtags: data.selectedHashtags || [],
+              performanceMetrics: {
+                avgViews: data.analysis.avgViews,
+                avgEngagement: data.analysis.avgEngagement,
+                viralBenchmark: data.analysis.avgViews * 2,
+              },
+              savedInspiration: data.analysis.viralVideos.slice(0, 5),
+            },
+          })),
+
+        setStartFromVideo: (data) =>
+          set((state) => ({
+            start: {
+              ...state.start,
+              source: { type: "video" as const, ...data },
+              selectedHashtags: data.hashtags || [],
+              performanceMetrics: {
+                avgViews: data.basicStats.playCount,
+                avgEngagement: data.basicStats.engagementRate,
+                viralBenchmark: data.basicStats.playCount,
+              },
+            },
+          })),
+
+        setStartFromIdea: (data) =>
+          set((state) => ({
+            start: {
+              ...state.start,
+              source: { type: "idea" as const, ...data },
+            },
+          })),
+
+        updateVideoAiAnalysis: (analysis) =>
+          set((state) => {
+            if (state.start.source?.type !== "video") return state;
+            return {
+              start: {
+                ...state.start,
+                source: {
+                  ...state.start.source,
+                  aiAnalysis: analysis,
+                },
+              },
+            };
+          }),
+
+        setStartHashtags: (hashtags) =>
+          set((state) => ({
+            start: { ...state.start, selectedHashtags: hashtags },
+          })),
+
+        toggleStartHashtag: (hashtag) =>
+          set((state) => ({
+            start: {
+              ...state.start,
+              selectedHashtags: state.start.selectedHashtags.includes(hashtag)
+                ? state.start.selectedHashtags.filter((h) => h !== hashtag)
+                : [...state.start.selectedHashtags, hashtag],
+            },
+          })),
+
+        addStartInspiration: (video) =>
+          set((state) => ({
+            start: {
+              ...state.start,
+              savedInspiration: state.start.savedInspiration.some((v) => v.id === video.id)
+                ? state.start.savedInspiration
+                : [...state.start.savedInspiration, video],
+            },
+          })),
+
+        removeStartInspiration: (videoId) =>
+          set((state) => ({
+            start: {
+              ...state.start,
+              savedInspiration: state.start.savedInspiration.filter((v) => v.id !== videoId),
+            },
+          })),
+
+        setStartPerformanceMetrics: (metrics) =>
+          set((state) => ({
+            start: { ...state.start, performanceMetrics: metrics },
+          })),
+
+        setStartAiInsights: (insights) =>
+          set((state) => ({
+            start: { ...state.start, aiInsights: insights },
+          })),
+
+        clearStartData: () =>
+          set((state) => ({
+            start: initialStartData,
+          })),
+
+        // Discover Actions (legacy)
         setDiscoverKeywords: (keywords) =>
           set((state) => ({
             discover: { ...state.discover, keywords },
@@ -528,9 +752,9 @@ export const useWorkflowStore = create<WorkflowState>()(
           })),
 
         // Analyze Actions
-        setAnalyzeCampaign: (id, name) =>
+        setAnalyzeCampaign: (id, name, description, genre) =>
           set((state) => ({
-            analyze: { ...state.analyze, campaignId: id, campaignName: name },
+            analyze: { ...state.analyze, campaignId: id, campaignName: name, campaignDescription: description ?? null, campaignGenre: genre ?? null },
           })),
 
         setAnalyzeUserIdea: (idea) =>
@@ -667,9 +891,21 @@ export const useWorkflowStore = create<WorkflowState>()(
 
         // Processing Actions
         setProcessingVideos: (videos) =>
-          set((state) => ({
-            processing: { ...state.processing, videos },
-          })),
+          set((state) => {
+            // Get valid video IDs from the new videos array
+            const validIds = new Set(videos.map((v) => v.id));
+            // Filter out stale IDs from selectedVideos
+            const cleanedSelectedVideos = state.processing.selectedVideos.filter(
+              (id) => validIds.has(id)
+            );
+            return {
+              processing: {
+                ...state.processing,
+                videos,
+                selectedVideos: cleanedSelectedVideos,
+              },
+            };
+          }),
 
         addProcessingVideo: (video) =>
           set((state) => ({
@@ -799,15 +1035,31 @@ export const useWorkflowStore = create<WorkflowState>()(
         // Bridge Actions - Transfer data between stages
         transferToAnalyze: () => {
           const state = get();
+          // Transfer from new Start stage
+          const startSource = state.start.source;
+          let userIdea = "";
+          let hashtags = state.start.selectedHashtags;
+
+          if (startSource?.type === "idea") {
+            userIdea = startSource.idea;
+          } else if (startSource?.type === "video") {
+            userIdea = startSource.description || "";
+            hashtags = startSource.hashtags || hashtags;
+          } else if (startSource?.type === "trends") {
+            hashtags = startSource.selectedHashtags || hashtags;
+          }
+
           set({
             currentStage: "analyze",
-            completedStages: [...state.completedStages, "discover" as WorkflowStage].filter(
+            completedStages: [...state.completedStages, "start" as WorkflowStage].filter(
               (v, i, a) => a.indexOf(v) === i
             ) as WorkflowStage[],
             analyze: {
               ...state.analyze,
-              hashtags: state.discover.selectedHashtags,
-              // Pre-fill from discover insights
+              userIdea: userIdea || state.analyze.userIdea,
+              hashtags: hashtags.length > 0 ? hashtags : state.analyze.hashtags,
+              // Transfer performance metrics to target audience hints
+              targetAudience: state.start.aiInsights?.targetAudience || state.analyze.targetAudience,
             },
           });
         },
@@ -952,7 +1204,8 @@ export const useWorkflowStore = create<WorkflowState>()(
         partialize: (state) => ({
           currentStage: state.currentStage,
           completedStages: state.completedStages,
-          discover: state.discover,
+          start: state.start,
+          discover: state.discover, // Legacy - kept for backward compatibility
           analyze: state.analyze,
           processing: state.processing, // Persist processing so approved videos remain available in publish
           publish: state.publish, // Persist publish state (caption, hashtags, etc.)
@@ -1002,7 +1255,18 @@ export const selectIsStageCompleted = (stage: WorkflowStage) => (state: Workflow
   state.completedStages.includes(stage);
 
 export const selectCanProceedToAnalyze = (state: WorkflowState) =>
-  state.discover.keywords.length > 0 || state.discover.savedInspiration.length > 0;
+  state.start.source !== null || // Has selected an entry path
+  state.discover.keywords.length > 0 || // Legacy support
+  state.discover.savedInspiration.length > 0; // Legacy support
+
+export const selectStartSummary = (state: WorkflowState) => ({
+  hasSource: state.start.source !== null,
+  sourceType: state.start.source?.type || null,
+  hashtagCount: state.start.selectedHashtags.length,
+  inspirationCount: state.start.savedInspiration.length,
+  hasMetrics: state.start.performanceMetrics !== null,
+  hasAiInsights: state.start.aiInsights !== null,
+});
 
 export const selectCanProceedToCreate = (state: WorkflowState) =>
   state.analyze.campaignId !== null &&

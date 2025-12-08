@@ -163,6 +163,11 @@ class ApiClient {
         }
       }
 
+      // Handle 204 No Content (e.g., successful DELETE)
+      if (response.status === 204) {
+        return { data: null as T };
+      }
+
       const data = await response.json();
 
       if (!response.ok) {

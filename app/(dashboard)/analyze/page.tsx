@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useWorkflowStore, ContentIdea } from "@/lib/stores/workflow-store";
+import { useWorkflowStore, ContentIdea, StartFromVideo } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
 import { useCampaigns } from "@/lib/queries";
@@ -14,33 +14,30 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Checkbox } from "@/components/ui/checkbox";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
 import { cn, getProxiedImageUrl } from "@/lib/utils";
 import {
-  Lightbulb,
-  ArrowRight,
   ArrowLeft,
   Sparkles,
   Check,
   FolderOpen,
-  Hash,
-  Eye,
   Video,
   Image as ImageIcon,
   Bot,
-  Zap,
-  Target,
-  Users,
   Clock,
   Music,
   Plus,
   X,
-  ChevronRight,
-  Wand2,
   BookmarkCheck,
+  Copy,
+  ChevronDown,
+  ChevronUp,
+  Wand2,
 } from "lucide-react";
+import { InfoButton } from "@/components/ui/info-button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { generateRecreationPrompt, hasRecreationData } from "@/lib/video-recreation-prompt";
 
 // ============================================================================
 // Types
@@ -75,6 +72,8 @@ interface GenerateIdeasRequest {
   hashtags: string[];
   target_audience: string[];
   content_goals: string[];
+  campaign_description?: string | null;  // Central context for all prompts - describes campaign concept/goal
+  genre?: string | null;  // Music genre for content generation
   // Rich trend data (instead of just a count)
   inspiration_videos?: InspirationVideo[];
   trend_insights?: TrendInsights;
@@ -83,6 +82,7 @@ interface GenerateIdeasRequest {
     avgEngagement: number;
     viralBenchmark: number;
   } | null;
+  language?: "ko" | "en";
 }
 
 interface GenerateIdeasResponse {
@@ -93,38 +93,107 @@ interface GenerateIdeasResponse {
 }
 
 // ============================================================================
-// Target Audience Options
-// ============================================================================
-
-const AUDIENCE_OPTIONS = [
-  { id: "gen_z", label: { ko: "Gen Z", en: "Gen Z" } },
-  { id: "millennials", label: { ko: "밀레니얼", en: "Millennials" } },
-  { id: "music_fans", label: { ko: "음악 팬", en: "Music Fans" } },
-  { id: "fashion", label: { ko: "패션 관심층", en: "Fashion Enthusiasts" } },
-];
-
-const GOAL_OPTIONS = [
-  { id: "awareness", label: { ko: "인지도", en: "Brand Awareness" } },
-  { id: "engagement", label: { ko: "참여도", en: "Engagement" } },
-  { id: "viral", label: { ko: "바이럴", en: "Go Viral" } },
-  { id: "entertainment", label: { ko: "엔터테인먼트", en: "Entertainment" } },
-];
-
-// ============================================================================
 // Context Reception Component
 // ============================================================================
 
 function ContextReceptionPanel() {
   const { language } = useI18n();
-  const { goToDiscover } = useWorkflowNavigation();
+  const { goToStart } = useWorkflowNavigation();
+  const { success: toastSuccess, error: toastError } = useToast();
 
-  const { keywords, selectedHashtags, savedInspiration, performanceMetrics, aiInsights } =
-    useWorkflowStore((state) => state.discover);
+  // State for recreation prompt
+  const [showRecreationPrompt, setShowRecreationPrompt] = useState(false);
+  const [recreationPrompt, setRecreationPrompt] = useState<string | null>(null);
+
+  // Get both discover state and start source, plus setAnalyzeUserIdea for applying recreation prompt
+  const { discover, startSource, setAnalyzeUserIdea } = useWorkflowStore(
+    useShallow((state) => ({
+      discover: state.discover,
+      startSource: state.start.source,
+      setAnalyzeUserIdea: state.setAnalyzeUserIdea,
+    }))
+  );
+
+  const { keywords, selectedHashtags, savedInspiration, aiInsights } = discover;
+
+  // Type guard for video source
+  const isVideoSource = startSource?.type === "video";
+  const videoSource: StartFromVideo | null = isVideoSource ? (startSource as StartFromVideo) : null;
+
+  // Check if recreation prompt can be generated
+  const canGenerateRecreation = isVideoSource && videoSource && hasRecreationData(videoSource);
+
+  // Generate recreation prompt
+  const handleGenerateRecreation = useCallback(() => {
+    if (!videoSource) return;
+
+    const result = generateRecreationPrompt(videoSource, {
+      language: language as "ko" | "en",
+      includeHashtags: true,
+      emphasisLevel: "exact",
+    });
+
+    setRecreationPrompt(result.fullPrompt);
+    setShowRecreationPrompt(true);
+  }, [videoSource, language]);
+
+  // Copy prompt to clipboard
+  const handleCopyPrompt = useCallback(async () => {
+    if (!recreationPrompt) return;
+
+    try {
+      await navigator.clipboard.writeText(recreationPrompt);
+      toastSuccess(
+        language === "ko" ? "복사됨" : "Copied",
+        language === "ko" ? "프롬프트가 클립보드에 복사되었습니다" : "Prompt copied to clipboard"
+      );
+    } catch {
+      toastError(
+        language === "ko" ? "복사 실패" : "Copy failed",
+        language === "ko" ? "클립보드 복사에 실패했습니다" : "Failed to copy to clipboard"
+      );
+    }
+  }, [recreationPrompt, language, toastSuccess, toastError]);
+
+  // Apply recreation prompt to user idea input
+  const handleApplyPrompt = useCallback(() => {
+    if (!videoSource) return;
+
+    const result = generateRecreationPrompt(videoSource, {
+      language: language as "ko" | "en",
+      includeHashtags: false,
+      emphasisLevel: "exact",
+    });
+
+    // Set the main prompt as the user idea
+    setAnalyzeUserIdea(result.mainPrompt);
+    toastSuccess(
+      language === "ko" ? "적용됨" : "Applied",
+      language === "ko" ? "재현 프롬프트가 아이디어에 적용되었습니다" : "Recreation prompt applied to idea"
+    );
+  }, [videoSource, language, setAnalyzeUserIdea, toastSuccess]);
+
+  // Debug logging
+  console.log("[ContextReceptionPanel] Source type:", startSource?.type);
+  console.log("[ContextReceptionPanel] Video source hashtags:", videoSource?.hashtags);
+  console.log("[ContextReceptionPanel] Discover keywords:", keywords);
+
+  // Determine what data to display based on source type
+  // When video is selected, use video's hashtags; otherwise use discover keywords
+  const displayKeywords = isVideoSource && videoSource && videoSource.hashtags.length > 0
+    ? videoSource.hashtags
+    : keywords;
+
+  const displayHashtags = isVideoSource && videoSource && videoSource.hashtags.length > 0
+    ? [] // Video already shows hashtags as keywords
+    : selectedHashtags;
 
   const hasContext =
-    keywords.length > 0 ||
-    selectedHashtags.length > 0 ||
-    savedInspiration.length > 0;
+    displayKeywords.length > 0 ||
+    displayHashtags.length > 0 ||
+    savedInspiration.length > 0 ||
+    aiInsights !== null ||
+    (isVideoSource && videoSource?.aiAnalysis);
 
   if (!hasContext) {
     return (
@@ -141,7 +210,7 @@ function ContextReceptionPanel() {
           <Button
             variant="outline"
             size="sm"
-            onClick={goToDiscover}
+            onClick={goToStart}
             className="border-neutral-300 text-neutral-700"
           >
             <ArrowLeft className="h-3 w-3 mr-1" />
@@ -163,7 +232,7 @@ function ContextReceptionPanel() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={goToDiscover}
+          onClick={goToStart}
           className="h-7 px-2 text-xs text-neutral-500"
         >
           {language === "ko" ? "수정" : "Edit"}
@@ -178,14 +247,22 @@ function ContextReceptionPanel() {
       </p>
 
       <div className="space-y-3">
-        {/* Keywords */}
-        {keywords.length > 0 && (
+        {/* Source Type Indicator */}
+        {isVideoSource && (
+          <div className="flex items-center gap-2 text-xs text-neutral-500">
+            <Video className="h-3 w-3" />
+            <span>{language === "ko" ? "영상 기반 분석" : "Video-based analysis"}</span>
+          </div>
+        )}
+
+        {/* Keywords (from video hashtags or trend keywords) */}
+        {displayKeywords.length > 0 && (
           <div>
             <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-1">
               {language === "ko" ? "키워드" : "Keywords"}
             </p>
             <div className="flex flex-wrap gap-1">
-              {keywords.map((k) => (
+              {displayKeywords.map((k) => (
                 <Badge
                   key={k}
                   variant="outline"
@@ -198,14 +275,14 @@ function ContextReceptionPanel() {
           </div>
         )}
 
-        {/* Hashtags */}
-        {selectedHashtags.length > 0 && (
+        {/* Hashtags (only for trend source) */}
+        {displayHashtags.length > 0 && (
           <div>
             <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-1">
               {language === "ko" ? "해시태그" : "Hashtags"}
             </p>
             <div className="flex flex-wrap gap-1">
-              {selectedHashtags.map((h) => (
+              {displayHashtags.map((h) => (
                 <Badge key={h} className="text-xs bg-neutral-900 text-white">
                   #{h}
                 </Badge>
@@ -244,33 +321,200 @@ function ContextReceptionPanel() {
           </div>
         )}
 
-        {/* Performance Metrics */}
-        {performanceMetrics && (
-          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-neutral-200">
-            <div className="text-center">
-              <p className="text-[10px] text-neutral-500">
-                {language === "ko" ? "평균 조회" : "Avg Views"}
-              </p>
-              <p className="text-xs font-medium text-neutral-700">
-                {(performanceMetrics.avgViews / 1000).toFixed(0)}K
-              </p>
-            </div>
-            <div className="text-center">
-              <p className="text-[10px] text-neutral-500">
-                {language === "ko" ? "참여율" : "Engagement"}
-              </p>
-              <p className="text-xs font-medium text-neutral-700">
-                {performanceMetrics.avgEngagement.toFixed(1)}%
-              </p>
-            </div>
-            <div className="text-center">
-              <p className="text-[10px] text-neutral-500">
-                {language === "ko" ? "바이럴 기준" : "Viral Bar"}
-              </p>
-              <p className="text-xs font-medium text-neutral-700">
-                {(performanceMetrics.viralBenchmark / 1000).toFixed(0)}K+
-              </p>
-            </div>
+        {/* AI Video Analysis (for video source) */}
+        {isVideoSource && videoSource?.aiAnalysis && (
+          <div className="pt-2 border-t border-neutral-200 space-y-2">
+            <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+              {language === "ko" ? "AI 영상 분석" : "AI Video Analysis"}
+            </p>
+
+            {/* Hook Analysis */}
+            {videoSource.aiAnalysis.hookAnalysis && (
+              <div>
+                <p className="text-[10px] text-neutral-400 mb-1">
+                  {language === "ko" ? "훅 분석" : "Hook Analysis"}
+                </p>
+                <p className="text-xs text-neutral-600 line-clamp-2">
+                  {videoSource.aiAnalysis.hookAnalysis}
+                </p>
+              </div>
+            )}
+
+            {/* Style Analysis */}
+            {videoSource.aiAnalysis.styleAnalysis && (
+              <div>
+                <p className="text-[10px] text-neutral-400 mb-1">
+                  {language === "ko" ? "스타일 분석" : "Style Analysis"}
+                </p>
+                <p className="text-xs text-neutral-600 line-clamp-2">
+                  {videoSource.aiAnalysis.styleAnalysis}
+                </p>
+              </div>
+            )}
+
+            {/* Concept Details */}
+            {videoSource.aiAnalysis.conceptDetails && (
+              <div>
+                <p className="text-[10px] text-neutral-400 mb-1">
+                  {language === "ko" ? "컨셉 요소" : "Concept Elements"}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {videoSource.aiAnalysis.conceptDetails.visualStyle && (
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600">
+                      {videoSource.aiAnalysis.conceptDetails.visualStyle}
+                    </Badge>
+                  )}
+                  {videoSource.aiAnalysis.conceptDetails.mood && (
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600">
+                      {videoSource.aiAnalysis.conceptDetails.mood}
+                    </Badge>
+                  )}
+                  {videoSource.aiAnalysis.conceptDetails.pace && (
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600">
+                      {videoSource.aiAnalysis.conceptDetails.pace}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Suggested Approach */}
+            {videoSource.aiAnalysis.suggestedApproach && (
+              <div>
+                <p className="text-[10px] text-neutral-400 mb-1">
+                  {language === "ko" ? "추천 접근법" : "Suggested Approach"}
+                </p>
+                <p className="text-xs text-neutral-600 line-clamp-2">
+                  {videoSource.aiAnalysis.suggestedApproach}
+                </p>
+              </div>
+            )}
+
+            {/* Video Recreation Prompt Generator */}
+            {canGenerateRecreation && (
+              <div className="pt-2 border-t border-neutral-200">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (showRecreationPrompt) {
+                        setShowRecreationPrompt(false);
+                      } else {
+                        handleGenerateRecreation();
+                      }
+                    }}
+                    className="flex-1 flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-neutral-100 hover:bg-neutral-200 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Wand2 className="h-4 w-4 text-neutral-600" />
+                      <span className="text-xs font-medium text-neutral-700">
+                        {language === "ko" ? "영상 재현 프롬프트" : "Recreation Prompt"}
+                      </span>
+                    </div>
+                    {showRecreationPrompt ? (
+                      <ChevronUp className="h-4 w-4 text-neutral-500" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-neutral-500" />
+                    )}
+                  </button>
+                  <InfoButton
+                    content={language === "ko"
+                      ? "분석된 영상의 시각적 스타일, 분위기, 카메라 움직임 등을 기반으로 거의 동일한 스타일의 영상을 만들 수 있는 프롬프트를 생성합니다. '적용' 버튼으로 바로 아이디어에 반영할 수 있습니다."
+                      : "Generates a prompt based on the analyzed video's visual style, mood, camera movement, etc. to create content with nearly identical style. Use the 'Apply' button to directly add it to your idea."}
+                    size="sm"
+                  />
+                </div>
+
+                {/* Recreation Prompt Display */}
+                {showRecreationPrompt && recreationPrompt && (
+                  <div className="mt-2 space-y-2">
+                    <div className="relative">
+                      <pre className="text-xs text-neutral-600 whitespace-pre-wrap bg-white border border-neutral-200 rounded-lg p-3 max-h-[200px] overflow-y-auto pr-20">
+                        {recreationPrompt}
+                      </pre>
+                      <div className="absolute top-2 right-2 flex items-center gap-1">
+                        <button
+                          onClick={handleCopyPrompt}
+                          className="p-1.5 rounded bg-neutral-100 hover:bg-neutral-200 transition-colors"
+                          title={language === "ko" ? "복사" : "Copy"}
+                        >
+                          <Copy className="h-3.5 w-3.5 text-neutral-600" />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Apply Button */}
+                    <button
+                      onClick={handleApplyPrompt}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white transition-colors"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      <span className="text-xs font-medium">
+                        {language === "ko" ? "아이디어에 적용하기" : "Apply to Idea"}
+                      </span>
+                    </button>
+                    <p className="text-[10px] text-neutral-400">
+                      {language === "ko"
+                        ? "적용 시 아래 '나의 아이디어' 입력란에 재현 프롬프트가 자동으로 입력됩니다."
+                        : "When applied, the recreation prompt will be automatically entered in the 'My Idea' input below."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* AI Trend Insights (for trend source) */}
+        {!isVideoSource && aiInsights && (
+          <div className="pt-2 border-t border-neutral-200 space-y-2">
+            <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+              {language === "ko" ? "AI 트렌드 인사이트" : "AI Trend Insights"}
+            </p>
+
+            {/* Content Strategy */}
+            {aiInsights.contentStrategy && aiInsights.contentStrategy.length > 0 && (
+              <div>
+                <p className="text-[10px] text-neutral-400 mb-1">
+                  {language === "ko" ? "콘텐츠 전략" : "Content Strategy"}
+                </p>
+                <ul className="text-xs text-neutral-600 space-y-0.5">
+                  {aiInsights.contentStrategy.slice(0, 3).map((strategy, i) => (
+                    <li key={i} className="flex items-start gap-1">
+                      <span className="text-neutral-400">•</span>
+                      <span className="line-clamp-1">{strategy}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Video Ideas */}
+            {aiInsights.videoIdeas && aiInsights.videoIdeas.length > 0 && (
+              <div>
+                <p className="text-[10px] text-neutral-400 mb-1">
+                  {language === "ko" ? "영상 아이디어" : "Video Ideas"}
+                </p>
+                <ul className="text-xs text-neutral-600 space-y-0.5">
+                  {aiInsights.videoIdeas.slice(0, 2).map((idea, i) => (
+                    <li key={i} className="flex items-start gap-1">
+                      <span className="text-neutral-400">•</span>
+                      <span className="line-clamp-1">{idea}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Audience Insights */}
+            {aiInsights.audienceInsights && (
+              <div>
+                <p className="text-[10px] text-neutral-400 mb-1">
+                  {language === "ko" ? "타겟 오디언스" : "Target Audience"}
+                </p>
+                <p className="text-xs text-neutral-600 line-clamp-2">
+                  {aiInsights.audienceInsights}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -299,7 +543,7 @@ function CampaignSelector() {
   // Auto-select first campaign
   useEffect(() => {
     if (campaigns.length > 0 && !campaignId) {
-      setAnalyzeCampaign(campaigns[0].id, campaigns[0].name);
+      setAnalyzeCampaign(campaigns[0].id, campaigns[0].name, campaigns[0].description, campaigns[0].genre);
     }
   }, [campaigns, campaignId, setAnalyzeCampaign]);
 
@@ -334,7 +578,7 @@ function CampaignSelector() {
         return (
           <button
             key={campaign.id}
-            onClick={() => setAnalyzeCampaign(campaign.id, campaign.name)}
+            onClick={() => setAnalyzeCampaign(campaign.id, campaign.name, campaign.description, campaign.genre)}
             className={cn(
               "w-full flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all",
               isSelected
@@ -434,47 +678,104 @@ function IdeaCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <h4 className="text-sm font-semibold text-neutral-800 truncate">{idea.title}</h4>
-            <Badge
-              variant="outline"
-              className={cn(
-                "text-[10px] shrink-0",
-                idea.estimatedEngagement === "high"
-                  ? "border-green-600 text-green-600"
-                  : idea.estimatedEngagement === "medium"
-                  ? "border-yellow-600 text-yellow-600"
-                  : "border-neutral-400 text-neutral-400"
-              )}
-            >
-              {idea.estimatedEngagement === "high"
-                ? language === "ko"
-                  ? "높음"
-                  : "High"
-                : idea.estimatedEngagement === "medium"
-                ? language === "ko"
-                  ? "중간"
-                  : "Medium"
-                : language === "ko"
-                ? "낮음"
-                : "Low"}
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-[10px] shrink-0 cursor-help",
+                    idea.estimatedEngagement === "high"
+                      ? "border-green-600 text-green-600"
+                      : idea.estimatedEngagement === "medium"
+                      ? "border-yellow-600 text-yellow-600"
+                      : "border-neutral-400 text-neutral-400"
+                  )}
+                >
+                  {idea.estimatedEngagement === "high"
+                    ? language === "ko"
+                      ? "높음"
+                      : "High"
+                    : idea.estimatedEngagement === "medium"
+                    ? language === "ko"
+                      ? "중간"
+                      : "Medium"
+                    : language === "ko"
+                    ? "낮음"
+                    : "Low"}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[200px]">
+                <p className="text-xs">
+                  {language === "ko"
+                    ? idea.estimatedEngagement === "high"
+                      ? "트렌드 데이터 기반 예상 참여도가 높습니다. 바이럴 가능성이 큰 아이디어예요."
+                      : idea.estimatedEngagement === "medium"
+                      ? "보통 수준의 예상 참여도입니다. 안정적인 성과가 기대됩니다."
+                      : "예상 참여도가 낮습니다. 차별화 전략이 필요할 수 있어요."
+                    : idea.estimatedEngagement === "high"
+                    ? "High estimated engagement based on trend data. This idea has strong viral potential."
+                    : idea.estimatedEngagement === "medium"
+                    ? "Moderate estimated engagement. Steady performance is expected."
+                    : "Lower estimated engagement. May need differentiation strategy."}
+                </p>
+              </TooltipContent>
+            </Tooltip>
           </div>
           <p className="text-xs text-neutral-500 mb-2 line-clamp-2">{idea.hook}</p>
           <div className="flex items-center gap-3 text-[10px] text-neutral-500">
-            <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              {idea.type === "ai_video"
-                ? language === "ko"
-                  ? "AI 영상"
-                  : "AI Video"
-                : language === "ko"
-                ? "컴포즈"
-                : "Compose"}
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex items-center gap-1 cursor-help">
+                  <Clock className="h-3 w-3" />
+                  {idea.type === "ai_video"
+                    ? language === "ko"
+                      ? "AI 영상"
+                      : "AI Video"
+                    : language === "ko"
+                    ? "컴포즈"
+                    : "Compose"}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[220px]">
+                <p className="text-xs">
+                  {language === "ko"
+                    ? idea.type === "ai_video"
+                      ? "AI가 이미지와 영상을 생성합니다. 창의적인 비주얼이 필요한 콘텐츠에 적합해요."
+                      : "기존 영상 소스를 조합하여 편집합니다. 빠른 제작이 가능해요."
+                    : idea.type === "ai_video"
+                    ? "AI generates images and videos. Best for content requiring creative visuals."
+                    : "Combines existing video sources for editing. Enables quick production."}
+                </p>
+              </TooltipContent>
+            </Tooltip>
             {idea.suggestedMusic && (
-              <span className="flex items-center gap-1">
-                <Music className="h-3 w-3" />
-                {idea.suggestedMusic.bpm} BPM
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex items-center gap-1 cursor-help">
+                    <Music className="h-3 w-3" />
+                    {idea.suggestedMusic.bpm} BPM
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[220px]">
+                  <p className="text-xs">
+                    {language === "ko"
+                      ? `추천 음악 템포입니다. ${idea.suggestedMusic.bpm} BPM은 ${
+                          idea.suggestedMusic.bpm < 100
+                            ? "차분하고 감성적인"
+                            : idea.suggestedMusic.bpm < 120
+                            ? "적당한 에너지의"
+                            : "빠르고 역동적인"
+                        } 분위기에 적합해요.`
+                      : `Recommended music tempo. ${idea.suggestedMusic.bpm} BPM suits ${
+                          idea.suggestedMusic.bpm < 100
+                            ? "calm, emotional"
+                            : idea.suggestedMusic.bpm < 120
+                            ? "moderate energy"
+                            : "fast, dynamic"
+                        } moods.`}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
         </div>
@@ -499,14 +800,12 @@ export default function AnalyzePage() {
 
   // Sync workflow stage
   useWorkflowSync("analyze");
-  const { goToDiscover, proceedToCreate, canProceedToCreate } = useWorkflowNavigation();
+  const { goToStart, proceedToCreate, canProceedToCreate } = useWorkflowNavigation();
 
   // Workflow store
   const discover = useWorkflowStore((state) => state.discover);
   const analyze = useWorkflowStore((state) => state.analyze);
   const setAnalyzeUserIdea = useWorkflowStore((state) => state.setAnalyzeUserIdea);
-  const setAnalyzeTargetAudience = useWorkflowStore((state) => state.setAnalyzeTargetAudience);
-  const setAnalyzeContentGoals = useWorkflowStore((state) => state.setAnalyzeContentGoals);
   const setAnalyzeAiIdeas = useWorkflowStore((state) => state.setAnalyzeAiIdeas);
   const removeAnalyzeIdea = useWorkflowStore((state) => state.removeAnalyzeIdea);
   const selectAnalyzeIdea = useWorkflowStore((state) => state.selectAnalyzeIdea);
@@ -522,31 +821,6 @@ export default function AnalyzePage() {
       setAnalyzeHashtags(discover.selectedHashtags);
     }
   }, [discover.selectedHashtags, analyze.hashtags, setAnalyzeHashtags]);
-
-  // Toggle handlers
-  const toggleAudience = useCallback(
-    (id: string) => {
-      const current = analyze.targetAudience;
-      if (current.includes(id)) {
-        setAnalyzeTargetAudience(current.filter((a) => a !== id));
-      } else {
-        setAnalyzeTargetAudience([...current, id]);
-      }
-    },
-    [analyze.targetAudience, setAnalyzeTargetAudience]
-  );
-
-  const toggleGoal = useCallback(
-    (id: string) => {
-      const current = analyze.contentGoals;
-      if (current.includes(id)) {
-        setAnalyzeContentGoals(current.filter((g) => g !== id));
-      } else {
-        setAnalyzeContentGoals([...current, id]);
-      }
-    },
-    [analyze.contentGoals, setAnalyzeContentGoals]
-  );
 
   // Generate ideas with Gemini 3
   const handleGenerateIdeas = async () => {
@@ -601,10 +875,13 @@ export default function AnalyzePage() {
         hashtags: analyze.hashtags,
         target_audience: analyze.targetAudience,
         content_goals: analyze.contentGoals,
+        campaign_description: analyze.campaignDescription,  // Central context for prompts - campaign concept/goal
+        genre: analyze.campaignGenre,  // Music genre for viral content generation
         // Pass rich trend data instead of just count
         inspiration_videos: inspirationVideos,
         trend_insights: trendInsights,
         performance_metrics: discover.performanceMetrics,
+        language: language,
       };
 
       const response = await api.post<GenerateIdeasResponse, GenerateIdeasRequest>(
@@ -673,8 +950,6 @@ export default function AnalyzePage() {
       language === "ko"
         ? "만들고 싶은 영상에 대해 설명해주세요...\n예: 해변에서 춤추는 밝은 분위기의 영상"
         : "Describe the video you want to create...\nExample: A bright, cheerful video dancing on the beach",
-    targetAudience: language === "ko" ? "타겟 오디언스" : "Target Audience",
-    contentGoals: language === "ko" ? "콘텐츠 목표" : "Content Goals",
     generateIdeas: language === "ko" ? "AI 아이디어 생성" : "Generate AI Ideas",
     generating: language === "ko" ? "생성 중..." : "Generating...",
     aiIdeas: language === "ko" ? "AI 콘텐츠 아이디어" : "AI Content Ideas",
@@ -684,10 +959,11 @@ export default function AnalyzePage() {
   };
 
   return (
+    <TooltipProvider>
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
       <WorkflowHeader
-        onBack={goToDiscover}
+        onBack={goToStart}
         onNext={handleProceedToCreate}
         canProceed={canProceedToCreate}
       />
@@ -703,17 +979,33 @@ export default function AnalyzePage() {
 
               {/* Campaign Selection */}
               <div>
-                <Label className="text-xs font-medium text-neutral-700 mb-2 block">
-                  {t.campaign}
-                </Label>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Label className="text-xs font-medium text-neutral-700">
+                    {t.campaign}
+                  </Label>
+                  <InfoButton
+                    content={language === "ko"
+                      ? "생성된 콘텐츠가 저장될 캠페인을 선택하세요. 캠페인별로 콘텐츠를 관리하고 성과를 추적할 수 있습니다. 캠페인이 없다면 먼저 생성하세요."
+                      : "Select the campaign where generated content will be saved. You can manage content and track performance per campaign. Create a campaign first if you don't have one."}
+                    side="bottom"
+                  />
+                </div>
                 <CampaignSelector />
               </div>
 
               {/* User Idea Input */}
               <div>
-                <Label className="text-xs font-medium text-neutral-700 mb-2 block">
-                  {t.yourIdea}
-                </Label>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Label className="text-xs font-medium text-neutral-700">
+                    {t.yourIdea}
+                  </Label>
+                  <InfoButton
+                    content={language === "ko"
+                      ? "만들고 싶은 영상에 대한 아이디어를 자유롭게 입력하세요. AI가 트렌드 데이터와 함께 분석하여 최적화된 콘텐츠 아이디어를 제안합니다. 구체적일수록 더 좋은 결과를 얻을 수 있어요."
+                      : "Freely describe your video idea. AI will analyze it with trend data to suggest optimized content ideas. The more specific, the better results you'll get."}
+                    side="bottom"
+                  />
+                </div>
                 <textarea
                   value={analyze.userIdea}
                   onChange={(e) => setAnalyzeUserIdea(e.target.value)}
@@ -722,89 +1014,6 @@ export default function AnalyzePage() {
                   className="w-full px-3 py-2.5 bg-white border border-neutral-200 rounded-lg text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/20 resize-none"
                 />
               </div>
-
-              {/* Target Audience */}
-              <div>
-                <Label className="text-xs font-medium text-neutral-700 mb-2 block">
-                  {t.targetAudience}
-                </Label>
-                <div className="flex flex-wrap gap-2">
-                  {AUDIENCE_OPTIONS.map((option) => {
-                    const isSelected = analyze.targetAudience.includes(option.id);
-                    return (
-                      <button
-                        key={option.id}
-                        onClick={() => toggleAudience(option.id)}
-                        className={cn(
-                          "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
-                          isSelected
-                            ? "bg-neutral-900 text-white"
-                            : "bg-white text-neutral-600 border border-neutral-200 hover:border-neutral-300"
-                        )}
-                      >
-                        {option.label[language]}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Content Goals */}
-              <div>
-                <Label className="text-xs font-medium text-neutral-700 mb-2 block">
-                  {t.contentGoals}
-                </Label>
-                <div className="flex flex-wrap gap-2">
-                  {GOAL_OPTIONS.map((option) => {
-                    const isSelected = analyze.contentGoals.includes(option.id);
-                    return (
-                      <button
-                        key={option.id}
-                        onClick={() => toggleGoal(option.id)}
-                        className={cn(
-                          "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
-                          isSelected
-                            ? "bg-neutral-900 text-white"
-                            : "bg-white text-neutral-600 border border-neutral-200 hover:border-neutral-300"
-                        )}
-                      >
-                        {option.label[language]}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Data Flow Indicator */}
-              {(discover.keywords.length > 0 || discover.savedInspiration.length > 0) && (
-                <div className="mb-3 p-2 rounded-lg bg-neutral-100 border border-neutral-200">
-                  <div className="flex items-center gap-2 text-xs text-neutral-600">
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-neutral-400" />
-                      <span>{language === "ko" ? "트렌드 데이터" : "Trend Data"}</span>
-                    </div>
-                    <span className="text-neutral-300">→</span>
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-neutral-500" />
-                      <span>{language === "ko" ? "AI 분석" : "AI Analysis"}</span>
-                    </div>
-                    <span className="text-neutral-300">→</span>
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-neutral-900" />
-                      <span>{language === "ko" ? "맞춤 프롬프트" : "Custom Prompt"}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Context Info */}
-              {(discover.keywords.length > 0 || discover.savedInspiration.length > 0) && (
-                <p className="text-xs text-neutral-500 mb-2 text-center">
-                  {language === "ko"
-                    ? `${discover.keywords.length}개 키워드 + ${discover.savedInspiration.length}개 영감 활용`
-                    : `Using ${discover.keywords.length} keywords + ${discover.savedInspiration.length} inspirations`}
-                </p>
-              )}
 
               {/* Generate Button */}
               <Button
@@ -831,10 +1040,18 @@ export default function AnalyzePage() {
         {/* Right Column - AI Ideas */}
         <div className="w-1/2 flex flex-col bg-neutral-50">
           <div className="p-4 border-b border-neutral-200 shrink-0">
-            <h2 className="text-sm font-semibold text-neutral-700 flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-neutral-900" />
-              {t.aiIdeas}
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-neutral-700 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-neutral-900" />
+                {t.aiIdeas}
+              </h2>
+              <InfoButton
+                content={language === "ko"
+                  ? "AI가 입력한 정보와 트렌드 데이터를 분석하여 생성한 콘텐츠 아이디어입니다. 원하는 아이디어를 선택하면 다음 단계에서 사용됩니다. 각 아이디어에는 최적화된 프롬프트가 포함되어 있어요."
+                  : "Content ideas generated by AI analyzing your inputs and trend data. Select your preferred idea to use in the next step. Each idea includes an optimized prompt."}
+                side="bottom"
+              />
+            </div>
           </div>
 
           <ScrollArea className="flex-1">
@@ -872,26 +1089,58 @@ export default function AnalyzePage() {
               {/* Selected Idea Summary */}
               {analyze.selectedIdea && (
                 <div className="mt-4 p-4 border border-neutral-300 rounded-lg bg-white">
-                  <h3 className="text-xs font-semibold text-neutral-900 mb-2 flex items-center gap-2">
-                    <Check className="h-3 w-3" />
-                    {t.selectedIdea}
-                  </h3>
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="text-xs font-semibold text-neutral-900 flex items-center gap-2">
+                      <Check className="h-3 w-3" />
+                      {t.selectedIdea}
+                    </h3>
+                    <InfoButton
+                      content={language === "ko"
+                        ? "선택한 아이디어가 다음 생성 단계에서 사용됩니다. 프롬프트와 해시태그가 자동으로 적용되어 콘텐츠가 생성돼요."
+                        : "Your selected idea will be used in the next creation step. The prompt and hashtags will be automatically applied for content generation."
+                      }
+                      size="sm"
+                    />
+                  </div>
                   <p className="text-sm text-neutral-700 mb-3">{analyze.selectedIdea.title}</p>
                   <div className="p-3 bg-neutral-100 rounded border border-neutral-200">
-                    <p className="text-xs text-neutral-500 mb-1">
-                      {language === "ko" ? "최적화된 프롬프트" : "Optimized Prompt"}
-                    </p>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <p className="text-xs text-neutral-500">
+                        {language === "ko" ? "최적화된 프롬프트" : "Optimized Prompt"}
+                      </p>
+                      <InfoButton
+                        content={language === "ko"
+                          ? "AI가 트렌드 데이터와 아이디어를 분석하여 최적화한 영상 생성 프롬프트입니다. 이 프롬프트로 AI 영상이 생성됩니다."
+                          : "AI-optimized video generation prompt based on trend data and your idea. This prompt will be used to generate AI videos."
+                        }
+                        size="sm"
+                      />
+                    </div>
                     <p className="text-sm text-neutral-700 leading-relaxed">
                       {analyze.selectedIdea.optimizedPrompt}
                     </p>
                   </div>
                   {analyze.hashtags.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      {analyze.hashtags.map((tag) => (
-                        <Badge key={tag} className="text-xs bg-neutral-200 text-neutral-700">
-                          #{tag}
-                        </Badge>
-                      ))}
+                    <div className="mt-3">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <p className="text-xs text-neutral-500">
+                          {language === "ko" ? "추천 해시태그" : "Recommended Hashtags"}
+                        </p>
+                        <InfoButton
+                          content={language === "ko"
+                            ? "트렌드 분석 기반으로 추천된 해시태그입니다. 발행 단계에서 자동으로 적용되어 도달률을 높여줍니다."
+                            : "Recommended hashtags based on trend analysis. These will be automatically applied during publishing to increase reach."
+                          }
+                          size="sm"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {analyze.hashtags.map((tag) => (
+                          <Badge key={tag} className="text-xs bg-neutral-200 text-neutral-700">
+                            #{tag}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -939,5 +1188,6 @@ export default function AnalyzePage() {
       </div>
 
     </div>
+    </TooltipProvider>
   );
 }

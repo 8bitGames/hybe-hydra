@@ -110,7 +110,7 @@ export const PublishOptimizerConfig: AgentConfig<PublishOptimizerInput, PublishO
   },
 
   prompts: {
-    system: `You are a social media publishing strategist specializing in K-pop and entertainment content.
+    system: `You are a social media publishing strategist for viral content.
 Your expertise spans TikTok, Instagram Reels, and YouTube Shorts optimization.
 
 ## Core Competencies:
@@ -132,7 +132,6 @@ Your expertise spans TikTok, Instagram Reels, and YouTube Shorts optimization.
 ## Guidelines:
 - Prioritize authenticity over viral tactics
 - Consider platform-specific community guidelines
-- Respect HYBE brand standards
 - Focus on sustainable growth over short-term spikes
 
 Always respond in valid JSON format.`,
@@ -246,7 +245,7 @@ export class PublishOptimizerAgent extends BaseAgent<PublishOptimizerInput, Publ
       hashtags: input.content.hashtags.join(', '),
       region: input.targetAudience?.region || 'KR',
       ageRange: input.targetAudience?.ageRange || 'All ages',
-      interests: input.targetAudience?.interests?.join(', ') || 'K-pop, Entertainment',
+      interests: input.targetAudience?.interests?.join(', ') || 'General interests',
       publishingGoal: input.publishingGoal,
       artistName: context.workflow.artistName,
     });

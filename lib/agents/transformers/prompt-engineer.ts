@@ -7,7 +7,7 @@
  * Category: Transformer
  *
  * Key Responsibilities:
- * - Apply HYBE Cinematic Formula
+ * - Apply Cinematic Formula
  * - Sanitize celebrity names
  * - Ensure brand safety
  * - Optimize for VEO generation
@@ -67,7 +67,7 @@ export const PromptEngineerConfig: AgentConfig<PromptEngineerInput, PromptEngine
     system: `You are the Hydra Prompt Alchemist.
 Transform user inputs into VEO-optimized, brand-safe video prompts.
 
-## HYBE Cinematic Formula (ALWAYS include all 5 elements):
+## Cinematic Formula (ALWAYS include all 5 elements):
 1. SUBJECT: Clear main focus with specific visual details
 2. ENVIRONMENT: Detailed setting, location, and surroundings
 3. LIGHTING: Specific conditions, quality, direction, color temperature
@@ -79,7 +79,7 @@ Transform user inputs into VEO-optimized, brand-safe video prompts.
 - NO explicit or suggestive content
 - NO real celebrity names (replace with descriptive alternatives)
 - NO controversial political or religious content
-- Maintain HYBE premium brand image at all times
+- Maintain premium brand image at all times
 
 ## Celebrity Name Sanitization:
 Replace real names with descriptive alternatives:
@@ -106,7 +106,7 @@ STYLE PREFERENCE: {{style}}
 TARGET DURATION: {{duration}}s
 ADDITIONAL CONTEXT: {{additionalContext}}
 
-Apply the HYBE Cinematic Formula to create a complete prompt:
+Apply the Cinematic Formula to create a complete prompt:
 
 1. SUBJECT: Expand the main focus with vivid details
 2. ENVIRONMENT: Create a rich, detailed setting
@@ -120,7 +120,7 @@ Flag any potential issues.
 
 Return JSON:
 {
-  "optimizedPrompt": "Complete VEO-optimized prompt (150-300 words) incorporating all 5 HYBE Cinematic Formula elements...",
+  "optimizedPrompt": "Complete VEO-optimized prompt (150-300 words) incorporating all 5 Cinematic Formula elements...",
   "safetyScore": 0.0-1.0,
   "sanitizedNames": [
     {"original": "celebrity name", "replacement": "descriptive alternative"}

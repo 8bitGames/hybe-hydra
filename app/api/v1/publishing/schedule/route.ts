@@ -89,10 +89,10 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Get generation details for each post
+    // Get generation details for each post (exclude soft-deleted)
     const generationIds = [...new Set(posts.map((p) => p.generationId))];
     const generations = await prisma.videoGeneration.findMany({
-      where: { id: { in: generationIds } },
+      where: { id: { in: generationIds }, deletedAt: null },
       select: {
         id: true,
         prompt: true,
@@ -199,12 +199,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify generation exists and belongs to campaign
+    // Verify generation exists and belongs to campaign (exclude soft-deleted)
     const generation = await prisma.videoGeneration.findFirst({
       where: {
         id: generation_id,
         campaignId: campaign_id,
         status: "COMPLETED",
+        deletedAt: null,
       },
     });
 

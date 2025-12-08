@@ -123,7 +123,7 @@ function DashboardContent({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto px-4 py-6">
+      <main className="flex-1 overflow-auto">
         {children}
       </main>
     </div>

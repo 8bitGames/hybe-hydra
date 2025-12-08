@@ -54,6 +54,9 @@ import {
   Settings,
 } from "lucide-react";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { VariationQuickPanel, PublishSuccessDialog } from "@/components/features/publish";
+import { VariationModal, VariationConfig } from "@/components/features/variation-modal";
+import type { VideoGeneration, StylePreset } from "@/lib/video-api";
 
 // Social Account interface
 interface SocialAccount {
@@ -107,6 +110,7 @@ export default function PublishPage() {
   const discover = useWorkflowStore((state) => state.discover);
   const analyze = useWorkflowStore((state) => state.analyze);
   const processing = useWorkflowStore((state) => state.processing);
+  const setSelectedProcessingVideos = useWorkflowStore((state) => state.setSelectedProcessingVideos);
   const publish = useWorkflowStore((state) => state.publish);
   const setPublishCaption = useWorkflowStore((state) => state.setPublishCaption);
   const setPublishHashtags = useWorkflowStore((state) => state.setPublishHashtags);
@@ -142,6 +146,29 @@ export default function PublishPage() {
     disable_comment: false,
   });
 
+  // Variation modal state
+  const [variationModalOpen, setVariationModalOpen] = useState(false);
+  const [variationType, setVariationType] = useState<"ai" | "compose">("ai");
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [publishedVideos, setPublishedVideos] = useState<ProcessingVideo[]>([]);
+  const [stylePresets, setStylePresets] = useState<StylePreset[]>([]);
+  const [isCreatingVariations, setIsCreatingVariations] = useState(false);
+
+  // Clean up stale selections on mount
+  // This handles the case where localStorage has stale IDs that don't match current videos
+  useEffect(() => {
+    if (!isHydrated) return;
+
+    const validIds = new Set(processing.videos.map((v) => v.id));
+    const staleIds = processing.selectedVideos.filter((id) => !validIds.has(id));
+
+    if (staleIds.length > 0) {
+      // Remove stale IDs from selection
+      const cleanedSelection = processing.selectedVideos.filter((id) => validIds.has(id));
+      setSelectedProcessingVideos(cleanedSelection);
+    }
+  }, [isHydrated, processing.videos, processing.selectedVideos, setSelectedProcessingVideos]);
+
   // Fetch connected social accounts
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -168,21 +195,38 @@ export default function PublishPage() {
     fetchAccounts();
   }, []);
 
+  // Fetch style presets for variation modal
+  useEffect(() => {
+    const fetchPresets = async () => {
+      try {
+        const response = await api.get<{ presets: StylePreset[] }>("/api/v1/style-presets");
+        if (response.data?.presets) {
+          setStylePresets(response.data.presets);
+        }
+      } catch (error) {
+        console.error("Failed to fetch style presets:", error);
+      }
+    };
+    fetchPresets();
+  }, []);
+
   // Get selected account
   const selectedAccount = useMemo(() => {
     return socialAccounts.find((a) => a.id === selectedAccountId) || null;
   }, [socialAccounts, selectedAccountId]);
 
-  // Get approved videos from processing stage
+  // Get videos for publishing based on current selection
+  // Priority: selectedVideos > approved status (fallback)
   const approvedVideos = useMemo(() => {
-    const approved = processing.videos.filter((v) => v.status === "approved");
-    if (approved.length === 0 && processing.selectedVideos.length > 0) {
+    // If there are selected videos, use them as source of truth
+    if (processing.selectedVideos.length > 0) {
       return processing.videos.filter(
         (v) => processing.selectedVideos.includes(v.id) &&
                (v.status === "completed" || v.status === "approved")
       );
     }
-    return approved;
+    // Fallback: show all approved videos if no selection
+    return processing.videos.filter((v) => v.status === "approved");
   }, [processing.videos, processing.selectedVideos]);
 
   // Current video
@@ -379,8 +423,9 @@ export default function PublishPage() {
           isKorean ? "발행 예약 완료" : "Scheduled",
           isKorean ? `${successCount}개의 발행이 예약되었습니다` : `${successCount} posts scheduled`
         );
-        resetWorkflow();
-        router.push("/publishing");
+        // Show success dialog instead of immediately redirecting
+        setPublishedVideos(approvedVideos);
+        setShowSuccessDialog(true);
       } else {
         throw new Error("Failed to schedule");
       }
@@ -391,6 +436,101 @@ export default function PublishPage() {
       setIsPublishing(false);
     }
   };
+
+  // Variation handlers
+  const handleOpenVariationModal = useCallback((type: "ai" | "compose") => {
+    setVariationType(type);
+    setVariationModalOpen(true);
+  }, []);
+
+  const handleCreateVariations = async (config: VariationConfig) => {
+    if (!currentVideo?.generationId) {
+      toast.error(isKorean ? "오류" : "Error", isKorean ? "영상 정보가 없습니다" : "No video information");
+      return;
+    }
+
+    setIsCreatingVariations(true);
+    try {
+      const response = await api.post<{ batch_id: string; total_count: number }>(
+        `/api/v1/generations/${currentVideo.generationId}/variations`,
+        {
+          style_categories: config.styleCategories,
+          enable_prompt_variation: config.enablePromptVariation,
+          prompt_variation_types: config.promptVariationTypes,
+          max_variations: config.maxVariations,
+          auto_publish: config.autoPublish ? {
+            enabled: true,
+            social_account_id: config.autoPublish.socialAccountId,
+            interval_minutes: config.autoPublish.intervalMinutes,
+            caption: config.autoPublish.caption,
+            hashtags: config.autoPublish.hashtags,
+          } : undefined,
+        }
+      );
+
+      if (response.data?.batch_id) {
+        toast.success(
+          isKorean ? "변형 생성 시작" : "Variations Started",
+          isKorean ? `${response.data.total_count}개 변형 생성 중` : `Creating ${response.data.total_count} variations`
+        );
+        setVariationModalOpen(false);
+        // Navigate to processing page with batch ID
+        router.push(`/processing?variation_batch=${response.data.batch_id}`);
+      }
+    } catch (error) {
+      console.error("Create variations error:", error);
+      toast.error(isKorean ? "오류" : "Error", isKorean ? "변형 생성에 실패했습니다" : "Failed to create variations");
+    } finally {
+      setIsCreatingVariations(false);
+    }
+  };
+
+  // Success dialog handlers
+  const handleCreateVariationsFromSuccess = useCallback(() => {
+    setShowSuccessDialog(false);
+    setVariationModalOpen(true);
+  }, []);
+
+  const handleViewSchedule = useCallback(() => {
+    setShowSuccessDialog(false);
+    resetWorkflow();
+    router.push("/publishing");
+  }, [resetWorkflow, router]);
+
+  const handleStartNew = useCallback(() => {
+    setShowSuccessDialog(false);
+    resetWorkflow();
+    router.push("/start");
+  }, [resetWorkflow, router]);
+
+  // Convert currentVideo to VideoGeneration format for VariationModal
+  const seedGeneration: VideoGeneration | null = currentVideo ? {
+    id: currentVideo.generationId || currentVideo.id,
+    campaign_id: "",
+    prompt: currentVideo.prompt || "",
+    negative_prompt: null,
+    status: (currentVideo.status as VideoGeneration["status"]) || "completed",
+    progress: 100,
+    error_message: null,
+    output_url: currentVideo.outputUrl,
+    output_asset_id: null,
+    duration_seconds: currentVideo.duration || 5,
+    aspect_ratio: "9:16",
+    reference_image_id: null,
+    reference_style: null,
+    audio_asset_id: "",
+    quality_score: null,
+    original_input: null,
+    trend_keywords: [],
+    reference_urls: null,
+    prompt_analysis: null,
+    is_favorite: false,
+    tags: [],
+    created_by: "",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    generation_type: "AI",
+  } : null;
 
   const isScheduled = selectedDate !== undefined;
 
@@ -537,11 +677,18 @@ export default function PublishPage() {
                     index === currentVideoIndex ? "border-black" : "border-transparent opacity-60 hover:opacity-100"
                   )}
                 >
-                  {video.thumbnailUrl || video.outputUrl ? (
+                  {video.thumbnailUrl ? (
                     <img
-                      src={video.thumbnailUrl || `${video.outputUrl}#t=0.5`}
+                      src={video.thumbnailUrl}
                       alt=""
                       className="w-full h-full object-cover"
+                    />
+                  ) : video.outputUrl ? (
+                    <video
+                      src={video.outputUrl}
+                      className="w-full h-full object-cover"
+                      muted
+                      preload="metadata"
                     />
                   ) : (
                     <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
@@ -551,6 +698,15 @@ export default function PublishPage() {
                 </button>
               ))}
             </div>
+          )}
+
+          {/* Variation Quick Panel */}
+          {currentVideo && (
+            <VariationQuickPanel
+              video={currentVideo}
+              onCreateAIVariation={() => handleOpenVariationModal("ai")}
+              onCreateComposeVariation={() => handleOpenVariationModal("compose")}
+            />
           )}
         </div>
 
@@ -839,6 +995,34 @@ export default function PublishPage() {
           </div>
         </div>
       </div>
+
+      {/* Variation Modal */}
+      <VariationModal
+        isOpen={variationModalOpen}
+        onClose={() => setVariationModalOpen(false)}
+        seedGeneration={seedGeneration}
+        presets={stylePresets}
+        onCreateVariations={handleCreateVariations}
+        isCreating={isCreatingVariations}
+        socialAccounts={socialAccounts as unknown as import("@/lib/publishing-api").SocialAccount[]}
+      />
+
+      {/* Publish Success Dialog */}
+      <PublishSuccessDialog
+        isOpen={showSuccessDialog}
+        onClose={() => setShowSuccessDialog(false)}
+        publishedCount={publishedVideos.length}
+        videos={publishedVideos}
+        publishContext={{
+          accountId: selectedAccountId || "",
+          accountName: selectedAccount?.account_name || "",
+          caption: publish.caption,
+          hashtags: publish.hashtags,
+        }}
+        onCreateVariations={handleCreateVariationsFromSuccess}
+        onViewSchedule={handleViewSchedule}
+        onStartNew={handleStartNew}
+      />
     </div>
   );
 }

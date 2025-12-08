@@ -325,12 +325,14 @@ function StepNavigation({
   scriptData,
   selectedImages,
   selectedAudio,
+  musicSkipped,
   onStepClick,
 }: {
   currentStep: ComposeStep;
   scriptData: ScriptGenerationResponse | null;
   selectedImages: ImageCandidate[];
   selectedAudio: AudioMatch | null;
+  musicSkipped: boolean;
   onStepClick: (step: ComposeStep) => void;
 }) {
   const { language } = useI18n();
@@ -339,7 +341,7 @@ function StepNavigation({
     switch (step) {
       case 1: return scriptData !== null;
       case 2: return selectedImages.length >= 3;
-      case 3: return selectedAudio !== null;
+      case 3: return selectedAudio !== null || musicSkipped; // Complete if audio selected OR skipped
       case 4: return false; // Never "complete" - this is the final step
       default: return false;
     }
@@ -468,6 +470,7 @@ export function InlineComposeFlow({
   const [audioStartTime, setAudioStartTime] = useState<number>(0);
   const [audioAnalysis, setAudioAnalysis] = useState<AudioAnalysisResponse | null>(null);
   const [analyzingAudio, setAnalyzingAudio] = useState(false);
+  const [musicSkipped, setMusicSkipped] = useState(false);
 
   // Step 4: Render state
   const [effectPreset, setEffectPreset] = useState("zoom_beat");
@@ -623,6 +626,7 @@ export function InlineComposeFlow({
 
   const handleSelectAudio = async (audio: AudioMatch) => {
     setSelectedAudio(audio);
+    setMusicSkipped(false); // Reset skip when selecting audio
     setAudioAnalysis(null);
     setAudioStartTime(0);
     setAnalyzingAudio(true);
@@ -640,6 +644,21 @@ export function InlineComposeFlow({
     }
   };
 
+  const handleSkipMusic = () => {
+    setMusicSkipped(true);
+    setSelectedAudio(null);
+    setAudioAnalysis(null);
+    setAudioStartTime(0);
+  };
+
+  const handleUnskipMusic = () => {
+    setMusicSkipped(false);
+    // Re-trigger music matching if we have script data
+    if (scriptData && audioMatches.length === 0) {
+      handleMatchMusic();
+    }
+  };
+
   // Auto-match music when entering step 3
   useEffect(() => {
     if (currentStep === 3 && audioMatches.length === 0 && scriptData) {
@@ -652,7 +671,9 @@ export function InlineComposeFlow({
   // ========================================
 
   const handleStartRender = async () => {
-    if (!selectedAudio || selectedImages.length < 3 || !generationId || !scriptData) {
+    // Allow proceeding with music skipped (no selectedAudio) or with audio selected
+    const hasValidMusicChoice = selectedAudio !== null || musicSkipped;
+    if (!hasValidMusicChoice || selectedImages.length < 3 || !generationId || !scriptData) {
       setError(language === "ko" ? "최소 3개의 이미지가 필요합니다" : "At least 3 images required");
       return;
     }
@@ -686,18 +707,18 @@ export function InlineComposeFlow({
           order: idx,
         }));
 
-      // Start render
+      // Start render - audioAssetId is optional when music is skipped
       const renderResult = await composeApi.startRender({
         generationId,
         campaignId,
-        audioAssetId: selectedAudio.id,
+        audioAssetId: selectedAudio?.id || "", // Empty string when skipped, API handles this
         images: proxiedImages,
         script: { lines: scriptData.script.lines },
         effectPreset,
         aspectRatio,
         targetDuration: 0,
         vibe: scriptData.vibe,
-        audioStartTime,
+        audioStartTime: musicSkipped ? 0 : audioStartTime,
         prompt,
         searchKeywords: editableKeywords,
         tiktokSEO: tiktokSEO || undefined,
@@ -732,6 +753,7 @@ export function InlineComposeFlow({
     setSelectedAudio(null);
     setAudioAnalysis(null);
     setAudioStartTime(0);
+    setMusicSkipped(false);
     setGenerationId(null);
     setError("");
 
@@ -746,6 +768,16 @@ export function InlineComposeFlow({
   // ========================================
 
   const getProgressSummary = useCallback(() => {
+    // Determine music detail text
+    let musicDetail: string;
+    if (musicSkipped) {
+      musicDetail = language === "ko" ? "건너뜀" : "Skipped";
+    } else if (selectedAudio) {
+      musicDetail = selectedAudio.filename.substring(0, 20) + (selectedAudio.filename.length > 20 ? "..." : "");
+    } else {
+      musicDetail = language === "ko" ? "대기 중" : "Pending";
+    }
+
     return {
       script: {
         complete: scriptData !== null,
@@ -760,11 +792,9 @@ export function InlineComposeFlow({
         detail: `${selectedImages.length}/3+ ${language === "ko" ? "선택됨" : "selected"}`
       },
       music: {
-        complete: selectedAudio !== null,
+        complete: selectedAudio !== null || musicSkipped,
         label: language === "ko" ? "음악" : "Music",
-        detail: selectedAudio
-          ? selectedAudio.filename.substring(0, 20) + (selectedAudio.filename.length > 20 ? "..." : "")
-          : language === "ko" ? "대기 중" : "Pending"
+        detail: musicDetail
       },
       effects: {
         complete: false, // Never complete - final step
@@ -772,7 +802,7 @@ export function InlineComposeFlow({
         detail: effectPreset.replace("_", " ")
       }
     };
-  }, [scriptData, selectedImages.length, selectedAudio, effectPreset, language]);
+  }, [scriptData, selectedImages.length, selectedAudio, musicSkipped, effectPreset, language]);
 
   // ========================================
   // Navigation
@@ -782,7 +812,7 @@ export function InlineComposeFlow({
     switch (currentStep) {
       case 1: return scriptData !== null;
       case 2: return selectedImages.length >= 3;
-      case 3: return selectedAudio !== null;
+      case 3: return selectedAudio !== null || musicSkipped; // Can proceed if audio selected OR skipped
       case 4: return true;
       default: return false;
     }
@@ -815,6 +845,7 @@ export function InlineComposeFlow({
           scriptData={scriptData}
           selectedImages={selectedImages}
           selectedAudio={selectedAudio}
+          musicSkipped={musicSkipped}
           onStepClick={setCurrentStep}
         />
       </div>
@@ -888,8 +919,11 @@ export function InlineComposeFlow({
                 matchingMusic={matchingMusic}
                 analyzingAudio={analyzingAudio}
                 campaignId={campaignId}
+                musicSkipped={musicSkipped}
                 onSelectAudio={handleSelectAudio}
                 onSetAudioStartTime={setAudioStartTime}
+                onSkipMusic={handleSkipMusic}
+                onUnskipMusic={handleUnskipMusic}
                 onNext={handleNext}
               />
             )}
@@ -899,6 +933,7 @@ export function InlineComposeFlow({
                 scriptData={scriptData}
                 selectedImages={selectedImages}
                 selectedAudio={selectedAudio}
+                musicSkipped={musicSkipped}
                 aspectRatio={aspectRatio}
                 effectPreset={effectPreset}
                 setEffectPreset={setEffectPreset}
@@ -972,8 +1007,11 @@ export function InlineComposeFlow({
                 {selectedImages.length}/3+ {language === "ko" ? "이미지 선택됨" : "images selected"}
               </span>
             )}
-            {currentStep === 3 && !selectedAudio && (
+            {currentStep === 3 && !selectedAudio && !musicSkipped && (
               <span>{language === "ko" ? "음악을 선택하세요" : "Select music"}</span>
+            )}
+            {currentStep === 3 && musicSkipped && (
+              <span>{language === "ko" ? "음악 없이 진행" : "Proceeding without music"}</span>
             )}
           </div>
 
@@ -992,7 +1030,7 @@ export function InlineComposeFlow({
           ) : (
             <Button
               onClick={handleStartRender}
-              disabled={rendering || !selectedAudio || selectedImages.length < 3}
+              disabled={rendering || (!selectedAudio && !musicSkipped) || selectedImages.length < 3}
               className="bg-neutral-900 text-white hover:bg-neutral-800"
             >
               {rendering ? (

@@ -251,91 +251,113 @@ export async function getHashtagVideos(hashtag: string, limit: number = 30): Pro
 
 /**
  * Get trending/feed videos
+ * Fetches multiple pages to get more results
  */
-export async function getTrendingVideos(region: string = "US", limit: number = 20): Promise<{
+export async function getTrendingVideos(region: string = "US", limit: number = 50): Promise<{
   success: boolean;
   videos: TikTokVideo[];
   error?: string;
 }> {
-  console.log(`[TIKTOK-RAPIDAPI] Getting trending videos for region: ${region}`);
+  console.log(`[TIKTOK-RAPIDAPI] Getting trending videos for region: ${region}, limit: ${limit}`);
+
+  const videos: TikTokVideo[] = [];
+  const seenIds = new Set<string>();
+  const perPage = 30; // API max per request
+  const maxPages = Math.ceil(limit / perPage);
 
   try {
-    const params = new URLSearchParams({
-      region,
-      count: String(Math.min(limit, 30)),
-    });
-
-    const response = await fetch(`${BASE_URL}/feed-list?${params}`, {
-      method: "GET",
-      headers: getHeaders(),
-    });
-
-    if (!response.ok) {
-      return {
-        success: false,
-        videos: [],
-        error: `API error: ${response.status}`,
-      };
-    }
-
-    const data = await response.json();
-    const videos: TikTokVideo[] = [];
-    const items = data.aweme_list || data.data || [];
-
-    for (const item of items.slice(0, limit)) {
-      const videoId = item.aweme_id || "";
-      const author = item.author || {};
-      const authorId = author.unique_id || "";
-      const stats = item.statistics || {};
-
-      // Extract hashtags
-      const videoHashtags: string[] = [];
-      for (const extra of item.text_extra || []) {
-        if (extra.hashtag_name) {
-          videoHashtags.push(extra.hashtag_name);
-        }
-      }
-
-      // Get cover image URL
-      let coverUrl = "";
-      const cover = item.video?.cover || item.video?.origin_cover;
-      if (cover?.url_list?.length > 0) {
-        coverUrl = cover.url_list[0];
-      }
-
-      videos.push({
-        id: String(videoId),
-        description: item.desc || "",
-        author: {
-          uniqueId: authorId,
-          nickname: author.nickname || "",
-          avatarUrl: author.avatar_thumb?.url_list?.[0] || "",
-        },
-        stats: {
-          playCount: stats.play_count || 0,
-          likeCount: stats.digg_count || 0,
-          commentCount: stats.comment_count || 0,
-          shareCount: stats.share_count || 0,
-        },
-        videoUrl: `https://www.tiktok.com/@${authorId}/video/${videoId}`,
-        thumbnailUrl: coverUrl,
-        hashtags: videoHashtags,
-        createTime: item.create_time,
-        musicTitle: item.music?.title || "",
+    for (let page = 0; page < maxPages && videos.length < limit; page++) {
+      const params = new URLSearchParams({
+        region,
+        count: String(perPage),
       });
+
+      const response = await fetch(`${BASE_URL}/feed-list?${params}`, {
+        method: "GET",
+        headers: getHeaders(),
+      });
+
+      console.log(`[TIKTOK-RAPIDAPI] Trending page ${page + 1} response status: ${response.status}`);
+
+      if (!response.ok) {
+        if (videos.length > 0) break; // Return what we have
+        return {
+          success: false,
+          videos: [],
+          error: `API error: ${response.status}`,
+        };
+      }
+
+      const data = await response.json();
+      const items = data.aweme_list || data.data || [];
+
+      console.log(`[TIKTOK-RAPIDAPI] Trending page ${page + 1} found ${items.length} items`);
+
+      if (items.length === 0) break;
+
+      for (const item of items) {
+        if (videos.length >= limit) break;
+
+        const videoId = item.aweme_id || "";
+        if (!videoId || seenIds.has(videoId)) continue;
+        seenIds.add(videoId);
+
+        const author = item.author || {};
+        const authorId = author.unique_id || "";
+        const stats = item.statistics || {};
+
+        // Extract hashtags
+        const videoHashtags: string[] = [];
+        for (const extra of item.text_extra || []) {
+          if (extra.hashtag_name) {
+            videoHashtags.push(extra.hashtag_name);
+          }
+        }
+
+        // Get cover image URL
+        let coverUrl = "";
+        const cover = item.video?.cover || item.video?.origin_cover;
+        if (cover?.url_list?.length > 0) {
+          coverUrl = cover.url_list[0];
+        }
+
+        videos.push({
+          id: String(videoId),
+          description: item.desc || "",
+          author: {
+            uniqueId: authorId,
+            nickname: author.nickname || "",
+            avatarUrl: author.avatar_thumb?.url_list?.[0] || "",
+          },
+          stats: {
+            playCount: stats.play_count || 0,
+            likeCount: stats.digg_count || 0,
+            commentCount: stats.comment_count || 0,
+            shareCount: stats.share_count || 0,
+          },
+          videoUrl: `https://www.tiktok.com/@${authorId}/video/${videoId}`,
+          thumbnailUrl: coverUrl,
+          hashtags: videoHashtags,
+          createTime: item.create_time,
+          musicTitle: item.music?.title || "",
+        });
+      }
+
+      // Check if there are more results
+      if (!data.has_more) break;
     }
 
-    console.log(`[TIKTOK-RAPIDAPI] Trending found ${videos.length} videos`);
+    console.log(`[TIKTOK-RAPIDAPI] Trending total found ${videos.length} videos`);
 
     return {
-      success: true,
+      success: videos.length > 0,
       videos,
     };
   } catch (error) {
     console.error(`[TIKTOK-RAPIDAPI] Trending error:`, error);
     return {
-      success: false,
-      videos: [],
+      success: videos.length > 0,
+      videos,
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }

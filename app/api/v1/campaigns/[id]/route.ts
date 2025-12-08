@@ -35,7 +35,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    if (!campaign) {
+    // Check if campaign exists and is not soft deleted
+    if (!campaign || campaign.deletedAt) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
     }
 
@@ -88,7 +89,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    if (!existingCampaign) {
+    // Check if campaign exists and is not soft deleted
+    if (!existingCampaign || existingCampaign.deletedAt) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
     }
 
@@ -163,7 +165,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    if (!existingCampaign) {
+    // Check if campaign exists and is not already soft deleted
+    if (!existingCampaign || existingCampaign.deletedAt) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
     }
 
@@ -171,7 +174,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Access denied" }, { status: 403 });
     }
 
-    await prisma.campaign.delete({ where: { id } });
+    // Soft delete: set deletedAt instead of actual delete
+    await prisma.campaign.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
 
     // Invalidate cache
     await invalidateCampaignCache(id);

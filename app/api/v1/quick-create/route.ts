@@ -214,10 +214,11 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("page_size") || "20");
 
-    // Get only Quick Create generations for this user
+    // Get only Quick Create generations for this user (exclude soft-deleted)
     const where = {
       isQuickCreate: true,
       createdBy: user.id,
+      deletedAt: null,
     };
 
     const total = await prisma.videoGeneration.count({ where });

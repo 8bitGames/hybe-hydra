@@ -94,7 +94,7 @@ export const ComposeScriptGeneratorConfig: AgentConfig<ComposeScriptGeneratorInp
   },
 
   prompts: {
-    system: `You are a creative director for K-pop/country music social media content.
+    system: `You are a creative director for social media content.
 Generate viral TikTok video scripts with perfect timing and hook-first structure.
 
 Your expertise includes:
@@ -232,7 +232,7 @@ export class ComposeScriptGeneratorAgent extends BaseAgent<ComposeScriptGenerato
       const prompt = groundingTemplate.replace('{{artistName}}', artistName);
 
       const response = await groundingClient.generate({
-        system: 'You are a research assistant that finds current information about K-pop artists and trending topics.',
+        system: 'You are a research assistant that finds current information about artists and trending topics.',
         user: prompt,
         responseFormat: 'text',
       });

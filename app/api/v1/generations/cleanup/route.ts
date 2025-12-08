@@ -23,11 +23,12 @@ export async function GET(request: NextRequest) {
 
     const oneHourAgo = new Date(Date.now() - STUCK_THRESHOLD_MS);
 
-    // Find stuck PROCESSING generations (older than 1 hour)
+    // Find stuck PROCESSING generations (older than 1 hour) - exclude soft-deleted
     const stuckProcessing = await prisma.videoGeneration.findMany({
       where: {
         status: "PROCESSING",
         updatedAt: { lt: oneHourAgo },
+        deletedAt: null,
         ...(campaignId && { campaignId }),
         // RBAC: filter by user's labels unless admin
         ...(user.role !== "ADMIN" && {
@@ -51,12 +52,13 @@ export async function GET(request: NextRequest) {
       orderBy: { updatedAt: "asc" },
     });
 
-    // Find orphaned generations (no output URL and status is COMPLETED)
+    // Find orphaned generations (no output URL and status is COMPLETED) - exclude soft-deleted
     const orphanedCompleted = await prisma.videoGeneration.findMany({
       where: {
         status: "COMPLETED",
         outputUrl: null,
         composedOutputUrl: null,
+        deletedAt: null,
         ...(campaignId && { campaignId }),
         ...(user.role !== "ADMIN" && {
           campaign: {
@@ -77,11 +79,12 @@ export async function GET(request: NextRequest) {
       orderBy: { updatedAt: "asc" },
     });
 
-    // Find failed generations that can be cleaned up
+    // Find failed generations that can be cleaned up - exclude soft-deleted
     const failedGenerations = includeAll
       ? await prisma.videoGeneration.findMany({
           where: {
             status: "FAILED",
+            deletedAt: null,
             ...(campaignId && { campaignId }),
             ...(user.role !== "ADMIN" && {
               campaign: {

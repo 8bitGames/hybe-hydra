@@ -65,9 +65,9 @@ async function fetchDashboardStats(
 
     const campaignIds = campaigns.map(c => c.id);
 
-    // Get all video generations for these campaigns
+    // Get all video generations for these campaigns (exclude soft-deleted)
     const generations = await prisma.videoGeneration.findMany({
-      where: { campaignId: { in: campaignIds } },
+      where: { campaignId: { in: campaignIds }, deletedAt: null },
       select: {
         id: true,
         campaignId: true,

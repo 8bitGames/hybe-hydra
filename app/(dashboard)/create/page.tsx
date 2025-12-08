@@ -6,8 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
-import { useCampaigns, useAssets, useMerchandise } from "@/lib/queries";
-import type { MerchandiseItem as MerchandiseItemType } from "@/lib/campaigns-api";
+import { useCampaigns, useAssets } from "@/lib/queries";
 import { useToast } from "@/components/ui/toast";
 import { PersonalizePromptModal } from "@/components/features/create/PersonalizePromptModal";
 import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
@@ -46,7 +45,15 @@ import {
   Check,
   Library,
 } from "lucide-react";
+import { InfoButton } from "@/components/ui/info-button";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { InlineComposeFlow } from "@/components/features/create/compose/InlineComposeFlow";
+import { ChevronDown } from "lucide-react";
 
 // ============================================================================
 // Helper Functions
@@ -71,7 +78,7 @@ interface StepStatus {
   campaignSelected: boolean;
   methodSelected: boolean;
   musicSelected: boolean;
-  imageSelected: boolean; // Required for AI (Veo3) mode
+  imageSelected: boolean;
 }
 
 function StepProgressIndicator({
@@ -84,18 +91,12 @@ function StepProgressIndicator({
   const { language } = useI18n();
   const isKorean = language === "ko";
 
-  // For AI mode, image is required; for compose mode, it's not
-  const imageRequired = selectedMethod === "ai";
-  const assetsComplete = imageRequired
-    ? (status.musicSelected && status.imageSelected)
-    : status.musicSelected;
-
   // Determine current step and next action
+  // Assets are now optional, so step 3 is always "done" once method is selected
   const getCurrentStep = (): number => {
     if (!status.campaignSelected) return 1;
     if (!status.methodSelected) return 2;
-    if (!assetsComplete) return 3;
-    return 4; // All done
+    return 3; // Ready to go (assets are optional)
   };
 
   const currentStep = getCurrentStep();
@@ -111,18 +112,7 @@ function StepProgressIndicator({
         ? "AI 생성 또는 컴포즈 중 생성 방식을 선택하세요"
         : "Choose between AI Generated or Compose video";
     }
-    // Check assets based on method
-    if (!status.musicSelected) {
-      return isKorean
-        ? "영상에 사용할 음악을 추가하세요"
-        : "Add music for your video";
-    }
-    if (selectedMethod === "ai" && !status.imageSelected) {
-      return isKorean
-        ? "Veo3 생성을 위해 레퍼런스 이미지를 추가하세요"
-        : "Add a reference image for Veo3 generation";
-    }
-    // All complete
+    // Ready to generate (assets are optional)
     if (selectedMethod === "ai") {
       return isKorean
         ? "준비 완료! 'Veo3로 생성하기' 버튼을 클릭하세요"
@@ -133,7 +123,7 @@ function StepProgressIndicator({
       : "Ready! Click 'Start Compose' to create";
   };
 
-  // Build steps dynamically based on method
+  // Build steps - assets are now optional extras
   const steps = [
     {
       num: 1,
@@ -144,13 +134,6 @@ function StepProgressIndicator({
       num: 2,
       label: isKorean ? "생성 방식" : "Method",
       done: status.methodSelected,
-    },
-    {
-      num: 3,
-      label: selectedMethod === "ai"
-        ? (isKorean ? "음악 + 이미지" : "Music + Image")
-        : (isKorean ? "음악" : "Music"),
-      done: assetsComplete,
     },
   ];
 
@@ -208,7 +191,7 @@ function StepProgressIndicator({
 
 function ContextPanel() {
   const { language } = useI18n();
-  const { goToAnalyze, goToDiscover } = useWorkflowNavigation();
+  const { goToAnalyze, goToStart } = useWorkflowNavigation();
 
   const { discover, analyze } = useWorkflowStore(
     useShallow((state) => ({
@@ -253,7 +236,7 @@ function ContextPanel() {
           <Button
             variant="outline"
             size="sm"
-            onClick={goToDiscover}
+            onClick={goToStart}
             className="border-neutral-300"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
@@ -528,7 +511,6 @@ interface CampaignAsset {
   filename: string;
   original_filename: string;
   type: "image" | "video" | "audio" | "goods";
-  merchandise_type?: "album" | "photocard" | "lightstick" | "apparel" | "accessory" | "other" | null;
   s3_url: string;
   mime_type: string | null;
 }
@@ -540,8 +522,6 @@ function AssetUploadSection({
   onImagesChange,
   campaignAssets,
   isLoadingAssets,
-  merchandiseItems,
-  isLoadingMerchandise,
 }: {
   audioAsset: UploadedAsset | null;
   imageAssets: UploadedAsset[];
@@ -549,12 +529,12 @@ function AssetUploadSection({
   onImagesChange: (assets: UploadedAsset[]) => void;
   campaignAssets: CampaignAsset[];
   isLoadingAssets: boolean;
-  merchandiseItems: MerchandiseItemType[];
-  isLoadingMerchandise: boolean;
 }) {
   const { language } = useI18n();
   const [showAudioPicker, setShowAudioPicker] = useState(false);
   const [showImagePicker, setShowImagePicker] = useState(false);
+  const [musicExpanded, setMusicExpanded] = useState(false);
+  const [imageExpanded, setImageExpanded] = useState(false);
 
   // Filter campaign assets by type
   const audioAssets = useMemo(
@@ -563,10 +543,6 @@ function AssetUploadSection({
   );
   const imageAssetsFromCampaign = useMemo(
     () => campaignAssets.filter((a) => a.type === "image"),
-    [campaignAssets]
-  );
-  const goodsAssets = useMemo(
-    () => campaignAssets.filter((a) => a.type === "goods"),
     [campaignAssets]
   );
   const videoAssets = useMemo(
@@ -632,28 +608,12 @@ function AssetUploadSection({
     onImagesChange(imageAssets.filter((a) => a.id !== id));
   };
 
-  // Get merchandise type label
-  const getMerchandiseLabel = (type: string | null | undefined): string => {
-    const labels: Record<string, { ko: string; en: string }> = {
-      album: { ko: "앨범", en: "Album" },
-      photocard: { ko: "포토카드", en: "Photocard" },
-      lightstick: { ko: "응원봉", en: "Lightstick" },
-      apparel: { ko: "의류", en: "Apparel" },
-      accessory: { ko: "액세서리", en: "Accessory" },
-      other: { ko: "기타", en: "Other" },
-    };
-    if (!type || !labels[type]) return language === "ko" ? "굿즈" : "Goods";
-    return language === "ko" ? labels[type].ko : labels[type].en;
-  };
-
   // Calculate asset counts for summary
   const assetCounts = {
     audio: audioAssets.length,
     image: imageAssetsFromCampaign.length,
     video: videoAssets.length,
-    goods: goodsAssets.length,
-    merchandise: merchandiseItems.length,
-    total: campaignAssets.length + merchandiseItems.length,
+    total: campaignAssets.length,
   };
 
   return (
@@ -688,321 +648,103 @@ function AssetUploadSection({
                 {language === "ko" ? "영상" : "Videos"} {assetCounts.video}
               </Badge>
             )}
-            {assetCounts.goods > 0 && (
-              <Badge variant="secondary" className="text-[10px] bg-neutral-200">
-                <Library className="h-2.5 w-2.5 mr-1" />
-                {language === "ko" ? "굿즈" : "Goods"} {assetCounts.goods}
-              </Badge>
-            )}
-            {assetCounts.merchandise > 0 && (
-              <Badge variant="secondary" className="text-[10px] bg-neutral-200">
-                <Library className="h-2.5 w-2.5 mr-1" />
-                {language === "ko" ? "머천다이즈" : "Merchandise"} {assetCounts.merchandise}
-              </Badge>
-            )}
           </div>
         </div>
       )}
 
-      {/* Music Section */}
-      <div>
-        <Label className="text-xs text-neutral-500 mb-2 flex items-center gap-1">
-          <Music className="h-3 w-3" />
-          {language === "ko" ? "음악" : "Music"}
-        </Label>
-        {audioAsset ? (
-          <div className="flex items-center gap-2 p-2 bg-neutral-100 rounded-lg">
-            <Music className="h-4 w-4 text-neutral-500" />
-            <span className="text-sm text-neutral-700 flex-1 truncate">
-              {audioAsset.name}
-            </span>
-            {audioAsset.fromCampaign && (
-              <Badge variant="outline" className="text-[9px] border-neutral-300">
-                {language === "ko" ? "캠페인" : "Campaign"}
-              </Badge>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => onAudioChange(null)}
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {/* From Campaign Button */}
-            {audioAssets.length > 0 && (
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-neutral-600 border-neutral-200"
-                  onClick={() => setShowAudioPicker(!showAudioPicker)}
-                >
-                  <Library className="h-4 w-4 mr-2" />
-                  {language === "ko"
-                    ? `캠페인에서 선택 (${audioAssets.length})`
-                    : `Select from Campaign (${audioAssets.length})`}
-                </Button>
-                {showAudioPicker && (
-                  <div className="absolute z-10 mt-1 w-full bg-white border border-neutral-200 rounded-lg shadow-lg max-h-48 overflow-auto">
-                    {audioAssets.map((asset) => (
-                      <button
-                        key={asset.id}
-                        onClick={() => handleSelectCampaignAudio(asset)}
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-neutral-50 flex items-center gap-2"
-                      >
-                        <Music className="h-3 w-3 text-neutral-400" />
-                        <span className="truncate">{asset.original_filename}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            {/* Upload Button */}
-            <label className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-neutral-200 rounded-lg cursor-pointer hover:border-neutral-300 transition-colors">
-              <Upload className="h-4 w-4 text-neutral-400" />
-              <span className="text-sm text-neutral-500">
-                {language === "ko" ? "오디오 파일 업로드" : "Upload audio file"}
+      {/* Music Section - Collapsible */}
+      <Collapsible open={musicExpanded} onOpenChange={setMusicExpanded}>
+        <CollapsibleTrigger asChild>
+          <button className="w-full flex items-center justify-between p-3 bg-neutral-50 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors">
+            <div className="flex items-center gap-2">
+              <Music className="h-4 w-4 text-neutral-500" />
+              <span className="text-sm font-medium text-neutral-700">
+                {language === "ko" ? "음악" : "Music"}
               </span>
-              <input
-                type="file"
-                accept="audio/*"
-                className="hidden"
-                onChange={handleAudioUpload}
-              />
-            </label>
-          </div>
-        )}
-      </div>
-
-      {/* Reference Images Section */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <Label className="text-xs text-neutral-500 flex items-center gap-1">
-            <Images className="h-3 w-3" />
-            {language === "ko" ? "레퍼런스 이미지" : "Reference Images"}
-            <span className="text-neutral-400">({imageAssets.length}/10)</span>
-          </Label>
-          {imageAssetsFromCampaign.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 text-xs text-neutral-500"
-              onClick={() => setShowImagePicker(!showImagePicker)}
-            >
-              <Library className="h-3 w-3 mr-1" />
-              {language === "ko" ? "캠페인에서 선택" : "From Campaign"}
-            </Button>
-          )}
-        </div>
-
-        {/* Campaign Image Picker */}
-        {showImagePicker && imageAssetsFromCampaign.length > 0 && (
-          <div className="mb-3 p-3 border border-neutral-200 rounded-lg bg-neutral-50">
-            <div className="text-xs text-neutral-500 mb-2">
-              {language === "ko"
-                ? "캠페인 이미지 (클릭하여 추가)"
-                : "Campaign images (click to add)"}
-            </div>
-            <div className="grid grid-cols-6 gap-1.5 max-h-32 overflow-auto">
-              {imageAssetsFromCampaign.map((asset) => {
-                const isSelected = imageAssets.some((a) => a.id === asset.id);
-                return (
-                  <button
-                    key={asset.id}
-                    onClick={() => handleSelectCampaignImage(asset)}
-                    disabled={isSelected || imageAssets.length >= 10}
-                    className={cn(
-                      "relative aspect-square rounded overflow-hidden",
-                      isSelected
-                        ? "ring-2 ring-neutral-900 opacity-50"
-                        : "hover:ring-2 hover:ring-neutral-400"
-                    )}
-                  >
-                    <img
-                      src={asset.s3_url}
-                      alt={asset.original_filename}
-                      className="w-full h-full object-cover"
-                    />
-                    {isSelected && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                        <Check className="h-4 w-4 text-white" />
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full mt-2 text-xs"
-              onClick={() => setShowImagePicker(false)}
-            >
-              {language === "ko" ? "닫기" : "Close"}
-            </Button>
-          </div>
-        )}
-
-        {/* Selected Images Grid */}
-        <div className="grid grid-cols-5 gap-2">
-          {imageAssets.map((asset) => (
-            <div key={asset.id} className="relative aspect-square group">
-              <img
-                src={asset.url}
-                alt={asset.name}
-                className="w-full h-full object-cover rounded-lg"
-              />
-              {asset.fromCampaign && (
-                <div className="absolute bottom-0.5 left-0.5 px-1 py-0.5 bg-black/60 rounded text-[8px] text-white">
-                  {language === "ko" ? "캠페인" : "Campaign"}
-                </div>
+              <Badge variant="secondary" className="text-[10px] bg-neutral-200">
+                {language === "ko" ? "선택사항" : "Optional"}
+              </Badge>
+              {audioAsset && (
+                <Badge variant="outline" className="text-[10px] border-neutral-400 text-neutral-600">
+                  {audioAsset.name.length > 20 ? audioAsset.name.slice(0, 20) + "..." : audioAsset.name}
+                </Badge>
               )}
-              <button
-                onClick={() => removeImage(asset.id)}
-                className="absolute -top-1 -right-1 w-5 h-5 bg-neutral-900 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            </div>
+            <ChevronDown className={cn(
+              "h-4 w-4 text-neutral-500 transition-transform",
+              musicExpanded && "rotate-180"
+            )} />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-3 px-1">
+          {audioAsset ? (
+            <div className="flex items-center gap-2 p-2 bg-neutral-100 rounded-lg">
+              <Music className="h-4 w-4 text-neutral-500" />
+              <span className="text-sm text-neutral-700 flex-1 truncate">
+                {audioAsset.name}
+              </span>
+              {audioAsset.fromCampaign && (
+                <Badge variant="outline" className="text-[9px] border-neutral-300">
+                  {language === "ko" ? "캠페인" : "Campaign"}
+                </Badge>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => onAudioChange(null)}
               >
                 <X className="h-3 w-3" />
-              </button>
+              </Button>
             </div>
-          ))}
-          {imageAssets.length < 10 && (
-            <label className="aspect-square border-2 border-dashed border-neutral-200 rounded-lg flex items-center justify-center cursor-pointer hover:border-neutral-300 transition-colors">
-              <Plus className="h-5 w-5 text-neutral-400" />
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={handleImagesUpload}
-              />
-            </label>
-          )}
-        </div>
-      </div>
-
-      {/* Merchandise/Goods Section - Shows both campaign goods assets AND separate merchandise items */}
-      {(goodsAssets.length > 0 || merchandiseItems.length > 0) && (
-        <div>
-          <Label className="text-xs text-neutral-500 mb-2 flex items-center gap-1">
-            <Library className="h-3 w-3" />
-            {language === "ko" ? "굿즈/머천다이즈" : "Merchandise"}
-            <span className="text-neutral-400">
-              ({goodsAssets.length + merchandiseItems.length})
-            </span>
-          </Label>
-
-          {/* Artist Merchandise Items (from MerchandiseItem table) */}
-          {merchandiseItems.length > 0 && (
-            <div className="mb-3">
-              <p className="text-[10px] text-neutral-500 mb-2">
-                {language === "ko" ? "아티스트 머천다이즈" : "Artist Merchandise"}
-              </p>
-              <div className="grid grid-cols-4 gap-2">
-                {merchandiseItems.map((item) => {
-                  const isSelected = imageAssets.some((a) => a.id === item.id);
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => {
-                        if (isSelected || imageAssets.length >= 10) return;
-                        onImagesChange([
-                          ...imageAssets,
-                          {
-                            id: item.id,
-                            type: "image",
-                            name: item.name,
-                            url: item.s3_url,
-                            fromCampaign: true,
-                          },
-                        ]);
-                      }}
-                      disabled={isSelected || imageAssets.length >= 10}
-                      className={cn(
-                        "relative aspect-square rounded-lg overflow-hidden border-2 transition-all",
-                        isSelected
-                          ? "border-neutral-900 opacity-70"
-                          : "border-neutral-200 hover:border-neutral-400"
-                      )}
-                    >
-                      <img
-                        src={item.thumbnail_url || item.s3_url}
-                        alt={item.name}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute bottom-0 inset-x-0 p-1 bg-gradient-to-t from-black/70 to-transparent">
-                        <span className="text-[9px] text-white font-medium">
-                          {getMerchandiseLabel(item.type)}
-                        </span>
-                      </div>
-                      {isSelected && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                          <Check className="h-5 w-5 text-white" />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Campaign Goods Assets (from Asset table with type=goods) */}
-          {goodsAssets.length > 0 && (
-            <div>
-              {merchandiseItems.length > 0 && (
-                <p className="text-[10px] text-neutral-500 mb-2">
-                  {language === "ko" ? "캠페인 굿즈" : "Campaign Goods"}
-                </p>
+          ) : (
+            <div className="space-y-2">
+              {/* From Campaign Button */}
+              {audioAssets.length > 0 && (
+                <div className="relative">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-neutral-600 border-neutral-200"
+                    onClick={() => setShowAudioPicker(!showAudioPicker)}
+                  >
+                    <Library className="h-4 w-4 mr-2" />
+                    {language === "ko"
+                      ? `캠페인에서 선택 (${audioAssets.length})`
+                      : `Select from Campaign (${audioAssets.length})`}
+                  </Button>
+                  {showAudioPicker && (
+                    <div className="absolute z-10 mt-1 w-full bg-white border border-neutral-200 rounded-lg shadow-lg max-h-48 overflow-auto">
+                      {audioAssets.map((asset) => (
+                        <button
+                          key={asset.id}
+                          onClick={() => handleSelectCampaignAudio(asset)}
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-neutral-50 flex items-center gap-2"
+                        >
+                          <Music className="h-3 w-3 text-neutral-400" />
+                          <span className="truncate">{asset.original_filename}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
-              <div className="grid grid-cols-4 gap-2">
-                {goodsAssets.map((asset) => {
-                  const isSelected = imageAssets.some((a) => a.id === asset.id);
-                  return (
-                    <button
-                      key={asset.id}
-                      onClick={() => handleSelectCampaignImage(asset)}
-                      disabled={isSelected || imageAssets.length >= 10}
-                      className={cn(
-                        "relative aspect-square rounded-lg overflow-hidden border-2 transition-all",
-                        isSelected
-                          ? "border-neutral-900 opacity-70"
-                          : "border-neutral-200 hover:border-neutral-400"
-                      )}
-                    >
-                      <img
-                        src={asset.s3_url}
-                        alt={asset.original_filename}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute bottom-0 inset-x-0 p-1 bg-gradient-to-t from-black/70 to-transparent">
-                        <span className="text-[9px] text-white font-medium">
-                          {getMerchandiseLabel(asset.merchandise_type)}
-                        </span>
-                      </div>
-                      {isSelected && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                          <Check className="h-5 w-5 text-white" />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+              {/* Upload Button */}
+              <label className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-neutral-200 rounded-lg cursor-pointer hover:border-neutral-300 transition-colors">
+                <Upload className="h-4 w-4 text-neutral-400" />
+                <span className="text-sm text-neutral-500">
+                  {language === "ko" ? "오디오 파일 업로드" : "Upload audio file"}
+                </span>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={handleAudioUpload}
+                />
+              </label>
             </div>
           )}
-
-          <p className="text-[10px] text-neutral-400 mt-2">
-            {language === "ko"
-              ? "굿즈 이미지를 클릭하여 레퍼런스로 추가"
-              : "Click merchandise to add as reference"}
-          </p>
-        </div>
-      )}
-
+        </CollapsibleContent>
+      </Collapsible>
       {/* Video References Section */}
       {videoAssets.length > 0 && (
         <div>
@@ -1040,6 +782,141 @@ function AssetUploadSection({
           )}
         </div>
       )}
+
+      {/* Reference Images Section - Collapsible, at the bottom */}
+      <Collapsible open={imageExpanded} onOpenChange={setImageExpanded}>
+        <CollapsibleTrigger asChild>
+          <button className="w-full flex items-center justify-between p-3 bg-neutral-50 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors">
+            <div className="flex items-center gap-2">
+              <Images className="h-4 w-4 text-neutral-500" />
+              <span className="text-sm font-medium text-neutral-700">
+                {language === "ko" ? "레퍼런스 이미지" : "Reference Images"}
+              </span>
+              <Badge variant="secondary" className="text-[10px] bg-neutral-200">
+                {language === "ko" ? "선택사항" : "Optional"}
+              </Badge>
+              {imageAssets.length > 0 && (
+                <Badge variant="outline" className="text-[10px] border-neutral-400 text-neutral-600">
+                  {imageAssets.length}/10
+                </Badge>
+              )}
+            </div>
+            <ChevronDown className={cn(
+              "h-4 w-4 text-neutral-500 transition-transform",
+              imageExpanded && "rotate-180"
+            )} />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-3 px-1">
+          <div className="space-y-3">
+            {/* From Campaign Button */}
+            {imageAssetsFromCampaign.length > 0 && (
+              <div className="relative">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-neutral-600 border-neutral-200"
+                  onClick={() => setShowImagePicker(!showImagePicker)}
+                >
+                  <Library className="h-4 w-4 mr-2" />
+                  {language === "ko"
+                    ? `캠페인에서 선택 (${imageAssetsFromCampaign.length})`
+                    : `Select from Campaign (${imageAssetsFromCampaign.length})`}
+                </Button>
+              </div>
+            )}
+
+            {/* Campaign Image Picker */}
+            {showImagePicker && imageAssetsFromCampaign.length > 0 && (
+              <div className="p-3 border border-neutral-200 rounded-lg bg-neutral-50">
+                <div className="text-xs text-neutral-500 mb-2">
+                  {language === "ko"
+                    ? "캠페인 이미지 (클릭하여 추가)"
+                    : "Campaign images (click to add)"}
+                </div>
+                <div className="grid grid-cols-6 gap-1.5 max-h-32 overflow-auto">
+                  {imageAssetsFromCampaign.map((asset) => {
+                    const isSelected = imageAssets.some((a) => a.id === asset.id);
+                    return (
+                      <button
+                        key={asset.id}
+                        onClick={() => handleSelectCampaignImage(asset)}
+                        disabled={isSelected || imageAssets.length >= 10}
+                        className={cn(
+                          "relative aspect-square rounded overflow-hidden",
+                          isSelected
+                            ? "ring-2 ring-neutral-900 opacity-50"
+                            : "hover:ring-2 hover:ring-neutral-400"
+                        )}
+                      >
+                        <img
+                          src={asset.s3_url}
+                          alt={asset.original_filename}
+                          className="w-full h-full object-cover"
+                        />
+                        {isSelected && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                            <Check className="h-4 w-4 text-white" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full mt-2 text-xs"
+                  onClick={() => setShowImagePicker(false)}
+                >
+                  {language === "ko" ? "닫기" : "Close"}
+                </Button>
+              </div>
+            )}
+
+            {/* Selected Images Grid */}
+            <div className="grid grid-cols-5 gap-2">
+              {imageAssets.map((asset) => (
+                <div key={asset.id} className="relative aspect-square group">
+                  <img
+                    src={asset.url}
+                    alt={asset.name}
+                    className="w-full h-full object-cover rounded-lg"
+                  />
+                  {asset.fromCampaign && (
+                    <div className="absolute bottom-0.5 left-0.5 px-1 py-0.5 bg-black/60 rounded text-[8px] text-white">
+                      {language === "ko" ? "캠페인" : "Campaign"}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => removeImage(asset.id)}
+                    className="absolute -top-1 -right-1 w-5 h-5 bg-neutral-900 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              {imageAssets.length < 10 && (
+                <label className="aspect-square border-2 border-dashed border-neutral-200 rounded-lg flex items-center justify-center cursor-pointer hover:border-neutral-300 transition-colors">
+                  <Plus className="h-5 w-5 text-neutral-400" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleImagesUpload}
+                  />
+                </label>
+              )}
+            </div>
+
+            <p className="text-[10px] text-neutral-400">
+              {language === "ko"
+                ? "Veo3 영상 생성에 참고할 이미지를 추가하세요"
+                : "Add images to reference for Veo3 video generation"}
+            </p>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }
@@ -1262,26 +1139,18 @@ export default function CreatePage() {
     [campaigns, selectedCampaignId]
   );
 
+  // Get selected campaign object (for artist_name)
+  const selectedCampaign = useMemo(
+    () => campaigns.find((c) => c.id === selectedCampaignId),
+    [campaigns, selectedCampaignId]
+  );
+
   // Fetch assets for selected campaign
   const { data: assetsData, isLoading: isLoadingAssets } = useAssets(
     selectedCampaignId,
     { page_size: 100 }
   );
   const campaignAssets = useMemo(() => assetsData?.items || [], [assetsData]);
-
-  // Get artist_id from selected campaign to fetch merchandise
-  const selectedCampaign = useMemo(
-    () => campaigns.find((c) => c.id === selectedCampaignId),
-    [campaigns, selectedCampaignId]
-  );
-
-  // Fetch merchandise items for the campaign's artist
-  const { data: merchandiseData, isLoading: isLoadingMerchandise } = useMerchandise({
-    artist_id: selectedCampaign?.artist_id,
-    page_size: 50,
-    active_only: true,
-  });
-  const merchandiseItems = useMemo(() => merchandiseData?.items || [], [merchandiseData]);
 
   // Handle campaign change
   const handleCampaignChange = (campaignId: string) => {
@@ -1333,33 +1202,13 @@ export default function CreatePage() {
       return;
     }
 
-    // Check for audio asset - required for any video generation
-    if (!audioAsset) {
-      console.log("[Veo3] No audio asset selected");
-      toast.warning(
-        language === "ko" ? "음악 필요" : "Music required",
-        language === "ko" ? "영상 생성을 위해 음악을 선택하세요" : "Please select music for video generation"
-      );
-      return;
-    }
-
-    // MANDATORY: Reference image is required for Veo3 I2V generation
-    // User must provide at least one image
-    if (imageAssets.length === 0) {
-      console.log("[Veo3] No images selected - I2V mode requires at least one reference image");
-      toast.warning(
-        language === "ko" ? "이미지 필요" : "Image required",
-        language === "ko" ? "Veo3 영상 생성을 위해 최소 1개의 레퍼런스 이미지가 필요합니다. 이미지를 추가해주세요." : "At least one reference image is required for Veo3 video generation. Please add an image."
-      );
-      return;
-    }
-
-    // Images are attached, show personalization modal
-    console.log("[Veo3] Images attached, showing personalization modal");
-    console.log("[Veo3] Image URLs:", imageAssets.map(a => a.url));
+    // Music and images are now optional - proceed to personalization modal
+    console.log("[Veo3] Proceeding to personalization modal");
+    console.log("[Veo3] Audio:", audioAsset?.name || "None");
+    console.log("[Veo3] Images:", imageAssets.length > 0 ? imageAssets.map(a => a.url) : "None");
     setShowPersonalizeModal(true);
     console.log("[Veo3] showPersonalizeModal set to true");
-  }, [selectedCampaignId, audioAsset, imageAssets.length, analyze, router, language, toast]);
+  }, [selectedCampaignId, audioAsset, imageAssets.length, language, toast]);
 
   // Helper function to convert File to base64
   const fileToBase64 = useCallback((file: File): Promise<string> => {
@@ -1396,15 +1245,7 @@ export default function CreatePage() {
         imageAssetsCount: imageAssets.length,
       });
 
-      if (!audioAsset) {
-        console.log("[Veo3] No audio asset in personalization complete");
-        toast.warning(
-          language === "ko" ? "음악 필요" : "Music required",
-          language === "ko" ? "영상 생성을 위해 음악을 선택하세요" : "Please select music for video generation"
-        );
-        return;
-      }
-
+      // Music and images are now optional - proceed with generation
       setPersonalizedPrompt({ prompt, metadata });
       setShowPersonalizeModal(false);
       setIsGenerating(true);
@@ -1477,7 +1318,7 @@ export default function CreatePage() {
 
         const apiParams = {
           prompt: prompt.slice(0, 100) + "...",
-          audio_asset_id: audioAsset.id,
+          audio_asset_id: audioAsset?.id,
           aspect_ratio: metadata.aspectRatio,
           duration_seconds: parseInt(metadata.duration) || 5,
           reference_style: metadata.style || undefined,
@@ -1492,7 +1333,7 @@ export default function CreatePage() {
 
         const response = await videoApi.create(selectedCampaignId, {
           prompt,
-          audio_asset_id: audioAsset.id,
+          audio_asset_id: audioAsset?.id,
           aspect_ratio: metadata.aspectRatio,
           duration_seconds: parseInt(metadata.duration) || 5,
           reference_style: metadata.style || undefined,
@@ -1574,6 +1415,7 @@ export default function CreatePage() {
   // If compose flow is active, show the inline compose flow WITH partially disabled WorkflowHeader
   if (showComposeFlow && selectedCampaignId) {
     return (
+      <TooltipProvider>
       <div className="h-full flex flex-col bg-white">
         {/* WorkflowHeader - can go back to Analyze, but cannot go forward to Processing */}
         <WorkflowHeader
@@ -1588,10 +1430,12 @@ export default function CreatePage() {
           onBack={() => setShowComposeFlow(false)}
         />
       </div>
+      </TooltipProvider>
     );
   }
 
   return (
+    <TooltipProvider>
     <div className="h-full flex flex-col bg-white">
       {/* Header */}
       <WorkflowHeader
@@ -1634,6 +1478,12 @@ export default function CreatePage() {
                 <Label className="text-sm font-medium text-neutral-700">
                   {t.selectCampaign}
                 </Label>
+                <InfoButton
+                  content={language === "ko"
+                    ? "생성된 영상이 저장될 캠페인을 선택하세요. 캠페인에 업로드된 에셋(음악, 이미지)을 영상 제작에 활용할 수 있습니다. 분석 단계에서 선택한 캠페인이 기본 선택됩니다."
+                    : "Select the campaign where your video will be saved. You can use assets (music, images) uploaded to the campaign. The campaign from Analyze step is pre-selected."}
+                  side="bottom"
+                />
               </div>
               <Select
                 value={selectedCampaignId}
@@ -1683,6 +1533,12 @@ export default function CreatePage() {
                 <Label className="text-sm font-medium text-neutral-700">
                   {language === "ko" ? "생성 방식 선택" : "Choose Creation Method"}
                 </Label>
+                <InfoButton
+                  content={language === "ko"
+                    ? "AI 생성: Veo3로 이미지에서 영상을 자동 생성합니다. Compose: 에셋을 직접 조합하여 영상을 만듭니다. AI 생성은 크리에이티브한 영상에, Compose는 정확한 편집에 적합합니다."
+                    : "AI Generate: Auto-create video from images with Veo3. Compose: Manually combine assets. AI Generate is best for creative videos, Compose for precise editing."}
+                  side="bottom"
+                />
               </div>
               <CreateMethodCards
                 selectedMethod={selectedMethod}
@@ -1693,28 +1549,26 @@ export default function CreatePage() {
               />
             </div>
 
-            {/* Step 3: Asset Upload */}
+            {/* Step 3: Asset Upload (Optional) */}
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <div className={cn(
                   "w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
-                  selectedMethod === "ai"
-                    ? (audioAsset && imageAssets.length > 0 ? "bg-neutral-900 text-white" : "bg-neutral-200 text-neutral-600")
-                    : (audioAsset ? "bg-neutral-900 text-white" : "bg-neutral-200 text-neutral-600")
+                  (audioAsset || imageAssets.length > 0) ? "bg-neutral-900 text-white" : "bg-neutral-200 text-neutral-600"
                 )}>
-                  {selectedMethod === "ai"
-                    ? (audioAsset && imageAssets.length > 0 ? <Check className="h-3 w-3" /> : "3")
-                    : (audioAsset ? <Check className="h-3 w-3" /> : "3")
-                  }
+                  {(audioAsset || imageAssets.length > 0) ? <Check className="h-3 w-3" /> : "3"}
                 </div>
                 <Label className="text-sm font-medium text-neutral-700">
                   {language === "ko" ? "에셋 선택" : "Select Assets"}
                 </Label>
+                <InfoButton
+                  content={language === "ko"
+                    ? "영상 제작에 사용할 음악과 이미지를 선택합니다. 캠페인 에셋에서 선택하거나 새로 업로드할 수 있습니다. 음악과 이미지는 선택사항입니다."
+                    : "Select music and images for video creation. Choose from campaign assets or upload new files. Music and images are optional."}
+                  side="bottom"
+                />
                 <span className="text-xs text-neutral-400">
-                  ({selectedMethod === "ai"
-                    ? (language === "ko" ? "음악 + 이미지 필수" : "Music + Image required")
-                    : (language === "ko" ? "음악 필수" : "Music required")
-                  })
+                  ({language === "ko" ? "선택사항" : "Optional"})
                 </span>
               </div>
               <AssetUploadSection
@@ -1724,8 +1578,6 @@ export default function CreatePage() {
                 onImagesChange={setImageAssets}
                 campaignAssets={campaignAssets}
                 isLoadingAssets={isLoadingAssets}
-                merchandiseItems={merchandiseItems}
-                isLoadingMerchandise={isLoadingMerchandise}
               />
             </div>
           </div>
@@ -1745,5 +1597,6 @@ export default function CreatePage() {
         onComplete={handlePersonalizationComplete}
       />
     </div>
+    </TooltipProvider>
   );
 }

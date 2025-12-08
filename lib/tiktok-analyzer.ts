@@ -100,6 +100,9 @@ export interface TikTokAnalysisResult {
     duration: number;
     thumbnail_url: string;
     video_url: string;
+    // Compose video detection
+    is_photo_post: boolean;
+    image_urls: string[];
   };
   style_analysis?: VideoStyleAnalysis;
   content_analysis?: VideoContentAnalysis;

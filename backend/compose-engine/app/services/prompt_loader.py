@@ -138,7 +138,7 @@ Provide analysis in JSON format.'''
                 'model_options': {'temperature': 0.3, 'max_tokens': 1024}
             },
             'compose-script-generator': {
-                'system_prompt': '''You are an expert TikTok content strategist and script writer specializing in K-pop content.
+                'system_prompt': '''You are an expert TikTok content strategist and script writer.
 Your task is to create engaging, viral-worthy scripts that hook viewers in the first second.''',
                 'templates': {
                     'main': '''Create a TikTok script for {artist_name} content.

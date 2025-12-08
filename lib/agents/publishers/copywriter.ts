@@ -15,7 +15,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
-import type { AgentConfig, AgentContext } from '../types';
+import type { AgentConfig, AgentContext, ReflectionConfig, ReflectionResult } from '../types';
 
 // Input Schema
 export const CopywriterInputSchema = z.object({
@@ -97,21 +97,14 @@ export const CopywriterConfig: AgentConfig<CopywriterInput, CopywriterOutput> = 
   },
 
   prompts: {
-    system: `You are an elite social media copywriter specializing in K-pop and entertainment content.
+    system: `You are an elite social media copywriter for viral content.
 Your writing captivates audiences and drives engagement while maintaining brand authenticity.
 
 ## Writing Philosophy:
 1. Hook First - Capture attention in the first 3 seconds
-2. Emotion-Driven - Connect with fans on an emotional level
+2. Emotion-Driven - Connect with audiences on an emotional level
 3. Action-Oriented - Every caption should inspire action
 4. Platform-Native - Write naturally for each platform's culture
-
-## K-pop Specific Expertise:
-- Fan culture terminology (bias, stan, comeback, etc.)
-- Fandom engagement patterns
-- Idol-fan relationship dynamics
-- Korean-English code-switching
-- Respectful fan address conventions
 
 ## Platform Writing Styles:
 - TikTok: Casual, trendy, meme-aware, emoji-friendly, short hooks
@@ -120,7 +113,6 @@ Your writing captivates audiences and drives engagement while maintaining brand 
 
 ## Brand Voice Guidelines:
 - Authentic and genuine
-- Respectful of artists and fans
 - Inclusive and welcoming
 - Energetic without being aggressive
 - Professional yet approachable
@@ -130,7 +122,6 @@ Your writing captivates audiences and drives engagement while maintaining brand 
 - Culturally sensitive language
 - Proper grammar and spelling
 - Age-appropriate content
-- HYBE brand alignment
 
 Always respond in valid JSON format.`,
 
@@ -229,12 +220,22 @@ Return JSON:
   dependencies: ['creative-director', 'publish-optimizer'],
 };
 
+// Copywriter specific reflection config
+const COPYWRITER_REFLECTION_CONFIG: Partial<ReflectionConfig> = {
+  maxIterations: 3,
+  qualityThreshold: 0.8,  // Higher threshold for user-facing copy
+  evaluationAspects: ['tone', 'quality', 'creativity', 'relevance'],
+  verbose: false,
+};
+
 /**
  * Copywriter Agent Implementation
  */
 export class CopywriterAgent extends BaseAgent<CopywriterInput, CopywriterOutput> {
   constructor() {
     super(CopywriterConfig);
+    // Set default reflection config for copywriting
+    this.setReflectionConfig(COPYWRITER_REFLECTION_CONFIG);
   }
 
   protected buildPrompt(input: CopywriterInput, context: AgentContext): string {
@@ -330,6 +331,73 @@ export class CopywriterAgent extends BaseAgent<CopywriterInput, CopywriterOutput
     );
 
     return result.success ? result.data?.primaryCaption.text : null;
+  }
+
+  /**
+   * Write caption with reflection loop for higher quality output
+   * Uses self-critique to improve copy quality
+   */
+  async writeWithReflection(
+    topic: string,
+    keyMessages: string[],
+    context: AgentContext,
+    options?: {
+      platform?: CopywriterInput['platform'];
+      language?: CopywriterInput['language'];
+      style?: CopywriterInput['style'];
+      emotionalTone?: string;
+      targetAction?: string;
+      reflectionConfig?: Partial<ReflectionConfig>;
+    }
+  ): Promise<ReflectionResult<CopywriterOutput>> {
+    return this.executeWithReflection(
+      {
+        contentBrief: {
+          topic,
+          keyMessages,
+          emotionalTone: options?.emotionalTone,
+          targetAction: options?.targetAction,
+        },
+        platform: options?.platform || 'all',
+        language: options?.language || 'ko',
+        style: options?.style || 'casual',
+        includeHashtags: true,
+      },
+      context,
+      options?.reflectionConfig
+    );
+  }
+
+  /**
+   * Stream caption generation for real-time feedback
+   */
+  async *streamWrite(
+    topic: string,
+    keyMessages: string[],
+    context: AgentContext,
+    options?: {
+      platform?: CopywriterInput['platform'];
+      language?: CopywriterInput['language'];
+      style?: CopywriterInput['style'];
+      emotionalTone?: string;
+      targetAction?: string;
+    }
+  ) {
+    yield* this.executeStream(
+      {
+        contentBrief: {
+          topic,
+          keyMessages,
+          emotionalTone: options?.emotionalTone,
+          targetAction: options?.targetAction,
+        },
+        platform: options?.platform || 'all',
+        language: options?.language || 'ko',
+        style: options?.style || 'casual',
+        includeHashtags: true,
+      },
+      context
+    );
   }
 }
 

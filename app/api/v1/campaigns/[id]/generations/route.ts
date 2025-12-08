@@ -28,7 +28,7 @@ async function startVideoGeneration(
     aspectRatio?: string;
     referenceImageUrl?: string;  // User's reference photo (REQUIRED for I2V)
     style?: string;
-    audioUrl: string;  // Audio URL for composition
+    audioUrl?: string;  // Audio URL for composition (optional)
     // MANDATORY I2V parameters
     imageDescription: string;  // How the image should be used in video (required)
     // Pre-generated preview image (from two-step workflow) - skips AI image generation if provided
@@ -48,20 +48,24 @@ async function startVideoGeneration(
         },
       });
 
-      // Step 1: Analyze audio first (for better UX, do this early)
-      console.log(`[Generation ${generationId}] Analyzing audio...`);
+      // Step 1: Analyze audio first (for better UX, do this early) - only if audio is provided
       let audioAnalysis;
-      try {
-        audioAnalysis = await analyzeAudio(params.audioUrl);
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: {
-            progress: 10,
-            audioAnalysis: audioAnalysis as object,
-          },
-        });
-      } catch (audioError) {
-        console.warn(`[Generation ${generationId}] Audio analysis failed, continuing with defaults:`, audioError);
+      if (params.audioUrl) {
+        console.log(`[Generation ${generationId}] Analyzing audio...`);
+        try {
+          audioAnalysis = await analyzeAudio(params.audioUrl);
+          await prisma.videoGeneration.update({
+            where: { id: generationId },
+            data: {
+              progress: 10,
+              audioAnalysis: audioAnalysis as object,
+            },
+          });
+        } catch (audioError) {
+          console.warn(`[Generation ${generationId}] Audio analysis failed, continuing with defaults:`, audioError);
+        }
+      } else {
+        console.log(`[Generation ${generationId}] No audio provided, skipping audio analysis`);
       }
 
       // Step 2: MANDATORY I2V Mode - Always generate image first using Gemini, then animate with Veo3
@@ -341,64 +345,77 @@ async function startVideoGeneration(
         },
       });
 
-      // Step 3: Compose video with audio using Modal (GPU-accelerated)
-      console.log(`[Generation ${generationId}] Composing video with audio via Modal...`);
+      // Step 3: Compose video with audio using Modal (GPU-accelerated) - only if audio is provided
+      if (params.audioUrl) {
+        console.log(`[Generation ${generationId}] Composing video with audio via Modal...`);
 
-      const s3Bucket = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
-      const s3Key = generateS3Key(campaignId, "composed_video.mp4");
+        const s3Bucket = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
+        const s3Key = generateS3Key(campaignId, "composed_video.mp4");
 
-      const composeRequest: AudioComposeRequest = {
-        job_id: uuidv4(),
-        video_url: result.videoUrl,
-        audio_url: params.audioUrl,
-        audio_start_time: audioAnalysis?.best_15s_start || 0,
-        audio_volume: 1.0,
-        fade_in: 0.5,
-        fade_out: 1.0,
-        mix_original_audio: false,
-        output_s3_bucket: s3Bucket,
-        output_s3_key: s3Key,
-      };
+        const composeRequest: AudioComposeRequest = {
+          job_id: uuidv4(),
+          video_url: result.videoUrl,
+          audio_url: params.audioUrl,
+          audio_start_time: audioAnalysis?.best_15s_start || 0,
+          audio_volume: 1.0,
+          fade_in: 0.5,
+          fade_out: 1.0,
+          mix_original_audio: false,
+          output_s3_bucket: s3Bucket,
+          output_s3_key: s3Key,
+        };
 
-      console.log(`[Generation ${generationId}] Modal compose request:`, {
-        video_url: result.videoUrl.slice(0, 60) + "...",
-        audio_start_time: composeRequest.audio_start_time,
-        output_key: s3Key,
-      });
+        console.log(`[Generation ${generationId}] Modal compose request:`, {
+          video_url: result.videoUrl.slice(0, 60) + "...",
+          audio_start_time: composeRequest.audio_start_time,
+          output_key: s3Key,
+        });
 
-      const composeResult = await composeVideoWithAudioModal({
-        ...composeRequest,
-        pollInterval: 3000,  // Poll every 3 seconds
-        maxWaitTime: 300000, // Max 5 minutes
-        onProgress: (status) => {
-          console.log(`[Generation ${generationId}] Modal compose status: ${status.status}`);
-        },
-      });
-
-      if (composeResult.status === "completed" && composeResult.output_url) {
-        // Success - update with composed video URL
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: {
-            status: "COMPLETED",
-            progress: 100,
-            composedOutputUrl: composeResult.output_url,
-            audioStartTime: audioAnalysis?.best_15s_start || 0,
-            audioDuration: 15,
+        const composeResult = await composeVideoWithAudioModal({
+          ...composeRequest,
+          pollInterval: 3000,  // Poll every 3 seconds
+          maxWaitTime: 300000, // Max 5 minutes
+          onProgress: (status) => {
+            console.log(`[Generation ${generationId}] Modal compose status: ${status.status}`);
           },
         });
-        console.log(`[Generation ${generationId}] Complete with audio! URL: ${composeResult.output_url.slice(0, 60)}...`);
+
+        if (composeResult.status === "completed" && composeResult.output_url) {
+          // Success - update with composed video URL
+          await prisma.videoGeneration.update({
+            where: { id: generationId },
+            data: {
+              status: "COMPLETED",
+              progress: 100,
+              composedOutputUrl: composeResult.output_url,
+              audioStartTime: audioAnalysis?.best_15s_start || 0,
+              audioDuration: 15,
+            },
+          });
+          console.log(`[Generation ${generationId}] Complete with audio! URL: ${composeResult.output_url.slice(0, 60)}...`);
+        } else {
+          // Composition failed, but video succeeded - mark as completed with warning
+          console.warn(`[Generation ${generationId}] Audio composition failed:`, composeResult.error);
+          await prisma.videoGeneration.update({
+            where: { id: generationId },
+            data: {
+              status: "COMPLETED",
+              progress: 100,
+              errorMessage: `Video generated but audio composition failed: ${composeResult.error}`,
+            },
+          });
+        }
       } else {
-        // Composition failed, but video succeeded - mark as completed with warning
-        console.warn(`[Generation ${generationId}] Audio composition failed:`, composeResult.error);
+        // No audio - mark video as completed directly
+        console.log(`[Generation ${generationId}] No audio provided, completing without composition...`);
         await prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "COMPLETED",
             progress: 100,
-            errorMessage: `Video generated but audio composition failed: ${composeResult.error}`,
           },
         });
+        console.log(`[Generation ${generationId}] Complete (no audio)! URL: ${result.videoUrl.slice(0, 60)}...`);
       }
     } catch (error) {
       console.error("Video generation error:", error);
@@ -446,8 +463,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Access denied" }, { status: 403 });
     }
 
-    // Build where clause
-    const where: Record<string, unknown> = { campaignId };
+    // Build where clause - exclude soft-deleted records
+    const where: Record<string, unknown> = { campaignId, deletedAt: null };
     if (status) {
       where.status = status.toUpperCase() as VideoGenerationStatus;
     }
@@ -618,30 +635,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Validate audio asset (required)
-    if (!audio_asset_id) {
-      return NextResponse.json(
-        { detail: "Audio asset is required. Please select a music track." },
-        { status: 400 }
-      );
-    }
+    // Validate audio asset (optional - if provided, must exist and be audio type)
+    let audioAsset = null;
+    if (audio_asset_id) {
+      audioAsset = await prisma.asset.findUnique({
+        where: { id: audio_asset_id },
+      });
 
-    const audioAsset = await prisma.asset.findUnique({
-      where: { id: audio_asset_id },
-    });
+      if (!audioAsset) {
+        return NextResponse.json(
+          { detail: "Audio asset not found" },
+          { status: 400 }
+        );
+      }
 
-    if (!audioAsset) {
-      return NextResponse.json(
-        { detail: "Audio asset not found" },
-        { status: 400 }
-      );
-    }
-
-    if (audioAsset.type !== "AUDIO") {
-      return NextResponse.json(
-        { detail: "Selected asset is not an audio file" },
-        { status: 400 }
-      );
+      if (audioAsset.type !== "AUDIO") {
+        return NextResponse.json(
+          { detail: "Selected asset is not an audio file" },
+          { status: 400 }
+        );
+      }
     }
 
     // Validate reference image if provided
@@ -716,7 +729,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       aspectRatio: aspect_ratio,
       referenceImageUrl,
       style: reference_style,
-      audioUrl: audioAsset.s3Url,
+      audioUrl: audioAsset?.s3Url,
       // I2V is MANDATORY - always generate image first
       imageDescription: image_description || prompt,  // Use prompt as fallback description
       // Pre-generated preview image (skip AI image generation step if provided)

@@ -41,24 +41,24 @@ const KNOWN_CELEBRITIES: Array<{
   type: "male_solo" | "female_solo" | "male_group" | "female_group" | "mixed_group";
   description: string;
 }> = [
-  // BTS Members
-  { names: ["RM", "Kim Namjoon", "Namjoon", "남준"], type: "male_solo", description: "a male K-Pop artist" },
-  { names: ["Jin", "Kim Seokjin", "Seokjin", "석진"], type: "male_solo", description: "a male K-Pop artist" },
-  { names: ["Suga", "Min Yoongi", "Yoongi", "윤기", "Agust D"], type: "male_solo", description: "a male K-Pop artist" },
-  { names: ["J-Hope", "Jung Hoseok", "Hoseok", "호석"], type: "male_solo", description: "a male K-Pop artist" },
-  { names: ["Jimin", "Park Jimin", "박지민"], type: "male_solo", description: "a male K-Pop artist" },
-  { names: ["V", "Kim Taehyung", "Taehyung", "태형"], type: "male_solo", description: "a male K-Pop artist" },
-  { names: ["Jungkook", "Jeon Jungkook", "정국"], type: "male_solo", description: "a male K-Pop artist" },
-  { names: ["BTS", "방탄소년단", "Bangtan"], type: "male_group", description: "a male K-Pop group" },
+  // Korean Artists
+  { names: ["RM", "Kim Namjoon", "Namjoon", "남준"], type: "male_solo", description: "a male artist" },
+  { names: ["Jin", "Kim Seokjin", "Seokjin", "석진"], type: "male_solo", description: "a male artist" },
+  { names: ["Suga", "Min Yoongi", "Yoongi", "윤기", "Agust D"], type: "male_solo", description: "a male artist" },
+  { names: ["J-Hope", "Jung Hoseok", "Hoseok", "호석"], type: "male_solo", description: "a male artist" },
+  { names: ["Jimin", "Park Jimin", "박지민"], type: "male_solo", description: "a male artist" },
+  { names: ["V", "Kim Taehyung", "Taehyung", "태형"], type: "male_solo", description: "a male artist" },
+  { names: ["Jungkook", "Jeon Jungkook", "정국"], type: "male_solo", description: "a male artist" },
+  { names: ["BTS", "방탄소년단", "Bangtan"], type: "male_group", description: "a male group" },
 
-  // Other HYBE Artists
-  { names: ["SEVENTEEN", "세븐틴", "SVT"], type: "male_group", description: "a male K-Pop group" },
-  { names: ["TXT", "TOMORROW X TOGETHER", "투모로우바이투게더"], type: "male_group", description: "a male K-Pop group" },
-  { names: ["ENHYPEN", "엔하이픈"], type: "male_group", description: "a male K-Pop group" },
-  { names: ["LE SSERAFIM", "르세라핌"], type: "female_group", description: "a female K-Pop group" },
-  { names: ["NewJeans", "뉴진스"], type: "female_group", description: "a female K-Pop group" },
-  { names: ["ILLIT", "아일릿"], type: "female_group", description: "a female K-Pop group" },
-  { names: ["fromis_9", "프로미스나인"], type: "female_group", description: "a female K-Pop group" },
+  // Other Korean Artists
+  { names: ["SEVENTEEN", "세븐틴", "SVT"], type: "male_group", description: "a male group" },
+  { names: ["TXT", "TOMORROW X TOGETHER", "투모로우바이투게더"], type: "male_group", description: "a male group" },
+  { names: ["ENHYPEN", "엔하이픈"], type: "male_group", description: "a male group" },
+  { names: ["LE SSERAFIM", "르세라핌"], type: "female_group", description: "a female group" },
+  { names: ["NewJeans", "뉴진스"], type: "female_group", description: "a female group" },
+  { names: ["ILLIT", "아일릿"], type: "female_group", description: "a female group" },
+  { names: ["fromis_9", "프로미스나인"], type: "female_group", description: "a female group" },
 
   // Country Artists (based on the user's campaigns)
   { names: ["Thomas Rhett"], type: "male_solo", description: "a male country artist" },

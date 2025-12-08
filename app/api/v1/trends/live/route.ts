@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { TrendPlatform } from "@prisma/client";
-import { searchTikTok } from "@/lib/tiktok-rapidapi";
+import { getTrendingVideos } from "@/lib/tiktok-rapidapi";
 
 const CACHE_DURATION_HOURS = 24;
-const TRENDING_SEARCH_QUERY = "trending"; // Search for "trending" keyword
+const TRENDING_SEARCH_QUERY = "trending"; // Identifier for cached trending videos
 
 // GET /api/v1/trends/live - Get live trending videos with 24h cache
 export async function GET(request: NextRequest) {
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const limit = Math.min(parseInt(searchParams.get("limit") || "30"), 50);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
     const forceRefresh = searchParams.get("refresh") === "true";
 
     console.log("[TRENDS-LIVE] Request:", { limit, forceRefresh });
@@ -45,8 +45,8 @@ export async function GET(request: NextRequest) {
     // Fetch fresh data if needed
     if (needsRefresh) {
       try {
-        console.log(`[TRENDS-LIVE] Fetching fresh trending data`);
-        const result = await searchTikTok(TRENDING_SEARCH_QUERY, limit);
+        console.log(`[TRENDS-LIVE] Fetching fresh trending data, limit: ${limit}`);
+        const result = await getTrendingVideos("US", limit);
 
         if (result.success && result.videos.length > 0) {
           // Delete old trending videos (cleanup)

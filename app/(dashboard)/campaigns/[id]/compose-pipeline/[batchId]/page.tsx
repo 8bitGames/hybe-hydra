@@ -145,7 +145,7 @@ export default function ComposePipelineDetailPage() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">
-          {isKorean ? "파이프라인을 찾을 수 없습니다" : "Pipeline not found"}
+          {isKorean ? "베리에이션을 찾을 수 없습니다" : "Variation not found"}
         </p>
         <Link href="/pipeline">
           <Button variant="outline" className="mt-4">
@@ -172,7 +172,7 @@ export default function ComposePipelineDetailPage() {
         <div className="flex-1">
           <h1 className="text-xl font-bold flex items-center gap-2">
             <Wand2 className="w-5 h-5 text-purple-500" />
-            {isKorean ? "Compose 파이프라인 상세" : "Compose Pipeline Detail"}
+            {isKorean ? "Compose 베리에이션 상세" : "Compose Variation Detail"}
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {pipeline.seed_generation.prompt.slice(0, 80)}

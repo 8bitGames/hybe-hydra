@@ -2,6 +2,10 @@
  * Analyze Generate Ideas API
  * ==========================
  * Uses CreativeDirectorAgent for trend-following content idea generation
+ *
+ * Supports both regular and streaming responses:
+ * - POST /api/v1/analyze/generate-ideas - Regular JSON response
+ * - POST /api/v1/analyze/generate-ideas?stream=true - Server-Sent Events stream
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -42,6 +46,8 @@ interface GenerateIdeasRequest {
   hashtags: string[];
   target_audience: string[];
   content_goals: string[];
+  campaign_description?: string | null;  // Central context for all prompts - describes campaign concept/goal
+  genre?: string | null;  // Music genre for viral content generation (e.g., pop, hiphop, ballad)
   // Rich trend data (instead of just a count)
   inspiration_videos?: InspirationVideo[];
   trend_insights?: TrendInsights;
@@ -85,12 +91,18 @@ export async function POST(request: NextRequest) {
   try {
     const body: GenerateIdeasRequest = await request.json();
 
+    // Check if streaming is requested
+    const url = new URL(request.url);
+    const isStreaming = url.searchParams.get("stream") === "true";
+
     const {
       user_idea,
       keywords,
       hashtags,
       target_audience,
       content_goals,
+      campaign_description,
+      genre,
       inspiration_videos,
       trend_insights,
       performance_metrics,
@@ -114,6 +126,7 @@ export async function POST(request: NextRequest) {
         artistName,
         platform: "tiktok",
         language,
+        genre: genre || undefined,  // Music genre for viral content generation
         sessionId: `analyze-ideas-${Date.now()}`,
       },
       discover: {
@@ -123,21 +136,26 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    // Execute agent
-    const agentResult = await creativeDirector.execute(
-      {
-        userIdea: user_idea || undefined,
-        strategy: strategy,
-        audience: target_audience.length > 0 ? target_audience.join(", ") : undefined,
-        goals: content_goals.length > 0 ? content_goals : undefined,
-        benchmarks: performance_metrics ? {
-          avgViews: performance_metrics.avgViews,
-          avgEngagement: performance_metrics.avgEngagement,
-          topPerformers: extractTopPerformers(inspiration_videos),
-        } : undefined,
-      },
-      agentContext
-    );
+    const agentInput = {
+      userIdea: user_idea || undefined,
+      campaignDescription: campaign_description || undefined,  // Central context for all prompts
+      strategy: strategy,
+      audience: target_audience.length > 0 ? target_audience.join(", ") : undefined,
+      goals: content_goals.length > 0 ? content_goals : undefined,
+      benchmarks: performance_metrics ? {
+        avgViews: performance_metrics.avgViews,
+        avgEngagement: performance_metrics.avgEngagement,
+        topPerformers: extractTopPerformers(inspiration_videos),
+      } : undefined,
+    };
+
+    // Handle streaming response
+    if (isStreaming) {
+      return handleStreamingResponse(creativeDirector, agentInput, agentContext);
+    }
+
+    // Execute agent (non-streaming)
+    const agentResult = await creativeDirector.execute(agentInput, agentContext);
 
     // Check if agent execution was successful
     if (!agentResult.success || !agentResult.data) {
@@ -182,6 +200,124 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// ============================================================================
+// Streaming Handler
+// ============================================================================
+
+/**
+ * Handle streaming response using Server-Sent Events
+ */
+function handleStreamingResponse(
+  agent: ReturnType<typeof createCreativeDirectorAgent>,
+  input: Parameters<typeof agent.execute>[0],
+  context: AgentContext
+): Response {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // Send initial event
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: "start", message: "Generating ideas..." })}\n\n`)
+        );
+
+        // Use the streaming generator
+        const streamGenerator = agent.streamIdeas(
+          input.userIdea,
+          context,
+          {
+            strategy: input.strategy,
+            audience: input.audience,
+            goals: input.goals,
+          }
+        );
+
+        let accumulatedContent = "";
+
+        for await (const chunk of streamGenerator) {
+          if (chunk.done) {
+            // Final result with parsed data
+            const result = chunk as unknown as { done: true; data?: unknown; success: boolean; error?: string };
+
+            if (result.success && result.data) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const output = result.data as any;
+              const ideas: ContentIdea[] = (output.ideas || []).map((idea: {
+                title: string;
+                hook: string;
+                description: string;
+                estimatedEngagement: "high" | "medium" | "low";
+                optimizedPrompt: string;
+                suggestedMusic?: { bpm: number; genre: string };
+                scriptOutline?: string[];
+              }) => ({
+                id: uuidv4(),
+                type: "ai_video" as const,
+                title: idea.title,
+                hook: idea.hook,
+                description: idea.description,
+                estimatedEngagement: idea.estimatedEngagement,
+                optimizedPrompt: idea.optimizedPrompt,
+                suggestedMusic: idea.suggestedMusic,
+                scriptOutline: idea.scriptOutline,
+              }));
+
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({
+                  type: "complete",
+                  success: true,
+                  ideas,
+                  optimized_hashtags: output.optimizedHashtags || [],
+                  content_strategy: output.contentStrategy || "",
+                })}\n\n`)
+              );
+            } else {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({
+                  type: "error",
+                  error: result.error || "Failed to generate ideas",
+                })}\n\n`)
+              );
+            }
+          } else {
+            // Partial content chunk
+            accumulatedContent = chunk.accumulated || accumulatedContent + chunk.content;
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({
+                type: "chunk",
+                content: chunk.content,
+                accumulated: accumulatedContent.length,
+              })}\n\n`)
+            );
+          }
+        }
+
+        // Send done event
+        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+        controller.close();
+      } catch (error) {
+        console.error("Streaming error:", error);
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({
+            type: "error",
+            error: error instanceof Error ? error.message : "Streaming failed",
+          })}\n\n`)
+        );
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    },
+  });
 }
 
 // ============================================================================

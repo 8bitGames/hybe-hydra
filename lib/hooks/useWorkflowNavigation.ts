@@ -17,7 +17,7 @@ export interface WorkflowNavigationResult {
   setCurrentStage: (stage: WorkflowStage) => void;
 
   // Navigation functions
-  goToDiscover: () => void;
+  goToStart: () => void;
   goToAnalyze: () => void;
   goToCreate: () => void;
   goToProcessing: () => void;
@@ -59,12 +59,12 @@ const STAGE_CONFIG: Record<
   WorkflowStage,
   Omit<StageInfo, "isCompleted" | "isCurrent" | "canNavigate">
 > = {
-  discover: {
-    id: "discover",
-    label: { ko: "발견", en: "Discover" },
-    description: { ko: "트렌드 검색 및 영감 수집", en: "Search trends and gather inspiration" },
-    route: "/discover",
-    icon: "Search",
+  start: {
+    id: "start",
+    label: { ko: "시작", en: "Start" },
+    description: { ko: "새 콘텐츠 시작하기", en: "Start new content" },
+    route: "/start",
+    icon: "Zap",
   },
   analyze: {
     id: "analyze",
@@ -96,7 +96,7 @@ const STAGE_CONFIG: Record<
   },
 };
 
-const STAGE_ORDER: WorkflowStage[] = ["discover", "analyze", "create", "processing", "publish"];
+const STAGE_ORDER: WorkflowStage[] = ["start", "analyze", "create", "processing", "publish"];
 
 export function useWorkflowNavigation(): WorkflowNavigationResult {
   const router = useRouter();
@@ -116,9 +116,9 @@ export function useWorkflowNavigation(): WorkflowNavigationResult {
   const canProceedToPublish = useWorkflowStore(selectCanProceedToPublish);
 
   // Simple navigation (just changes route)
-  const goToDiscover = useCallback(() => {
-    setCurrentStage("discover");
-    router.push("/discover");
+  const goToStart = useCallback(() => {
+    setCurrentStage("start");
+    router.push("/start");
   }, [router, setCurrentStage]);
 
   const goToAnalyze = useCallback(() => {
@@ -177,7 +177,7 @@ export function useWorkflowNavigation(): WorkflowNavigationResult {
   // Reset workflow
   const resetWorkflow = useCallback(() => {
     resetWorkflowStore();
-    router.push("/discover");
+    router.push("/start");
   }, [router, resetWorkflowStore]);
 
   // Get stage info with dynamic state
@@ -221,7 +221,7 @@ export function useWorkflowNavigation(): WorkflowNavigationResult {
     currentStage,
     completedStages,
     setCurrentStage,
-    goToDiscover,
+    goToStart,
     goToAnalyze,
     goToCreate,
     goToProcessing,

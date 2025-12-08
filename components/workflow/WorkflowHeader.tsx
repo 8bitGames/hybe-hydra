@@ -7,11 +7,11 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { ArrowLeft, ArrowRight, Compass, Sparkles, Clapperboard, Settings2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, Zap, Sparkles, Clapperboard, Settings2, Upload } from "lucide-react";
 
 // Stage configuration
 const STAGES = [
-  { id: "discover", route: "/discover", icon: Compass, label: { ko: "발견", en: "Discover" }, description: { ko: "트렌드 검색", en: "Search trends" } },
+  { id: "start", route: "/start", icon: Zap, label: { ko: "시작", en: "Start" }, description: { ko: "새 콘텐츠 시작", en: "Start new content" } },
   { id: "analyze", route: "/analyze", icon: Sparkles, label: { ko: "분석", en: "Analyze" }, description: { ko: "아이디어 분석", en: "Analyze ideas" } },
   { id: "create", route: "/create", icon: Clapperboard, label: { ko: "생성", en: "Create" }, description: { ko: "영상 생성", en: "Create videos" } },
   { id: "processing", route: "/processing", icon: Settings2, label: { ko: "프로세싱", en: "Processing" }, description: { ko: "영상 검토", en: "Review videos" } },
@@ -66,7 +66,7 @@ export function WorkflowHeader({
   const Icon = currentStage.icon;
 
   return (
-    <div className="flex items-center justify-between px-[7%] py-4 border-b border-neutral-200 bg-white shrink-0">
+    <div className="flex items-center justify-between px-[7%] py-4 border-b border-neutral-200 bg-white shrink-0 sticky top-0 z-10">
       {/* Left: Icon + Title */}
       <div className="flex items-center gap-3 min-w-[200px]">
         <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center">
@@ -82,73 +82,7 @@ export function WorkflowHeader({
         </div>
       </div>
 
-      {/* Center: Workflow Progress */}
-      <div className="flex items-center gap-1">
-        {STAGES.map((stage, index) => {
-          const StageIcon = stage.icon;
-          const isCurrent = pathname.startsWith(stage.route);
-          const isPast = index < currentIndex;
-          const isFuture = index > currentIndex;
-          const isLast = index === STAGES.length - 1;
 
-          // Determine if this link should be disabled
-          const isLinkDisabled = disabled || (disableForward && isFuture);
-
-          const content = (
-            <>
-              <div
-                className={cn(
-                  "flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all",
-                  isCurrent && "border-neutral-900 bg-neutral-900 text-white",
-                  isPast && "border-neutral-400 bg-transparent text-neutral-400",
-                  !isCurrent && !isPast && "border-neutral-300 bg-transparent text-neutral-300",
-                  !isLinkDisabled && "hover:border-neutral-500",
-                  isLinkDisabled && "opacity-50 cursor-not-allowed"
-                )}
-              >
-                <StageIcon className="w-4 h-4" />
-              </div>
-              <span
-                className={cn(
-                  "text-xs font-medium whitespace-nowrap transition-colors",
-                  isCurrent && "text-neutral-900",
-                  isPast && "text-neutral-500",
-                  !isCurrent && !isPast && "text-neutral-400",
-                  isLinkDisabled && "opacity-50"
-                )}
-              >
-                {stage.label[language]}
-              </span>
-            </>
-          );
-
-          return (
-            <React.Fragment key={stage.id}>
-              {isLinkDisabled ? (
-                <div className="flex flex-col items-center gap-1 cursor-not-allowed">
-                  {content}
-                </div>
-              ) : (
-                <Link
-                  href={stage.route}
-                  className="flex flex-col items-center gap-1 transition-all cursor-pointer"
-                >
-                  {content}
-                </Link>
-              )}
-              {!isLast && (
-                <div
-                  className={cn(
-                    "mx-1 w-6 h-0.5 rounded-full transition-colors",
-                    isPast ? "bg-neutral-400" : "bg-neutral-200",
-                    (disabled || (disableForward && isFuture)) && "opacity-50"
-                  )}
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
-      </div>
 
       {/* Right: Navigation Buttons */}
       <div className="flex items-center gap-2 min-w-[200px] justify-end">

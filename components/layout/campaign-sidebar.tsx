@@ -78,7 +78,7 @@ const workflowSteps: WorkflowStep[] = [
   },
   {
     id: "pipeline",
-    name: "Pipeline",
+    name: "Variation",
     description: "Batch variations & A/B testing",
     icon: Layers,
     href: (id) => `/campaigns/${id}/pipeline`,
@@ -405,7 +405,7 @@ export function CampaignSidebar({ className }: CampaignSidebarProps) {
                 )}
               >
                 <Layers className="h-4 w-4" />
-                <span className="text-sm">Pipeline</span>
+                <span className="text-sm">Variation</span>
                 <Badge variant="secondary" className="ml-auto text-[10px]">
                   A/B
                 </Badge>

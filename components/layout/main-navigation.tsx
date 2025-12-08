@@ -55,10 +55,10 @@ interface NavItem {
 // Workflow items - main 4-stage flow
 const workflowItems: NavItem[] = [
   {
-    name: { ko: "발견", en: "Discover" },
-    href: "/discover",
-    icon: Search,
-    description: { ko: "트렌드 검색 및 영감 수집", en: "Search trends and gather inspiration" },
+    name: { ko: "시작", en: "Start" },
+    href: "/start",
+    icon: Zap,
+    description: { ko: "새 콘텐츠 시작하기", en: "Start new content" },
     isWorkflow: true,
   },
   {
@@ -94,9 +94,9 @@ const workflowItems: NavItem[] = [
 // Secondary navigation items
 const secondaryItems: NavItem[] = [
   {
-    name: { ko: "대시보드", en: "Dashboard" },
-    href: "/dashboard",
-    icon: LayoutGrid,
+    name: { ko: "트렌드", en: "Trends" },
+    href: "/trend-dashboard",
+    icon: TrendingUp,
   },
   {
     name: { ko: "캠페인", en: "Campaigns" },
@@ -120,7 +120,7 @@ const secondaryItems: NavItem[] = [
         description: { ko: "업로드된 이미지 및 파일", en: "Uploaded images and files" },
       },
       {
-        name: { ko: "파이프라인", en: "Pipeline" },
+        name: { ko: "베리에이션", en: "Variation" },
         href: "/pipeline",
         icon: Layers,
         description: { ko: "생성 작업 현황", en: "Generation job status" },
@@ -154,10 +154,10 @@ export function MainNavigation({ className, mobile }: MainNavigationProps) {
 
       if (hrefPath === currentPath) return true;
 
-      // Special case: Pipeline detail pages under campaigns should activate "Pipeline", not "Campaigns"
-      const isPipelineDetailPage = pathname?.includes("/pipeline/") || pathname?.includes("/compose-pipeline/");
-      if (isPipelineDetailPage) {
-        // Only match if this is the pipeline nav item
+      // Special case: Variation detail pages under campaigns should activate "Variation", not "Campaigns"
+      const isVariationDetailPage = pathname?.includes("/pipeline/") || pathname?.includes("/compose-pipeline/");
+      if (isVariationDetailPage) {
+        // Only match if this is the variation nav item
         return hrefPath === "/pipeline";
       }
 

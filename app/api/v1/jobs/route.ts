@@ -18,11 +18,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
     }
 
-    // Get active video generations (PENDING or PROCESSING)
+    // Get active video generations (PENDING or PROCESSING) - exclude soft-deleted
     const activeGenerations = await prisma.videoGeneration.findMany({
       where: {
         createdBy: user.id,
         status: { in: ["PENDING", "PROCESSING"] },
+        deletedAt: null,
       },
       select: {
         id: true,
@@ -40,11 +41,12 @@ export async function GET(request: NextRequest) {
       take: 20,
     });
 
-    // Get recent completed/failed generations
+    // Get recent completed/failed generations - exclude soft-deleted
     const recentGenerations = await prisma.videoGeneration.findMany({
       where: {
         createdBy: user.id,
         status: { in: ["COMPLETED", "FAILED"] },
+        deletedAt: null,
         updatedAt: {
           gte: new Date(Date.now() - 60 * 60 * 1000), // Last hour
         },

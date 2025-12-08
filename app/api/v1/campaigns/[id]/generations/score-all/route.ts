@@ -66,10 +66,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // No body or invalid JSON - use defaults
     }
 
-    // Get generations to score
+    // Get generations to score (exclude soft-deleted)
     const whereClause: Record<string, unknown> = {
       campaignId,
       status: "COMPLETED",
+      deletedAt: null,
     };
 
     if (onlyUnscored) {

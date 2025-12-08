@@ -62,7 +62,7 @@ class ImageData(BaseModel):
 
 
 class AudioData(BaseModel):
-    """Audio data for rendering."""
+    """Audio data for rendering. Optional - videos can be generated without audio."""
     url: str = Field(..., description="S3 URL of the audio file")
     start_time: float = Field(default=0, description="Start time in seconds")
     duration: Optional[float] = Field(default=None, description="Duration to use")
@@ -128,7 +128,8 @@ class RenderRequest(BaseModel):
     """Request model for video rendering."""
     job_id: str = Field(..., description="Unique job identifier")
     images: list[ImageData] = Field(..., description="Images to compose")
-    audio: AudioData = Field(..., description="Audio track")
+    # Audio is optional - videos can be generated without background music
+    audio: Optional[AudioData] = Field(default=None, description="Audio track (optional)")
     script: Optional[ScriptData] = Field(default=None, description="Text overlays")
     settings: RenderSettings = Field(
         default_factory=RenderSettings,

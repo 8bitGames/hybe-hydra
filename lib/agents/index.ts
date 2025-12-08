@@ -28,7 +28,25 @@
 // ============================================================================
 
 export * from './types';
-export { BaseAgent } from './base-agent';
+export { BaseAgent, type MemoryConfig } from './base-agent';
+
+// ============================================================================
+// Memory Service
+// ============================================================================
+
+export {
+  storeMemory,
+  retrieveMemories,
+  getMemory,
+  deleteMemory,
+  clearAgentMemories,
+  updateImportance,
+  consolidateMemories,
+  cleanupExpiredMemories,
+  getMemoryStats,
+  buildMemoryContext,
+  type MemoryRecord,
+} from './memory-service';
 
 // ============================================================================
 // Prompt Management
@@ -39,7 +57,14 @@ export {
   loadPromptsByCategory,
   clearPromptCache,
   preloadAllPrompts,
+  // Prompt History Management
+  savePromptHistory,
+  getPromptHistory,
+  getPromptHistoryVersion,
+  rollbackToVersion,
+  updatePromptWithHistory,
   type DatabasePrompt,
+  type PromptHistoryRecord,
 } from './prompt-loader';
 
 // ============================================================================

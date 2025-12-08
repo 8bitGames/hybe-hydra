@@ -33,22 +33,23 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Access denied" }, { status: 403 });
     }
 
-    // Get generation counts by status
+    // Get generation counts by status (exclude soft-deleted)
     const [total, pending, processing, completed, failed, cancelled] = await Promise.all([
-      prisma.videoGeneration.count({ where: { campaignId } }),
-      prisma.videoGeneration.count({ where: { campaignId, status: "PENDING" } }),
-      prisma.videoGeneration.count({ where: { campaignId, status: "PROCESSING" } }),
-      prisma.videoGeneration.count({ where: { campaignId, status: "COMPLETED" } }),
-      prisma.videoGeneration.count({ where: { campaignId, status: "FAILED" } }),
-      prisma.videoGeneration.count({ where: { campaignId, status: "CANCELLED" } }),
+      prisma.videoGeneration.count({ where: { campaignId, deletedAt: null } }),
+      prisma.videoGeneration.count({ where: { campaignId, status: "PENDING", deletedAt: null } }),
+      prisma.videoGeneration.count({ where: { campaignId, status: "PROCESSING", deletedAt: null } }),
+      prisma.videoGeneration.count({ where: { campaignId, status: "COMPLETED", deletedAt: null } }),
+      prisma.videoGeneration.count({ where: { campaignId, status: "FAILED", deletedAt: null } }),
+      prisma.videoGeneration.count({ where: { campaignId, status: "CANCELLED", deletedAt: null } }),
     ]);
 
-    // Get average quality score for completed generations
+    // Get average quality score for completed generations (exclude soft-deleted)
     const avgQuality = await prisma.videoGeneration.aggregate({
       where: {
         campaignId,
         status: "COMPLETED",
         qualityScore: { not: null },
+        deletedAt: null,
       },
       _avg: {
         qualityScore: true,

@@ -180,7 +180,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-8 pb-8 px-[7%]">
+    <div className="space-y-8 py-8 px-[7%]">
       {/* Hero Section - Quick Actions */}
       <div>
         <h1 className="text-4xl font-bold tracking-tight mb-2">
@@ -406,7 +406,7 @@ export default function DashboardPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />
-            {language === "ko" ? "콘텐츠 제작 파이프라인" : "Content Production Pipeline"}
+            {language === "ko" ? "콘텐츠 제작 워크플로우" : "Content Production Workflow"}
           </CardTitle>
           <CardDescription>
             {language === "ko"

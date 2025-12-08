@@ -376,7 +376,7 @@ export class ComposeConductorAgent extends BaseAgent<ComposeConductorInput, Comp
       .replace(/\{\{duration\}\}/g, String(input.duration))
       .replace('{{bpm}}', String(input.bpm || 'unknown'))
       .replace('{{mood}}', input.mood || 'dynamic')
-      .replace('{{genre}}', input.genre || 'pop')
+      .replace('{{genre}}', input.genre || 'infer from artist/song context')
       .replace('{{intensity}}', String(input.intensity || 0.7))
       .replace('{{images.length}}', String(input.images.length));
 

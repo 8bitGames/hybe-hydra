@@ -265,10 +265,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Access denied" }, { status: 403 });
     }
 
-    // Find all generations with this batch ID
+    // Find all generations with this batch ID (exclude soft-deleted)
     const generations = await prisma.videoGeneration.findMany({
       where: {
         campaignId,
+        deletedAt: null,
         qualityMetadata: {
           path: ["batchId"],
           equals: batchId,

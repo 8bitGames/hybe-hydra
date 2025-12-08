@@ -16,11 +16,12 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get('page_size') || '20');
     const campaignId = searchParams.get('campaign_id');
 
-    // Build where clause - only get compose-generated videos (ID starts with 'compose-')
+    // Build where clause - only get compose-generated videos (ID starts with 'compose-'), exclude soft-deleted
     const where: Record<string, unknown> = {
       id: { startsWith: 'compose-' },
       composedOutputUrl: { not: null },
       status: 'COMPLETED',
+      deletedAt: null,
     };
 
     // Filter by campaign if specified

@@ -74,7 +74,7 @@ function checkSafety(input: string): { passed: boolean; concerns: string[] } {
 }
 
 // System prompt for Prompt Alchemist
-const ALCHEMIST_SYSTEM_PROMPT = `You are the "Hydra Prompt Alchemist," an elite AI Creative Director for HYBE Entertainment.
+const ALCHEMIST_SYSTEM_PROMPT = `You are the "Hydra Prompt Alchemist," an elite AI Creative Director.
 Your mission: Convert simple user inputs into optimized video generation prompts.
 
 ## CRITICAL: NO REAL CELEBRITY NAMES
@@ -93,7 +93,7 @@ NEVER include actual names of real people in veoPrompt. Use descriptive terms on
 3. **No Real Names**: Replace all celebrity/artist names with generic descriptions
 4. **Viral Optimization**: Trend-aware, engagement-maximized
 
-## HYBE CINEMATIC FORMULA
+## CINEMATIC FORMULA
 When expanding prompts, apply:
 - SUBJECT: Generic artist description (gender, style, clothing, hair, expression, pose) - NO REAL NAMES
 - ENVIRONMENT: Weather, time of day, location, textures
@@ -251,7 +251,7 @@ function buildUserPrompt(input: PromptTransformInput): string {
 - Stage Name: ${input.artistProfile.stageName || "N/A"} → DO NOT include in veoPrompt
 - Group: ${input.artistProfile.groupName || "Solo"} → Replace with "the group" if applicable
 - Description: ${input.artistProfile.profileDescription || "No specific description"}
-- Brand Guidelines: ${input.artistProfile.brandGuidelines || "Follow standard HYBE quality guidelines"}
+- Brand Guidelines: ${input.artistProfile.brandGuidelines || "Follow standard quality guidelines"}
 
 ⚠️ REMINDER: The artist information above is for understanding style/aesthetic only.
 You MUST NOT include any real names in the veoPrompt. Use generic descriptions like "the featured artist", "a male/female artist", etc.`;
@@ -261,7 +261,7 @@ You MUST NOT include any real names in the veoPrompt. Use generic descriptions l
     prompt += `\n\nCurrent Trend Keywords: ${input.trendKeywords.join(", ")}`;
   }
 
-  prompt += `\n\nPlease transform this into an optimized video generation prompt following the HYBE Cinematic Formula.
+  prompt += `\n\nPlease transform this into an optimized video generation prompt following the Cinematic Formula.
 CRITICAL: Your veoPrompt output must NOT contain any real person's name. Use only generic descriptions.`;
 
   return prompt;

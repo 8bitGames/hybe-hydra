@@ -28,7 +28,7 @@ const AVAILABLE_MOODS = [
 ] as const;
 
 const AVAILABLE_GENRES = [
-  'kpop', 'hiphop', 'emotional', 'corporate', 'tiktok',
+  'pop', 'hiphop', 'emotional', 'corporate', 'tiktok',
   'cinematic', 'vlog', 'documentary', 'edm', 'indie',
   'ballad', 'dance', 'rock', 'jazz', 'classical',
 ] as const;
@@ -211,7 +211,7 @@ export class ComposeEffectAnalyzerAgent extends BaseAgent<ComposeEffectAnalyzerI
 
     // Genre detection
     const genreKeywords: Record<string, string[]> = {
-      kpop: ['k-pop', 'kpop', '케이팝', '아이돌', '댄스', 'idol'],
+      pop: ['pop', '팝', '대중음악', 'popular'],
       hiphop: ['힙합', '랩', 'hiphop', 'hip-hop', 'rap'],
       emotional: ['감성', '발라드', 'ballad', 'emotional', '느낌'],
       corporate: ['기업', '비즈니스', 'corporate', 'business', 'professional'],
@@ -227,7 +227,8 @@ export class ComposeEffectAnalyzerAgent extends BaseAgent<ComposeEffectAnalyzerI
         genres.push(genre as typeof AVAILABLE_GENRES[number]);
       }
     }
-    if (genres.length === 0) genres.push('tiktok');
+    // No hardcoded default - use 'pop' as neutral fallback (not kpop/tiktok specific)
+    if (genres.length === 0) genres.push('pop');
 
     // Intensity detection
     let intensity: typeof AVAILABLE_INTENSITIES[number] = 'medium';
