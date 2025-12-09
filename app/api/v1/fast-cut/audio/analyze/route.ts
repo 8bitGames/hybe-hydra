@@ -21,6 +21,7 @@ interface FastCutEngineAnalysisResponse {
   energy_curve: [number, number][];
   duration: number;
   suggested_vibe: string;
+  best_15s_start: number;  // Best starting point for 15s segment
 }
 
 interface FastCutEngineBestSegmentResponse {
@@ -56,12 +57,18 @@ async function pollModalResult(callId: string, maxAttempts = 60): Promise<FastCu
 
       if (data.status === 'completed' && data.result?.analysis) {
         const analysis = data.result.analysis;
+        console.log('[Fast Cut AudioAnalyze] Modal analysis result:', {
+          bpm: analysis.bpm,
+          duration: analysis.duration,
+          best_15s_start: analysis.best_15s_start,
+        });
         return {
           bpm: analysis.bpm,
           beat_times: [],
           energy_curve: analysis.energy_curve?.map((e: number, i: number) => [i * 0.5, e] as [number, number]) || [],
           duration: analysis.duration,
           suggested_vibe: 'energetic',
+          best_15s_start: analysis.best_15s_start ?? 0,
         };
       }
 
@@ -204,9 +211,16 @@ export async function POST(request: NextRequest) {
         data: { metadata: updatedMetadata }
       });
 
-      // Use calculated best 15s start from energy curve, or fallback to 0
-      const suggestedStart = 0; // Modal analyze will provide this in energy_curve
-      const suggestedEnd = Math.min(targetDuration, analysisResult.duration);
+      // Use best 15s start from Modal analysis
+      const suggestedStart = analysisResult.best_15s_start ?? 0;
+      const suggestedEnd = Math.min(suggestedStart + targetDuration, analysisResult.duration);
+
+      console.log('[Fast Cut AudioAnalyze] Using best segment:', {
+        suggestedStart,
+        suggestedEnd,
+        targetDuration,
+        totalDuration: analysisResult.duration,
+      });
 
       return NextResponse.json({
         assetId,

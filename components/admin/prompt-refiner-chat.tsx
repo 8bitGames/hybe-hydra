@@ -53,6 +53,7 @@ import {
   StarOff,
   History,
   Trash2,
+  Loader2,
 } from 'lucide-react';
 
 interface ChatMessage {
@@ -112,27 +113,6 @@ interface PromptRefinerChatProps {
   }) => void;
 }
 
-// Sample test inputs for different agent types
-const SAMPLE_TEST_INPUTS: Record<string, object> = {
-  'vision-analyzer': {
-    imageDescription: "A short-form video showing a person doing a dance challenge",
-    platform: "tiktok",
-  },
-  'keyword-insights': {
-    keywords: ["viral", "trending", "dance"],
-    platform: "tiktok",
-    language: "ko",
-  },
-  'script-writer': {
-    topic: "신제품 립스틱 홍보",
-    duration: 30,
-    style: "casual",
-  },
-  'default': {
-    input: "샘플 입력 데이터",
-    context: "테스트 컨텍스트",
-  },
-};
 
 export function PromptRefinerChat({
   agentId,
@@ -148,6 +128,7 @@ export function PromptRefinerChat({
   const [testInput, setTestInput] = useState('');
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [selectedCodeBlock, setSelectedCodeBlock] = useState<string>('');
+  const [isGeneratingTestInput, setIsGeneratingTestInput] = useState(false);
 
   // Session management state
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -182,13 +163,45 @@ export function PromptRefinerChat({
     }
   }, [input]);
 
-  // Initialize test input with sample data
-  useEffect(() => {
-    const sampleKey = Object.keys(SAMPLE_TEST_INPUTS).find(key =>
-      agentId.toLowerCase().includes(key.replace('-', ''))
-    ) || 'default';
-    setTestInput(JSON.stringify(SAMPLE_TEST_INPUTS[sampleKey], null, 2));
-  }, [agentId]);
+  // Generate test input using AI
+  const generateTestInput = async () => {
+    setIsGeneratingTestInput(true);
+    try {
+      const response = await fetch(`/api/v1/admin/prompts/${agentId}/refine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'chat',
+          message: `이 프롬프트를 테스트하기 위한 적절한 샘플 입력 데이터를 JSON 형식으로 생성해줘.
+프롬프트가 기대하는 입력 형식을 분석하고, 실제 사용 시나리오를 반영한 테스트 데이터를 만들어줘.
+JSON 코드 블록만 출력하고 설명은 필요없어.`,
+          history: [],
+          currentPrompt,
+        }),
+      });
+
+      const data = await response.json();
+
+      // Extract JSON from the response
+      const jsonMatch = data.response?.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        setTestInput(jsonMatch[1].trim());
+      } else {
+        // Try to parse the whole response as JSON
+        try {
+          JSON.parse(data.response);
+          setTestInput(data.response);
+        } catch {
+          setTestInput('{\n  "input": "테스트 입력"\n}');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to generate test input:', error);
+      setTestInput('{\n  "input": "테스트 입력"\n}');
+    } finally {
+      setIsGeneratingTestInput(false);
+    }
+  };
 
   // Load sessions for this agent
   const loadSessions = useCallback(async () => {
@@ -666,7 +679,7 @@ export function PromptRefinerChat({
                 size="sm"
                 onClick={() => sendMessage('improve')}
                 disabled={isLoading}
-                className="bg-purple-600 border-purple-500 text-white hover:bg-purple-700"
+                className="bg-gray-800 border-gray-700 text-white hover:bg-gray-700"
               >
                 <Zap className="w-4 h-4 mr-1" />
                 개선하기
@@ -850,19 +863,21 @@ export function PromptRefinerChat({
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Sample Data Buttons */}
-            <div className="flex flex-wrap gap-2">
-              <span className="text-sm text-gray-400">샘플:</span>
-              {Object.entries(SAMPLE_TEST_INPUTS).map(([key, value]) => (
-                <Badge
-                  key={key}
-                  variant="outline"
-                  className="cursor-pointer hover:bg-gray-800 border-gray-600"
-                  onClick={() => setTestInput(JSON.stringify(value, null, 2))}
-                >
-                  {key}
-                </Badge>
-              ))}
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={generateTestInput}
+                disabled={isGeneratingTestInput}
+                className="bg-gray-800 border-gray-700 text-white hover:bg-gray-700"
+              >
+                {isGeneratingTestInput ? (
+                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4 mr-1" />
+                )}
+                {isGeneratingTestInput ? '생성 중...' : 'AI 샘플 생성'}
+              </Button>
             </div>
 
             <Textarea
@@ -884,7 +899,8 @@ export function PromptRefinerChat({
             </Button>
             <Button
               onClick={handleTestSubmit}
-              className="bg-purple-600 hover:bg-purple-700 text-white"
+              disabled={isGeneratingTestInput}
+              className="bg-gray-800 border-gray-700 text-white hover:bg-gray-700"
             >
               <TestTube className="w-4 h-4 mr-1" />
               테스트 실행

@@ -66,7 +66,6 @@ import { FastCutEffectStep } from "./FastCutEffectStep";
 // ============================================================================
 
 type FastCutStep = 1 | 2 | 3 | 4;
-type ImageSourceMode = "search_only" | "mixed";
 
 interface InlineFastCutFlowProps {
   campaignId: string;
@@ -467,7 +466,6 @@ export function InlineFastCutFlow({
   const [imageCandidates, setImageCandidates] = useState<ImageCandidate[]>([]);
   const [selectedImages, setSelectedImages] = useState<ImageCandidate[]>([]);
   const [generationId, setGenerationId] = useState<string | null>(null);
-  const [imageSourceMode, setImageSourceMode] = useState<ImageSourceMode>("search_only");
 
   // Step 3: Music state
   const [matchingMusic, setMatchingMusic] = useState(false);
@@ -630,14 +628,8 @@ export function InlineFastCutFlow({
     });
   };
 
-  const reorderImage = (fromIndex: number, direction: "left" | "right") => {
-    setSelectedImages((prev) => {
-      const newImages = [...prev];
-      const toIndex = direction === "left" ? fromIndex - 1 : fromIndex + 1;
-      if (toIndex < 0 || toIndex >= newImages.length) return prev;
-      [newImages[fromIndex], newImages[toIndex]] = [newImages[toIndex], newImages[fromIndex]];
-      return newImages;
-    });
+  const reorderImages = (newImages: ImageCandidate[]) => {
+    setSelectedImages(newImages);
   };
 
   // ========================================
@@ -940,8 +932,6 @@ export function InlineFastCutFlow({
 
             {currentStep === 2 && (
               <FastCutImageStep
-                imageSourceMode={imageSourceMode}
-                setImageSourceMode={setImageSourceMode}
                 imageCandidates={imageCandidates}
                 selectedImages={selectedImages}
                 searchingImages={searchingImages}
@@ -949,7 +939,7 @@ export function InlineFastCutFlow({
                 selectedSearchKeywords={selectedSearchKeywords}
                 setSelectedSearchKeywords={setSelectedSearchKeywords}
                 onToggleSelection={toggleImageSelection}
-                onReorderImage={reorderImage}
+                onReorderImages={reorderImages}
                 onSearchImages={() => handleSearchImages()}
                 onNext={handleNext}
               />
