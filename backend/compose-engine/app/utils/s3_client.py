@@ -58,20 +58,29 @@ class S3Client:
 
         # Debug: Log settings
         print(f"[S3Client] Initializing with bucket={self.bucket}, region={self.region}")
-        print(f"[S3Client] Access key (first 4 chars): {settings.aws_access_key_id[:4] if settings.aws_access_key_id else 'EMPTY'}")
+        print(f"[S3Client] Access key (first 4 chars): {settings.aws_access_key_id[:4] if settings.aws_access_key_id else 'EMPTY (using IAM role)'}")
 
-        # Create S3 client with connection pooling
-        self.client = boto3.client(
-            "s3",
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-            region_name=settings.aws_region,
-            config=Config(
+        # Build kwargs - only include credentials if explicitly set
+        # This allows IAM role to be used on AWS Batch/EC2
+        client_kwargs = {
+            "region_name": settings.aws_region,
+            "config": Config(
                 signature_version="s3v4",
                 max_pool_connections=20,  # Connection pooling
                 retries={"max_attempts": 3, "mode": "adaptive"}
             )
-        )
+        }
+
+        # Only add explicit credentials if they're actually set (non-empty)
+        if settings.aws_access_key_id and settings.aws_secret_access_key:
+            client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
+            client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
+            print("[S3Client] Using explicit AWS credentials")
+        else:
+            print("[S3Client] Using default credential chain (IAM role/environment)")
+
+        # Create S3 client with connection pooling
+        self.client = boto3.client("s3", **client_kwargs)
 
         # Shared HTTP client for external URLs
         self._http_client: Optional[httpx.AsyncClient] = None

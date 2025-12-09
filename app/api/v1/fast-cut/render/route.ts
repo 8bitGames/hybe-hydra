@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
-import { submitRenderToModal, ModalRenderRequest, isLocalMode } from '@/lib/modal/client';
+import { submitRenderToModal, ModalRenderRequest, isLocalMode, isBatchMode, getComposeEngineMode } from '@/lib/modal/client';
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
@@ -257,7 +257,7 @@ export async function POST(request: NextRequest) {
     console.log('[Fast Cut Render] Modal response:', modalResponse);
 
     // Determine render backend for status display
-    const renderBackend = isLocalMode() ? 'local' : 'modal';
+    const renderBackend = getComposeEngineMode();
 
     // Store modal call_id and image URLs in database for status polling and retry
     await prisma.videoGeneration.update({
@@ -272,7 +272,12 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    const backendLabel = renderBackend === 'local' ? 'Local (CPU)' : 'Modal (CPU)';
+    const backendLabels: Record<string, string> = {
+      local: 'Local (CPU)',
+      modal: 'Modal (GPU)',
+      batch: 'AWS Batch (GPU)',
+    };
+    const backendLabel = backendLabels[renderBackend] || 'Modal (GPU)';
     return NextResponse.json({
       jobId: generationId,
       generationId,

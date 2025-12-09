@@ -1,20 +1,22 @@
 /**
  * Compose Engine Client for Video Rendering
  *
- * Supports two modes:
- *   - modal (default): Modal serverless GPU (production)
+ * Supports three modes:
+ *   - modal (default): Modal serverless GPU (production - Modal.com)
+ *   - batch: AWS Batch GPU (production - AWS infrastructure)
  *   - local: Local compose-engine Docker container (development)
  *
  * Modal Flow: Next.js → Modal (GPU T4 + NVENC) → S3
+ * Batch Flow: Next.js → AWS Batch (GPU g4dn + NVENC) → S3
  * Local Flow: Next.js → Docker compose-engine (CPU) → S3
  *
- * GPU Stack (Modal):
+ * GPU Stack (Modal & AWS Batch):
  *   - Base: nvidia/cuda:12.4.0-devel-ubuntu22.04
  *   - FFmpeg: jellyfin-ffmpeg6 (has h264_nvenc baked in)
  *   - Encoder: h264_nvenc (5-10x faster than CPU)
  */
 
-// Compose engine mode: 'modal' (production) or 'local' (development)
+// Compose engine mode: 'modal' (default), 'batch' (AWS Batch), or 'local' (development)
 const COMPOSE_ENGINE_MODE = process.env.COMPOSE_ENGINE_MODE || 'modal';
 
 // Modal endpoints (production)
@@ -30,6 +32,20 @@ const LOCAL_COMPOSE_URL = process.env.LOCAL_COMPOSE_URL || 'http://localhost:800
  */
 export function isLocalMode(): boolean {
   return COMPOSE_ENGINE_MODE === 'local';
+}
+
+/**
+ * Check if running in AWS Batch mode
+ */
+export function isBatchMode(): boolean {
+  return COMPOSE_ENGINE_MODE === 'batch';
+}
+
+/**
+ * Get current compose engine mode
+ */
+export function getComposeEngineMode(): 'modal' | 'batch' | 'local' {
+  return COMPOSE_ENGINE_MODE as 'modal' | 'batch' | 'local';
 }
 
 // Callback URL for Modal to notify us when render completes
@@ -176,9 +192,9 @@ async function submitToLocal(
 }
 
 /**
- * Submit a render job (auto-selects Modal or Local based on COMPOSE_ENGINE_MODE)
+ * Submit a render job (auto-selects Modal, Batch, or Local based on COMPOSE_ENGINE_MODE)
  * Returns immediately with a call_id for polling
- * Automatically includes callback URL for database updates on completion (Modal only)
+ * Automatically includes callback URL for database updates on completion
  */
 export async function submitRenderToModal(
   request: ModalRenderRequest
@@ -186,10 +202,42 @@ export async function submitRenderToModal(
   if (isLocalMode()) {
     console.log('[Compose] Using LOCAL mode');
     return submitToLocal(request);
+  } else if (isBatchMode()) {
+    console.log('[Compose] Using AWS BATCH mode');
+    return submitToBatch(request);
   } else {
     console.log('[Compose] Using MODAL mode');
     return submitToModal(request);
   }
+}
+
+/**
+ * Submit a render job to AWS Batch (production - AWS infrastructure)
+ * Uses AWS SDK to submit to Batch job queue
+ */
+async function submitToBatch(
+  request: ModalRenderRequest
+): Promise<ModalSubmitResponse> {
+  // Dynamic import to avoid loading AWS SDK when not needed
+  const { submitRenderToBatch } = await import('@/lib/batch/client');
+
+  const result = await submitRenderToBatch({
+    job_id: request.job_id,
+    images: request.images,
+    audio: request.audio,
+    script: request.script,
+    settings: request.settings,
+    output: request.output,
+  });
+
+  // Map Batch response to Modal response format for compatibility
+  return {
+    call_id: result.batch_job_id, // Use AWS Batch job ID as call_id
+    job_id: result.job_id,
+    status: result.status === 'queued' ? 'queued' : 'error',
+    message: result.message,
+    error: result.error,
+  };
 }
 
 /**
@@ -279,7 +327,7 @@ async function getLocalStatus(jobId: string): Promise<ModalStatusResponse> {
 }
 
 /**
- * Poll for render job status (auto-selects Modal or Local based on COMPOSE_ENGINE_MODE)
+ * Poll for render job status (auto-selects Modal, Batch, or Local based on COMPOSE_ENGINE_MODE)
  * Returns current status, progress, and output URL when complete
  */
 export async function getModalRenderStatus(
@@ -287,8 +335,54 @@ export async function getModalRenderStatus(
 ): Promise<ModalStatusResponse> {
   if (isLocalMode()) {
     return getLocalStatus(callId);
+  } else if (isBatchMode()) {
+    return getBatchStatus(callId);
   } else {
     return getModalStatus(callId);
+  }
+}
+
+/**
+ * Poll AWS Batch for render job status
+ * Maps Batch status to Modal status format for compatibility
+ */
+async function getBatchStatus(batchJobId: string): Promise<ModalStatusResponse> {
+  // Dynamic import to avoid loading AWS SDK when not needed
+  const { getBatchJobStatus } = await import('@/lib/batch/client');
+
+  const result = await getBatchJobStatus(batchJobId);
+
+  // Map Batch status to Modal status format
+  if (result.mappedStatus === 'completed') {
+    // Note: For completed jobs, the output URL comes from the callback
+    // We can't get it from AWS Batch status directly
+    return {
+      status: 'completed',
+      call_id: result.batch_job_id,
+      result: {
+        status: 'completed',
+        job_id: result.job_id,
+        output_url: null, // Will be set by callback
+        error: null,
+      },
+    };
+  } else if (result.mappedStatus === 'failed') {
+    return {
+      status: 'failed',
+      call_id: result.batch_job_id,
+      result: {
+        status: 'failed',
+        job_id: result.job_id,
+        output_url: null,
+        error: result.statusReason || 'Job failed',
+      },
+      error: result.statusReason,
+    };
+  } else {
+    return {
+      status: 'processing',
+      call_id: result.batch_job_id,
+    };
   }
 }
 
