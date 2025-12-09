@@ -78,8 +78,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     // Get all generated preview images for this campaign
+    // Also include user's preview images that are not linked to any campaign
     const previewImages = await prisma.generatedPreviewImage.findMany({
-      where: { campaignId },
+      where: {
+        OR: [
+          { campaignId },  // Images linked to this campaign
+          { campaignId: null, userId: user.id },  // User's images not linked to any campaign
+        ],
+      },
       orderBy: { createdAt: "desc" },
     });
 
@@ -400,6 +406,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         product_image_url: img.productImageUrl,
         hand_pose: img.handPose,
         used_in_generation_id: img.usedInGenerationId,
+        is_linked_to_campaign: img.campaignId === campaignId,  // false = user's unlinked image
         created_at: img.createdAt.toISOString(),
       })),
     });

@@ -40,6 +40,7 @@ import {
   History,
   Clock,
   Trash2,
+  Play,
 } from "lucide-react";
 import { InfoButton } from "@/components/ui/info-button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -721,45 +722,51 @@ function SavedInspirationPanel({
         {savedVideos.map((video) => (
           <div
             key={video.id}
-            className="group relative flex-shrink-0 w-48 p-2.5 border border-neutral-200 rounded-lg hover:bg-neutral-50 hover:border-neutral-300 transition-all cursor-pointer"
+            className="group relative flex-shrink-0 w-28 border border-neutral-200 rounded-lg hover:border-neutral-300 transition-all cursor-pointer overflow-hidden"
             onClick={() => handleViewVideo(video.videoUrl)}
           >
-            {/* Header: Author + Remove */}
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-medium text-neutral-700 truncate flex-1">
-                @{sanitizeUsername(video.author.name)}
-              </span>
+            {/* Thumbnail */}
+            <div className="relative aspect-[9/16] bg-neutral-100">
+              {video.thumbnailUrl ? (
+                <img
+                  src={video.thumbnailUrl}
+                  alt={video.author.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Play className="h-6 w-6 text-neutral-300" />
+                </div>
+              )}
+              {/* Remove button overlay */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemove(video.id);
                 }}
-                className="p-0.5 rounded text-neutral-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                className="absolute top-1 right-1 p-1 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <X className="h-3 w-3" />
               </button>
+              {/* Stats overlay */}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 pt-4">
+                <div className="flex items-center gap-1.5 text-[9px] text-white">
+                  <span className="flex items-center gap-0.5">
+                    <Eye className="h-2.5 w-2.5" />
+                    {formatCount(video.stats.playCount)}
+                  </span>
+                  <span className="flex items-center gap-0.5">
+                    <Heart className="h-2.5 w-2.5" />
+                    {formatCount(video.stats.likeCount)}
+                  </span>
+                </div>
+              </div>
             </div>
-            {/* Description */}
-            <p className="text-[10px] text-neutral-500 line-clamp-2 mb-1.5 min-h-[2rem]">
-              {video.description || (language === "ko" ? "설명 없음" : "No description")}
-            </p>
-            {/* Stats */}
-            <div className="flex items-center gap-2 text-[9px] text-neutral-400">
-              <span className="flex items-center gap-0.5">
-                <Eye className="h-2 w-2" />
-                {formatCount(video.stats.playCount)}
+            {/* Author */}
+            <div className="p-1.5">
+              <span className="text-[10px] text-neutral-600 truncate block">
+                @{sanitizeUsername(video.author.name)}
               </span>
-              <span className="flex items-center gap-0.5">
-                <Heart className="h-2 w-2" />
-                {formatCount(video.stats.likeCount)}
-              </span>
-              <span className="text-neutral-500 font-medium">
-                {formatPercent(video.engagementRate)}
-              </span>
-            </div>
-            {/* External link indicator on hover */}
-            <div className="absolute top-2 right-7 opacity-0 group-hover:opacity-100 transition-opacity">
-              <ExternalLink className="h-2.5 w-2.5 text-neutral-400" />
             </div>
           </div>
         ))}

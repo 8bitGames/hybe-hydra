@@ -71,15 +71,15 @@ class ImageProcessor:
         # Try to open image, fall back to black screen on error
         try:
             img = Image.open(image_path)
-            img.verify()  # Verify it's a valid image
+            img.verify()  # Verify it is a valid image
             # Re-open after verify (verify consumes the file)
             img = Image.open(image_path)
         except Exception as e:
             print(f"[ImageProcessor] Invalid image, using black screen: {image_path} - {e}")
             return self.create_black_image(aspect_ratio, output_path)
 
-        # Convert to RGB if necessary
-        if img.mode in ("RGBA", "P"):
+        # Convert to RGB if necessary (handles RGBA, P, L, LA, 1, etc.)
+        if img.mode != "RGB":
             img = img.convert("RGB")
 
         img_w, img_h = img.size
@@ -112,6 +112,17 @@ class ImageProcessor:
         """Resize image using GPU (cupy)."""
         # Convert PIL to numpy array
         arr = np.array(img)
+
+        # Handle grayscale images (2D array) - convert to RGB
+        if len(arr.shape) == 2:
+            arr = np.stack([arr, arr, arr], axis=-1)
+        # Handle RGBA images (4 channels) - drop alpha
+        elif len(arr.shape) == 3 and arr.shape[2] == 4:
+            arr = arr[:, :, :3]
+        # Handle single channel with explicit dimension
+        elif len(arr.shape) == 3 and arr.shape[2] == 1:
+            arr = np.concatenate([arr, arr, arr], axis=-1)
+
         current_h, current_w = arr.shape[:2]
 
         # Calculate zoom factors

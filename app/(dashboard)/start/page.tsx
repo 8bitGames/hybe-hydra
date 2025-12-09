@@ -22,6 +22,8 @@ import {
   Layers,
   Palette,
   Camera,
+  Link,
+  Loader2,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore, useWorkflowHydrated } from "@/lib/stores/workflow-store";
@@ -57,10 +59,29 @@ function formatCount(num: number): string {
   return num.toLocaleString();
 }
 
+// TikTok URL detection helper
+function detectTikTokUrl(input: string): { isTikTok: boolean; url: string | null } {
+  const trimmed = input.trim();
+  // Match various TikTok URL patterns
+  const tiktokPatterns = [
+    /^https?:\/\/(www\.)?tiktok\.com\/@[\w.-]+\/video\/\d+/i,
+    /^https?:\/\/vm\.tiktok\.com\/[\w]+/i,
+    /^https?:\/\/(www\.)?tiktok\.com\/t\/[\w]+/i,
+    /^https?:\/\/m\.tiktok\.com\/v\/\d+/i,
+  ];
+
+  for (const pattern of tiktokPatterns) {
+    if (pattern.test(trimmed)) {
+      return { isTikTok: true, url: trimmed };
+    }
+  }
+
+  return { isTikTok: false, url: null };
+}
+
 export default function StartPage() {
   const router = useRouter();
   const { translate, language } = useI18n();
-  const isKorean = language === "ko";
   const hydrated = useWorkflowHydrated();
 
   const [ideaInput, setIdeaInput] = useState("");
@@ -70,6 +91,9 @@ export default function StartPage() {
   const {
     start,
     setStartFromIdea,
+    setStartFromVideo,
+    setStartFromTrends,
+    setStartAiInsights,
     setCurrentStage,
     clearStartData,
     transferToAnalyze,
@@ -77,8 +101,10 @@ export default function StartPage() {
   } = useWorkflowStore();
 
   const [isAnalyzingVideo, setIsAnalyzingVideo] = useState(false);
+  const [isAnalyzingIdea, setIsAnalyzingIdea] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [inputType, setInputType] = useState<"text" | "tiktok" | null>(null);
 
   const startSource = start.source;
 
@@ -251,14 +277,290 @@ export default function StartPage() {
     }
   }, [hydrated, startSource, isAnalyzingVideo, updateVideoAiAnalysis, retryCount]);
 
-  // Handle direct idea input
-  const handleIdeaSubmit = () => {
-    if (!ideaInput.trim()) return;
+  // Handle direct idea input - with TikTok URL detection and idea analysis
+  const handleIdeaSubmit = async () => {
+    const input = ideaInput.trim();
+    if (!input) return;
 
-    clearStartData();
-    setStartFromIdea({ idea: ideaInput.trim() });
-    setCurrentStage("analyze");
-    router.push("/analyze");
+    // Check if it's a TikTok URL
+    const { isTikTok, url } = detectTikTokUrl(input);
+
+    if (isTikTok && url) {
+      // TikTok URL detected - analyze video
+      setInputType("tiktok");
+      setIsAnalyzingVideo(true);
+      setAnalysisError(null);
+      clearStartData();
+
+      try {
+        const token = getAccessToken();
+        const response = await fetch("/api/v1/analyze-video", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+          body: JSON.stringify({ url }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Failed to analyze video");
+        }
+
+        // Extract video metadata and analysis
+        const { metadata, style_analysis, content_analysis, suggested_prompt, isComposeVideo, imageCount, conceptDetails } = data.data;
+
+        // Set video source with all data
+        setStartFromVideo({
+          videoId: metadata.id,
+          videoUrl: url,
+          thumbnailUrl: metadata.thumbnail_url,
+          description: metadata.description || "",
+          hashtags: metadata.hashtags || [],
+          basicStats: {
+            playCount: metadata.stats?.plays || 0,
+            likeCount: metadata.stats?.likes || 0,
+            commentCount: metadata.stats?.comments || 0,
+            shareCount: metadata.stats?.shares || 0,
+            engagementRate: metadata.stats?.plays > 0
+              ? ((metadata.stats?.likes || 0) + (metadata.stats?.comments || 0)) / metadata.stats.plays * 100
+              : 0,
+          },
+          author: {
+            id: metadata.author?.username || "",
+            name: metadata.author?.nickname || metadata.author?.username || "Unknown",
+            avatar: metadata.author?.avatar,
+          },
+          aiAnalysis: buildAiAnalysis(style_analysis, content_analysis, suggested_prompt, isComposeVideo, imageCount, conceptDetails),
+        });
+
+        setIdeaInput("");
+        // Page will re-render with video preview
+      } catch (error) {
+        console.error("[START] Video analysis failed:", error);
+        setAnalysisError(error instanceof Error ? error.message : "Failed to analyze video");
+      } finally {
+        setIsAnalyzingVideo(false);
+      }
+    } else {
+      // Regular text - analyze as idea/keyword
+      setInputType("text");
+      setIsAnalyzingIdea(true);
+      setAnalysisError(null);
+      clearStartData();
+
+      try {
+        const token = getAccessToken();
+
+        // Extract keywords from the idea (simple approach: use the input as keyword)
+        // You could also use AI to extract keywords, but let's keep it simple
+        const keywords = input
+          .split(/[\s,]+/)
+          .filter(k => k.length > 1)
+          .slice(0, 3)
+          .map(k => k.toLowerCase().replace(/[^a-z0-9가-힣]/gi, ""));
+
+        // If we have keywords, try to get trend analysis
+        if (keywords.length > 0) {
+          const response = await fetch(
+            `/api/v1/trends/keyword-analysis?keywords=${encodeURIComponent(keywords.join(","))}&limit=20`,
+            {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            }
+          );
+
+          if (response.ok) {
+            const data = await response.json();
+
+            if (data.success && data.analyses && data.analyses.length > 0) {
+              // Found trend data - use it
+              const analysis = data.analyses[0];
+
+              setStartFromTrends({
+                keywords: keywords,
+                analysis: {
+                  totalVideos: analysis.totalVideos || 0,
+                  avgViews: analysis.aggregateStats?.avgViews || 0,
+                  avgEngagement: analysis.aggregateStats?.avgEngagementRate || 0,
+                  topHashtags: analysis.hashtagInsights?.topHashtags?.map((h: { tag: string }) => h.tag) || [],
+                  viralVideos: (analysis.videos || []).slice(0, 5).map((v: {
+                    id: string;
+                    videoUrl: string;
+                    thumbnailUrl?: string;
+                    description?: string;
+                    author?: { id?: string; name?: string; avatar?: string };
+                    stats?: { playCount?: number; likeCount?: number; commentCount?: number; shareCount?: number };
+                    hashtags?: string[];
+                    engagementRate?: number;
+                  }) => ({
+                    id: v.id,
+                    videoUrl: v.videoUrl,
+                    thumbnailUrl: v.thumbnailUrl || null,
+                    description: v.description || "",
+                    author: {
+                      id: v.author?.id || "",
+                      name: v.author?.name || "Unknown",
+                      avatar: v.author?.avatar,
+                    },
+                    stats: {
+                      playCount: v.stats?.playCount || 0,
+                      likeCount: v.stats?.likeCount || 0,
+                      commentCount: v.stats?.commentCount || 0,
+                      shareCount: v.stats?.shareCount || 0,
+                    },
+                    hashtags: v.hashtags || [],
+                    engagementRate: v.engagementRate || 0,
+                  })),
+                },
+                selectedHashtags: analysis.hashtagInsights?.recommendedHashtags?.slice(0, 10) || [],
+              });
+
+              // Set AI insights if available
+              if (analysis.aiInsights) {
+                setStartAiInsights({
+                  summary: analysis.aiInsights.summary,
+                  contentStrategy: analysis.aiInsights.contentStrategy,
+                  hashtagStrategy: analysis.aiInsights.hashtagStrategy,
+                  captionTemplates: analysis.aiInsights.captionTemplates,
+                  videoIdeas: analysis.aiInsights.videoIdeas,
+                  bestPostingAdvice: analysis.aiInsights.bestPostingAdvice,
+                  audienceInsights: analysis.aiInsights.audienceInsights,
+                  trendPrediction: analysis.aiInsights.trendPrediction,
+                });
+              }
+
+              setIdeaInput("");
+              // Page will re-render with trend preview
+              return;
+            }
+          }
+        }
+
+        // No trend data found or keywords empty - just set as simple idea and proceed
+        setStartFromIdea({ idea: input, keywords });
+        setIdeaInput("");
+        // For simple ideas without trend data, go directly to analyze
+        transferToAnalyze();
+        setCurrentStage("analyze");
+        router.push("/analyze");
+      } catch (error) {
+        console.error("[START] Idea analysis failed:", error);
+        // Fallback: just set the idea and proceed
+        setStartFromIdea({ idea: input });
+        setIdeaInput("");
+        transferToAnalyze();
+        setCurrentStage("analyze");
+        router.push("/analyze");
+      } finally {
+        setIsAnalyzingIdea(false);
+      }
+    }
+  };
+
+  // Helper to build AI analysis from video analysis response
+  const buildAiAnalysis = (
+    style_analysis: {
+      visual_style?: string;
+      mood?: string;
+      pace?: string;
+      lighting?: string;
+      camera_movement?: string[];
+      effects?: string[];
+      color_palette?: string[];
+      transitions?: string[];
+    } | undefined,
+    content_analysis: {
+      main_subject?: string;
+      setting?: string;
+      actions?: string[];
+      props?: string[];
+      clothing_style?: string;
+    } | undefined,
+    suggested_prompt: string | undefined,
+    isComposeVideo: boolean | undefined,
+    imageCount: number | undefined,
+    conceptDetails: {
+      visualStyle?: string;
+      colorPalette?: string[];
+      lighting?: string;
+      cameraMovement?: string[];
+      transitions?: string[];
+      effects?: string[];
+      mood?: string;
+      pace?: string;
+      mainSubject?: string;
+      actions?: string[];
+      setting?: string;
+      props?: string[];
+      clothingStyle?: string;
+    } | undefined
+  ) => {
+    const aiAnalysis: {
+      hookAnalysis?: string;
+      styleAnalysis?: string;
+      structureAnalysis?: string;
+      suggestedApproach?: string;
+      isComposeVideo?: boolean;
+      imageCount?: number;
+      conceptDetails?: typeof conceptDetails;
+    } = {};
+
+    // Build styleAnalysis from style_analysis
+    if (style_analysis) {
+      const styleParts: string[] = [];
+      if (style_analysis.visual_style) styleParts.push(style_analysis.visual_style);
+      if (style_analysis.mood) styleParts.push(`Mood: ${style_analysis.mood}`);
+      if (style_analysis.pace) styleParts.push(`Pace: ${style_analysis.pace}`);
+      if (style_analysis.lighting) styleParts.push(`Lighting: ${style_analysis.lighting}`);
+      if (style_analysis.camera_movement?.length) {
+        styleParts.push(`Camera: ${style_analysis.camera_movement.join(", ")}`);
+      }
+      if (style_analysis.effects?.length) {
+        styleParts.push(`Effects: ${style_analysis.effects.join(", ")}`);
+      }
+      aiAnalysis.styleAnalysis = styleParts.join(". ");
+    }
+
+    // Build structureAnalysis from content_analysis
+    if (content_analysis) {
+      const contentParts: string[] = [];
+      if (content_analysis.main_subject) contentParts.push(`Subject: ${content_analysis.main_subject}`);
+      if (content_analysis.setting) contentParts.push(`Setting: ${content_analysis.setting}`);
+      if (content_analysis.actions?.length) {
+        contentParts.push(`Actions: ${content_analysis.actions.join(", ")}`);
+      }
+      if (content_analysis.props?.length) {
+        contentParts.push(`Props: ${content_analysis.props.join(", ")}`);
+      }
+      aiAnalysis.structureAnalysis = contentParts.join(". ");
+    }
+
+    // Build hookAnalysis
+    if (style_analysis || content_analysis) {
+      const hookParts: string[] = [];
+      if (content_analysis?.main_subject) hookParts.push(content_analysis.main_subject);
+      if (style_analysis?.visual_style) hookParts.push(style_analysis.visual_style);
+      if (content_analysis?.actions?.[0]) hookParts.push(content_analysis.actions[0]);
+      aiAnalysis.hookAnalysis = hookParts.join(" - ");
+    }
+
+    if (suggested_prompt) {
+      aiAnalysis.suggestedApproach = suggested_prompt;
+    }
+
+    if (isComposeVideo !== undefined) {
+      aiAnalysis.isComposeVideo = isComposeVideo;
+    }
+    if (imageCount !== undefined) {
+      aiAnalysis.imageCount = imageCount;
+    }
+    if (conceptDetails) {
+      aiAnalysis.conceptDetails = conceptDetails;
+    }
+
+    return aiAnalysis;
   };
 
   // Navigate to trend dashboard
@@ -291,10 +593,10 @@ export default function StartPage() {
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffHours / 24);
 
-    if (diffHours < 1) return isKorean ? "방금 전" : "Just now";
-    if (diffHours < 24) return isKorean ? `${diffHours}시간 전` : `${diffHours}h ago`;
-    if (diffDays < 7) return isKorean ? `${diffDays}일 전` : `${diffDays}d ago`;
-    return date.toLocaleDateString(isKorean ? "ko-KR" : "en-US");
+    if (diffHours < 1) return translate("startPage.time.justNow");
+    if (diffHours < 24) return translate("startPage.time.hoursAgo").replace("{n}", String(diffHours));
+    if (diffDays < 7) return translate("startPage.time.daysAgo").replace("{n}", String(diffDays));
+    return date.toLocaleDateString(language === "ko" ? "ko-KR" : "en-US");
   };
 
   if (!hydrated) {
@@ -307,11 +609,16 @@ export default function StartPage() {
     );
   }
 
-  // Check if we can proceed to analyze
-  const canProceedToAnalyze = startSource !== null || ideaInput.trim().length > 0;
+  // Check if we can proceed to analyze (not during loading)
+  const canProceedToAnalyze =
+    !isAnalyzingVideo &&
+    !isAnalyzingIdea &&
+    (startSource !== null || ideaInput.trim().length > 0);
 
   // Handle proceed action
   const handleProceed = () => {
+    if (isAnalyzingVideo || isAnalyzingIdea) return;
+
     if (ideaInput.trim()) {
       handleIdeaSubmit();
     } else if (startSource) {
@@ -366,16 +673,13 @@ export default function StartPage() {
                       <div className="flex items-center gap-2">
                         <Hash className="h-4 w-4 text-muted-foreground" />
                         <CardTitle className="text-sm font-medium">
-                          {isKorean ? "추천 해시태그" : "Recommended Hashtags"}
+                          {translate("startPage.analysis.recommendedHashtags")}
                           <span className="ml-2 text-muted-foreground font-normal">
                             ({startSource.analysis.topHashtags.length})
                           </span>
                         </CardTitle>
                         <InfoButton
-                          content={isKorean
-                            ? "분석된 바이럴 영상들에서 가장 많이 사용된 해시태그입니다. 발행 단계에서 자동으로 적용되며, 도달률과 노출을 높이는 데 도움이 됩니다."
-                            : "Most frequently used hashtags from analyzed viral videos. These will be automatically applied during publishing to help increase reach and exposure."
-                          }
+                          content={translate("startPage.infoButtons.hashtags")}
                           side="right"
                         />
                       </div>
@@ -391,9 +695,7 @@ export default function StartPage() {
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground mt-3">
-                        {isKorean
-                          ? "이 해시태그들은 콘텐츠 발행 시 자동으로 적용됩니다"
-                          : "These hashtags will be automatically applied when publishing"}
+                        {translate("startPage.analysis.hashtagsAutoApply")}
                       </p>
                     </CardContent>
                   </Card>
@@ -406,20 +708,15 @@ export default function StartPage() {
                       <div className="flex items-center gap-2">
                         <Sparkles className="h-4 w-4 text-muted-foreground" />
                         <CardTitle className="text-sm font-medium">
-                          {isKorean ? "트렌드 분석 결과" : "Trend Analysis Results"}
+                          {translate("startPage.analysis.trendAnalysisResults")}
                         </CardTitle>
                         <InfoButton
-                          content={isKorean
-                            ? "AI가 바이럴 영상들을 분석하여 추출한 인사이트입니다. 다음 단계에서 콘텐츠 아이디어 생성과 스크립트 작성에 활용됩니다."
-                            : "AI-generated insights from analyzing viral videos. These will be used in the next step for content ideation and script generation."
-                          }
+                          content={translate("startPage.infoButtons.trendAnalysis")}
                           side="right"
                         />
                       </div>
                       <CardDescription className="text-xs">
-                        {isKorean
-                          ? `${startSource.analysis.viralVideos.length}개 바이럴 영상 분석 기반`
-                          : `Based on ${startSource.analysis.viralVideos.length} viral videos analyzed`}
+                        {`${startSource.analysis.viralVideos.length} ${translate("startPage.analysis.basedOnVideos")}`}
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -428,13 +725,10 @@ export default function StartPage() {
                         <div className="p-3 bg-neutral-50 rounded-lg">
                           <div className="flex items-center gap-1.5 mb-1">
                             <p className="text-xs font-medium text-muted-foreground">
-                              {isKorean ? "핵심 인사이트" : "Key Insight"}
+                              {translate("startPage.analysis.keyInsight")}
                             </p>
                             <InfoButton
-                              content={isKorean
-                                ? "분석된 영상들의 공통점과 핵심 성공 요인을 요약한 내용입니다. 콘텐츠 기획의 방향성을 잡는 데 참고하세요."
-                                : "A summary of common patterns and key success factors from analyzed videos. Use this as a guide for content planning direction."
-                              }
+                              content={translate("startPage.infoButtons.keyInsight")}
                               size="sm"
                             />
                           </div>
@@ -447,13 +741,10 @@ export default function StartPage() {
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
                             <p className="text-xs font-medium text-muted-foreground">
-                              {isKorean ? "발견된 성공 패턴" : "Success Patterns Found"}
+                              {translate("startPage.analysis.successPatterns")}
                             </p>
                             <InfoButton
-                              content={isKorean
-                                ? "바이럴 영상들에서 반복적으로 나타나는 성공적인 콘텐츠 패턴입니다. 스크립트와 영상 구성에 직접 반영됩니다."
-                                : "Recurring successful content patterns found in viral videos. These will be directly applied to script and video composition."
-                              }
+                              content={translate("startPage.infoButtons.successPatterns")}
                               size="sm"
                             />
                           </div>
@@ -473,13 +764,10 @@ export default function StartPage() {
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
                             <p className="text-xs font-medium text-muted-foreground">
-                              {isKorean ? "해시태그 전략" : "Hashtag Strategy"}
+                              {translate("startPage.analysis.hashtagStrategy")}
                             </p>
                             <InfoButton
-                              content={isKorean
-                                ? "효과적인 해시태그 사용법에 대한 가이드입니다. 발행 시 해시태그 조합과 순서를 결정하는 데 참고됩니다."
-                                : "Guidelines for effective hashtag usage. This helps determine the combination and order of hashtags when publishing."
-                              }
+                              content={translate("startPage.infoButtons.hashtagStrategy")}
                               size="sm"
                             />
                           </div>
@@ -499,13 +787,10 @@ export default function StartPage() {
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
                             <p className="text-xs font-medium text-muted-foreground">
-                              {isKorean ? "추천 콘텐츠 방향" : "Recommended Content Direction"}
+                              {translate("startPage.analysis.recommendedDirection")}
                             </p>
                             <InfoButton
-                              content={isKorean
-                                ? "트렌드에 맞는 구체적인 영상 아이디어입니다. 다음 단계에서 AI 아이디어 생성의 기반 자료로 활용됩니다."
-                                : "Specific video ideas based on current trends. These serve as foundation for AI idea generation in the next step."
-                              }
+                              content={translate("startPage.infoButtons.recommendedDirection")}
                               size="sm"
                             />
                           </div>
@@ -525,13 +810,10 @@ export default function StartPage() {
                         <div className="pt-2 border-t">
                           <div className="flex items-center gap-1.5 mb-1">
                             <p className="text-xs font-medium text-muted-foreground">
-                              {isKorean ? "타겟 오디언스" : "Target Audience"}
+                              {translate("startPage.analysis.targetAudience")}
                             </p>
                             <InfoButton
-                              content={isKorean
-                                ? "이 트렌드에 가장 반응이 좋은 시청자 그룹입니다. 콘텐츠 톤앤매너와 메시지 전달 방식을 결정하는 데 활용됩니다."
-                                : "The viewer demographic most responsive to this trend. Used to determine content tone and messaging approach."
-                              }
+                              content={translate("startPage.infoButtons.targetAudience")}
                               size="sm"
                             />
                           </div>
@@ -549,16 +831,13 @@ export default function StartPage() {
                       <div className="flex items-center gap-2">
                         <Video className="h-4 w-4 text-muted-foreground" />
                         <CardTitle className="text-sm font-medium">
-                          {isKorean ? "분석된 영상" : "Analyzed Videos"}
+                          {translate("startPage.analysis.analyzedVideos")}
                           <span className="ml-2 text-muted-foreground font-normal">
                             ({startSource.analysis.viralVideos.length})
                           </span>
                         </CardTitle>
                         <InfoButton
-                          content={isKorean
-                            ? "위 인사이트들이 도출된 원본 바이럴 영상들입니다. 영감 영상으로 다음 단계에 전달되어 콘텐츠 스타일 참고용으로 활용됩니다."
-                            : "The original viral videos from which the above insights were derived. These are passed to the next step as inspiration for content style reference."
-                          }
+                          content={translate("startPage.infoButtons.analyzedVideos")}
                           side="right"
                         />
                       </div>
@@ -610,7 +889,7 @@ export default function StartPage() {
                           onClick={() => window.open(startSource.videoUrl, "_blank")}
                         >
                           <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                          {isKorean ? "원본 보기" : "View Original"}
+                          {translate("startPage.analysis.viewOriginal")}
                         </Button>
                         <Button variant="ghost" size="icon" onClick={handleClearSource}>
                           <X className="h-4 w-4" />
@@ -626,13 +905,10 @@ export default function StartPage() {
                     <CardHeader className="pb-2">
                       <div className="flex items-center gap-2">
                         <CardTitle className="text-sm font-medium">
-                          {isKorean ? "영상 설명" : "Video Description"}
+                          {translate("startPage.analysis.videoDescription")}
                         </CardTitle>
                         <InfoButton
-                          content={isKorean
-                            ? "원본 영상의 캡션입니다. 콘텐츠 톤앤매너와 키워드를 참고하는 데 활용됩니다."
-                            : "Caption from the original video. Used as reference for content tone and keywords."
-                          }
+                          content={translate("startPage.infoButtons.videoDescription")}
                           size="sm"
                         />
                       </div>
@@ -650,16 +926,13 @@ export default function StartPage() {
                       <div className="flex items-center gap-2">
                         <Hash className="h-4 w-4 text-muted-foreground" />
                         <CardTitle className="text-sm font-medium">
-                          {isKorean ? "해시태그" : "Hashtags"}
+                          {translate("startPage.analysis.hashtagsLabel")}
                           <span className="ml-2 text-muted-foreground font-normal">
                             ({startSource.hashtags.length})
                           </span>
                         </CardTitle>
                         <InfoButton
-                          content={isKorean
-                            ? "원본 영상에 사용된 해시태그입니다. 발행 단계에서 참고용으로 제공되며, 관련 트렌드 파악에 활용됩니다."
-                            : "Hashtags used in the original video. These are provided as reference during publishing and help identify related trends."
-                          }
+                          content={translate("startPage.infoButtons.hashtagsReference")}
                           side="right"
                         />
                       </div>
@@ -675,9 +948,7 @@ export default function StartPage() {
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground mt-3">
-                        {isKorean
-                          ? "이 해시태그들이 콘텐츠 생성에 참고됩니다"
-                          : "These hashtags will be used as reference for content generation"}
+                        {translate("startPage.analysis.hashtagsReference")}
                       </p>
                     </CardContent>
                   </Card>
@@ -691,12 +962,10 @@ export default function StartPage() {
                         <div className="animate-spin rounded-full h-5 w-5 border-2 border-neutral-300 border-t-neutral-600" />
                         <div>
                           <p className="text-sm font-medium">
-                            {isKorean ? "영상 분석 중..." : "Analyzing video..."}
+                            {translate("startPage.analysis.analyzingVideoStatus")}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {isKorean
-                              ? "AI가 영상의 스타일과 구조를 분석하고 있습니다"
-                              : "AI is analyzing the video's style and structure"}
+                            {translate("startPage.analysis.analyzingAiStatus")}
                           </p>
                         </div>
                       </div>
@@ -712,7 +981,7 @@ export default function StartPage() {
                         <X className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="text-sm font-medium text-red-700">
-                            {isKorean ? "분석 실패" : "Analysis Failed"}
+                            {translate("startPage.analysis.analysisFailed")}
                           </p>
                           <p className="text-xs text-red-600 mt-1">{analysisError}</p>
                           <Button
@@ -724,7 +993,7 @@ export default function StartPage() {
                               setRetryCount((c) => c + 1);
                             }}
                           >
-                            {isKorean ? "다시 시도" : "Retry"}
+                            {translate("startPage.input.retry")}
                           </Button>
                         </div>
                       </div>
@@ -743,23 +1012,19 @@ export default function StartPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <p className="font-medium text-sm">
-                              {isKorean ? "🎨 Compose 영상 추천" : "🎨 Compose Video Recommended"}
+                              {translate("startPage.analysis.composeRecommended")}
                             </p>
                             <Badge variant="secondary" className="text-xs">
-                              {isKorean ? "슬라이드쇼" : "Slideshow"}
+                              {translate("startPage.analysis.slideshow")}
                             </Badge>
                           </div>
                           <p className="text-sm text-muted-foreground mb-2">
-                            {isKorean
-                              ? `이 영상은 ${startSource.aiAnalysis.imageCount || "여러"}개의 이미지로 구성된 슬라이드쇼 형식입니다. Compose 모드를 사용하면 유사한 스타일의 영상을 쉽게 제작할 수 있습니다.`
-                              : `This video is a slideshow format composed of ${startSource.aiAnalysis.imageCount || "multiple"} images. Using Compose mode will make it easy to create a video with a similar style.`}
+                            {translate("startPage.analysis.composeDescription").replace("{count}", String(startSource.aiAnalysis.imageCount || "multiple"))}
                           </p>
                           <div className="flex items-center gap-2">
                             <ImageIcon className="h-4 w-4 text-muted-foreground" />
                             <span className="text-xs text-muted-foreground">
-                              {isKorean
-                                ? `${startSource.aiAnalysis.imageCount || 0}개 이미지 감지됨`
-                                : `${startSource.aiAnalysis.imageCount || 0} images detected`}
+                              {translate("startPage.analysis.imagesDetected").replace("{count}", String(startSource.aiAnalysis.imageCount || 0))}
                             </span>
                           </div>
                         </div>
@@ -775,13 +1040,10 @@ export default function StartPage() {
                       <div className="flex items-center gap-2">
                         <Sparkles className="h-4 w-4 text-muted-foreground" />
                         <CardTitle className="text-sm font-medium">
-                          {isKorean ? "영상 분석" : "Video Analysis"}
+                          {translate("startPage.analysis.videoAnalysis")}
                         </CardTitle>
                         <InfoButton
-                          content={isKorean
-                            ? "AI가 원본 영상을 분석하여 추출한 인사이트입니다. 스크립트 작성과 영상 구성에 활용됩니다."
-                            : "AI-generated insights from analyzing the original video. These are used for script writing and video composition."
-                          }
+                          content={translate("startPage.infoButtons.videoAnalysis")}
                           side="right"
                         />
                       </div>
@@ -791,13 +1053,10 @@ export default function StartPage() {
                         <div>
                           <div className="flex items-center gap-1.5 mb-1">
                             <p className="text-xs font-medium text-muted-foreground">
-                              {isKorean ? "훅 분석" : "Hook Analysis"}
+                              {translate("startPage.analysis.hookAnalysis")}
                             </p>
                             <InfoButton
-                              content={isKorean
-                                ? "영상의 첫 3초 구간 분석입니다. 시청자의 주목을 끄는 오프닝 방식을 참고하세요."
-                                : "Analysis of the first 3 seconds of the video. Reference this for attention-grabbing opening techniques."
-                              }
+                              content={translate("startPage.infoButtons.hookAnalysis")}
                               size="sm"
                             />
                           </div>
@@ -808,13 +1067,10 @@ export default function StartPage() {
                         <div>
                           <div className="flex items-center gap-1.5 mb-1">
                             <p className="text-xs font-medium text-muted-foreground">
-                              {isKorean ? "스타일 분석" : "Style Analysis"}
+                              {translate("startPage.analysis.styleAnalysis")}
                             </p>
                             <InfoButton
-                              content={isKorean
-                                ? "영상의 전반적인 톤, 편집 스타일, 음악 사용 등을 분석한 내용입니다."
-                                : "Analysis of the overall tone, editing style, and music usage in the video."
-                              }
+                              content={translate("startPage.infoButtons.styleAnalysis")}
                               size="sm"
                             />
                           </div>
@@ -825,13 +1081,10 @@ export default function StartPage() {
                         <div>
                           <div className="flex items-center gap-1.5 mb-1">
                             <p className="text-xs font-medium text-muted-foreground">
-                              {isKorean ? "구조 분석" : "Structure Analysis"}
+                              {translate("startPage.analysis.structureAnalysis")}
                             </p>
                             <InfoButton
-                              content={isKorean
-                                ? "영상의 구성, 주제, 배경, 소품 등 콘텐츠 구조를 분석한 내용입니다."
-                                : "Analysis of the video's composition, subject, setting, and props."
-                              }
+                              content={translate("startPage.infoButtons.structureAnalysis")}
                               size="sm"
                             />
                           </div>
@@ -842,13 +1095,10 @@ export default function StartPage() {
                         <div>
                           <div className="flex items-center gap-1.5 mb-1">
                             <p className="text-xs font-medium text-muted-foreground">
-                              {isKorean ? "추천 접근 방식" : "Suggested Approach"}
+                              {translate("startPage.analysis.suggestedApproach")}
                             </p>
                             <InfoButton
-                              content={isKorean
-                                ? "이 영상을 참고하여 새로운 콘텐츠를 만들 때 권장되는 방향입니다."
-                                : "Recommended direction for creating new content based on this video."
-                              }
+                              content={translate("startPage.infoButtons.suggestedApproach")}
                               size="sm"
                             />
                           </div>
@@ -866,13 +1116,10 @@ export default function StartPage() {
                       <div className="flex items-center gap-2">
                         <Camera className="h-4 w-4 text-muted-foreground" />
                         <CardTitle className="text-sm font-medium">
-                          {isKorean ? "컨셉 상세 (재현용)" : "Concept Details (For Recreation)"}
+                          {translate("startPage.analysis.conceptDetails")}
                         </CardTitle>
                         <InfoButton
-                          content={isKorean
-                            ? "원본 영상과 유사한 컨셉으로 새 영상을 만들 때 참고할 수 있는 상세 정보입니다."
-                            : "Detailed information you can reference when creating a new video with a similar concept to the original."
-                          }
+                          content={translate("startPage.infoButtons.conceptDetails")}
                           side="right"
                         />
                       </div>
@@ -883,7 +1130,7 @@ export default function StartPage() {
                         {startSource.aiAnalysis.conceptDetails.visualStyle && (
                           <div>
                             <p className="text-xs font-medium text-muted-foreground mb-1">
-                              {isKorean ? "비주얼 스타일" : "Visual Style"}
+                              {translate("startPage.analysis.visualStyle")}
                             </p>
                             <p className="text-sm">{startSource.aiAnalysis.conceptDetails.visualStyle}</p>
                           </div>
@@ -891,7 +1138,7 @@ export default function StartPage() {
                         {startSource.aiAnalysis.conceptDetails.mood && (
                           <div>
                             <p className="text-xs font-medium text-muted-foreground mb-1">
-                              {isKorean ? "분위기" : "Mood"}
+                              {translate("startPage.analysis.mood")}
                             </p>
                             <p className="text-sm">{startSource.aiAnalysis.conceptDetails.mood}</p>
                           </div>
@@ -899,7 +1146,7 @@ export default function StartPage() {
                         {startSource.aiAnalysis.conceptDetails.pace && (
                           <div>
                             <p className="text-xs font-medium text-muted-foreground mb-1">
-                              {isKorean ? "페이스" : "Pace"}
+                              {translate("startPage.analysis.pace")}
                             </p>
                             <p className="text-sm">{startSource.aiAnalysis.conceptDetails.pace}</p>
                           </div>
@@ -907,7 +1154,7 @@ export default function StartPage() {
                         {startSource.aiAnalysis.conceptDetails.lighting && (
                           <div>
                             <p className="text-xs font-medium text-muted-foreground mb-1">
-                              {isKorean ? "조명" : "Lighting"}
+                              {translate("startPage.analysis.lighting")}
                             </p>
                             <p className="text-sm">{startSource.aiAnalysis.conceptDetails.lighting}</p>
                           </div>
@@ -920,7 +1167,7 @@ export default function StartPage() {
                           <div className="flex items-center gap-1.5 mb-2">
                             <Palette className="h-3.5 w-3.5 text-muted-foreground" />
                             <p className="text-xs font-medium text-muted-foreground">
-                              {isKorean ? "컬러 팔레트" : "Color Palette"}
+                              {translate("startPage.analysis.colorPalette")}
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-1.5">
@@ -938,7 +1185,7 @@ export default function StartPage() {
                         {startSource.aiAnalysis.conceptDetails.cameraMovement && startSource.aiAnalysis.conceptDetails.cameraMovement.length > 0 && (
                           <div>
                             <p className="text-xs font-medium text-muted-foreground mb-1">
-                              {isKorean ? "카메라 움직임" : "Camera Movement"}
+                              {translate("startPage.analysis.cameraMovement")}
                             </p>
                             <div className="flex flex-wrap gap-1">
                               {startSource.aiAnalysis.conceptDetails.cameraMovement.map((move, idx) => (
@@ -952,7 +1199,7 @@ export default function StartPage() {
                         {startSource.aiAnalysis.conceptDetails.transitions && startSource.aiAnalysis.conceptDetails.transitions.length > 0 && (
                           <div>
                             <p className="text-xs font-medium text-muted-foreground mb-1">
-                              {isKorean ? "전환 효과" : "Transitions"}
+                              {translate("startPage.analysis.transitions")}
                             </p>
                             <div className="flex flex-wrap gap-1">
                               {startSource.aiAnalysis.conceptDetails.transitions.map((trans, idx) => (
@@ -969,7 +1216,7 @@ export default function StartPage() {
                       {startSource.aiAnalysis.conceptDetails.effects && startSource.aiAnalysis.conceptDetails.effects.length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-muted-foreground mb-1">
-                            {isKorean ? "이펙트" : "Effects"}
+                            {translate("startPage.analysis.effects")}
                           </p>
                           <div className="flex flex-wrap gap-1">
                             {startSource.aiAnalysis.conceptDetails.effects.map((effect, idx) => (
@@ -984,24 +1231,24 @@ export default function StartPage() {
                       {/* Content Details */}
                       <div className="pt-3 border-t">
                         <p className="text-xs font-medium text-muted-foreground mb-2">
-                          {isKorean ? "콘텐츠 구성" : "Content Composition"}
+                          {translate("startPage.analysis.contentComposition")}
                         </p>
                         <div className="grid grid-cols-2 gap-3">
                           {startSource.aiAnalysis.conceptDetails.mainSubject && (
                             <div>
-                              <p className="text-xs text-muted-foreground">{isKorean ? "주요 피사체" : "Main Subject"}</p>
+                              <p className="text-xs text-muted-foreground">{translate("startPage.analysis.mainSubject")}</p>
                               <p className="text-sm">{startSource.aiAnalysis.conceptDetails.mainSubject}</p>
                             </div>
                           )}
                           {startSource.aiAnalysis.conceptDetails.setting && (
                             <div>
-                              <p className="text-xs text-muted-foreground">{isKorean ? "배경/장소" : "Setting"}</p>
+                              <p className="text-xs text-muted-foreground">{translate("startPage.analysis.setting")}</p>
                               <p className="text-sm">{startSource.aiAnalysis.conceptDetails.setting}</p>
                             </div>
                           )}
                           {startSource.aiAnalysis.conceptDetails.clothingStyle && (
                             <div>
-                              <p className="text-xs text-muted-foreground">{isKorean ? "의상 스타일" : "Clothing Style"}</p>
+                              <p className="text-xs text-muted-foreground">{translate("startPage.analysis.clothingStyle")}</p>
                               <p className="text-sm">{startSource.aiAnalysis.conceptDetails.clothingStyle}</p>
                             </div>
                           )}
@@ -1012,7 +1259,7 @@ export default function StartPage() {
                       {startSource.aiAnalysis.conceptDetails.actions && startSource.aiAnalysis.conceptDetails.actions.length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-muted-foreground mb-1">
-                            {isKorean ? "동작/액션" : "Actions"}
+                            {translate("startPage.analysis.actions")}
                           </p>
                           <div className="flex flex-wrap gap-1">
                             {startSource.aiAnalysis.conceptDetails.actions.map((action, idx) => (
@@ -1028,7 +1275,7 @@ export default function StartPage() {
                       {startSource.aiAnalysis.conceptDetails.props && startSource.aiAnalysis.conceptDetails.props.length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-muted-foreground mb-1">
-                            {isKorean ? "소품" : "Props"}
+                            {translate("startPage.analysis.props")}
                           </p>
                           <div className="flex flex-wrap gap-1">
                             {startSource.aiAnalysis.conceptDetails.props.map((prop, idx) => (
@@ -1072,17 +1319,75 @@ export default function StartPage() {
                   {translate("startPage.entryPaths.idea.title")}
                 </span>
               </div>
-              <Input
-                placeholder={
-                  isKorean
-                    ? "아이디어를 입력하세요 (예: 홈트 루틴, 일상 브이로그)"
-                    : "Enter your idea (e.g., home workout routine, daily vlog)"
-                }
-                value={ideaInput}
-                onChange={(e) => setIdeaInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleIdeaSubmit()}
-                className="w-full"
-              />
+              <div className="space-y-3">
+                <div className="relative">
+                  <Input
+                    placeholder={translate("startPage.input.placeholder")}
+                    value={ideaInput}
+                    onChange={(e) => setIdeaInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && !isAnalyzingVideo && !isAnalyzingIdea && handleIdeaSubmit()}
+                    disabled={isAnalyzingVideo || isAnalyzingIdea}
+                    className="w-full pr-10"
+                  />
+                  {detectTikTokUrl(ideaInput).isTikTok && (
+                    <Link className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                  )}
+                </div>
+
+                {/* Input hints */}
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Lightbulb className="h-3 w-3" />
+                    {translate("startPage.input.hintIdea")}
+                  </span>
+                  <span className="text-neutral-300">|</span>
+                  <span className="flex items-center gap-1">
+                    <Link className="h-3 w-3" />
+                    {translate("startPage.input.hintTiktok")}
+                  </span>
+                </div>
+
+                {/* Loading state for video analysis */}
+                {isAnalyzingVideo && inputType === "tiktok" && (
+                  <div className="flex items-center gap-2 p-3 bg-neutral-50 rounded-lg">
+                    <Loader2 className="h-4 w-4 animate-spin text-neutral-500" />
+                    <span className="text-sm text-muted-foreground">
+                      {translate("startPage.input.analyzingVideo")}
+                    </span>
+                  </div>
+                )}
+
+                {/* Loading state for idea analysis */}
+                {isAnalyzingIdea && inputType === "text" && (
+                  <div className="flex items-center gap-2 p-3 bg-neutral-50 rounded-lg">
+                    <Loader2 className="h-4 w-4 animate-spin text-neutral-500" />
+                    <span className="text-sm text-muted-foreground">
+                      {translate("startPage.input.analyzingIdea")}
+                    </span>
+                  </div>
+                )}
+
+                {/* Error state */}
+                {analysisError && !isAnalyzingVideo && !isAnalyzingIdea && (
+                  <div className="flex items-start gap-2 p-3 bg-red-50 rounded-lg border border-red-100">
+                    <X className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm text-red-700">{analysisError}</p>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 text-xs text-red-600"
+                        onClick={() => {
+                          setAnalysisError(null);
+                          handleIdeaSubmit();
+                        }}
+                      >
+                        {translate("startPage.input.retry")}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
@@ -1093,7 +1398,7 @@ export default function StartPage() {
             </div>
             <div className="relative flex justify-center text-sm">
               <span className="px-4 bg-background text-muted-foreground">
-                {isKorean ? "또는" : "or"}
+                {translate("startPage.input.or")}
               </span>
             </div>
           </div>
@@ -1129,13 +1434,13 @@ export default function StartPage() {
               <CardContent className="pt-0">
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="secondary" className="text-xs">
-                    {isKorean ? "키워드 분석" : "Keyword Analysis"}
+                    {translate("startPage.badges.keywordAnalysis")}
                   </Badge>
                   <Badge variant="secondary" className="text-xs">
-                    {isKorean ? "바이럴 영상" : "Viral Videos"}
+                    {translate("startPage.badges.viralVideos")}
                   </Badge>
                   <Badge variant="secondary" className="text-xs">
-                    {isKorean ? "해시태그 트렌드" : "Hashtag Trends"}
+                    {translate("startPage.badges.hashtagTrends")}
                   </Badge>
                 </div>
               </CardContent>
@@ -1205,7 +1510,7 @@ export default function StartPage() {
                   onClick={() => router.push("/campaigns")}
                 >
                   <FolderOpen className="h-4 w-4 mr-1" />
-                  {isKorean ? "모든 캠페인 보기" : "View All Campaigns"}
+                  {translate("startPage.viewAllCampaigns")}
                 </Button>
               </div>
             </div>

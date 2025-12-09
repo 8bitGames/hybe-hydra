@@ -179,6 +179,7 @@ interface WorkspaceData {
     product_image_url: string | null;
     hand_pose: string | null;
     used_in_generation_id: string | null;
+    is_linked_to_campaign: boolean;  // false = user's unlinked image from /create
     created_at: string;
   }>;
 }

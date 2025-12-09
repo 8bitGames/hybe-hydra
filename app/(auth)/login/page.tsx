@@ -28,7 +28,7 @@ export default function LoginPage() {
     const result = await login(email, password);
 
     if (result.success) {
-      router.push("/dashboard");
+      router.push("/trend-dashboard");
     } else {
       setError(result.error || t.auth.login.error);
     }
