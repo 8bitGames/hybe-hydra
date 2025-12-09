@@ -17,6 +17,7 @@ import { generatePreviewImage, PreviewImageInput } from "@/lib/preview-image";
  * - product_image_url?: URL of the product image to include
  * - composition_mode?: "direct" | "two_step" (default: "two_step" when product_image_url provided)
  * - hand_pose?: Description of how hands should hold the product (for two_step mode)
+ * - campaign_id?: Optional campaign ID to link this image to a specific campaign
  *
  * Response:
  * - preview_id: Unique ID for this preview
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
       product_image_url,
       composition_mode,
       hand_pose,
+      campaign_id,
     } = body;
 
     if (!video_prompt) {
@@ -70,7 +72,7 @@ export async function POST(request: NextRequest) {
 
     const result = await generatePreviewImage(
       input,
-      { type: "user", id: user.id, userId: user.id },
+      { type: "user", id: user.id, userId: user.id, campaignId: campaign_id || undefined },
       "[Preview Image AI]"
     );
 

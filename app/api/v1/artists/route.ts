@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
         if (isAdmin) {
           // Admin can see all artists
           artists = await prisma.artist.findMany({
+            where: { deletedAt: null },
             include: {
               label: {
                 select: {
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
           artists = await prisma.artist.findMany({
             where: {
               labelId: { in: user.labelIds },
+              deletedAt: null,
             },
             include: {
               label: {

@@ -158,8 +158,33 @@ class S3Client:
                 "Referer": url.split('/')[0] + '//' + url.split('/')[2] + '/',
             }
             client = await self._get_http_client()
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
+
+            # Retry logic for transient errors (503, 502, 429, connection errors)
+            max_retries = 3
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    response = await client.get(url, headers=headers)
+                    response.raise_for_status()
+                    break  # Success
+                except httpx.HTTPStatusError as e:
+                    last_error = e
+                    if e.response.status_code in (502, 503, 429):
+                        # Transient error - retry with exponential backoff
+                        wait_time = (attempt + 1) * 2  # 2s, 4s, 6s
+                        print(f"[S3Client] Retry {attempt + 1}/{max_retries} after {e.response.status_code} error, waiting {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise  # Non-transient error - don't retry
+                except (httpx.ConnectError, httpx.ReadTimeout) as e:
+                    last_error = e
+                    wait_time = (attempt + 1) * 2
+                    print(f"[S3Client] Retry {attempt + 1}/{max_retries} after connection error, waiting {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+            else:
+                # All retries exhausted
+                raise last_error or ValueError(f"Failed to download after {max_retries} retries")
 
             # Validate it's an actual image, not an HTML error page
             content = response.content

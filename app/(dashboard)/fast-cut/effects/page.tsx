@@ -6,7 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
 import { fastCutApi } from "@/lib/fast-cut-api";
 import { useToast } from "@/components/ui/toast";
-import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
 import { FastCutEffectStep } from "@/components/features/create/fast-cut/FastCutEffectStep";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sparkles } from "lucide-react";
@@ -130,21 +130,10 @@ export default function FastCutEffectsPage() {
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-full">
-        <WorkflowHeader
-          onBack={handleBack}
-          canProceed={false}
-          contentType="fast-cut"
-          actionButton={{
-            label: language === "ko" ? "영상 생성" : "Generate Video",
-            onClick: handleStartRender,
-            disabled: rendering,
-            loading: rendering,
-            icon: <Sparkles className="h-4 w-4" />,
-          }}
-        />
+      <div className="flex flex-col flex-1 min-h-0">
+        <WorkflowHeader contentType="fast-cut" />
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-6 min-h-0">
           <div className="max-w-3xl mx-auto">
             <FastCutEffectStep
               scriptData={scriptData}
@@ -162,6 +151,19 @@ export default function FastCutEffectsPage() {
             />
           </div>
         </div>
+
+        <WorkflowFooter
+          onBack={handleBack}
+          canProceed={false}
+          contentType="fast-cut"
+          actionButton={{
+            label: language === "ko" ? "영상 생성" : "Generate Video",
+            onClick: handleStartRender,
+            disabled: rendering,
+            loading: rendering,
+            icon: <Sparkles className="h-4 w-4" />,
+          }}
+        />
       </div>
     </TooltipProvider>
   );

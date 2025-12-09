@@ -8,9 +8,10 @@ import { useShallow } from "zustand/react/shallow";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
 import { useCampaigns, useAssets } from "@/lib/queries";
 import { useToast } from "@/components/ui/toast";
-import { PersonalizePromptModal } from "@/components/features/create/PersonalizePromptModal";
+import { useAuthStore } from "@/lib/auth-store";
 import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
-import { videoApi } from "@/lib/video-api";
+import { videoApi, previewImageApi } from "@/lib/video-api";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
 import { cn } from "@/lib/utils";
 import {
   Sparkles,
@@ -35,16 +36,24 @@ import {
   Plus,
   X,
   Hash,
-  Eye,
-  Zap,
-  Trophy,
   Lightbulb,
   Play,
   ExternalLink,
   FolderOpen,
   Check,
   Library,
+  Wand2,
+  AlertCircle,
+  RefreshCw,
+  ImagePlus,
+  ZoomIn,
+  Loader2,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { InfoButton } from "@/components/ui/info-button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -63,120 +72,6 @@ function formatCount(num: number | null | undefined): string {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
   return num.toLocaleString();
-}
-
-function formatPercent(num: number): string {
-  return `${num.toFixed(1)}%`;
-}
-
-// ============================================================================
-// Step Progress Indicator
-// ============================================================================
-
-interface StepStatus {
-  campaignSelected: boolean;
-  methodSelected: boolean;
-  musicSelected: boolean;
-  imageSelected: boolean;
-}
-
-function StepProgressIndicator({
-  status,
-  selectedMethod,
-}: {
-  status: StepStatus;
-  selectedMethod: "ai" | null;
-}) {
-  const { language } = useI18n();
-  const isKorean = language === "ko";
-
-  // Determine current step and next action
-  // Assets are now optional, so step 3 is always "done" once method is selected
-  const getCurrentStep = (): number => {
-    if (!status.campaignSelected) return 1;
-    if (!status.methodSelected) return 2;
-    return 3; // Ready to go (assets are optional)
-  };
-
-  const currentStep = getCurrentStep();
-
-  const getNextActionMessage = (): string => {
-    if (!status.campaignSelected) {
-      return isKorean
-        ? "영상을 저장할 캠페인을 선택하세요"
-        : "Select a campaign to save your video";
-    }
-    if (!status.methodSelected) {
-      return isKorean
-        ? "AI 생성 방식을 선택하세요"
-        : "Select AI video generation method";
-    }
-    // Ready to generate (assets are optional)
-    return isKorean
-      ? "준비 완료! 'Veo3로 생성하기' 버튼을 클릭하세요"
-      : "Ready! Click 'Generate with Veo3' to create";
-  };
-
-  // Build steps - assets are now optional extras
-  const steps = [
-    {
-      num: 1,
-      label: isKorean ? "캠페인" : "Campaign",
-      done: status.campaignSelected,
-    },
-    {
-      num: 2,
-      label: isKorean ? "생성 방식" : "Method",
-      done: status.methodSelected,
-    },
-  ];
-
-  return (
-    <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 mb-6">
-      {/* Next Action Message */}
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-5 h-5 rounded-full bg-neutral-900 flex items-center justify-center">
-          <ArrowRight className="h-3 w-3 text-white" />
-        </div>
-        <span className="text-sm font-medium text-neutral-900">
-          {getNextActionMessage()}
-        </span>
-      </div>
-
-      {/* Step Indicators */}
-      <div className="flex items-center gap-2">
-        {steps.map((step, index) => (
-          <div key={step.num} className="flex items-center">
-            <div
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all",
-                step.done
-                  ? "bg-neutral-900 text-white"
-                  : currentStep === step.num
-                  ? "bg-neutral-200 text-neutral-900 ring-2 ring-neutral-400 ring-offset-1"
-                  : "bg-neutral-100 text-neutral-400"
-              )}
-            >
-              {step.done ? (
-                <Check className="h-3 w-3" />
-              ) : (
-                <span className="w-3 text-center">{step.num}</span>
-              )}
-              <span>{step.label}</span>
-            </div>
-            {index < steps.length - 1 && (
-              <div
-                className={cn(
-                  "w-4 h-0.5 mx-1",
-                  step.done ? "bg-neutral-400" : "bg-neutral-200"
-                )}
-              />
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 // ============================================================================
@@ -381,44 +276,6 @@ function ContextPanel() {
           </div>
         )}
 
-        {/* Performance Benchmarks */}
-        {performanceMetrics && (
-          <div>
-            <h3 className="text-xs font-semibold text-neutral-500 mb-2 uppercase tracking-wide">
-              {language === "ko" ? "성과 벤치마크" : "Performance Benchmarks"}
-            </h3>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="bg-neutral-100 rounded-lg p-2.5 text-center">
-                <div className="flex items-center justify-center gap-1 text-neutral-500 text-[10px] mb-0.5">
-                  <Eye className="h-2.5 w-2.5" />
-                  {language === "ko" ? "평균 조회" : "Avg Views"}
-                </div>
-                <div className="text-sm font-bold text-neutral-900">
-                  {formatCount(performanceMetrics.avgViews)}
-                </div>
-              </div>
-              <div className="bg-neutral-100 rounded-lg p-2.5 text-center">
-                <div className="flex items-center justify-center gap-1 text-neutral-500 text-[10px] mb-0.5">
-                  <Zap className="h-2.5 w-2.5" />
-                  {language === "ko" ? "참여율" : "Engagement"}
-                </div>
-                <div className="text-sm font-bold text-neutral-900">
-                  {formatPercent(performanceMetrics.avgEngagement)}
-                </div>
-              </div>
-              <div className="bg-neutral-100 rounded-lg p-2.5 text-center">
-                <div className="flex items-center justify-center gap-1 text-neutral-500 text-[10px] mb-0.5">
-                  <Trophy className="h-2.5 w-2.5" />
-                  {language === "ko" ? "바이럴" : "Viral"}
-                </div>
-                <div className="text-sm font-bold text-neutral-900">
-                  {formatCount(performanceMetrics.viralBenchmark)}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Inspiration Videos */}
         {savedInspiration.length > 0 && (
           <div>
@@ -512,6 +369,7 @@ function AssetUploadSection({
   onImagesChange,
   campaignAssets,
   isLoadingAssets,
+  campaignId,
 }: {
   audioAsset: UploadedAsset | null;
   imageAssets: UploadedAsset[];
@@ -519,12 +377,15 @@ function AssetUploadSection({
   onImagesChange: (assets: UploadedAsset[]) => void;
   campaignAssets: CampaignAsset[];
   isLoadingAssets: boolean;
+  campaignId: string;
 }) {
   const { language } = useI18n();
   const [showAudioPicker, setShowAudioPicker] = useState(false);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [musicExpanded, setMusicExpanded] = useState(false);
   const [imageExpanded, setImageExpanded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Filter campaign assets by type
   const audioAssets = useMemo(
@@ -540,18 +401,78 @@ function AssetUploadSection({
     [campaignAssets]
   );
 
-  const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
+    if (!file || !campaignId) return;
+
+    // Get the latest token from store (not from hook to avoid stale closure)
+    const accessToken = useAuthStore.getState().accessToken;
+    if (!accessToken) {
+      setUploadError(language === 'ko'
+        ? '로그인이 필요합니다. 페이지를 새로고침 해주세요.'
+        : 'Please log in. Try refreshing the page.');
+      return;
+    }
+
+    // Validate file type
+    const validTypes = ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/ogg'];
+    if (!validTypes.includes(file.type)) {
+      setUploadError(language === 'ko'
+        ? '지원하는 형식: MP3, WAV, FLAC, OGG'
+        : 'Supported formats: MP3, WAV, FLAC, OGG');
+      return;
+    }
+
+    // Validate file size (500MB max)
+    if (file.size > 500 * 1024 * 1024) {
+      setUploadError(language === 'ko'
+        ? '파일 크기는 500MB 이하여야 합니다'
+        : 'File must be less than 500MB');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`/api/v1/campaigns/${campaignId}/assets`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || 'Upload failed');
+      }
+
+      const data = await response.json();
+
+      // Use the uploaded asset's S3 URL
       onAudioChange({
-        id: crypto.randomUUID(),
+        id: data.id,
         type: "audio",
         name: file.name,
-        url,
-        file,
+        url: data.s3_url,
+        fromCampaign: true,
       });
+
+      // Auto-expand music section to show the selected file
+      setMusicExpanded(true);
+    } catch (err) {
+      console.error('Upload error:', err);
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
     }
+
+    // Reset input
+    e.target.value = '';
   };
 
   const handleSelectCampaignAudio = (asset: CampaignAsset) => {
@@ -719,18 +640,38 @@ function AssetUploadSection({
                 </div>
               )}
               {/* Upload Button */}
-              <label className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-neutral-200 rounded-lg cursor-pointer hover:border-neutral-300 transition-colors">
-                <Upload className="h-4 w-4 text-neutral-400" />
-                <span className="text-sm text-neutral-500">
-                  {language === "ko" ? "오디오 파일 업로드" : "Upload audio file"}
-                </span>
+              <label className={cn(
+                "flex items-center justify-center gap-2 p-3 border-2 border-dashed rounded-lg transition-colors",
+                uploading
+                  ? "border-neutral-300 bg-neutral-50 cursor-wait"
+                  : "border-neutral-200 cursor-pointer hover:border-neutral-300"
+              )}>
+                {uploading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 text-neutral-400 animate-spin" />
+                    <span className="text-sm text-neutral-500">
+                      {language === "ko" ? "업로드 중..." : "Uploading..."}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 text-neutral-400" />
+                    <span className="text-sm text-neutral-500">
+                      {language === "ko" ? "오디오 파일 업로드" : "Upload audio file"}
+                    </span>
+                  </>
+                )}
                 <input
                   type="file"
                   accept="audio/*"
                   className="hidden"
                   onChange={handleAudioUpload}
+                  disabled={uploading}
                 />
               </label>
+              {uploadError && (
+                <p className="text-xs text-red-500 mt-1">{uploadError}</p>
+              )}
             </div>
           )}
         </CollapsibleContent>
@@ -912,94 +853,503 @@ function AssetUploadSection({
 }
 
 // ============================================================================
-// Create Method Cards
+// Inline Prompt Personalizer (replaces modal)
 // ============================================================================
 
-function CreateMethodCards({
-  selectedMethod,
-  onSelectMethod,
-  onGenerate,
-  isGenerating,
-}: {
-  selectedMethod: "ai" | null;
-  onSelectMethod: (method: "ai") => void;
-  onGenerate: () => void;
+interface PreviewImageData {
+  preview_id: string;
+  image_url: string;
+  image_base64: string;
+  gemini_image_prompt: string;
+}
+
+interface InlinePromptPersonalizerProps {
+  isActive: boolean;
+  onGenerateVideo: (metadata: {
+    duration: string;
+    aspectRatio: string;
+    style: string;
+    previewImage?: PreviewImageData;
+  }) => void;
   isGenerating: boolean;
-}) {
+  context: {
+    selectedIdea?: {
+      title: string;
+      description: string;
+      hook?: string;
+      type: "ai_video" | "fast-cut";
+      optimizedPrompt?: string;
+    } | null;
+    campaignName: string;
+    artistName?: string;
+    optimizedPrompt?: string;
+  };
+  images: { url: string; name?: string; fromCampaign?: boolean; file?: File }[];
+  campaignId: string;  // Required: link generated images to this campaign
+}
+
+function InlinePromptPersonalizer({
+  isActive,
+  onGenerateVideo,
+  isGenerating,
+  context,
+  images,
+  campaignId,
+}: InlinePromptPersonalizerProps) {
   const { language } = useI18n();
-  const { analyze } = useWorkflowStore();
+  const analyzeState = useWorkflowStore((state) => state.analyze);
+
+  const [isGeneratingImagePrompt, setIsGeneratingImagePrompt] = useState(false);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  // Prompts
+  const [videoPrompt, setVideoPrompt] = useState("");
+  const [imagePrompt, setImagePrompt] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<PreviewImageData | null>(null);
+
+  // Lightbox for full-size image view
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Metadata
+  const [metadata] = useState({
+    duration: "8s",
+    aspectRatio: "9:16",
+    style: "cinematic",
+  });
+
+  // Get video prompt from multiple sources
+  const getVideoPrompt = useCallback(() => {
+    const prompt =
+      context.selectedIdea?.optimizedPrompt ||
+      context.optimizedPrompt ||
+      context.selectedIdea?.description ||
+      analyzeState.selectedIdea?.optimizedPrompt ||
+      analyzeState.optimizedPrompt ||
+      analyzeState.userIdea ||
+      analyzeState.selectedIdea?.description ||
+      "";
+    return prompt;
+  }, [context, analyzeState]);
+
+  // Initialize when component becomes active
+  useEffect(() => {
+    if (isActive) {
+      const prompt = getVideoPrompt();
+      setIsGeneratingImagePrompt(false);
+      setIsGeneratingPreview(false);
+      setError(null);
+      setPreviewError(null);
+      setVideoPrompt(prompt);
+      setImagePrompt(null);
+      setPreviewImage(null);
+      setLightboxOpen(false);
+
+      // Auto-generate image prompt if video prompt exists
+      if (prompt) {
+        generateImagePrompt(prompt);
+      }
+    }
+  }, [isActive, getVideoPrompt]);
+
+  // Generate image prompt from video prompt
+  const generateImagePrompt = useCallback(async (prompt?: string) => {
+    const videoPromptToUse = prompt || videoPrompt;
+    if (!videoPromptToUse) return;
+
+    setIsGeneratingImagePrompt(true);
+    setImagePrompt(null);
+
+    try {
+      const imageDescription =
+        context.selectedIdea?.description ||
+        context.campaignName ||
+        "Product promotional video";
+
+      const response = await previewImageApi.generateImagePrompt({
+        video_prompt: videoPromptToUse,
+        image_description: imageDescription,
+        style: metadata.style,
+        aspect_ratio: metadata.aspectRatio,
+      });
+
+      if (response.error || !response.data?.image_prompt) {
+        throw new Error(response.error?.message || "Failed to generate image prompt");
+      }
+
+      setImagePrompt(response.data.image_prompt);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate image prompt");
+    } finally {
+      setIsGeneratingImagePrompt(false);
+    }
+  }, [videoPrompt, metadata, context]);
+
+  // Generate preview image (first frame for I2V)
+  const generatePreviewImage = useCallback(async () => {
+    if (!videoPrompt) return;
+
+    setIsGeneratingPreview(true);
+    setPreviewError(null);
+
+    try {
+      const productImage = images.find(img => img.url && !img.url.startsWith("blob:"));
+      const productImageUrl = productImage?.url;
+
+      const imageDescription =
+        context.selectedIdea?.description ||
+        context.campaignName ||
+        "Product promotional video";
+
+      const response = await previewImageApi.generateWithoutCampaign({
+        video_prompt: videoPrompt,
+        image_description: imageDescription,
+        aspect_ratio: metadata.aspectRatio,
+        style: metadata.style,
+        product_image_url: productImageUrl,
+        composition_mode: "direct",
+        hand_pose: "elegantly holding",
+        campaign_id: campaignId,  // Link generated image to the selected campaign
+      });
+
+      if (response.error || !response.data) {
+        throw new Error(response.error?.message || "Failed to generate preview image");
+      }
+
+      setPreviewImage({
+        preview_id: response.data.preview_id,
+        image_url: response.data.image_url,
+        image_base64: response.data.image_base64,
+        gemini_image_prompt: response.data.gemini_image_prompt,
+      });
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : "Failed to generate preview image");
+    } finally {
+      setIsGeneratingPreview(false);
+    }
+  }, [videoPrompt, metadata, images, context]);
+
+  // Handle regenerate
+  const handleRegenerate = useCallback(() => {
+    setPreviewImage(null);
+    generatePreviewImage();
+  }, [generatePreviewImage]);
+
+  // Handle complete
+  const handleComplete = useCallback(() => {
+    onGenerateVideo({
+      duration: metadata.duration,
+      aspectRatio: metadata.aspectRatio,
+      style: metadata.style,
+      previewImage: previewImage || undefined,
+    });
+  }, [metadata, previewImage, onGenerateVideo]);
+
+  if (!isActive) return null;
 
   return (
-    <div className="space-y-3">
-      {/* AI Generated Video */}
-      <div
-        onClick={() => onSelectMethod("ai")}
-        className={cn(
-          "border rounded-lg p-4 cursor-pointer transition-all",
-          selectedMethod === "ai"
-            ? "border-neutral-900 bg-neutral-50"
-            : "border-neutral-200 hover:border-neutral-300"
+    <div className="border border-neutral-200 rounded-lg bg-white overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100 bg-neutral-50">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-md bg-neutral-900 flex items-center justify-center">
+            <Sparkles className="h-3.5 w-3.5 text-white" />
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-neutral-900">
+              {language === "ko" ? "첫 장면 미리보기" : "First Frame Preview"}
+            </h4>
+            <p className="text-[10px] text-neutral-500">
+              {language === "ko"
+                ? "프롬프트를 확인하고 첫 장면을 생성하세요"
+                : "Review prompts and generate first frame"}
+            </p>
+          </div>
+        </div>
+        {/* Status indicator */}
+        {previewImage && (
+          <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">
+            <Check className="h-3 w-3 mr-1" />
+            {language === "ko" ? "첫 장면 준비 완료" : "First frame ready"}
+          </Badge>
         )}
-      >
-        <div className="flex items-start gap-3">
-          <div
-            className={cn(
-              "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-              selectedMethod === "ai" ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500"
-            )}
+      </div>
+
+      {/* Error display */}
+      {error && (
+        <div className="mx-4 mt-3 p-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+          <p className="text-xs text-red-600 flex-1">{error}</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-red-600 hover:text-red-700 h-6 px-2"
+            onClick={() => setError(null)}
           >
-            <Video className="h-5 w-5" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <h4 className="text-sm font-semibold text-neutral-900">
-                {language === "ko" ? "AI 생성 영상" : "AI Generated Video"}
-              </h4>
-              <Badge variant="outline" className="text-[9px] border-neutral-300">
-                Veo3
-              </Badge>
+            {language === "ko" ? "닫기" : "Dismiss"}
+          </Button>
+        </div>
+      )}
+
+      {/* Content */}
+      <div className="p-4 space-y-4">
+        {/* Prompts Section - Always visible */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* Left: Video Prompt */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Video className="h-3.5 w-3.5 text-neutral-500" />
+              <span className="text-xs font-medium text-neutral-700">
+                {language === "ko" ? "영상 프롬프트" : "Video Prompt"}
+              </span>
+              <Badge variant="secondary" className="text-[9px] bg-neutral-100">Input</Badge>
             </div>
-            <p className="text-xs text-neutral-500 mb-3">
-              {language === "ko"
-                ? "프롬프트를 기반으로 AI가 완전한 영상을 생성합니다"
-                : "AI creates a complete video from your prompt"}
-            </p>
-            <p className="text-[10px] text-neutral-400">
-              {language === "ko"
-                ? "추천: 독창적인 장면, 복잡한 안무, 시각 효과"
-                : "Best for: Original scenes, complex choreography, visual effects"}
-            </p>
+            <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg h-[140px] overflow-y-auto">
+              {videoPrompt ? (
+                <p className="text-xs text-neutral-700 whitespace-pre-wrap leading-relaxed">
+                  {videoPrompt}
+                </p>
+              ) : (
+                <div className="flex items-center gap-2 text-red-500">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  <p className="text-xs">
+                    {language === "ko" ? "프롬프트가 없습니다" : "No prompt available"}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
-          {selectedMethod === "ai" && (
-            <Check className="h-5 w-5 text-neutral-900 shrink-0" />
-          )}
+
+          {/* Right: Image Prompt */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Wand2 className="h-3.5 w-3.5 text-blue-500" />
+              <span className="text-xs font-medium text-neutral-700">
+                {language === "ko" ? "이미지 프롬프트" : "Image Prompt"}
+              </span>
+              <Badge variant="secondary" className="text-[9px] bg-blue-100 text-blue-600">AI</Badge>
+            </div>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg h-[140px] overflow-y-auto">
+              {isGeneratingImagePrompt ? (
+                <div className="flex items-center justify-center gap-2 h-full">
+                  <Spinner className="h-4 w-4 text-blue-600" />
+                  <span className="text-xs text-blue-600">
+                    {language === "ko" ? "생성 중..." : "Generating..."}
+                  </span>
+                </div>
+              ) : imagePrompt ? (
+                <div className="flex flex-col h-full">
+                  <p className="text-xs text-blue-800 whitespace-pre-wrap leading-relaxed flex-1">
+                    {imagePrompt}
+                  </p>
+                  <div className="mt-2 pt-2 border-t border-blue-200">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => generateImagePrompt()}
+                      disabled={isGeneratingPreview}
+                      className="text-[10px] text-blue-600 hover:text-blue-700 h-6 px-2 disabled:opacity-50"
+                    >
+                      <RefreshCw className="h-2.5 w-2.5 mr-1" />
+                      {language === "ko" ? "다시 생성" : "Regenerate"}
+                    </Button>
+                  </div>
+                </div>
+              ) : videoPrompt ? (
+                <div className="flex items-center justify-center h-full">
+                  <Button
+                    onClick={() => generateImagePrompt()}
+                    disabled={isGeneratingPreview}
+                    variant="outline"
+                    size="sm"
+                    className="border-blue-300 text-blue-600 hover:bg-blue-100 text-xs disabled:opacity-50"
+                  >
+                    <Wand2 className="h-3 w-3 mr-1" />
+                    {language === "ko" ? "프롬프트 생성" : "Generate Prompt"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full text-blue-500 text-xs">
+                  {language === "ko" ? "영상 프롬프트 필요" : "Video prompt required"}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        {selectedMethod === "ai" && (
-          <div className="mt-4 pt-4 border-t border-neutral-200">
+        {/* Preview Image Section - Below prompts */}
+        {(isGeneratingPreview || previewError || previewImage) && (
+          <div className="border-t border-neutral-200 pt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <ImagePlus className="h-3.5 w-3.5 text-neutral-500" />
+              <span className="text-xs font-medium text-neutral-700">
+                {language === "ko" ? "첫 장면 미리보기" : "First Frame Preview"}
+              </span>
+            </div>
+
+            {isGeneratingPreview ? (
+              <div className="flex items-center gap-4 p-4 bg-neutral-50 rounded-lg border border-neutral-200">
+                <div className="relative w-10 h-10">
+                  <div className="absolute inset-0 rounded-lg bg-neutral-200 animate-pulse" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <ImagePlus className="h-5 w-5 text-neutral-600 animate-bounce" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-neutral-900">
+                    {language === "ko" ? "첫 장면 생성 중..." : "Generating first frame..."}
+                  </h4>
+                  <p className="text-xs text-neutral-500">
+                    {language === "ko" ? "30초 ~ 1분 소요" : "30 seconds to 1 minute"}
+                  </p>
+                </div>
+                <Spinner className="h-5 w-5" />
+              </div>
+            ) : previewError ? (
+              <div className="flex items-center gap-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                <AlertCircle className="h-6 w-6 text-red-500 shrink-0" />
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-red-800">
+                    {language === "ko" ? "생성 실패" : "Generation failed"}
+                  </h4>
+                  <p className="text-xs text-red-600">{previewError}</p>
+                </div>
+                <Button onClick={handleRegenerate} variant="outline" size="sm" className="shrink-0">
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  {language === "ko" ? "재시도" : "Retry"}
+                </Button>
+              </div>
+            ) : previewImage ? (
+              <div>
+                {/* Preview image - clickable for lightbox */}
+                <button
+                  type="button"
+                  onClick={() => setLightboxOpen(true)}
+                  className="relative w-full max-w-md rounded-lg overflow-hidden border border-neutral-200 bg-neutral-900 cursor-pointer group"
+                >
+                  <img
+                    src={previewImage.image_url}
+                    alt="Generated first frame"
+                    className="w-full h-auto object-contain transition-opacity group-hover:opacity-90"
+                    style={{ maxHeight: "200px" }}
+                  />
+                  {/* Expand overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
+                    <div className="bg-white/90 rounded-full p-2">
+                      <ZoomIn className="h-5 w-5 text-neutral-700" />
+                    </div>
+                  </div>
+                </button>
+                <div className="flex items-center gap-2 mt-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRegenerate}
+                    disabled={isGenerating}
+                    className="text-xs h-7 disabled:opacity-50"
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    {language === "ko" ? "다시 생성" : "Regenerate"}
+                  </Button>
+                  <span className="text-[10px] text-green-600 flex items-center gap-1">
+                    <Check className="h-3 w-3" />
+                    {language === "ko" ? "영상 생성 준비 완료" : "Ready for video"}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between px-4 py-3 border-t border-neutral-200 bg-neutral-50">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            if (previewImage && !isGeneratingPreview) {
+              setPreviewImage(null);
+              setPreviewError(null);
+            }
+          }}
+          disabled={!previewImage || isGeneratingPreview}
+          className="border-neutral-300"
+        >
+          {language === "ko" ? "이미지 초기화" : "Reset Image"}
+        </Button>
+
+        <div className="flex items-center gap-2">
+          {/* Generate Frame button - show when image prompt exists but no preview yet */}
+          {imagePrompt && !isGeneratingImagePrompt && !previewImage && (
             <Button
-              onClick={(e) => {
-                e.stopPropagation();
-                onGenerate();
-              }}
+              onClick={generatePreviewImage}
+              disabled={isGeneratingPreview}
+              variant="outline"
+              className="border-neutral-300"
+            >
+              {isGeneratingPreview ? (
+                <>
+                  <Spinner className="h-4 w-4 mr-2" />
+                  {language === "ko" ? "생성 중..." : "Generating..."}
+                </>
+              ) : (
+                <>
+                  <ImagePlus className="h-4 w-4 mr-2" />
+                  {language === "ko" ? "첫 장면 생성" : "Generate Frame"}
+                </>
+              )}
+            </Button>
+          )}
+
+          {/* Generate Video button - show when preview is ready */}
+          {previewImage && !isGeneratingPreview && (
+            <Button
+              onClick={handleComplete}
               disabled={isGenerating}
-              className="w-full bg-neutral-900 text-white hover:bg-neutral-800"
+              className="bg-neutral-900 text-white hover:bg-neutral-800"
             >
               {isGenerating ? (
                 <>
-                  <Sparkles className="h-4 w-4 mr-2 animate-pulse" />
+                  <Spinner className="h-4 w-4 mr-2" />
                   {language === "ko" ? "생성 중..." : "Generating..."}
                 </>
               ) : (
                 <>
                   <Sparkles className="h-4 w-4 mr-2" />
-                  {language === "ko" ? "Veo3로 생성하기" : "Generate with Veo3"}
+                  {language === "ko" ? "영상 생성하기" : "Generate Video"}
                 </>
               )}
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
+
+      {/* Lightbox Dialog for full-size image */}
+      <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+        <DialogContent className="max-w-4xl p-0 bg-black border-neutral-800">
+          <DialogTitle className="sr-only">
+            {language === "ko" ? "첫 장면 미리보기 전체 화면" : "First frame preview full screen"}
+          </DialogTitle>
+          {previewImage && (
+            <div className="relative">
+              <img
+                src={previewImage.image_url}
+                alt="Generated first frame - full size"
+                className="w-full h-auto object-contain max-h-[80vh]"
+              />
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(false)}
+                className="absolute top-4 right-4 p-2 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1018,11 +1368,10 @@ export default function CreatePage() {
   const { goToAnalyze } = useWorkflowNavigation();
 
   // Workflow store
-  const { analyze, setAnalyzeCampaign, startContentType } = useWorkflowStore(
+  const { analyze, setAnalyzeCampaign } = useWorkflowStore(
     useShallow((state) => ({
       analyze: state.analyze,
       setAnalyzeCampaign: state.setAnalyzeCampaign,
-      startContentType: state.start.contentType,
     }))
   );
 
@@ -1073,77 +1422,10 @@ export default function CreatePage() {
     setImageAssets([]);
   };
 
-  // Local state - Initialize selectedMethod based on startContentType from Start stage
-  const [selectedMethod, setSelectedMethod] = useState<"ai" | null>(() => {
-    // Use startContentType from Start stage selection (AI Video only on this page)
-    if (startContentType === "ai_video") return "ai";
-    return null;
-  });
+  // Local state
   const [audioAsset, setAudioAsset] = useState<UploadedAsset | null>(null);
   const [imageAssets, setImageAssets] = useState<UploadedAsset[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-
-  // Personalization modal state
-  const [showPersonalizeModal, setShowPersonalizeModal] = useState(false);
-  const [personalizedPrompt, setPersonalizedPrompt] = useState<{
-    prompt: string;
-    metadata: { duration: string; aspectRatio: string; style: string };
-  } | null>(null);
-
-  // Sync selectedMethod when startContentType changes (e.g., user navigated back and changed it)
-  useEffect(() => {
-    if (startContentType === "ai_video") {
-      setSelectedMethod("ai");
-    }
-  }, [startContentType]);
-
-  // Handle AI generation
-  const handleGenerate = useCallback(async () => {
-    console.log("[Veo3] handleGenerate called", {
-      selectedCampaignId,
-      audioAsset: audioAsset?.id,
-      imageAssetsCount: imageAssets.length,
-    });
-
-    if (!selectedCampaignId) {
-      console.log("[Veo3] No campaign selected");
-      toast.warning(
-        language === "ko" ? "캠페인 필요" : "Campaign needed",
-        language === "ko" ? "먼저 캠페인을 선택하세요" : "Please select a campaign first"
-      );
-      return;
-    }
-
-    // Check if we have a prompt from the analyze step
-    const hasPrompt =
-      analyze.selectedIdea?.optimizedPrompt ||
-      analyze.optimizedPrompt ||
-      analyze.userIdea ||
-      analyze.selectedIdea?.description;
-
-    if (!hasPrompt) {
-      console.log("[Veo3] No prompt available from analyze step");
-      toast.warning(
-        language === "ko" ? "프롬프트 필요" : "Prompt needed",
-        language === "ko"
-          ? "먼저 Analyze 단계에서 아이디어를 선택하거나 프롬프트를 입력하세요"
-          : "Please select an idea or enter a prompt in the Analyze step first"
-      );
-      return;
-    }
-
-    // Proceed to personalization modal
-    console.log("[Veo3] Proceeding to personalization modal");
-    console.log("[Veo3] Audio:", audioAsset?.name || "None");
-    console.log("[Veo3] Images:", imageAssets.length > 0 ? imageAssets.map(a => a.url) : "None");
-    console.log("[Veo3] Prompt source:",
-      analyze.selectedIdea?.optimizedPrompt ? "selectedIdea.optimizedPrompt" :
-      analyze.optimizedPrompt ? "analyze.optimizedPrompt" :
-      analyze.userIdea ? "analyze.userIdea" : "selectedIdea.description"
-    );
-    setShowPersonalizeModal(true);
-    console.log("[Veo3] showPersonalizeModal set to true");
-  }, [selectedCampaignId, audioAsset, imageAssets.length, analyze, language, toast]);
 
   // Helper function to convert File to base64
   const fileToBase64 = useCallback((file: File): Promise<string> => {
@@ -1180,9 +1462,7 @@ export default function CreatePage() {
         imageAssetsCount: imageAssets.length,
       });
 
-      // Music and images are now optional - proceed with generation
-      setPersonalizedPrompt({ prompt, metadata });
-      setShowPersonalizeModal(false);
+      // Start generation directly (no modal to close)
       setIsGenerating(true);
 
       try {
@@ -1306,23 +1586,6 @@ export default function CreatePage() {
     [selectedCampaignId, audioAsset, imageAssets, analyze, router, language, toast, fileToBase64]
   );
 
-  // Build context for personalization modal
-  const personalizationContext = useMemo(() => {
-    const { selectedIdea, campaignName, hashtags: analyzeHashtags, optimizedPrompt, userIdea } = analyze;
-    const { keywords, selectedHashtags, performanceMetrics, aiInsights } = useWorkflowStore.getState().discover;
-
-    return {
-      selectedIdea: selectedIdea || null,
-      hashtags: [...new Set([...selectedHashtags, ...analyzeHashtags])],
-      keywords,
-      campaignName: campaignName || selectedCampaignName,
-      artistName: selectedCampaign?.artist_name,
-      performanceMetrics: performanceMetrics || null,
-      aiInsights: aiInsights || null,
-      optimizedPrompt: optimizedPrompt || userIdea || "", // Pass the analyzed prompt or userIdea as fallback
-    };
-  }, [analyze, selectedCampaignName, selectedCampaign]);
-
   // Translations
   const t = {
     title: language === "ko" ? "콘텐츠 만들기" : "Create Content",
@@ -1353,35 +1616,16 @@ export default function CreatePage() {
         {/* Right Column - Campaign, Assets & Methods */}
         <div className="w-3/5 overflow-auto">
           <div className="p-6 space-y-6">
-            {/* Step Progress Indicator */}
-            <StepProgressIndicator
-              status={{
-                campaignSelected: !!selectedCampaignId,
-                methodSelected: !!selectedMethod,
-                musicSelected: !!audioAsset,
-                imageSelected: imageAssets.length > 0,
-              }}
-              selectedMethod={selectedMethod}
-            />
-
-            {/* Step 1: Campaign Selector */}
+            {/* Campaign Selector */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <div className={cn(
-                  "w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
-                  selectedCampaignId
-                    ? "bg-neutral-900 text-white"
-                    : "bg-neutral-200 text-neutral-600"
-                )}>
-                  {selectedCampaignId ? <Check className="h-3 w-3" /> : "1"}
-                </div>
                 <Label className="text-sm font-medium text-neutral-700">
                   {t.selectCampaign}
                 </Label>
                 <InfoButton
                   content={language === "ko"
-                    ? "생성된 영상이 저장될 캠페인을 선택하세요. 캠페인에 업로드된 에셋(음악, 이미지)을 영상 제작에 활용할 수 있습니다. 분석 단계에서 선택한 캠페인이 기본 선택됩니다."
-                    : "Select the campaign where your video will be saved. You can use assets (music, images) uploaded to the campaign. The campaign from Analyze step is pre-selected."}
+                    ? "생성된 영상이 저장될 캠페인을 선택하세요. 캠페인에 업로드된 에셋(음악, 이미지)을 영상 제작에 활용할 수 있습니다."
+                    : "Select the campaign where your video will be saved. You can use assets (music, images) uploaded to the campaign."}
                   side="bottom"
                 />
               </div>
@@ -1419,62 +1663,52 @@ export default function CreatePage() {
               )}
             </div>
 
-            {/* Step 2: Create Methods - Pre-selected from Start stage */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className={cn(
-                  "w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
-                  selectedMethod
-                    ? "bg-neutral-900 text-white"
-                    : "bg-neutral-200 text-neutral-600"
-                )}>
-                  {selectedMethod ? <Check className="h-3 w-3" /> : "2"}
-                </div>
-                <Label className="text-sm font-medium text-neutral-700">
-                  {language === "ko" ? "생성 방식 선택" : "Choose Creation Method"}
-                </Label>
-                {/* Show pre-selected indicator from Start stage */}
-                {startContentType === "ai_video" && (
-                  <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-500">
-                    {language === "ko" ? "Start에서 AI Video 선택됨" : "AI Video selected from Start"}
-                  </Badge>
-                )}
-                <InfoButton
-                  content={language === "ko"
-                    ? "Start 단계에서 선택한 콘텐츠 타입이 자동 선택됩니다. 필요시 변경할 수 있습니다."
-                    : "Content type selected at Start stage is auto-selected. You can change it if needed."}
-                  side="bottom"
-                />
-              </div>
-              <CreateMethodCards
-                selectedMethod={selectedMethod}
-                onSelectMethod={setSelectedMethod}
-                onGenerate={handleGenerate}
+            {/* Inline Prompt Personalizer - Shows when campaign is selected */}
+            {selectedCampaignId && (
+              <InlinePromptPersonalizer
+                isActive={true}
+                onGenerateVideo={(metadata) => {
+                  // Get the video prompt from workflow store
+                  const prompt =
+                    analyze.selectedIdea?.optimizedPrompt ||
+                    analyze.optimizedPrompt ||
+                    analyze.userIdea ||
+                    analyze.selectedIdea?.description ||
+                    "";
+                  handlePersonalizationComplete(prompt, metadata);
+                }}
                 isGenerating={isGenerating}
+                context={{
+                  selectedIdea: analyze.selectedIdea || null,
+                  campaignName: selectedCampaignName,
+                  artistName: selectedCampaign?.artist_name,
+                  optimizedPrompt: analyze.optimizedPrompt || analyze.userIdea || "",
+                }}
+                images={imageAssets.map((asset) => ({
+                  url: asset.url,
+                  name: asset.name,
+                  fromCampaign: asset.fromCampaign,
+                  file: asset.file,
+                }))}
+                campaignId={selectedCampaignId}
               />
-            </div>
+            )}
 
-            {/* Step 3: Asset Upload (Optional) */}
+            {/* Asset Upload (Optional) */}
             <div className="space-y-4">
               <div className="flex items-center gap-2">
-                <div className={cn(
-                  "w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium",
-                  (audioAsset || imageAssets.length > 0) ? "bg-neutral-900 text-white" : "bg-neutral-200 text-neutral-600"
-                )}>
-                  {(audioAsset || imageAssets.length > 0) ? <Check className="h-3 w-3" /> : "3"}
-                </div>
                 <Label className="text-sm font-medium text-neutral-700">
                   {language === "ko" ? "에셋 선택" : "Select Assets"}
                 </Label>
+                <Badge variant="secondary" className="text-[10px] bg-neutral-100 text-neutral-500">
+                  {language === "ko" ? "선택사항" : "Optional"}
+                </Badge>
                 <InfoButton
                   content={language === "ko"
-                    ? "영상 제작에 사용할 음악과 이미지를 선택합니다. 새로 업로드할 수 있습니다. 음악과 이미지는 선택사항입니다."
-                    : "Select music and images for video creation. Upload new files. Music and images are optional."}
+                    ? "영상 제작에 사용할 음악과 이미지를 선택합니다. 새로 업로드할 수 있습니다."
+                    : "Select music and images for video creation. Upload new files."}
                   side="bottom"
                 />
-                <span className="text-xs text-neutral-400">
-                  ({language === "ko" ? "선택사항" : "Optional"})
-                </span>
               </div>
               <AssetUploadSection
                 audioAsset={audioAsset}
@@ -1483,23 +1717,18 @@ export default function CreatePage() {
                 onImagesChange={setImageAssets}
                 campaignAssets={[]}
                 isLoadingAssets={false}
+                campaignId={selectedCampaignId}
               />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Personalize Prompt Modal - Shows when user clicks Veo3 with images attached */}
-      <PersonalizePromptModal
-        open={showPersonalizeModal}
-        onOpenChange={setShowPersonalizeModal}
-        images={imageAssets.map((asset) => ({
-          url: asset.url,
-          type: asset.fromCampaign ? "reference" : "reference",
-          name: asset.name,
-        }))}
-        context={personalizationContext}
-        onComplete={handlePersonalizationComplete}
+      {/* Footer with navigation */}
+      <WorkflowFooter
+        onBack={goToAnalyze}
+        onNext={() => router.push("/processing")}
+        canProceed={!isGenerating}
       />
     </div>
     </TooltipProvider>

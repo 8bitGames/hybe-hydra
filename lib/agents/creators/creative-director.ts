@@ -194,16 +194,16 @@ For each idea provide:
 - Music matching {{genre}} style (not the trend's music)
 - Script outline that feels authentic to {{genre}}
 
-Return JSON:
+Return JSON (IMPORTANT: bpm MUST be a number like 120, not a string):
 {
   "ideas": [{
     "title": "title that fits {{genre}} (max 50 chars)",
     "hook": "hook adapted for {{genre}} audience (max 100 chars)",
     "description": "2-3 sentences explaining how this adapts a trending format for {{genre}} music",
-    "estimatedEngagement": "high|medium|low",
+    "estimatedEngagement": "high",
     "optimizedPrompt": "Detailed VEO prompt (200+ words) with {{genre}}-appropriate: Subject: [genre-matching subject], Environment: [genre-authentic setting], Lighting: [genre-appropriate mood], Camera: [genre-fitting movements], Mood: [genre's emotional essence]",
-    "suggestedMusic": { "bpm": "genre-appropriate BPM", "genre": "{{genre}} or subgenre" },
-    "scriptOutline": ["scene1: {{genre}}-style hook", "scene2: genre-authentic build up", ...]
+    "suggestedMusic": { "bpm": 120, "genre": "{{genre}} or subgenre" },
+    "scriptOutline": ["scene1: {{genre}}-style hook", "scene2: genre-authentic build up"]
   }],
   "optimizedHashtags": ["hashtags for {{genre}} audience + trending format tags"],
   "contentStrategy": "how we're adapting trends to serve {{genre}} music fans authentically"

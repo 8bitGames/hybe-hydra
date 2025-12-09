@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 import { useI18n } from "@/lib/i18n";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -22,7 +21,6 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
-  Sparkles,
   Film,
   Music,
   Image as ImageIcon,
@@ -30,7 +28,6 @@ import {
   Hash,
   X,
   AlertCircle,
-  ChevronRight,
   HelpCircle,
   Palette,
 } from "lucide-react";
@@ -143,45 +140,15 @@ export function FastCutEffectStep({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-neutral-900 mb-1">
-            {language === "ko" ? "스타일 & 생성" : "Style & Generate"}
-          </h2>
-          <p className="text-sm text-neutral-500">
-            {language === "ko"
-              ? "스타일을 선택하고 영상을 생성하세요"
-              : "Select a style and generate your video"}
-          </p>
-        </div>
-
-        {/* Generate Button - Prominent position */}
-        {isReady && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                onClick={onStartRender}
-                disabled={rendering}
-                className="bg-neutral-900 text-white hover:bg-neutral-800"
-              >
-                {rendering ? (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-1 animate-spin" />
-                    {language === "ko" ? "생성 중..." : "Generating..."}
-                  </>
-                ) : (
-                  <>
-                    {language === "ko" ? "영상 생성" : "Generate Video"}
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </>
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-[280px]">
-              <p className="text-xs">{translate("fastCut.tooltips.effects.generateVideo")}</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
+      <div>
+        <h2 className="text-xl font-semibold text-neutral-900 mb-1">
+          {language === "ko" ? "스타일 & 생성" : "Style & Generate"}
+        </h2>
+        <p className="text-sm text-neutral-500">
+          {language === "ko"
+            ? "스타일을 선택하고 영상을 생성하세요"
+            : "Select a style and generate your video"}
+        </p>
       </div>
 
       {/* Summary Cards */}

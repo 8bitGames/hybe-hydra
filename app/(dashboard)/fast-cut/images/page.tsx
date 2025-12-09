@@ -6,7 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
 import { fastCutApi, ImageCandidate } from "@/lib/fast-cut-api";
 import { useToast } from "@/components/ui/toast";
-import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
 import { FastCutImageStep } from "@/components/features/create/fast-cut/FastCutImageStep";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ArrowRight } from "lucide-react";
@@ -39,11 +39,13 @@ export default function FastCutImagesPage() {
   }, [scriptData, router]);
 
   // Auto-search images on mount if we have keywords and no candidates
+  const keywordCount = selectedSearchKeywords?.size ?? 0;
   useEffect(() => {
-    if (generationId && selectedSearchKeywords.size > 0 && imageCandidates.length === 0 && !searchingImages) {
+    if (generationId && keywordCount > 0 && imageCandidates.length === 0 && !searchingImages) {
       handleSearchImages();
     }
-  }, [generationId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generationId, keywordCount]);
 
   const handleSearchImages = async () => {
     const searchKeywords = Array.from(selectedSearchKeywords);
@@ -106,21 +108,10 @@ export default function FastCutImagesPage() {
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-full">
-        <WorkflowHeader
-          onBack={handleBack}
-          onNext={handleNext}
-          canProceed={canProceed}
-          contentType="fast-cut"
-          actionButton={{
-            label: language === "ko" ? "음악 단계" : "Music Step",
-            onClick: handleNext,
-            disabled: !canProceed,
-            icon: <ArrowRight className="h-4 w-4" />,
-          }}
-        />
+      <div className="flex flex-col flex-1 min-h-0">
+        <WorkflowHeader contentType="fast-cut" />
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-6 min-h-0">
           <div className="max-w-4xl mx-auto">
             <FastCutImageStep
               imageCandidates={imageCandidates}
@@ -136,6 +127,19 @@ export default function FastCutImagesPage() {
             />
           </div>
         </div>
+
+        <WorkflowFooter
+          onBack={handleBack}
+          onNext={handleNext}
+          canProceed={canProceed}
+          contentType="fast-cut"
+          actionButton={{
+            label: language === "ko" ? "음악 단계" : "Music Step",
+            onClick: handleNext,
+            disabled: !canProceed,
+            icon: <ArrowRight className="h-4 w-4" />,
+          }}
+        />
       </div>
     </TooltipProvider>
   );

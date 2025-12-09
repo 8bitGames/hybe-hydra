@@ -17,7 +17,6 @@ import {
   X,
   Globe,
   AlertCircle,
-  ChevronRight,
   HelpCircle,
 } from "lucide-react";
 import { ImageCandidate } from "@/lib/fast-cut-api";
@@ -83,13 +82,13 @@ function SortableImageItem({
       {...attributes}
       {...listeners}
       className={cn(
-        "relative flex-shrink-0 w-16 cursor-grab active:cursor-grabbing touch-none",
+        "relative flex-shrink-0 w-32 cursor-grab active:cursor-grabbing touch-none",
         isDragging && "z-50 opacity-80"
       )}
     >
       <div
         className={cn(
-          "aspect-[3/4] rounded-lg overflow-hidden border-2 transition-colors",
+          "relative aspect-[3/4] rounded-lg overflow-hidden border-2 transition-colors",
           isDragging ? "border-neutral-900 shadow-lg" : "border-neutral-200"
         )}
       >
@@ -99,22 +98,22 @@ function SortableImageItem({
           className="w-full h-full object-cover pointer-events-none"
           draggable={false}
         />
+        {/* Order Number */}
+        <div className="absolute top-1.5 left-1.5 w-6 h-6 bg-neutral-900 text-white rounded-full flex items-center justify-center text-sm font-bold pointer-events-none">
+          {index + 1}
+        </div>
+        {/* Remove Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute top-1.5 right-1.5 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 z-10"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
-      {/* Order Number */}
-      <div className="absolute -top-1 -left-1 w-5 h-5 bg-neutral-900 text-white rounded-full flex items-center justify-center text-xs font-bold pointer-events-none">
-        {index + 1}
-      </div>
-      {/* Remove Button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 z-10"
-      >
-        <X className="h-3 w-3" />
-      </button>
     </div>
   );
 }
@@ -271,28 +270,15 @@ export function FastCutImageStep({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-neutral-900 mb-1">
-            {language === "ko" ? "이미지 선택" : "Image Selection"}
-          </h2>
-          <p className="text-sm text-neutral-500">
-            {language === "ko"
-              ? "영상에 사용할 이미지를 3~10장 선택하세요"
-              : "Select 3-10 images for your video"}
-          </p>
-        </div>
-
-        {/* Next Step Button - Prominent position */}
-        {selectedImages.length >= 3 && onNext && (
-          <Button
-            onClick={onNext}
-            className="bg-neutral-900 text-white hover:bg-neutral-800"
-          >
-            {language === "ko" ? "음악 선택" : "Select Music"}
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        )}
+      <div>
+        <h2 className="text-xl font-semibold text-neutral-900 mb-1">
+          {language === "ko" ? "이미지 선택" : "Image Selection"}
+        </h2>
+        <p className="text-sm text-neutral-500">
+          {language === "ko"
+            ? "영상에 사용할 이미지를 3~10장 선택하세요"
+            : "Select 3-10 images for your video"}
+        </p>
       </div>
 
       {/* Selection Status */}
@@ -429,7 +415,7 @@ export function FastCutImageStep({
               items={selectedImages.map((img) => img.id)}
               strategy={horizontalListSortingStrategy}
             >
-              <div className="flex gap-2 overflow-x-auto pb-2 p-2 bg-neutral-50 rounded-lg border border-neutral-200">
+              <div className="flex gap-3 overflow-x-auto p-3 bg-neutral-50 rounded-lg border border-neutral-200">
                 {selectedImages.map((image, idx) => (
                   <SortableImageItem
                     key={image.id}

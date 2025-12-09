@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { ProcessingVideo } from "@/lib/stores/workflow-store";
 import { useI18n } from "@/lib/i18n";
@@ -49,9 +50,9 @@ export function PublishSuccessDialog({
           </div>
 
           {/* Title */}
-          <h2 className="text-xl font-semibold mb-2">
+          <DialogTitle className="text-xl font-semibold mb-2">
             {t.publish.variation.successTitle}
-          </h2>
+          </DialogTitle>
 
           {/* Description */}
           <p className="text-neutral-500 mb-6">

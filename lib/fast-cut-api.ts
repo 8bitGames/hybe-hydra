@@ -449,7 +449,7 @@ export const fastCutApi = {
     generationId: string,
     onProgress?: (status: RenderStatus) => void,
     pollInterval = 2000,
-    maxAttempts = 300 // 10 minutes max
+    maxAttempts = 600 // 20 minutes max (AWS Batch cold start can take 3-5 min)
   ): Promise<RenderStatus> => {
     let attempts = 0;
 

@@ -1557,119 +1557,128 @@ export default function ProcessingPage() {
         )}
       </div>
 
-      {/* Floating Bulk Action Bar */}
-      {selectedVideos.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
-          <div className="flex items-center gap-3 px-6 py-3 bg-neutral-900 rounded-full shadow-2xl border border-neutral-700">
-            {/* Selection Count */}
-            <div className="flex items-center gap-2 text-white">
-              <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-              <span className="font-medium">
-                {selectedVideos.length} {isKorean ? "개 선택됨" : "selected"}
-              </span>
-            </div>
+      {/* Fixed Bottom Footer */}
+      <div className="border-t border-neutral-200 bg-white shrink-0">
+        <div className="flex items-center justify-between px-[7%] py-4">
+          {/* Left: Back Button */}
+          <Button
+            variant="outline"
+            onClick={goToCreate}
+            className="h-10 px-4 border-neutral-300 text-neutral-700 hover:bg-neutral-100"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            {isKorean ? "생성" : "Create"}
+          </Button>
 
-            <div className="h-5 w-px bg-neutral-600" />
+          {/* Center: Bulk Actions */}
+          <div className="flex items-center gap-2">
+            {selectedVideos.length > 0 ? (
+              <>
+                {/* Selection Count */}
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-100 rounded-lg">
+                  <CheckCheck className="h-4 w-4 text-neutral-600" />
+                  <span className="text-sm font-medium text-neutral-700">
+                    {selectedVideos.length} {isKorean ? "개 선택" : "selected"}
+                  </span>
+                  <button
+                    onClick={handleClearSelection}
+                    className="ml-1 text-neutral-400 hover:text-neutral-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
 
-            {/* Clear Selection */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClearSelection}
-              className="text-neutral-400 hover:text-white hover:bg-neutral-800"
-            >
-              <X className="h-4 w-4 mr-1" />
-              {isKorean ? "해제" : "Clear"}
-            </Button>
+                <div className="h-6 w-px bg-neutral-200" />
 
-            <div className="h-5 w-px bg-neutral-600" />
-
-            {/* Bulk Retry - only show if any selected are failed */}
-            {selectedVideos.some((id) => {
-              const v = videos.find((v) => v.id === id);
-              return v?.status === "failed";
-            }) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleBulkRetry}
-                disabled={isBulkRetrying}
-                className="text-amber-400 hover:text-amber-300 hover:bg-neutral-800 disabled:text-neutral-600"
-              >
-                {isBulkRetrying ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCcw className="h-4 w-4 mr-2" />
+                {/* Bulk Retry - only show if any selected are failed */}
+                {selectedVideos.some((id) => {
+                  const v = videos.find((v) => v.id === id);
+                  return v?.status === "failed";
+                }) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkRetry}
+                    disabled={isBulkRetrying}
+                    className="h-9 border-amber-300 text-amber-600 hover:bg-amber-50"
+                  >
+                    {isBulkRetrying ? (
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                    ) : (
+                      <RefreshCcw className="h-4 w-4 mr-1.5" />
+                    )}
+                    {isKorean ? "재시도" : "Retry"}
+                  </Button>
                 )}
-                {isKorean ? "재시도" : "Retry"}
-              </Button>
+
+                {/* Bulk Approve */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBulkApprove}
+                  disabled={isBulkApproving || selectedVideos.every((id) => {
+                    const v = videos.find((v) => v.id === id);
+                    return v?.status !== "completed";
+                  })}
+                  className="h-9 border-emerald-300 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  {isBulkApproving ? (
+                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <ThumbsUp className="h-4 w-4 mr-1.5" />
+                  )}
+                  {isKorean ? "승인" : "Approve"}
+                </Button>
+
+                {/* Bulk Reject */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBulkReject}
+                  disabled={isBulkRejecting}
+                  className="h-9 border-neutral-300 text-neutral-600 hover:bg-neutral-100 disabled:opacity-50"
+                >
+                  {isBulkRejecting ? (
+                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <ThumbsDown className="h-4 w-4 mr-1.5" />
+                  )}
+                  {isKorean ? "거부" : "Reject"}
+                </Button>
+
+                {/* Bulk Delete */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBulkDelete}
+                  disabled={isBulkDeleting}
+                  className="h-9 border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {isBulkDeleting ? (
+                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 mr-1.5" />
+                  )}
+                  {isKorean ? "삭제" : "Delete"}
+                </Button>
+              </>
+            ) : (
+              <p className="text-sm text-neutral-500">
+                {isKorean ? "영상을 선택하여 일괄 작업을 수행하세요" : "Select videos for bulk actions"}
+              </p>
             )}
-
-            {/* Bulk Approve */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleBulkApprove}
-              disabled={isBulkApproving || selectedVideos.every((id) => {
-                const v = videos.find((v) => v.id === id);
-                return v?.status !== "completed";
-              })}
-              className="text-emerald-400 hover:text-emerald-300 hover:bg-neutral-800 disabled:text-neutral-600"
-            >
-              {isBulkApproving ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <ThumbsUp className="h-4 w-4 mr-2" />
-              )}
-              {isKorean ? "승인" : "Approve"}
-            </Button>
-
-            {/* Bulk Reject */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleBulkReject}
-              disabled={isBulkRejecting}
-              className="text-neutral-400 hover:text-white hover:bg-neutral-800 disabled:text-neutral-600"
-            >
-              {isBulkRejecting ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <ThumbsDown className="h-4 w-4 mr-2" />
-              )}
-              {isKorean ? "거부" : "Reject"}
-            </Button>
-
-            {/* Bulk Delete */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleBulkDelete}
-              disabled={isBulkDeleting}
-              className="text-red-400 hover:text-red-300 hover:bg-neutral-800 disabled:text-neutral-600"
-            >
-              {isBulkDeleting ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
-              )}
-              {isKorean ? "삭제" : "Delete"}
-            </Button>
-
-            <div className="h-5 w-px bg-neutral-600" />
-
-            {/* Proceed to Publish */}
-            <Button
-              size="sm"
-              onClick={handleProceedToPublish}
-              className="bg-white text-neutral-900 hover:bg-neutral-100"
-            >
-              <Send className="h-4 w-4 mr-2" />
-              {isKorean ? "발행" : "Publish"}
-            </Button>
           </div>
+
+          {/* Right: Next Button */}
+          <Button
+            onClick={handleProceedToPublish}
+            className="h-10 px-6 bg-neutral-900 text-white hover:bg-neutral-800"
+          >
+            {isKorean ? "발행" : "Publish"}
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
         </div>
-      )}
+      </div>
 
         {/* Video Detail Modal */}
         <VideoDetailModal

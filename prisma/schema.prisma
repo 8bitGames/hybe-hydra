@@ -104,16 +104,17 @@ model Label {
 
 // Artist model
 model Artist {
-  id                 String   @id @default(uuid())
+  id                 String    @id @default(uuid())
   name               String
-  stageName          String?  @map("stage_name")
-  groupName          String?  @map("group_name")
-  labelId            String   @map("label_id")
-  profileDescription String?  @map("profile_description")
-  brandGuidelines    String?  @map("brand_guidelines")
-  profileImageUrl    String?  @map("profile_image_url")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  stageName          String?   @map("stage_name")
+  groupName          String?   @map("group_name")
+  labelId            String    @map("label_id")
+  profileDescription String?   @map("profile_description")
+  brandGuidelines    String?   @map("brand_guidelines")
+  profileImageUrl    String?   @map("profile_image_url")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  deletedAt          DateTime? @map("deleted_at")
 
   // Relations
   label       Label             @relation(fields: [labelId], references: [id])

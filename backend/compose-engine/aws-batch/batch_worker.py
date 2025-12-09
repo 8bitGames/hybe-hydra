@@ -67,7 +67,7 @@ def get_job_parameters() -> dict:
     return json.loads(params_json)
 
 
-def send_callback(callback_url: str, job_id: str, status: str, output_url: str = None, error: str = None):
+def send_callback(callback_url: str, callback_secret: str, job_id: str, status: str, output_url: str = None, error: str = None):
     """Send completion callback to Next.js."""
     if not callback_url:
         return
@@ -78,6 +78,7 @@ def send_callback(callback_url: str, job_id: str, status: str, output_url: str =
             "status": status,
             "output_url": output_url,
             "error": error,
+            "secret": callback_secret,  # Required for authentication
         }
         print(f"[{job_id}] Sending callback to {callback_url}")
 
@@ -113,6 +114,7 @@ async def render_video(request_data: dict) -> dict:
     """Main render function."""
     # Extract callback info
     callback_url = request_data.pop("callback_url", None)
+    callback_secret = request_data.pop("callback_secret", os.environ.get("CALLBACK_SECRET", ""))
     job_id = request_data.get("job_id", "unknown")
 
     # Enable GPU encoding
@@ -143,7 +145,7 @@ async def render_video(request_data: dict) -> dict:
 
         # Update status
         update_dynamodb_status(job_id, "completed", output_url=output_url)
-        send_callback(callback_url, job_id, "completed", output_url)
+        send_callback(callback_url, callback_secret, job_id, "completed", output_url)
 
         return {
             "status": "completed",
@@ -158,7 +160,7 @@ async def render_video(request_data: dict) -> dict:
         print(traceback.format_exc())
 
         update_dynamodb_status(job_id, "failed", error=error_msg)
-        send_callback(callback_url, job_id, "failed", error=error_msg)
+        send_callback(callback_url, callback_secret, job_id, "failed", error=error_msg)
 
         return {
             "status": "failed",

@@ -595,7 +595,7 @@ export function InlineFastCutFlow({
     try {
       const result = await fastCutApi.generateScript({
         campaignId,
-        artistName: analyze.campaignName || "Artist",
+        artistName: analyze.artistStageName || analyze.artistName || "Artist",
         trendKeywords: editableKeywords,
         userPrompt: prompt.trim(),
         targetDuration: 0,
@@ -992,6 +992,9 @@ export function InlineFastCutFlow({
           <div className="p-6">
             {currentStep === 1 && (
               <FastCutScriptStep
+                campaignId={campaignId}
+                campaignName={campaignName}
+                campaignReadOnly={true}
                 prompt={prompt}
                 setPrompt={setPrompt}
                 aspectRatio={aspectRatio}

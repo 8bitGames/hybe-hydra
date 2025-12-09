@@ -189,10 +189,10 @@ export async function POST(request: NextRequest) {
       console.warn('[FastCut Pipeline] Stage 2 failed, using fallback keywords:', keywordResult.error);
       // Fallback to basic keywords
       searchKeywords = [
-        `${artistName} HD photo`,
-        `${artistName} 4K concert`,
-        `${artistName} stage performance`,
-        `${artistName} official photoshoot`,
+        'concert stage lights 4K',
+        'performance crowd cheering HD',
+        'music video aesthetic cinematic',
+        'stage spotlight professional photo',
       ];
     }
 
@@ -222,7 +222,7 @@ export async function POST(request: NextRequest) {
         ),
       },
       vibe: scriptOutput.vibe,
-      vibeReason: scriptOutput.vibeReason || `${scriptOutput.vibe} mood for ${artistName} content`,
+      vibeReason: scriptOutput.vibeReason || `${scriptOutput.vibe} mood for this content`,
       suggestedBpmRange: scriptOutput.suggestedBpmRange,
       searchKeywords,
       keywordCategories,

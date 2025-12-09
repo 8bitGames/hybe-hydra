@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
@@ -8,7 +8,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
 import { fastCutApi } from "@/lib/fast-cut-api";
 import { useToast } from "@/components/ui/toast";
-import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
 import { FastCutScriptStep } from "@/components/features/create/fast-cut/FastCutScriptStep";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -52,6 +52,7 @@ export default function FastCutScriptPage() {
     campaignId,
     campaignName,
     setCampaignId,
+    setCampaignName,
     setGenerationId,
     setStyleSetId,
     setError,
@@ -61,11 +62,34 @@ export default function FastCutScriptPage() {
   const [showKeywordSuggestionDialog, setShowKeywordSuggestionDialog] = useState(false);
   const [keywordPopoverOpen, setKeywordPopoverOpen] = useState(false);
 
-  // Get or create campaign ID
-  const effectiveCampaignId = campaignId || analyze.campaignId || `campaign-${Date.now()}`;
-  if (!campaignId && effectiveCampaignId) {
-    setCampaignId(effectiveCampaignId);
-  }
+  // Sync campaign ID from workflow store on mount (if available)
+  useEffect(() => {
+    if (!campaignId && analyze.campaignId) {
+      setCampaignId(analyze.campaignId);
+      if (analyze.campaignName) {
+        setCampaignName(analyze.campaignName);
+      }
+    }
+  }, [campaignId, analyze.campaignId, analyze.campaignName, setCampaignId, setCampaignName]);
+
+  // Use the existing campaignId or analyze.campaignId for rendering
+  const effectiveCampaignId = campaignId || analyze.campaignId || "";
+
+  // Handle campaign selection change
+  const handleCampaignChange = (newCampaignId: string) => {
+    setCampaignId(newCampaignId);
+    // Campaign name will be updated by the CampaignSelector internally
+    // We need to fetch it here for display purposes
+    import("@/lib/api").then(({ api }) => {
+      api.get<{ name: string; artist_name?: string }>(`/api/v1/campaigns/${newCampaignId}`)
+        .then((res) => {
+          if (res.data?.name) {
+            setCampaignName(res.data.name);
+          }
+        })
+        .catch(console.error);
+    });
+  };
 
   // Handle script generation
   const handleGenerateScript = async () => {
@@ -83,7 +107,7 @@ export default function FastCutScriptPage() {
     await executeScriptGeneration();
   };
 
-  const executeScriptGeneration = async () => {
+  const executeScriptGeneration = async (autoSelectAIKeywords = false) => {
     setError(null);
     setGeneratingScript(true);
 
@@ -120,6 +144,12 @@ export default function FastCutScriptPage() {
       const mergedKeywords = [...editableKeywords, ...aiKeywords];
       setEditableKeywords(mergedKeywords);
 
+      // Auto-select first AI keyword if requested (when user chose "AI 키워드로 진행")
+      if (autoSelectAIKeywords && aiKeywords.length > 0) {
+        // Select the first AI keyword for automatic search
+        setSelectedSearchKeywords(new Set([aiKeywords[0].toLowerCase()]));
+      }
+
       // Generate ID for this fast cut session
       const newGenerationId = `compose-${Date.now()}`;
       setGenerationId(newGenerationId);
@@ -137,7 +167,8 @@ export default function FastCutScriptPage() {
 
   const handleKeywordSuggestionConfirm = async () => {
     setShowKeywordSuggestionDialog(false);
-    await executeScriptGeneration();
+    // Auto-select first AI keyword so image search starts automatically
+    await executeScriptGeneration(true);
   };
 
   const handleKeywordSuggestionCancel = () => {
@@ -159,23 +190,15 @@ export default function FastCutScriptPage() {
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-full">
-        <WorkflowHeader
-          onBack={handleBack}
-          onNext={handleNext}
-          canProceed={canProceed}
-          contentType="fast-cut"
-          actionButton={{
-            label: language === "ko" ? "이미지 단계" : "Images Step",
-            onClick: handleNext,
-            disabled: !canProceed,
-            icon: <ArrowRight className="h-4 w-4" />,
-          }}
-        />
+      <div className="flex flex-col flex-1 min-h-0">
+        <WorkflowHeader contentType="fast-cut" />
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-6 min-h-0">
           <div className="max-w-2xl mx-auto">
             <FastCutScriptStep
+              campaignId={effectiveCampaignId || null}
+              campaignName={campaignName}
+              onCampaignChange={handleCampaignChange}
               prompt={prompt}
               setPrompt={setPrompt}
               aspectRatio={aspectRatio}
@@ -218,6 +241,19 @@ export default function FastCutScriptPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <WorkflowFooter
+          onBack={handleBack}
+          onNext={handleNext}
+          canProceed={canProceed}
+          contentType="fast-cut"
+          actionButton={{
+            label: language === "ko" ? "이미지 단계" : "Images Step",
+            onClick: handleNext,
+            disabled: !canProceed,
+            icon: <ArrowRight className="h-4 w-4" />,
+          }}
+        />
       </div>
     </TooltipProvider>
   );

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
 import {
   TrendingUp,
   Lightbulb,
@@ -638,15 +638,12 @@ export default function StartPage() {
   // If we have a source from trend dashboard, show the preview
   if (startSource) {
     return (
-      <div className="flex flex-col bg-background min-h-full">
+      <div className="flex flex-col bg-background flex-1 min-h-0">
         {/* Workflow Header */}
-        <WorkflowHeader
-          onNext={handleProceedToAnalyze}
-          canProceed={true}
-        />
+        <WorkflowHeader />
 
         {/* Content Area */}
-        <div>
+        <div className="flex-1 overflow-auto min-h-0">
           <div className="container max-w-4xl mx-auto py-8 px-4">
             {/* Trend Data Preview */}
             {startSource.type === "trends" && (
@@ -1393,21 +1390,31 @@ export default function StartPage() {
 
           </div>
         </div>
+
+        {/* Workflow Footer */}
+        <WorkflowFooter
+          onNext={handleProceedToAnalyze}
+          canProceed={!isAnalyzingVideo}
+          actionButton={{
+            label: language === "ko" ? "다음 단계" : "Next Step",
+            onClick: handleProceedToAnalyze,
+            disabled: isAnalyzingVideo,
+            loading: isAnalyzingVideo,
+            icon: <ArrowRight className="h-4 w-4" />,
+          }}
+        />
       </div>
     );
   }
 
   // Default: Entry selection view
   return (
-    <div className="flex flex-col bg-background min-h-full">
+    <div className="flex flex-col bg-background flex-1 min-h-0">
       {/* Workflow Header */}
-      <WorkflowHeader
-        onNext={handleProceed}
-        canProceed={canProceedToAnalyze}
-      />
+      <WorkflowHeader />
 
       {/* Content Area */}
-      <div>
+      <div className="flex-1 overflow-auto min-h-0">
         <div className="container max-w-4xl mx-auto py-8 px-4">
           {/* Direct Idea Input */}
           <Card className="mb-8 border border-neutral-200">
@@ -1628,6 +1635,19 @@ export default function StartPage() {
           )}
         </div>
       </div>
+
+      {/* Workflow Footer */}
+      <WorkflowFooter
+        onNext={handleProceed}
+        canProceed={canProceedToAnalyze}
+        actionButton={{
+          label: language === "ko" ? "시작하기" : "Get Started",
+          onClick: handleProceed,
+          disabled: !canProceedToAnalyze || isAnalyzingVideo || isAnalyzingIdea,
+          loading: isAnalyzingVideo || isAnalyzingIdea,
+          icon: <ArrowRight className="h-4 w-4" />,
+        }}
+      />
     </div>
   );
 }

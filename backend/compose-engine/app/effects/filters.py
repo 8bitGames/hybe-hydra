@@ -39,14 +39,29 @@ def apply_color_grade(
 
 
 def _gpu_process(frame: np.ndarray, transform_fn) -> np.ndarray:
-    """Process frame on GPU if available, else CPU."""
+    """Process frame on GPU if available, else CPU.
+
+    Automatically falls back to CPU on CUDA errors (memory, invalid value, etc.)
+    """
     if USE_GPU and cp is not None:
-        # Transfer to GPU
-        gpu_frame = cp.asarray(frame.astype(cp.float32))
-        # Process on GPU
-        result = transform_fn(gpu_frame, cp)
-        # Transfer back
-        return cp.asnumpy(result).astype(np.uint8)
+        try:
+            # Ensure frame is valid numpy array with correct shape
+            if not isinstance(frame, np.ndarray) or frame.ndim != 3:
+                return transform_fn(frame.astype(np.float32), np).astype(np.uint8)
+
+            # Transfer to GPU
+            gpu_frame = cp.asarray(frame.astype(np.float32))
+            # Process on GPU
+            result = transform_fn(gpu_frame, cp)
+            # Transfer back
+            return cp.asnumpy(result).astype(np.uint8)
+        except Exception as e:
+            # CUDA errors (cudaErrorInvalidValue, out of memory, etc.) - fall back to CPU
+            error_msg = str(e).lower()
+            if 'cuda' in error_msg or 'gpu' in error_msg or 'memory' in error_msg:
+                print(f"[GPU] CUDA error, falling back to CPU: {str(e)[:80]}...")
+            # CPU fallback
+            return transform_fn(frame.astype(np.float32), np).astype(np.uint8)
     else:
         # CPU fallback
         return transform_fn(frame.astype(np.float32), np).astype(np.uint8)

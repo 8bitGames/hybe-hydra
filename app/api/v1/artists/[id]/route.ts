@@ -28,9 +28,9 @@ export async function PATCH(
       );
     }
 
-    // Find the artist
-    const existingArtist = await prisma.artist.findUnique({
-      where: { id },
+    // Find the artist (exclude soft-deleted)
+    const existingArtist = await prisma.artist.findFirst({
+      where: { id, deletedAt: null },
     });
 
     if (!existingArtist) {
@@ -128,11 +128,14 @@ export async function DELETE(
       );
     }
 
-    // Find the artist
-    const existingArtist = await prisma.artist.findUnique({
-      where: { id },
+    // Find the artist (exclude soft-deleted)
+    const existingArtist = await prisma.artist.findFirst({
+      where: { id, deletedAt: null },
       include: {
-        campaigns: { select: { id: true } },
+        campaigns: {
+          where: { deletedAt: null },
+          select: { id: true },
+        },
       },
     });
 
@@ -151,17 +154,18 @@ export async function DELETE(
       );
     }
 
-    // Check if artist has campaigns
+    // Check if artist has active campaigns (not soft-deleted)
     if (existingArtist.campaigns.length > 0) {
       return NextResponse.json(
-        { detail: "Cannot delete artist with existing campaigns" },
+        { detail: "Cannot delete artist with existing campaigns. Please delete all campaigns first." },
         { status: 400 }
       );
     }
 
-    // Delete the artist
-    await prisma.artist.delete({
+    // Soft delete the artist
+    await prisma.artist.update({
       where: { id },
+      data: { deletedAt: new Date() },
     });
 
     // Invalidate all artists list caches

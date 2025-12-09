@@ -1360,7 +1360,7 @@ export default function TrendDashboardPage() {
   const [selectedKeywordId, setSelectedKeywordId] = useState<string>("");
   const [addKeywordDialogOpen, setAddKeywordDialogOpen] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
-  const [searchType, setSearchType] = useState<"keyword" | "hashtag" | "user">("keyword");
+  const [searchType, setSearchType] = useState<"keyword" | "hashtag" | "user">("user");
 
   // Loading & Error States
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -1902,15 +1902,16 @@ export default function TrendDashboardPage() {
                   <div className="flex gap-1 p-1 bg-muted rounded-lg">
                     <button
                       type="button"
-                      onClick={() => setSearchType("keyword")}
+                      onClick={() => setSearchType("user")}
                       className={cn(
                         "flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-                        searchType === "keyword"
+                        searchType === "user"
                           ? "bg-background text-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
-                      {t.typeKeyword}
+                      <Users className="h-3 w-3 inline mr-1" />
+                      {t.typeUser}
                     </button>
                     <button
                       type="button"
@@ -1924,19 +1925,6 @@ export default function TrendDashboardPage() {
                     >
                       <Hash className="h-3 w-3 inline mr-1" />
                       {t.typeHashtag}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSearchType("user")}
-                      className={cn(
-                        "flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-                        searchType === "user"
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      <Users className="h-3 w-3 inline mr-1" />
-                      {t.typeUser}
                     </button>
                   </div>
                   <Input

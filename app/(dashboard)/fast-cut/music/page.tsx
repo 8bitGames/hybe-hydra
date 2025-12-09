@@ -6,7 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
 import { fastCutApi, AudioMatch } from "@/lib/fast-cut-api";
 import { useToast } from "@/components/ui/toast";
-import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
 import { FastCutMusicStep } from "@/components/features/create/fast-cut/FastCutMusicStep";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ArrowRight } from "lucide-react";
@@ -130,21 +130,10 @@ export default function FastCutMusicPage() {
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-full">
-        <WorkflowHeader
-          onBack={handleBack}
-          onNext={handleNext}
-          canProceed={canProceed}
-          contentType="fast-cut"
-          actionButton={{
-            label: language === "ko" ? "효과 단계" : "Effects Step",
-            onClick: handleNext,
-            disabled: !canProceed,
-            icon: <ArrowRight className="h-4 w-4" />,
-          }}
-        />
+      <div className="flex flex-col flex-1 min-h-0">
+        <WorkflowHeader contentType="fast-cut" />
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-6 min-h-0">
           <div className="max-w-3xl mx-auto">
             <FastCutMusicStep
               scriptData={scriptData}
@@ -164,6 +153,19 @@ export default function FastCutMusicPage() {
             />
           </div>
         </div>
+
+        <WorkflowFooter
+          onBack={handleBack}
+          onNext={handleNext}
+          canProceed={canProceed}
+          contentType="fast-cut"
+          actionButton={{
+            label: language === "ko" ? "효과 단계" : "Effects Step",
+            onClick: handleNext,
+            disabled: !canProceed,
+            icon: <ArrowRight className="h-4 w-4" />,
+          }}
+        />
       </div>
     </TooltipProvider>
   );

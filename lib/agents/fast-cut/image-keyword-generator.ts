@@ -202,15 +202,9 @@ export class ImageKeywordGeneratorAgent extends BaseAgent<ImageKeywordGeneratorI
     const vibe = input.vibe as VibeType;
     const vibeMapping = VIBE_VISUAL_MAPPING[vibe];
 
-    // Build artist section
-    let artistSection = '';
-    let artistKeywordGuide = 'Generate generic performer/artist keywords.';
-    if (input.artistName) {
-      artistSection = `ARTIST NAME: ${input.artistName}`;
-      artistKeywordGuide = `Include "${input.artistName}" in 1-2 keywords.
-Format: "${input.artistName} {context} {quality}"
-Examples: "${input.artistName} concert stage 4K", "${input.artistName} photoshoot HD"`;
-    }
+    // No artist name in keywords - extract keywords purely from prompt/script content
+    const artistSection = '';
+    const artistKeywordGuide = 'Generate generic performer/artist keywords based on the prompt context only. Do NOT include any specific artist names.';
 
     // Build script section
     let scriptSection = '';
