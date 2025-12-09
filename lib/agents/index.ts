@@ -220,44 +220,72 @@ export {
 } from './publishers';
 
 // ============================================================================
-// Compose Agents (Gemini 2.5 Flash)
+// Fast Cut Agents (Gemini 2.5 Flash)
 // ============================================================================
 
 export {
   // Script Generator
-  ComposeScriptGeneratorAgent,
-  createComposeScriptGeneratorAgent,
-  ComposeScriptGeneratorConfig,
-  ComposeScriptGeneratorInputSchema,
-  ComposeScriptGeneratorOutputSchema,
-  type ComposeScriptGeneratorInput,
-  type ComposeScriptGeneratorOutput,
+  FastCutScriptGeneratorAgent,
+  createFastCutScriptGeneratorAgent,
+  FastCutScriptGeneratorConfig,
+  FastCutScriptGeneratorInputSchema,
+  FastCutScriptGeneratorOutputSchema,
+  type FastCutScriptGeneratorInput,
+  type FastCutScriptGeneratorOutput,
 
   // Effect Analyzer
-  ComposeEffectAnalyzerAgent,
-  createComposeEffectAnalyzerAgent,
-  ComposeEffectAnalyzerConfig,
-  ComposeEffectAnalyzerInputSchema,
-  ComposeEffectAnalyzerOutputSchema,
-  type ComposeEffectAnalyzerInput,
-  type ComposeEffectAnalyzerOutput,
+  FastCutEffectAnalyzerAgent,
+  createFastCutEffectAnalyzerAgent,
+  FastCutEffectAnalyzerConfig,
+  FastCutEffectAnalyzerInputSchema,
+  FastCutEffectAnalyzerOutputSchema,
+  type FastCutEffectAnalyzerInput,
+  type FastCutEffectAnalyzerOutput,
 
   // Conductor
-  ComposeConductorAgent,
-  createComposeConductorAgent,
-  ComposeConductorConfig,
-  ComposeConductorInputSchema,
-  ComposeConductorOutputSchema,
+  FastCutConductorAgent,
+  createFastCutConductorAgent,
+  FastCutConductorConfig,
+  FastCutConductorInputSchema,
+  FastCutConductorOutputSchema,
   calculateBeatAlignedDurations,
   getAvailableOptions,
-  type ComposeConductorInput,
-  type ComposeConductorOutput,
+  type FastCutConductorInput,
+  type FastCutConductorOutput,
 
-  // Compose utilities
-  ComposeAgentFactories,
-  ComposeAgentIds,
-  ComposeAgentModels,
-} from './compose';
+  // Fast Cut utilities
+  FastCutAgentFactories,
+  FastCutAgentIds,
+  FastCutAgentModels,
+} from './fast-cut';
+
+// Backward compatibility aliases (deprecated - use FastCut* instead)
+export {
+  FastCutScriptGeneratorAgent as ComposeScriptGeneratorAgent,
+  createFastCutScriptGeneratorAgent as createComposeScriptGeneratorAgent,
+  FastCutScriptGeneratorConfig as ComposeScriptGeneratorConfig,
+  FastCutScriptGeneratorInputSchema as ComposeScriptGeneratorInputSchema,
+  FastCutScriptGeneratorOutputSchema as ComposeScriptGeneratorOutputSchema,
+  type FastCutScriptGeneratorInput as ComposeScriptGeneratorInput,
+  type FastCutScriptGeneratorOutput as ComposeScriptGeneratorOutput,
+  FastCutEffectAnalyzerAgent as ComposeEffectAnalyzerAgent,
+  createFastCutEffectAnalyzerAgent as createComposeEffectAnalyzerAgent,
+  FastCutEffectAnalyzerConfig as ComposeEffectAnalyzerConfig,
+  FastCutEffectAnalyzerInputSchema as ComposeEffectAnalyzerInputSchema,
+  FastCutEffectAnalyzerOutputSchema as ComposeEffectAnalyzerOutputSchema,
+  type FastCutEffectAnalyzerInput as ComposeEffectAnalyzerInput,
+  type FastCutEffectAnalyzerOutput as ComposeEffectAnalyzerOutput,
+  FastCutConductorAgent as ComposeConductorAgent,
+  createFastCutConductorAgent as createComposeConductorAgent,
+  FastCutConductorConfig as ComposeConductorConfig,
+  FastCutConductorInputSchema as ComposeConductorInputSchema,
+  FastCutConductorOutputSchema as ComposeConductorOutputSchema,
+  type FastCutConductorInput as ComposeConductorInput,
+  type FastCutConductorOutput as ComposeConductorOutput,
+  FastCutAgentFactories as ComposeAgentFactories,
+  FastCutAgentIds as ComposeAgentIds,
+  FastCutAgentModels as ComposeAgentModels,
+} from './fast-cut';
 
 // ============================================================================
 // Workflow Orchestrator
@@ -302,10 +330,10 @@ export const AgentFactories = {
   publishOptimizer: () => import('./publishers/publish-optimizer').then(m => m.createPublishOptimizerAgent()),
   copywriter: () => import('./publishers/copywriter').then(m => m.createCopywriterAgent()),
 
-  // Compose
-  composeScriptGenerator: () => import('./compose/script-generator').then(m => m.createComposeScriptGeneratorAgent()),
-  composeEffectAnalyzer: () => import('./compose/effect-analyzer').then(m => m.createComposeEffectAnalyzerAgent()),
-  composeConductor: () => import('./compose/conductor').then(m => m.createComposeConductorAgent()),
+  // Fast Cut
+  fastCutScriptGenerator: () => import('./fast-cut/script-generator').then(m => m.createFastCutScriptGeneratorAgent()),
+  fastCutEffectAnalyzer: () => import('./fast-cut/effect-analyzer').then(m => m.createFastCutEffectAnalyzerAgent()),
+  fastCutConductor: () => import('./fast-cut/conductor').then(m => m.createFastCutConductorAgent()),
 };
 
 /**
@@ -316,7 +344,7 @@ export const AgentCategories = {
   creator: ['creative-director', 'script-writer'],
   transformer: ['prompt-engineer', 'i2v-specialist'],
   publisher: ['publish-optimizer', 'copywriter'],
-  compose: ['compose-script-generator', 'compose-effect-analyzer', 'compose-conductor'],
+  'fast-cut': ['fast-cut-script-generator', 'fast-cut-effect-analyzer', 'fast-cut-conductor'],
 } as const;
 
 /**
@@ -342,8 +370,8 @@ export const AgentModels = {
   'publish-optimizer': 'gpt-5.1',
   'copywriter': 'gpt-5.1',
 
-  // Compose Agents - Gemini 2.5 Flash
-  'compose-script-generator': 'gemini-2.5-flash',
-  'compose-effect-analyzer': 'gemini-2.5-flash',
-  'compose-conductor': 'gemini-2.5-flash',
+  // Fast Cut Agents - Gemini 2.5 Flash
+  'fast-cut-script-generator': 'gemini-2.5-flash',
+  'fast-cut-effect-analyzer': 'gemini-2.5-flash',
+  'fast-cut-conductor': 'gemini-2.5-flash',
 } as const;

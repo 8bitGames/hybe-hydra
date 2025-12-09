@@ -28,6 +28,12 @@ interface TabConfig {
   badge?: string;
 }
 
+// Convert kebab-case tab id to camelCase for translation lookup
+const getTabTranslationKey = (tabId: CampaignTab): string => {
+  if (tabId === "fast-cut") return "fastCut";
+  return tabId;
+};
+
 /**
  * Tab navigation for Campaign Workspace
  * 캠페인 작업공간의 탭 네비게이션
@@ -41,7 +47,7 @@ export function CampaignTabs({ className, campaignId }: CampaignTabsProps) {
   const tabs: TabConfig[] = [
     { id: "assets", icon: FolderOpen, path: "" },
     { id: "generate", icon: Sparkles, path: "/generate" },
-    { id: "compose", icon: Images, path: "/compose" },
+    { id: "fast-cut", icon: Images, path: "/fast-cut" },
     { id: "videos", icon: Video, path: "/curation" },
     { id: "publish", icon: Send, path: "/publish" },
     { id: "analytics", icon: BarChart3, path: "/analytics" },
@@ -56,7 +62,7 @@ export function CampaignTabs({ className, campaignId }: CampaignTabsProps) {
 
     if (subPath === "" || subPath === "/") return "assets";
     if (subPath.startsWith("/generate")) return "generate";
-    if (subPath.startsWith("/compose")) return "compose";
+    if (subPath.startsWith("/fast-cut")) return "fast-cut";
     if (subPath.startsWith("/curation")) return "videos";
     if (subPath.startsWith("/publish")) return "publish";
     if (subPath.startsWith("/analytics")) return "analytics";
@@ -77,7 +83,7 @@ export function CampaignTabs({ className, campaignId }: CampaignTabsProps) {
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = currentTab === tab.id;
-          const label = t.campaignWorkspace.tabs[tab.id];
+          const label = t.campaignWorkspace.tabs[getTabTranslationKey(tab.id) as keyof typeof t.campaignWorkspace.tabs];
 
           return (
             <button
@@ -119,7 +125,7 @@ export function CompactCampaignTabs({ className, campaignId }: CampaignTabsProps
   const tabs: TabConfig[] = [
     { id: "assets", icon: FolderOpen, path: "" },
     { id: "generate", icon: Sparkles, path: "/generate" },
-    { id: "compose", icon: Images, path: "/compose" },
+    { id: "fast-cut", icon: Images, path: "/fast-cut" },
     { id: "videos", icon: Video, path: "/curation" },
     { id: "publish", icon: Send, path: "/publish" },
     { id: "analytics", icon: BarChart3, path: "/analytics" },
@@ -132,7 +138,7 @@ export function CompactCampaignTabs({ className, campaignId }: CampaignTabsProps
 
     if (subPath === "" || subPath === "/") return "assets";
     if (subPath.startsWith("/generate")) return "generate";
-    if (subPath.startsWith("/compose")) return "compose";
+    if (subPath.startsWith("/fast-cut")) return "fast-cut";
     if (subPath.startsWith("/curation")) return "videos";
     if (subPath.startsWith("/publish")) return "publish";
     if (subPath.startsWith("/analytics")) return "analytics";
@@ -165,7 +171,7 @@ export function CompactCampaignTabs({ className, campaignId }: CampaignTabsProps
             )}
           >
             <Icon className={cn("h-3.5 w-3.5", isActive && "text-primary")} />
-            <span className="hidden sm:inline">{t.campaignWorkspace.tabs[tab.id]}</span>
+            <span className="hidden sm:inline">{t.campaignWorkspace.tabs[getTabTranslationKey(tab.id) as keyof typeof t.campaignWorkspace.tabs]}</span>
           </button>
         );
       })}

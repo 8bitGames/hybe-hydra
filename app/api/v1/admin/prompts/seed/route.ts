@@ -23,10 +23,10 @@ import { PromptEngineerConfig } from '@/lib/agents/transformers/prompt-engineer'
 import { I2VSpecialistConfig } from '@/lib/agents/transformers/i2v-specialist';
 import { PublishOptimizerConfig } from '@/lib/agents/publishers/publish-optimizer';
 import { CopywriterConfig } from '@/lib/agents/publishers/copywriter';
-// Compose agents
-import { ComposeScriptGeneratorConfig } from '@/lib/agents/compose/script-generator';
-import { ComposeEffectAnalyzerConfig } from '@/lib/agents/compose/effect-analyzer';
-import { ComposeConductorConfig } from '@/lib/agents/compose/conductor';
+// Fast Cut agents
+import { FastCutScriptGeneratorConfig } from '@/lib/agents/fast-cut/script-generator';
+import { FastCutEffectAnalyzerConfig } from '@/lib/agents/fast-cut/effect-analyzer';
+import { FastCutConductorConfig } from '@/lib/agents/fast-cut/conductor';
 
 // All agent configs to seed
 const AGENT_CONFIGS = [
@@ -47,10 +47,10 @@ const AGENT_CONFIGS = [
   // Publishers
   PublishOptimizerConfig,
   CopywriterConfig,
-  // Compose
-  ComposeScriptGeneratorConfig,
-  ComposeEffectAnalyzerConfig,
-  ComposeConductorConfig,
+  // Fast Cut
+  FastCutScriptGeneratorConfig,
+  FastCutEffectAnalyzerConfig,
+  FastCutConductorConfig,
 ];
 
 export async function POST(request: NextRequest) {

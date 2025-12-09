@@ -57,7 +57,7 @@ export interface ModelConfig {
 // Agent Configuration Types
 // ================================
 
-export type AgentCategory = 'analyzer' | 'creator' | 'transformer' | 'publisher' | 'compose';
+export type AgentCategory = 'analyzer' | 'creator' | 'transformer' | 'publisher' | 'fast-cut';
 
 export interface AgentPrompts {
   system: string;

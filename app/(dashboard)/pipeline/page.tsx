@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { type Campaign } from "@/lib/campaigns-api";
-import { useCampaigns, usePipelines, useSeedCandidates, useComposeCandidates, useInvalidateQueries } from "@/lib/queries";
+import { useCampaigns, usePipelines, useSeedCandidates, useFastCutCandidates, useInvalidateQueries } from "@/lib/queries";
 import { pipelineApi, PipelineItem, cleanupApi, CleanupResponse } from "@/lib/pipeline-api";
 import { presetsApi, StylePreset, variationsApi, VariationConfigRequest, videoApi, VideoGeneration, composeVariationsApi } from "@/lib/video-api";
 import { socialAccountsApi, SocialAccount } from "@/lib/publishing-api";
@@ -69,8 +69,8 @@ import { cn } from "@/lib/utils";
 import {
   AIPipelineCard,
   AIPipelineTableRow,
-  ComposePipelineCard,
-  ComposePipelineTableRow,
+  FastCutPipelineCard,
+  FastCutPipelineTableRow,
   PipelineType,
 } from "@/components/features/pipeline";
 import {
@@ -97,9 +97,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import Link from "next/link";
 
 type StatusFilter = "all" | "pending" | "processing" | "completed" | "partial_failure";
-type VideoType = "ai" | "compose";
+type VideoType = "ai" | "fast-cut";
 type ViewMode = "grid" | "table";
-type PipelineTypeFilter = "all" | "ai" | "compose";
+type PipelineTypeFilter = "all" | "ai" | "fast-cut";
 
 interface SeedCandidate extends VideoGeneration {
   campaign_name?: string;
@@ -150,12 +150,12 @@ export default function GlobalPipelinePage() {
     refetch: refetchSeeds,
   } = useSeedCandidates(campaigns);
 
-  // Use TanStack Query for compose candidates
+  // Use TanStack Query for fast-cut candidates
   const {
     data: composeCandidates = [],
     isLoading: loadingCompose,
     refetch: refetchCompose,
-  } = useComposeCandidates(campaigns);
+  } = useFastCutCandidates(campaigns);
 
   const loading = campaignsLoading || pipelinesLoading;
   const [refreshing, setRefreshing] = useState(false);
@@ -182,7 +182,7 @@ export default function GlobalPipelinePage() {
   const [aiVariationModalOpen, setAIVariationModalOpen] = useState(false);
   const [composeVariationModalOpen, setComposeVariationModalOpen] = useState(false);
   const [selectedSeedGeneration, setSelectedSeedGeneration] = useState<VideoGeneration | null>(null);
-  const [selectedGenerationType, setSelectedGenerationType] = useState<"ai" | "compose">("ai");
+  const [selectedGenerationType, setSelectedGenerationType] = useState<"ai" | "fast-cut">("ai");
   const [presets, setPresets] = useState<StylePreset[]>([]);
   const [creatingVariations, setCreatingVariations] = useState(false);
   const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>([]);
@@ -236,7 +236,7 @@ export default function GlobalPipelinePage() {
         await refetchPipelines();
       } else if (activeTab === "create") {
         await refetchSeeds();
-      } else if (activeTab === "compose") {
+      } else if (activeTab === "fast-cut") {
         await refetchCompose();
       }
     } finally {
@@ -276,7 +276,7 @@ export default function GlobalPipelinePage() {
   const handleSelectSeed = (video: VideoGeneration) => {
     const isComposeVideo = video.id.startsWith("compose-");
     setSelectedSeedGeneration(video);
-    setSelectedGenerationType(isComposeVideo ? "compose" : "ai");
+    setSelectedGenerationType(isComposeVideo ? "fast-cut" : "ai");
 
     if (isComposeVideo) {
       setComposeVariationModalOpen(true);
@@ -289,7 +289,7 @@ export default function GlobalPipelinePage() {
     setSelectedSeedGeneration(pipeline.seed_generation);
     setSelectedGenerationType(pipeline.type || "ai");
 
-    if (pipeline.type === "compose") {
+    if (pipeline.type === "fast-cut") {
       setComposeVariationModalOpen(true);
     } else {
       setAIVariationModalOpen(true);
@@ -570,9 +570,9 @@ export default function GlobalPipelinePage() {
     return true;
   });
 
-  // Separate AI and Compose pipelines for rendering
+  // Separate AI and Fast Cut pipelines for rendering
   const aiPipelines = filteredPipelines.filter((p) => p.type === "ai");
-  const composePipelines = filteredPipelines.filter((p) => p.type === "compose");
+  const fastCutPipelines = filteredPipelines.filter((p) => p.type === "fast-cut");
 
   // Filter seed candidates
   const filteredSeedCandidates = seedCandidates.filter((video) => {
@@ -589,7 +589,7 @@ export default function GlobalPipelinePage() {
   });
 
   // Filter compose candidates
-  const filteredComposeCandidates = composeCandidates.filter((video) => {
+  const filteredComposeCandidates = composeCandidates.filter((video: VideoGeneration & { campaign_name?: string }) => {
     if (composeCampaignFilter !== "all" && video.campaign_id !== composeCampaignFilter) {
       return false;
     }
@@ -611,7 +611,7 @@ export default function GlobalPipelinePage() {
     totalVariations: pipelines.reduce((acc, p) => acc + p.total, 0),
     completedVariations: pipelines.reduce((acc, p) => acc + p.completed, 0),
     aiCount: pipelines.filter((p) => p.type === "ai").length,
-    composeCount: pipelines.filter((p) => p.type === "compose").length,
+    fastCutCount: pipelines.filter((p) => p.type === "fast-cut").length,
   }), [pipelines]);
 
   // Status config helper
@@ -860,9 +860,9 @@ export default function GlobalPipelinePage() {
                   {seedCandidates.length}
                 </Badge>
               </TabsTrigger>
-              <TabsTrigger value="compose" className="gap-2 px-4">
+              <TabsTrigger value="fast-cut" className="gap-2 px-4">
                 <Film className="w-4 h-4" />
-                {isKorean ? "컴포즈 영상" : "Compose Video"}
+                {isKorean ? "패스트 컷 영상" : "Fast Cut Video"}
                 <Badge variant="outline" className="ml-1 h-5 px-1.5">
                   {composeCandidates.length}
                 </Badge>
@@ -935,10 +935,10 @@ export default function GlobalPipelinePage() {
                           {isKorean ? "AI 영상" : "AI Video"}
                         </span>
                       </SelectItem>
-                      <SelectItem value="compose">
+                      <SelectItem value="fast-cut">
                         <span className="flex items-center gap-1.5">
                           <Film className="w-3 h-3" />
-                          {isKorean ? "컴포즈 영상" : "Compose Video"}
+                          {isKorean ? "패스트 컷 영상" : "Fast Cut Video"}
                         </span>
                       </SelectItem>
                     </SelectContent>
@@ -978,17 +978,17 @@ export default function GlobalPipelinePage() {
                   </h3>
                   <p className="text-muted-foreground text-sm mb-6 max-w-md mx-auto">
                     {isKorean
-                      ? "AI 영상 또는 컴포즈 영상 탭에서 영상을 선택하여 변형을 생성하세요"
-                      : "Select a video from the AI Video or Compose Video tab to create variations"}
+                      ? "AI 영상 또는 패스트 컷 영상 탭에서 영상을 선택하여 변형을 생성하세요"
+                      : "Select a video from the AI Video or Fast Cut Video tab to create variations"}
                   </p>
                   <div className="flex items-center justify-center gap-3">
                     <Button onClick={() => setActiveTab("create")} variant="outline">
                       <Video className="w-4 h-4 mr-2" />
                       {isKorean ? "AI 영상 보기" : "View AI Videos"}
                     </Button>
-                    <Button onClick={() => setActiveTab("compose")}>
+                    <Button onClick={() => setActiveTab("fast-cut")}>
                       <Sparkles className="w-4 h-4 mr-2" />
-                      {isKorean ? "컴포즈 영상 보기" : "View Compose Videos"}
+                      {isKorean ? "패스트 컷 영상 보기" : "View Fast Cut Videos"}
                     </Button>
                   </div>
                 </CardContent>
@@ -1021,8 +1021,8 @@ export default function GlobalPipelinePage() {
                     </thead>
                     <tbody className="divide-y">
                       {filteredPipelines.map((pipeline) =>
-                        pipeline.type === "compose" ? (
-                          <ComposePipelineTableRow
+                        pipeline.type === "fast-cut" ? (
+                          <FastCutPipelineTableRow
                             key={pipeline.batch_id}
                             pipeline={pipeline}
                             onCreateVariations={() => handleCreateMoreVariations(pipeline)}
@@ -1051,8 +1051,8 @@ export default function GlobalPipelinePage() {
               /* Grid View */
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredPipelines.map((pipeline) =>
-                  pipeline.type === "compose" ? (
-                    <ComposePipelineCard
+                  pipeline.type === "fast-cut" ? (
+                    <FastCutPipelineCard
                       key={pipeline.batch_id}
                       pipeline={pipeline}
                       onCreateVariations={() => handleCreateMoreVariations(pipeline)}
@@ -1330,7 +1330,7 @@ export default function GlobalPipelinePage() {
               </Card>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {filteredComposeCandidates.map((video) => (
+                {filteredComposeCandidates.map((video: VideoGeneration & { campaign_name?: string }) => (
                   <Card
                     key={video.id}
                     className="overflow-hidden hover:shadow-lg transition-all group"

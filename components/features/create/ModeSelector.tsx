@@ -20,7 +20,7 @@ interface ModeSelectorProps {
 const modeIcons: Record<CreateMode, LucideIcon> = {
   quick: Zap,
   generate: Bot,
-  compose: Images,
+  fastCut: Images,
   batch: Layers,
 };
 
@@ -32,7 +32,7 @@ export function ModeSelector({ className }: ModeSelectorProps) {
   const { t, language } = useI18n();
   const { createMode, setCreateMode } = useUIStore();
 
-  const modes: CreateMode[] = ["quick", "generate", "compose", "batch"];
+  const modes: CreateMode[] = ["quick", "generate", "fastCut", "batch"];
 
   return (
     <div className={cn("flex flex-wrap gap-2", className)}>
@@ -77,7 +77,7 @@ export function CompactModeSelector({ className }: ModeSelectorProps) {
   const { t } = useI18n();
   const { createMode, setCreateMode } = useUIStore();
 
-  const modes: CreateMode[] = ["quick", "generate", "compose", "batch"];
+  const modes: CreateMode[] = ["quick", "generate", "fastCut", "batch"];
 
   return (
     <div className={cn("grid grid-cols-4 gap-1 p-1 bg-muted rounded-lg", className)}>

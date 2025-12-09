@@ -7,8 +7,8 @@ export * from "./shared";
 // AI Pipeline components
 export * from "./ai";
 
-// Compose Pipeline components
-export * from "./compose";
+// Fast Cut Pipeline components
+export * from "./fast-cut";
 
 // Modal components
 export * from "./modals";

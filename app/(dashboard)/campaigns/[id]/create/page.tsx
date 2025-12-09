@@ -131,7 +131,7 @@ export default function CreatePage() {
 
             <Link href={`/campaigns/${campaignId}/compose`} className="block pt-2">
               <Button variant="outline" className="w-full h-12 border-zinc-400 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:border-zinc-500 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700 group-hover:shadow-lg transition-all">
-                {language === "ko" ? "컴포즈 영상 시작" : "Start Compose Video"}
+                {language === "ko" ? "패스트컷 영상 시작" : "Start Fast Cut Video"}
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </Link>

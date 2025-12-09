@@ -77,6 +77,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: { createdAt: "desc" },
     });
 
+    // Get all generated preview images for this campaign
+    const previewImages = await prisma.generatedPreviewImage.findMany({
+      where: { campaignId },
+      orderBy: { createdAt: "desc" },
+    });
+
     // Extract unique prompts (group by original_input or prompt)
     const promptMap = new Map<string, {
       original_input: string;
@@ -279,6 +285,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             avg_score: data.avg_score,
           })),
       },
+      preview_images: {
+        total: previewImages.length,
+        direct_mode: previewImages.filter((p) => p.compositionMode === "direct").length,
+        two_step_mode: previewImages.filter((p) => p.compositionMode === "two_step").length,
+        used_in_videos: previewImages.filter((p) => p.usedInGenerationId !== null).length,
+      },
     };
 
     // Format response
@@ -332,6 +344,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         tags: gen.tags,
         duration_seconds: gen.durationSeconds,
         aspect_ratio: gen.aspectRatio,
+        image_assets: gen.imageAssets as Array<{ id: string; url: string; keyword: string; sortOrder: number }> | null,
         reference_image: gen.referenceImage
           ? {
               id: gen.referenceImage.id,
@@ -371,6 +384,23 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         share_count: post.shareCount,
         engagement_rate: post.engagementRate,
         created_at: post.createdAt.toISOString(),
+      })),
+      preview_images: previewImages.map((img) => ({
+        id: img.id,
+        preview_id: img.previewId,
+        image_url: img.imageUrl,
+        video_prompt: img.videoPrompt,
+        image_description: img.imageDescription,
+        gemini_image_prompt: img.geminiImagePrompt,
+        aspect_ratio: img.aspectRatio,
+        style: img.style,
+        composition_mode: img.compositionMode,
+        composite_prompt: img.compositePrompt,
+        scene_image_url: img.sceneImageUrl,
+        product_image_url: img.productImageUrl,
+        hand_pose: img.handPose,
+        used_in_generation_id: img.usedInGenerationId,
+        created_at: img.createdAt.toISOString(),
       })),
     });
   } catch (error) {

@@ -95,7 +95,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const result = await generatePreviewImage(
       input,
-      { type: "campaign", id: campaignId },
+      { type: "campaign", id: campaignId, userId: user.id },
       "[Preview Image]"
     );
 
@@ -109,6 +109,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({
       preview_id: result.preview_id,
+      database_id: result.database_id,
       image_url: result.image_url,
       image_base64: result.image_base64,
       gemini_image_prompt: result.gemini_image_prompt,

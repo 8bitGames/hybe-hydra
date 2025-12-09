@@ -37,6 +37,19 @@ interface RecentProject {
   thumbnail?: string;
 }
 
+// Helper to get access token from Zustand persisted storage
+function getAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem("hydra-auth-storage");
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    return parsed.state?.accessToken || null;
+  } catch {
+    return null;
+  }
+}
+
 // Format count helper
 function formatCount(num: number): string {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -73,7 +86,7 @@ export default function StartPage() {
   useEffect(() => {
     async function loadRecentProjects() {
       try {
-        const token = localStorage.getItem("access_token");
+        const token = getAccessToken();
         if (!token) {
           setIsLoadingProjects(false);
           return;
@@ -122,7 +135,7 @@ export default function StartPage() {
       setAnalysisError(null);
 
       try {
-        const token = localStorage.getItem("access_token");
+        const token = getAccessToken();
         const response = await fetch("/api/v1/analyze-video", {
           method: "POST",
           headers: {

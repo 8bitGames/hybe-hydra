@@ -47,7 +47,7 @@ export function PipelineActionsMenu({
     if (onViewDetails) {
       onViewDetails();
     } else {
-      const basePath = pipelineType === "compose" ? "compose-pipeline" : "pipeline";
+      const basePath = pipelineType === "fast-cut" ? "fast-cut-pipeline" : "pipeline";
       router.push(
         `/campaigns/${pipeline.campaign_id}/${basePath}/${pipeline.batch_id}?seed=${pipeline.seed_generation_id}`
       );

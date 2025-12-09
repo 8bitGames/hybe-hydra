@@ -52,7 +52,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { InlineComposeFlow } from "@/components/features/create/compose/InlineComposeFlow";
+import { InlineFastCutFlow } from "@/components/features/create/fast-cut/InlineFastCutFlow";
 import { ChevronDown } from "lucide-react";
 
 // ============================================================================
@@ -86,7 +86,7 @@ function StepProgressIndicator({
   selectedMethod,
 }: {
   status: StepStatus;
-  selectedMethod: "ai" | "compose" | null;
+  selectedMethod: "ai" | "fast-cut" | null;
 }) {
   const { language } = useI18n();
   const isKorean = language === "ko";
@@ -109,8 +109,8 @@ function StepProgressIndicator({
     }
     if (!status.methodSelected) {
       return isKorean
-        ? "AI 생성 또는 컴포즈 중 생성 방식을 선택하세요"
-        : "Choose between AI Generated or Compose video";
+        ? "AI 생성 또는 패스트컷 중 생성 방식을 선택하세요"
+        : "Choose between AI Generated or Fast Cut video";
     }
     // Ready to generate (assets are optional)
     if (selectedMethod === "ai") {
@@ -119,8 +119,8 @@ function StepProgressIndicator({
         : "Ready! Click 'Generate with Veo3' to create";
     }
     return isKorean
-      ? "준비 완료! '컴포즈 시작' 버튼을 클릭하세요"
-      : "Ready! Click 'Start Compose' to create";
+      ? "준비 완료! '패스트컷 시작' 버튼을 클릭하세요"
+      : "Ready! Click 'Start Fast Cut' to create";
   };
 
   // Build steps - assets are now optional extras
@@ -319,14 +319,14 @@ function ContextPanel() {
               )}
             </div>
 
-            {/* Compose recommendation hint */}
-            {selectedIdea.type === "compose" && (
+            {/* Fast Cut recommendation hint */}
+            {selectedIdea.type === "fast-cut" && (
               <div className="mt-3 p-2 bg-neutral-100 rounded-md">
                 <p className="text-[11px] text-neutral-600 flex items-center gap-1.5">
                   <Images className="h-3 w-3" />
                   {language === "ko"
-                    ? "이 아이디어는 컴포즈 영상에 최적화되어 있습니다"
-                    : "This idea is optimized for Compose Video"}
+                    ? "이 아이디어는 패스트 컷 영상에 최적화되어 있습니다"
+                    : "This idea is optimized for Fast Cut Video"}
                 </p>
               </div>
             )}
@@ -944,8 +944,8 @@ function CreateMethodCards({
   onCompose,
   isGenerating,
 }: {
-  selectedMethod: "ai" | "compose" | null;
-  onSelectMethod: (method: "ai" | "compose") => void;
+  selectedMethod: "ai" | "fast-cut" | null;
+  onSelectMethod: (method: "ai" | "fast-cut") => void;
   onGenerate: () => void;
   onCompose: () => void;
   isGenerating: boolean;
@@ -1025,12 +1025,12 @@ function CreateMethodCards({
         )}
       </div>
 
-      {/* Compose Video */}
+      {/* Fast Cut Video */}
       <div
-        onClick={() => onSelectMethod("compose")}
+        onClick={() => onSelectMethod("fast-cut")}
         className={cn(
           "border rounded-lg p-4 cursor-pointer transition-all",
-          selectedMethod === "compose"
+          selectedMethod === "fast-cut"
             ? "border-neutral-900 bg-neutral-50"
             : "border-neutral-200 hover:border-neutral-300"
         )}
@@ -1039,7 +1039,7 @@ function CreateMethodCards({
           <div
             className={cn(
               "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-              selectedMethod === "compose" ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500"
+              selectedMethod === "fast-cut" ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500"
             )}
           >
             <Images className="h-5 w-5" />
@@ -1047,7 +1047,7 @@ function CreateMethodCards({
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <h4 className="text-sm font-semibold text-neutral-900">
-                {language === "ko" ? "컴포즈 영상" : "Compose Video"}
+                {language === "ko" ? "패스트 컷 영상" : "Fast Cut Video"}
               </h4>
             </div>
             <p className="text-xs text-neutral-500 mb-3">
@@ -1061,12 +1061,12 @@ function CreateMethodCards({
                 : "Best for: Photo montages, behind-the-scenes, product showcases"}
             </p>
           </div>
-          {selectedMethod === "compose" && (
+          {selectedMethod === "fast-cut" && (
             <Check className="h-5 w-5 text-neutral-900 shrink-0" />
           )}
         </div>
 
-        {selectedMethod === "compose" && (
+        {selectedMethod === "fast-cut" && (
           <div className="mt-4 pt-4 border-t border-neutral-200">
             <Button
               onClick={(e) => {
@@ -1084,7 +1084,7 @@ function CreateMethodCards({
               ) : (
                 <>
                   <Images className="h-4 w-4 mr-2" />
-                  {language === "ko" ? "컴포즈 시작" : "Start Compose"}
+                  {language === "ko" ? "패스트컷 시작" : "Start Fast Cut"}
                 </>
               )}
             </Button>
@@ -1164,11 +1164,11 @@ export default function CreatePage() {
   };
 
   // Local state
-  const [selectedMethod, setSelectedMethod] = useState<"ai" | "compose" | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<"ai" | "fast-cut" | null>(null);
   const [audioAsset, setAudioAsset] = useState<UploadedAsset | null>(null);
   const [imageAssets, setImageAssets] = useState<UploadedAsset[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showComposeFlow, setShowComposeFlow] = useState(false);
+  const [showFastCutFlow, setShowFastCutFlow] = useState(false);
 
   // Personalization modal state
   const [showPersonalizeModal, setShowPersonalizeModal] = useState(false);
@@ -1180,7 +1180,7 @@ export default function CreatePage() {
   // Auto-select method based on selected idea
   useEffect(() => {
     if (analyze.selectedIdea) {
-      setSelectedMethod(analyze.selectedIdea.type === "compose" ? "compose" : "ai");
+      setSelectedMethod(analyze.selectedIdea.type === "fast-cut" ? "fast-cut" : "ai");
     }
   }, [analyze.selectedIdea]);
 
@@ -1421,7 +1421,7 @@ export default function CreatePage() {
     }
 
     // Show inline compose flow instead of navigating to a new page
-    setShowComposeFlow(true);
+    setShowFastCutFlow(true);
   }, [selectedCampaignId, language, toast]);
 
   // Translations
@@ -1436,7 +1436,7 @@ export default function CreatePage() {
   };
 
   // If compose flow is active, show the inline compose flow WITH partially disabled WorkflowHeader
-  if (showComposeFlow && selectedCampaignId) {
+  if (showFastCutFlow && selectedCampaignId) {
     return (
       <TooltipProvider>
       <div className="h-full flex flex-col bg-white">
@@ -1444,13 +1444,13 @@ export default function CreatePage() {
         <WorkflowHeader
           onBack={goToAnalyze}
           disableForward={true}
-          subtitle={language === "ko" ? "컴포즈 영상 생성 중..." : "Creating Compose Video..."}
+          subtitle={language === "ko" ? "패스트 컷 영상 생성 중..." : "Creating Fast Cut Video..."}
         />
-        {/* Inline Compose Flow - has its own step navigation */}
-        <InlineComposeFlow
+        {/* Inline Fast Cut Flow - has its own step navigation */}
+        <InlineFastCutFlow
           campaignId={selectedCampaignId}
           campaignName={selectedCampaignName}
-          onBack={() => setShowComposeFlow(false)}
+          onBack={() => setShowFastCutFlow(false)}
         />
       </div>
       </TooltipProvider>

@@ -69,11 +69,11 @@ const workflowSteps: WorkflowStep[] = [
     isComplete: (campaign) => (campaign.video_count ?? 0) > 0,
   },
   {
-    id: "compose",
-    name: "Compose Video",
+    id: "fast-cut",
+    name: "Fast Cut",
     description: "Build video from images + audio",
     icon: Wand2,
-    href: (id) => `/campaigns/${id}/compose`,
+    href: (id) => `/campaigns/${id}/fast-cut`,
     isComplete: () => false, // Will be tracked separately
   },
   {
@@ -136,7 +136,7 @@ export function CampaignSidebar({ className }: CampaignSidebarProps) {
   // Determine current workflow step
   const getCurrentStep = () => {
     if (pathname?.includes("/generate")) return "generate";
-    if (pathname?.includes("/compose")) return "compose";
+    if (pathname?.includes("/fast-cut")) return "fast-cut";
     if (pathname?.includes("/pipeline")) return "pipeline";
     if (pathname?.includes("/curation")) return "curate";
     if (pathname?.includes("/publish")) return "publish";

@@ -72,7 +72,7 @@ const workflowItems: NavItem[] = [
     name: { ko: "생성", en: "Create" },
     href: "/create",
     icon: Sparkles,
-    description: { ko: "AI 영상 또는 컴포즈 영상 생성", en: "Generate AI or compose videos" },
+    description: { ko: "AI 영상 또는 패스트 컷 영상 생성", en: "Generate AI or fast cut videos" },
     isWorkflow: true,
   },
   {
@@ -111,7 +111,7 @@ const secondaryItems: NavItem[] = [
         name: { ko: "모든 영상", en: "All Videos" },
         href: "/videos",
         icon: Video,
-        description: { ko: "AI 및 컴포즈 영상", en: "AI and Compose videos" },
+        description: { ko: "AI 및 패스트컷 영상", en: "AI and Fast Cut videos" },
       },
       {
         name: { ko: "에셋 관리", en: "Assets" },

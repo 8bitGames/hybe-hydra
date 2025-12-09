@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { TikTokSEO } from "@/lib/compose-api";
+import { TikTokSEO } from "@/lib/fast-cut-api";
 import { Copy, Check, Edit2, ChevronDown, ChevronUp, Search, Hash, Clock, Target } from "lucide-react";
 
 interface TikTokSEOPreviewProps {

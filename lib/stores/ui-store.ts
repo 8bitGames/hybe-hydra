@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type CreateMode = "quick" | "generate" | "compose" | "batch";
-export type CampaignTab = "assets" | "create" | "generate" | "compose" | "videos" | "publish" | "analytics" | "info";
+export type CreateMode = "quick" | "generate" | "fastCut" | "batch";
+export type CampaignTab = "assets" | "create" | "generate" | "fast-cut" | "videos" | "publish" | "analytics" | "info";
 export type Language = "ko" | "en";
 
 interface UIState {

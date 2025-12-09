@@ -63,7 +63,7 @@ interface GenerateIdeasRequest {
 
 interface ContentIdea {
   id: string;
-  type: "ai_video" | "compose";
+  type: "ai_video" | "fast-cut";
   title: string;
   hook: string;
   description: string;

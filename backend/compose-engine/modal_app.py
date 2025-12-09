@@ -98,7 +98,7 @@ def send_callback(callback_url: str, callback_secret: str, job_id: str, status: 
     timeout=600,  # 10 minutes max per video
     memory=16384,  # 16GB RAM for parallel processing
     cpu=8.0,  # 8 CPU cores for parallel image/audio processing
-    secrets=[modal.Secret.from_name("aws-s3-secret")],
+    secrets=[modal.Secret.from_name("aws-s3-secret"), modal.Secret.from_name("custom-secret")],
     retries=2,  # Auto-retry on failure
     scaledown_window=300,  # Keep container warm for 5 minutes (faster cold starts)
     volumes={"/cache": cache_volume},  # Persistent cache for audio/image analysis
@@ -199,7 +199,7 @@ def render_video(request_data: dict) -> dict:
     timeout=600,
     memory=4096,  # 4GB RAM for CPU rendering
     cpu=4.0,  # More CPU cores for parallel processing
-    secrets=[modal.Secret.from_name("aws-s3-secret")],
+    secrets=[modal.Secret.from_name("aws-s3-secret"), modal.Secret.from_name("custom-secret")],
     retries=2,
     scaledown_window=300,  # Keep container warm for 5 minutes
     volumes={"/cache": cache_volume},
@@ -289,7 +289,7 @@ def render_video_cpu(request_data: dict) -> dict:
 # ============================================================================
 
 @app.function(
-    secrets=[modal.Secret.from_name("aws-s3-secret")],
+    secrets=[modal.Secret.from_name("aws-s3-secret"), modal.Secret.from_name("custom-secret")],
 )
 @modal.fastapi_endpoint(method="POST")
 def submit_render(request_data: dict):
@@ -513,7 +513,7 @@ def collect_trends_endpoint(request_data: dict):
     timeout=300,  # 5 minutes max
     memory=4096,  # 4GB RAM
     cpu=2.0,
-    secrets=[modal.Secret.from_name("aws-s3-secret")],
+    secrets=[modal.Secret.from_name("aws-s3-secret"), modal.Secret.from_name("custom-secret")],
     retries=2,
     scaledown_window=120,
 )
@@ -1048,7 +1048,7 @@ def get_media_duration(request_data: dict) -> dict:
 # Consolidated into a single endpoint to save on web endpoint quota (limit: 8)
 
 @app.function(
-    secrets=[modal.Secret.from_name("aws-s3-secret")],
+    secrets=[modal.Secret.from_name("aws-s3-secret"), modal.Secret.from_name("custom-secret")],
 )
 @modal.fastapi_endpoint(method="POST")
 def audio_endpoint(request_data: dict):

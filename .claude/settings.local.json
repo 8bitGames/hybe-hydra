@@ -71,7 +71,14 @@
       "Bash(npx eslint:*)",
       "Bash(npx tsx:*)",
       "Bash(git -C \"e:/Github/hybe-hydra\" diff --stat)",
-      "Bash(git -C \"e:/Github/hybe-hydra\" add -A)"
+      "Bash(git -C \"e:/Github/hybe-hydra\" add -A)",
+      "Bash(git -C \"e:/Github/hybe-hydra\" commit -m \"$(cat <<''EOF''\nfeat: Campaign refactoring, compose flow improvements, and artist management\n\n## Campaign Pages\n- Refactor campaign detail page with better data fetching\n- Simplify analytics page structure\n- Improve info page layout\n- Add assets page for campaign media management\n\n## Compose Flow\n- Enhance script, image, music, and effect steps\n- Improve InlineComposeFlow with better state management\n- Refactor PersonalizePromptModal for cleaner code\n\n## Artist Management\n- Add artist settings page (settings/artists)\n- Replace AddArtistModal with new ArtistModal component\n- Add artist CRUD API endpoints\n\n## UI Components\n- Add inline-tag-input component\n- Add keyword-input-popover component\n\n## Backend\n- Update compose-engine effects registry\n- Improve video renderer service\n- Enhance slideshow renderer engine\n\n## Other\n- Update i18n translations (ko/en)\n- Add generate-image-prompt API\n- Improve Google search integration\n- Update workflow store and queries\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git -C \"e:/Github/hybe-hydra\" log --oneline -5)",
+      "Bash(PYTHONIOENCODING=utf-8 PYTHONUTF8=1 cd:*)",
+      "Bash(modal app:*)",
+      "Bash(modal secret:*)",
+      "Bash(set PYTHONUTF8=1)",
+      "Bash(PYTHONIOENCODING=utf-8 PYTHONUTF8=1 modal deploy:*)"
     ],
     "deny": [],
     "ask": []

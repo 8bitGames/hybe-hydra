@@ -43,6 +43,12 @@ const statusVariants: Record<string, "default" | "secondary" | "outline" | "dest
   archived: "outline",
 };
 
+// Convert kebab-case tab id to camelCase for translation lookup
+const getTabTranslationKey = (tabId: CampaignTab): string => {
+  if (tabId === "fast-cut") return "fastCut";
+  return tabId;
+};
+
 const statusLabels: Record<string, { ko: string; en: string }> = {
   draft: { ko: "초안", en: "Draft" },
   active: { ko: "활성", en: "Active" },
@@ -328,7 +334,7 @@ export default function CampaignWorkspaceLayout({
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = currentTab === tab.id;
-            const label = t.campaignWorkspace.tabs[tab.id];
+            const label = t.campaignWorkspace.tabs[getTabTranslationKey(tab.id) as keyof typeof t.campaignWorkspace.tabs];
 
             return (
               <button

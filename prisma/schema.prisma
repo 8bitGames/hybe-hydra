@@ -788,6 +788,52 @@ model TikTokVideoAnalysisCache {
 }
 
 // =====================================================
+// GENERATED PREVIEW IMAGES (Imagen AI)
+// =====================================================
+
+// Generated Preview Image - stores AI-generated preview images from Imagen for I2V workflow
+model GeneratedPreviewImage {
+  id        String @id @default(uuid())
+  previewId String @unique @map("preview_id") // UUID generated during creation
+
+  // Image storage
+  imageUrl String  @map("image_url") // S3 URL of the final image
+  s3Key    String  @map("s3_key") // S3 object key
+
+  // Generation context
+  videoPrompt       String  @map("video_prompt") // Main scene description (Veo3 prompt)
+  imageDescription  String  @map("image_description") // Product/object focus description
+  geminiImagePrompt String  @map("gemini_image_prompt") // Optimized prompt used for Imagen
+  aspectRatio       String  @default("9:16") @map("aspect_ratio") // 9:16, 16:9, 1:1
+  style             String? // Optional style modifier
+  negativePrompt    String? @map("negative_prompt") // What to avoid
+
+  // Composition mode
+  compositionMode  String  @default("direct") @map("composition_mode") // "direct" | "two_step"
+  compositePrompt  String? @map("composite_prompt") // For two_step mode
+  sceneImageUrl    String? @map("scene_image_url") // For two_step mode - intermediate scene
+  sceneImageS3Key  String? @map("scene_image_s3_key")
+  productImageUrl  String? @map("product_image_url") // Reference product image URL
+  handPose         String? @map("hand_pose") // For two_step mode - how hands hold product
+
+  // Relations
+  userId     String  @map("user_id")
+  campaignId String? @map("campaign_id") // Optional - null if created from /create page
+
+  // Used in video generation
+  usedInGenerationId String? @map("used_in_generation_id") // Link to VideoGeneration if used
+
+  // Metadata
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([campaignId])
+  @@index([createdAt])
+  @@index([usedInGenerationId])
+  @@map("generated_preview_images")
+}
+
+// =====================================================
 // IMAGE CACHING SYSTEM
 // =====================================================
 

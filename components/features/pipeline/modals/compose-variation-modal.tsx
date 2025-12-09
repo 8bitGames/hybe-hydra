@@ -44,7 +44,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { SocialAccount } from "@/lib/publishing-api";
 import { useI18n } from "@/lib/i18n";
-import { ComposePipelineMetadata } from "../types";
+import { FastCutPipelineMetadata } from "../types";
 
 // Effect presets for compose variations
 const EFFECT_PRESETS = [
@@ -141,7 +141,7 @@ interface ComposeVariationModalProps {
       original_filename: string;
     } | null;
   } | null;
-  metadata?: ComposePipelineMetadata;
+  metadata?: FastCutPipelineMetadata;
   onCreateVariations: (config: ComposeVariationConfig) => Promise<void>;
   isCreating: boolean;
   socialAccounts?: SocialAccount[];

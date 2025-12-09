@@ -2,7 +2,7 @@ import { api } from "./api";
 import { VideoGeneration, VideoGenerationType, VideoGenerationStatus, VideoGenerationList } from "./video-api";
 
 // Pipeline type for filtering
-export type PipelineType = "ai" | "compose";
+export type PipelineType = "ai" | "fast-cut";
 
 // Pipeline Types
 export interface PipelineItem {
@@ -85,7 +85,7 @@ export const pipelineApi = {
       // Handle both AI variations and compose variations
       if (batchId && (variationType === "variation" || variationType === "compose_variation")) {
         // Determine pipeline type from variationType
-        const pipelineType: PipelineType = variationType === "compose_variation" ? "compose" : "ai";
+        const pipelineType: PipelineType = variationType === "compose_variation" ? "fast-cut" : "ai";
 
         // Skip if type filter is applied and doesn't match
         if (typeFilter && pipelineType !== typeFilter) {
@@ -168,9 +168,9 @@ export const pipelineApi = {
     return pipelineApi.list(campaignId, "ai");
   },
 
-  // List only Compose pipelines for a campaign
-  listCompose: async (campaignId: string): Promise<PipelineListResponse> => {
-    return pipelineApi.list(campaignId, "compose");
+  // List only Fast Cut pipelines for a campaign
+  listFastCut: async (campaignId: string): Promise<PipelineListResponse> => {
+    return pipelineApi.list(campaignId, "fast-cut");
   },
 
   // List all pipelines across all campaigns with optional type filter
@@ -207,9 +207,9 @@ export const pipelineApi = {
     return pipelineApi.listAll(campaignIds, campaignNames, "ai");
   },
 
-  // List all Compose pipelines across all campaigns
-  listAllCompose: async (campaignIds: string[], campaignNames?: Record<string, string>): Promise<PipelineListResponse> => {
-    return pipelineApi.listAll(campaignIds, campaignNames, "compose");
+  // List all Fast Cut pipelines across all campaigns
+  listAllFastCut: async (campaignIds: string[], campaignNames?: Record<string, string>): Promise<PipelineListResponse> => {
+    return pipelineApi.listAll(campaignIds, campaignNames, "fast-cut");
   },
 
   // Get pipeline detail with all variations
@@ -245,7 +245,7 @@ export const pipelineApi = {
     const firstVariation = response.data.variations[0];
     const metadata = firstVariation?.generation?.quality_metadata as Record<string, unknown> | null;
     const variationType = metadata?.variationType as string | undefined;
-    const pipelineType: PipelineType = variationType === "compose_variation" ? "compose" : "ai";
+    const pipelineType: PipelineType = variationType === "compose_variation" ? "fast-cut" : "ai";
 
     return {
       ...response.data,

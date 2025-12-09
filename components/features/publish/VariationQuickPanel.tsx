@@ -56,7 +56,7 @@ export function VariationQuickPanel({
         >
           <Film className="w-4 h-4 mb-1" />
           <span className="text-xs font-medium">
-            {t.publish.variation.composeVariation}
+            {t.publish.variation.fastCutVariation}
           </span>
           <span className="text-[10px] text-neutral-500">
             {t.publish.variation.musicEffects}

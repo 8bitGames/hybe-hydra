@@ -45,6 +45,8 @@ import {
   Calendar,
   Zap,
   Hash,
+  Image,
+  Download,
 } from "lucide-react";
 
 // Types
@@ -137,6 +139,7 @@ interface WorkspaceData {
     tags: string[];
     duration_seconds: number;
     aspect_ratio: string;
+    image_assets: Array<{ id: string; url: string; keyword: string; sortOrder: number }> | null;
     reference_image: { id: string; s3_url: string; thumbnail_url: string | null } | null;
     merchandise_refs: Array<{
       context: string;
@@ -159,6 +162,23 @@ interface WorkspaceData {
     comment_count: number | null;
     share_count: number | null;
     engagement_rate: number | null;
+    created_at: string;
+  }>;
+  preview_images: Array<{
+    id: string;
+    preview_id: string;
+    image_url: string;
+    video_prompt: string;
+    image_description: string;
+    gemini_image_prompt: string;
+    aspect_ratio: string;
+    style: string | null;
+    composition_mode: string;
+    composite_prompt: string | null;
+    scene_image_url: string | null;
+    product_image_url: string | null;
+    hand_pose: string | null;
+    used_in_generation_id: string | null;
     created_at: string;
   }>;
 }
@@ -336,7 +356,7 @@ export default function CampaignAnalyticsPage() {
     );
   }
 
-  const { campaign, stats, timeline, prompts, trends, reference_urls, generations, publishing } = data;
+  const { campaign, stats, timeline, prompts, trends, reference_urls, generations, publishing, preview_images } = data;
 
   // Filter generations based on search and status
   const filteredGenerations = generations.filter((gen) => {
@@ -438,7 +458,7 @@ export default function CampaignAnalyticsPage() {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="timeline" className="flex items-center gap-2">
             <History className="h-4 w-4" />
             <span className="hidden sm:inline">{t.workspace.timeline}</span>
@@ -450,6 +470,10 @@ export default function CampaignAnalyticsPage() {
           <TabsTrigger value="references" className="flex items-center gap-2">
             <Link2 className="h-4 w-4" />
             <span className="hidden sm:inline">{t.workspace.references}</span>
+          </TabsTrigger>
+          <TabsTrigger value="images" className="flex items-center gap-2">
+            <Image className="h-4 w-4" />
+            <span className="hidden sm:inline">{t.workspace.images}</span>
           </TabsTrigger>
           <TabsTrigger value="gallery" className="flex items-center gap-2">
             <LayoutGrid className="h-4 w-4" />
@@ -752,6 +776,118 @@ export default function CampaignAnalyticsPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* Images Tab - AI Generated Preview Images */}
+        <TabsContent value="images" className="mt-6">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5" />
+                    {t.workspace.generatedImages}
+                  </CardTitle>
+                  <CardDescription>{t.workspace.previewImagesForI2V}</CardDescription>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>{preview_images?.length || 0} {t.workspace.totalImages}</span>
+                  {preview_images?.filter(p => p.used_in_generation_id).length > 0 && (
+                    <Badge variant="secondary">
+                      {preview_images?.filter(p => p.used_in_generation_id).length} {t.workspace.usedInVideos}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!preview_images || preview_images.length === 0 ? (
+                <div className="text-center py-12">
+                  <Sparkles className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">{t.workspace.noPreviewImages}</p>
+                  <p className="text-sm text-muted-foreground mt-2">{t.workspace.generatePreviewFirst}</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {preview_images.map((img) => (
+                    <div
+                      key={img.id}
+                      className="group relative bg-muted rounded-lg overflow-hidden border hover:border-primary/50 transition-colors"
+                    >
+                      <div className="aspect-[9/16] relative">
+                        <img
+                          src={img.image_url}
+                          alt={img.image_description}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                        {/* Composition mode badge */}
+                        <Badge
+                          variant={img.composition_mode === "two_step" ? "default" : "secondary"}
+                          className="absolute top-2 left-2 text-[10px]"
+                        >
+                          {img.composition_mode === "two_step" ? "2-Step" : "Direct"}
+                        </Badge>
+                        {/* Used in video badge */}
+                        {img.used_in_generation_id && (
+                          <Badge className="absolute top-2 right-2 text-[10px] bg-green-600">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            {t.workspace.usedInVideo}
+                          </Badge>
+                        )}
+                        {/* Aspect ratio badge */}
+                        <Badge
+                          variant="outline"
+                          className="absolute bottom-2 right-2 text-[10px] bg-black/50 text-white border-0"
+                        >
+                          {img.aspect_ratio}
+                        </Badge>
+                        {/* Hover overlay with details */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="absolute bottom-0 left-0 right-0 p-3 space-y-1">
+                            <p className="text-white text-xs line-clamp-2">{img.video_prompt}</p>
+                            {img.style && (
+                              <Badge variant="outline" className="text-[10px] text-white border-white/50">
+                                {img.style}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        {/* Download button on hover */}
+                        <a
+                          href={img.image_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="absolute top-10 right-2 p-1.5 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Download className="h-3 w-3 text-white" />
+                        </a>
+                      </div>
+                      <div className="p-3">
+                        <p className="text-xs text-muted-foreground line-clamp-2 mb-1" title={img.image_description}>
+                          {img.image_description}
+                        </p>
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                          <span>{formatDate(img.created_at)}</span>
+                          {img.scene_image_url && (
+                            <a
+                              href={img.scene_image_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline"
+                            >
+                              {t.workspace.viewScene}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Gallery Tab */}

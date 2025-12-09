@@ -20,7 +20,7 @@ import {
 } from "./campaigns-api";
 import { videoApi, VideoGeneration, VideoGenerationList, VideoGenerationStatus, VideoGenerationType } from "./video-api";
 import { pipelineApi, PipelineItem, PipelineListResponse } from "./pipeline-api";
-import { composeApi, ComposedVideo, ComposedVideosResponse } from "./compose-api";
+import { fastCutApi, FastCutVideo, FastCutVideosResponse } from "./fast-cut-api";
 
 // Query Keys
 export const queryKeys = {
@@ -55,12 +55,12 @@ export const queryKeys = {
 
   // Pipelines
   pipelines: ["pipelines"] as const,
-  pipelinesList: (type?: "ai" | "compose" | "all") => ["pipelines", "list", type] as const,
+  pipelinesList: (type?: "ai" | "fast-cut" | "all") => ["pipelines", "list", type] as const,
 
-  // Compose Gallery
-  composeVideos: ["compose", "videos"] as const,
-  composeVideosList: (params?: { page?: number; page_size?: number; campaign_id?: string }) =>
-    ["compose", "videos", "list", params] as const,
+  // Fast Cut Gallery
+  fastCutVideos: ["fast-cut", "videos"] as const,
+  fastCutVideosList: (params?: { page?: number; page_size?: number; campaign_id?: string }) =>
+    ["fast-cut", "videos", "list", params] as const,
 
   // Trends
   trends: ["trends"] as const,
@@ -558,7 +558,7 @@ export function usePerformanceStats() {
 // Pipelines - fetches all pipelines across campaigns
 export function usePipelines(
   campaigns: Array<{ id: string; name: string }>,
-  options?: { type?: "ai" | "compose" | "all"; refetchInterval?: number }
+  options?: { type?: "ai" | "fast-cut" | "all"; refetchInterval?: number }
 ) {
   const campaignIds = campaigns.map((c) => c.id);
   const campaignNames = campaigns.reduce((acc, c) => {
@@ -601,7 +601,7 @@ export function useSeedCandidates(campaigns: Array<{ id: string; name: string }>
             });
             if (response.data) {
               return response.data.items
-                .filter((video) => !video.id.startsWith("compose-"))
+                .filter((video) => !video.id.startsWith("fast-cut-"))
                 .map((video) => ({
                   ...video,
                   campaign_name: campaignNames[campaign.id],
@@ -624,10 +624,10 @@ export function useSeedCandidates(campaigns: Array<{ id: string; name: string }>
   });
 }
 
-// Compose Candidates - completed compose videos for creating variations
-export function useComposeCandidates(campaigns: Array<{ id: string; name: string }>) {
+// Fast Cut Candidates - completed fast cut videos for creating variations
+export function useFastCutCandidates(campaigns: Array<{ id: string; name: string }>) {
   return useQuery({
-    queryKey: ["seeds", "compose"],
+    queryKey: ["seeds", "fast-cut"],
     queryFn: async () => {
       if (campaigns.length === 0) return [];
 
@@ -645,11 +645,11 @@ export function useComposeCandidates(campaigns: Array<{ id: string; name: string
             });
             if (response.data) {
               return response.data.items
-                .filter((video) => video.id.startsWith("compose-"))
+                .filter((video) => video.id.startsWith("fast-cut-"))
                 .map((video) => ({
                   ...video,
                   campaign_name: campaignNames[campaign.id],
-                  video_type: "compose" as const,
+                  video_type: "fast-cut" as const,
                 }));
             }
             return [];
@@ -668,16 +668,16 @@ export function useComposeCandidates(campaigns: Array<{ id: string; name: string
   });
 }
 
-// Compose Gallery - all composed videos
-export function useComposeVideos(params?: {
+// Fast Cut Gallery - all fast cut videos
+export function useFastCutVideos(params?: {
   page?: number;
   page_size?: number;
   campaign_id?: string;
 }) {
   return useQuery({
-    queryKey: queryKeys.composeVideosList(params),
+    queryKey: queryKeys.fastCutVideosList(params),
     queryFn: async () => {
-      return composeApi.getComposedVideos(params);
+      return fastCutApi.getFastCutVideos(params);
     },
     staleTime: 60 * 1000, // 1 minute
   });
@@ -697,7 +697,7 @@ export interface AllVideoItem {
   composed_output_url: string | null;
   created_at: string;
   updated_at: string;
-  generation_type: "AI" | "COMPOSE";
+  generation_type: "AI" | "FAST_CUT";
   quality_score: number | null;
 }
 
@@ -1133,8 +1133,8 @@ export function useInvalidateQueries() {
       queryClient.invalidateQueries({ queryKey: queryKeys.videos(campaignId) }),
     invalidatePipelines: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines }),
-    invalidateComposeVideos: () =>
-      queryClient.invalidateQueries({ queryKey: queryKeys.composeVideos }),
+    invalidateFastCutVideos: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.fastCutVideos }),
     invalidateTrends: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.trends }),
     invalidateTrendingVideos: () =>

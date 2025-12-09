@@ -45,7 +45,7 @@ interface ContextData {
     title: string;
     description: string;
     hook?: string;
-    type: "ai_video" | "compose";
+    type: "ai_video" | "fast-cut";
     optimizedPrompt?: string;
   } | null;
   hashtags: string[];

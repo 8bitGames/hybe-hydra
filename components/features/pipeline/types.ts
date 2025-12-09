@@ -61,8 +61,8 @@ export interface AIPipelineMetadata {
   promptModifications: string[];
 }
 
-// Compose Pipeline specific metadata
-export interface ComposePipelineMetadata {
+// Fast Cut Pipeline specific metadata
+export interface FastCutPipelineMetadata {
   scriptData?: {
     scenes: number;
     duration: number;
@@ -83,9 +83,9 @@ export interface AIPipelineItem extends PipelineItem {
   metadata?: AIPipelineMetadata;
 }
 
-export interface ComposePipelineItem extends PipelineItem {
-  type: "compose";
-  metadata?: ComposePipelineMetadata;
+export interface FastCutPipelineItem extends PipelineItem {
+  type: "fast-cut";
+  metadata?: FastCutPipelineMetadata;
 }
 
 // Variation item base type

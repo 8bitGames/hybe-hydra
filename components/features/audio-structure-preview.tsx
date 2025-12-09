@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import { AudioMatch, ScriptLine } from "@/lib/compose-api";
+import { AudioMatch, ScriptLine } from "@/lib/fast-cut-api";
 
 interface AudioStructurePreviewProps {
   audio: AudioMatch;

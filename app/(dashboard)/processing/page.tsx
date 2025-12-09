@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useCampaigns } from "@/lib/queries";
 import { videoApi, VideoGeneration } from "@/lib/video-api";
-import { composeApi } from "@/lib/compose-api";
+import { fastCutApi } from "@/lib/fast-cut-api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWorkflowSync, useWorkflowNavigation } from "@/lib/hooks/useWorkflowNavigation";
 import { useWorkflowStore, ProcessingVideo, useWorkflowHydrated } from "@/lib/stores/workflow-store";
@@ -296,7 +296,7 @@ function VideoDetailModal({
                   {status.label}
                 </Badge>
                 <Badge variant="outline" className="text-xs">
-                  {video.generationType === "AI" ? "AI Generated" : "Compose"}
+                  {video.generationType === "AI" ? "AI Generated" : "Fast Cut"}
                 </Badge>
               </div>
               <Button variant="ghost" size="icon" onClick={onClose} className="text-neutral-500 hover:text-neutral-900">
@@ -720,7 +720,7 @@ function ProcessingVideoCard({
           {/* Type Badge */}
           <div className="absolute top-2 left-2">
             <Badge variant="secondary" className="bg-black/60 text-white border-0 text-[10px]">
-              {video.generationType === "AI" ? "AI" : "Compose"}
+              {video.generationType === "AI" ? "AI" : "Fast Cut"}
             </Badge>
           </div>
 
@@ -923,8 +923,8 @@ export default function ProcessingPage() {
           return true;
         })
         .map((gen: VideoGeneration & { campaign_name?: string }) => {
-          // Determine if it's a compose video
-          const isCompose = gen.id.startsWith("compose-") || !!gen.composed_output_url;
+          // Determine if it's a fast-cut video (compose- or fastcut- prefix)
+          const isCompose = gen.id.startsWith("compose-") || gen.id.startsWith("fastcut-") || !!gen.composed_output_url;
 
           // Map status
           let status: ProcessingVideo["status"] = "processing";
@@ -1008,7 +1008,7 @@ export default function ProcessingPage() {
     const pollStatus = async () => {
       for (const video of processingComposeVideos) {
         try {
-          const status = await composeApi.getRenderStatus(video.generationId);
+          const status = await fastCutApi.getRenderStatus(video.generationId);
           console.log(`[Processing] Compose ${video.id} status:`, status.status, status.progress);
 
           // If status changed to completed or failed, trigger a refetch
@@ -1097,7 +1097,7 @@ export default function ProcessingPage() {
       await refetchGenerations();
       // Invalidate video caches so /videos page shows updated data
       queryClient.invalidateQueries({ queryKey: ["all-videos"] });
-      queryClient.invalidateQueries({ queryKey: ["compose", "videos"] });
+      queryClient.invalidateQueries({ queryKey: ["fast-cut", "videos"] });
       setSelectedVideo(null);
     } catch (error) {
       console.error('Delete failed:', error);
@@ -1168,7 +1168,7 @@ export default function ProcessingPage() {
     refetchGenerations();
     // Invalidate video caches so /videos page shows updated data
     queryClient.invalidateQueries({ queryKey: ["all-videos"] });
-    queryClient.invalidateQueries({ queryKey: ["compose", "videos"] });
+    queryClient.invalidateQueries({ queryKey: ["fast-cut", "videos"] });
   }, [selectedVideos, removeProcessingVideo, setSelectedProcessingVideos, refetchGenerations, queryClient]);
 
   const handleBulkRetry = useCallback(async () => {

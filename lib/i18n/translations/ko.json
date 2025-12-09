@@ -574,6 +574,7 @@
     "totalLikes": "총 좋아요",
     "timeline": "타임라인",
     "references": "참조",
+    "images": "이미지",
     "gallery": "갤러리",
     "publishing": "게시",
     "workHistory": "작업 기록",
@@ -618,7 +619,17 @@
     "trendsApplied": "적용된 트렌드",
     "referenceImage": "참조 이미지",
     "merchandise": "상품",
-    "generateSimilar": "유사 생성"
+    "generateSimilar": "유사 생성",
+    "generatedImages": "AI 생성 이미지",
+    "imagesUsedInVideos": "비디오 생성에 사용된 이미지",
+    "noImagesYet": "아직 이미지가 없습니다",
+    "previewImagesForI2V": "I2V 워크플로우용 AI 생성 프리뷰 이미지",
+    "totalImages": "개 이미지",
+    "usedInVideos": "개 영상에 사용됨",
+    "noPreviewImages": "아직 AI 생성 이미지가 없습니다",
+    "generatePreviewFirst": "영상 생성 전에 이미지를 먼저 생성해보세요",
+    "usedInVideo": "사용됨",
+    "viewScene": "씬 보기"
   },
   "generation": {
     "status": {

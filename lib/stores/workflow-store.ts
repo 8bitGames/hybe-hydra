@@ -157,7 +157,7 @@ export interface DiscoverData {
 // Analyze Stage Types
 export interface ContentIdea {
   id: string;
-  type: "ai_video" | "compose";
+  type: "ai_video" | "fast-cut";
   title: string;
   hook: string;
   description: string;
@@ -210,12 +210,12 @@ export interface GeneratedVideo {
 }
 
 export interface CreateData {
-  creationType: "ai" | "compose" | null;
+  creationType: "ai" | "fast-cut" | null;
   generations: GeneratedVideo[];
   selectedGenerations: string[]; // IDs
   pipelineStatus: {
     id: string;
-    type: "ai" | "compose";
+    type: "ai" | "fast-cut";
     status: "queued" | "processing" | "completed" | "failed";
     progress: number;
     estimatedTimeRemaining?: number;
@@ -404,7 +404,7 @@ interface WorkflowState {
   setAnalyzeHashtags: (hashtags: string[]) => void;
 
   // Actions - Create
-  setCreateType: (type: "ai" | "compose" | null) => void;
+  setCreateType: (type: "ai" | "fast-cut" | null) => void;
   addGeneration: (generation: GeneratedVideo) => void;
   updateGeneration: (id: string, updates: Partial<GeneratedVideo>) => void;
   removeGeneration: (id: string) => void;
@@ -1102,7 +1102,7 @@ export const useWorkflowStore = create<WorkflowState>()(
             ) as WorkflowStage[],
             create: {
               ...state.create,
-              creationType: state.analyze.selectedIdea?.type === "ai_video" ? "ai" : "compose",
+              creationType: state.analyze.selectedIdea?.type === "ai_video" ? "ai" : "fast-cut",
             },
           });
         },

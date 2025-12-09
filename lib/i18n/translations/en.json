@@ -574,6 +574,7 @@
     "totalLikes": "Total Likes",
     "timeline": "Timeline",
     "references": "References",
+    "images": "Images",
     "gallery": "Gallery",
     "publishing": "Publishing",
     "workHistory": "Work History",
@@ -618,7 +619,17 @@
     "trendsApplied": "Trends Applied",
     "referenceImage": "Reference Image",
     "merchandise": "Merchandise",
-    "generateSimilar": "Generate Similar"
+    "generateSimilar": "Generate Similar",
+    "generatedImages": "AI Generated Images",
+    "imagesUsedInVideos": "Images used in video generation",
+    "noImagesYet": "No images yet",
+    "previewImagesForI2V": "AI-generated preview images for I2V workflow",
+    "totalImages": "images",
+    "usedInVideos": "used in videos",
+    "noPreviewImages": "No AI generated images yet",
+    "generatePreviewFirst": "Generate preview images before video generation",
+    "usedInVideo": "Used",
+    "viewScene": "View Scene"
   },
   "generation": {
     "status": {

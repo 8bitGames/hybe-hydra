@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     const result = await generatePreviewImage(
       input,
-      { type: "user", id: user.id },
+      { type: "user", id: user.id, userId: user.id },
       "[Preview Image AI]"
     );
 
@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       preview_id: result.preview_id,
+      database_id: result.database_id,
       image_url: result.image_url,
       image_base64: result.image_base64,
       gemini_image_prompt: result.gemini_image_prompt,

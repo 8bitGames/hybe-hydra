@@ -3,8 +3,8 @@
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
-import { useComposeVideos, useAllAIVideos, AllVideoItem } from "@/lib/queries";
-import { ComposedVideo } from "@/lib/compose-api";
+import { useFastCutVideos, useAllAIVideos, AllVideoItem } from "@/lib/queries";
+import { FastCutVideo } from "@/lib/fast-cut-api";
 import {
   Card,
   CardContent,
@@ -60,7 +60,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { VideoGeneration as FullVideoGeneration } from "@/lib/video-api";
 
-type VideoType = "all" | "ai" | "compose";
+type VideoType = "all" | "ai" | "fast-cut";
 
 export default function AllVideosPage() {
   const router = useRouter();
@@ -81,8 +81,8 @@ export default function AllVideosPage() {
   const [deleteVideoId, setDeleteVideoId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Fetch compose videos with pagination
-  const { data: composeData, isLoading: loadingCompose, refetch: refetchCompose } = useComposeVideos({
+  // Fetch fast-cut videos with pagination
+  const { data: composeData, isLoading: loadingCompose, refetch: refetchCompose } = useFastCutVideos({
     page,
     page_size: pageSize,
   });
@@ -104,7 +104,7 @@ export default function AllVideosPage() {
     createNew: language === "ko" ? "새 영상 만들기" : "Create New Video",
     all: language === "ko" ? "전체" : "All",
     ai: language === "ko" ? "AI 영상" : "AI Videos",
-    compose: language === "ko" ? "컴포즈" : "Compose",
+    fastCut: language === "ko" ? "패스트 컷" : "Fast Cut",
     searchPlaceholder: language === "ko" ? "프롬프트, 캠페인명으로 검색..." : "Search by prompt, campaign...",
     noVideos: language === "ko" ? "영상을 찾을 수 없습니다" : "No videos found",
     createFirst: language === "ko" ? "영상 생성을 시작해보세요" : "Start generating videos to see them here",
@@ -129,7 +129,7 @@ export default function AllVideosPage() {
     status: language === "ko" ? "상태" : "Status",
     qualityScore: language === "ko" ? "품질 점수" : "Quality Score",
     generationType: language === "ko" ? "생성 타입" : "Generation Type",
-    composeVideo: language === "ko" ? "컴포즈 영상" : "Compose Video",
+    fastCutVideo: language === "ko" ? "패스트 컷 영상" : "Fast Cut Video",
     aiVideo: language === "ko" ? "AI 영상" : "AI Video",
     audio: language === "ko" ? "오디오" : "Audio",
     filename: language === "ko" ? "파일명" : "Filename",
@@ -357,9 +357,9 @@ export default function AllVideosPage() {
                 {t.ai}
                 <Badge variant="secondary" className="ml-1">{aiTotal}</Badge>
               </TabsTrigger>
-              <TabsTrigger value="compose" className="gap-2">
+              <TabsTrigger value="fast-cut" className="gap-2">
                 <Layers className="h-4 w-4" />
-                {t.compose}
+                {t.fastCut}
                 <Badge variant="secondary" className="ml-1">{composeTotal}</Badge>
               </TabsTrigger>
             </TabsList>
@@ -462,7 +462,7 @@ export default function AllVideosPage() {
                     ) : (
                       <>
                         <Layers className="h-3 w-3 mr-1" />
-                        Compose
+                        Fast Cut
                       </>
                     )}
                   </Badge>
@@ -671,7 +671,7 @@ export default function AllVideosPage() {
                     {isComposeVideo(selectedVideo) ? (
                       <>
                         <Layers className="h-3 w-3 mr-1" />
-                        {t.composeVideo}
+                        {t.fastCutVideo}
                       </>
                     ) : (
                       <>

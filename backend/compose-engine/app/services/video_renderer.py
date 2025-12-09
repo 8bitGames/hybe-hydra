@@ -970,11 +970,18 @@ class VideoRenderer:
             elif bpm < 90:
                 intensity = "low"
 
+        # Detect language from prompt (Korean characters present = ko)
+        import re
+        has_korean = bool(re.search(r'[가-힣]', prompt))
+        language = "ko" if has_korean else "en"
+
         return PromptAnalysis(
             moods=moods,
             genres=genres,
             keywords=prompt.split()[:5],
-            intensity=intensity
+            intensity=intensity,
+            reasoning="Fallback analysis (AI analyzer unavailable)",
+            language=language
         )
 
     def _adjust_script_timings(

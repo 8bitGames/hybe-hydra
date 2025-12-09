@@ -214,7 +214,7 @@ export function TrendVideoActionDialog({
                 <Images className="h-6 w-6" />
                 <div className="text-center">
                   <div className="font-semibold">
-                    {language === "ko" ? "컴포즈 영상" : "Compose Video"}
+                    {language === "ko" ? "패스트 컷 영상" : "Fast Cut Video"}
                   </div>
                   <div className="text-xs opacity-80">
                     {language === "ko" ? "이미지+음악으로 슬라이드쇼" : "Slideshow with images + music"}

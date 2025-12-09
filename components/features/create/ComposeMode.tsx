@@ -76,8 +76,8 @@ interface ComposeModeProps {
 }
 
 /**
- * Compose Mode - Image + Audio slideshow creation
- * 컴포즈 모드 - 이미지 + 오디오 슬라이드쇼 생성
+ * Fast Cut Mode - Image + Audio slideshow creation
+ * 패스트 컷 모드 - 이미지 + 오디오 슬라이드쇼 생성
  */
 export function ComposeMode({ className }: ComposeModeProps) {
   const router = useRouter();
@@ -167,7 +167,7 @@ export function ComposeMode({ className }: ComposeModeProps) {
                   <div className="flex items-center gap-2">
                     <TrendingUp className="h-4 w-4 text-primary" />
                     <span className="font-semibold text-primary">
-                      {pick("트렌드 기반 컴포즈", "Trend-Based Compose")}
+                      {pick("트렌드 기반 패스트 컷", "Trend-Based Fast Cut")}
                     </span>
                     {trendContext.keyword && (
                       <Badge variant="secondary" className="text-xs">
@@ -245,12 +245,12 @@ export function ComposeMode({ className }: ComposeModeProps) {
         <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="text-xl">
-              {pick("컴포즈 영상 생성 방식", "How Compose Video Works")}
+              {pick("패스트 컷 영상 생성 방식", "How Fast Cut Video Works")}
             </CardTitle>
             <CardDescription>
               {pick(
-                "4단계로 컴포즈 영상을 만드세요",
-                "Create Compose videos in 4 simple steps"
+                "4단계로 패스트 컷 영상을 만드세요",
+                "Create Fast Cut videos in 4 simple steps"
               )}
             </CardDescription>
           </CardHeader>
@@ -288,8 +288,8 @@ export function ComposeMode({ className }: ComposeModeProps) {
               </CardTitle>
               <CardDescription>
                 {pick(
-                  "캠페인을 선택하여 에셋에 접근하고 컴포즈 영상을 저장하세요",
-                  "Choose a campaign to access your assets and save the Compose video"
+                  "캠페인을 선택하여 에셋에 접근하고 패스트 컷 영상을 저장하세요",
+                  "Choose a campaign to access your assets and save the Fast Cut video"
                 )}
               </CardDescription>
             </CardHeader>
@@ -310,7 +310,7 @@ export function ComposeMode({ className }: ComposeModeProps) {
                 >
                   <Wand2 className="h-5 w-5 mr-2" />
                   {selectedCampaign
-                    ? pick("컴포즈 시작", "Start Compose")
+                    ? pick("패스트 컷 시작", "Start Fast Cut")
                     : pick("캠페인을 선택하세요", "Select Campaign to Continue")}
                   <ArrowRight className="h-5 w-5 ml-2" />
                 </Button>
@@ -327,7 +327,7 @@ export function ComposeMode({ className }: ComposeModeProps) {
                 </div>
                 <div>
                   <h3 className="font-semibold text-lg mb-2">
-                    {pick("컴포즈 영상을 사용하는 경우", "When to use Compose Video")}
+                    {pick("패스트 컷 영상을 사용하는 경우", "When to use Fast Cut Video")}
                   </h3>
                   <ul className="text-muted-foreground space-y-2">
                     <li className="flex items-start gap-2">

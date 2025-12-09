@@ -39,8 +39,21 @@ import {
 import { cn } from "@/lib/utils";
 import { SaveToCampaignModal } from "./SaveToCampaignModal";
 
+// Helper to get access token from Zustand persisted storage
+function getAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem("hydra-auth-storage");
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    return parsed.state?.accessToken || null;
+  } catch {
+    return null;
+  }
+}
+
 // Video type for Quick Create
-type VideoType = "ai" | "compose";
+type VideoType = "ai" | "fast-cut";
 
 interface QuickCreateModeProps {
   className?: string;
@@ -282,9 +295,9 @@ export function QuickCreateMode({
   const pollComposeStatus = useCallback(async (generationId: string) => {
     const pollInterval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/v1/quick-create/compose/${generationId}`, {
+        const response = await fetch(`/api/v1/quick-create/fast-cut/${generationId}`, {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+            Authorization: `Bearer ${getAccessToken()}`,
           },
         });
 
@@ -346,11 +359,11 @@ export function QuickCreateMode({
     setSavedToCampaign(false);
 
     try {
-      const response = await fetch("/api/v1/quick-create/compose", {
+      const response = await fetch("/api/v1/quick-create/fast-cut", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+          Authorization: `Bearer ${getAccessToken()}`,
         },
         body: JSON.stringify({
           prompt: prompt.trim(),
@@ -360,7 +373,7 @@ export function QuickCreateMode({
 
       if (!response.ok) {
         const error = await response.json();
-        setError(error.detail || "Failed to start compose");
+        setError(error.detail || "Failed to start fast cut");
         setState("failed");
         return;
       }
@@ -526,8 +539,8 @@ export function QuickCreateMode({
     const outputUrl = getCurrentOutputUrl();
     const generationId = getCurrentGenerationId();
 
-    // For Compose video type
-    if (videoType === "compose") {
+    // For Fast Cut video type
+    if (videoType === "fast-cut") {
       return (
         <div className="space-y-4">
           {/* Progress */}
@@ -551,7 +564,7 @@ export function QuickCreateMode({
               <div className="flex items-center justify-center gap-2">
                 <Badge variant="secondary" className="bg-purple-500/10 text-purple-500">
                   <Film className="h-3 w-3 mr-1" />
-                  Compose Video
+                  Fast Cut Video
                 </Badge>
                 <Badge variant="outline">
                   <VolumeX className="h-3 w-3 mr-1" />
@@ -765,18 +778,18 @@ export function QuickCreateMode({
           </button>
           <button
             onClick={() => {
-              setVideoType("compose");
+              setVideoType("fast-cut");
               handleReset();
             }}
             className={cn(
               "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all",
-              videoType === "compose"
+              videoType === "fast-cut"
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
             <Film className="h-4 w-4" />
-            <span>{language === "ko" ? "Compose 영상" : "Compose Video"}</span>
+            <span>{language === "ko" ? "패스트 컷 영상" : "Fast Cut Video"}</span>
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-purple-500/10 text-purple-500">
               {language === "ko" ? "이미지" : "Image"}
             </Badge>
@@ -1028,7 +1041,7 @@ export function QuickCreateMode({
                     ) : (
                       <>
                         <Film className="h-4 w-4 mr-2" />
-                        {language === "ko" ? "Compose 영상 생성" : "Generate Compose Video"}
+                        {language === "ko" ? "패스트 컷 영상 생성" : "Generate Fast Cut Video"}
                       </>
                     )}
                     <ArrowRight className="h-4 w-4 ml-2" />
@@ -1087,7 +1100,7 @@ export function QuickCreateMode({
                 <h2 className="font-semibold text-xl">
                   {videoType === "ai"
                     ? (language === "ko" ? "AI 영상" : "AI Video")
-                    : (language === "ko" ? "Compose 영상" : "Compose Video")}
+                    : (language === "ko" ? "패스트 컷 영상" : "Fast Cut Video")}
                 </h2>
                 <Badge variant="secondary" className="text-xs">
                   {language === "ko" ? "캠페인 불필요" : "No Campaign Required"}

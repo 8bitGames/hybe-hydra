@@ -10,6 +10,7 @@ import { generateImage, convertAspectRatioForImagen, generateTwoStepComposition 
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import type { AgentContext } from "@/lib/agents/types";
 import { uploadToS3 } from "@/lib/storage";
+import { prisma } from "@/lib/db/prisma";
 
 // ============================================================================
 // Types
@@ -38,13 +39,68 @@ export interface PreviewImageResult {
   scene_image_url?: string;
   scene_image_base64?: string;
   composite_prompt?: string;
+  // Database record
+  database_id?: string; // ID of saved GeneratedPreviewImage record
   // Error info
   error?: string;
+}
+
+// ============================================================================
+// Database Operations
+// ============================================================================
+
+interface SavePreviewImageParams {
+  previewId: string;
+  imageUrl: string;
+  s3Key: string;
+  input: PreviewImageInput;
+  geminiImagePrompt: string;
+  compositePrompt?: string;
+  sceneImageUrl?: string;
+  sceneImageS3Key?: string;
+  s3Config: S3PathConfig;
+}
+
+/**
+ * Save generated preview image to database
+ */
+async function savePreviewImageToDatabase(
+  params: SavePreviewImageParams
+): Promise<string | null> {
+  try {
+    const record = await prisma.generatedPreviewImage.create({
+      data: {
+        previewId: params.previewId,
+        imageUrl: params.imageUrl,
+        s3Key: params.s3Key,
+        videoPrompt: params.input.video_prompt,
+        imageDescription: params.input.image_description,
+        geminiImagePrompt: params.geminiImagePrompt,
+        aspectRatio: params.input.aspect_ratio || "9:16",
+        style: params.input.style,
+        negativePrompt: params.input.negative_prompt,
+        compositionMode: params.input.composition_mode || "direct",
+        compositePrompt: params.compositePrompt,
+        sceneImageUrl: params.sceneImageUrl,
+        sceneImageS3Key: params.sceneImageS3Key,
+        productImageUrl: params.input.product_image_url,
+        handPose: params.input.hand_pose,
+        userId: params.s3Config.userId,
+        campaignId: params.s3Config.type === "campaign" ? params.s3Config.id : null,
+      },
+    });
+    console.log(`[Preview Image] Saved to database with ID: ${record.id}`);
+    return record.id;
+  } catch (dbError) {
+    console.error("[Preview Image] Failed to save to database:", dbError);
+    return null;
+  }
 }
 
 export interface S3PathConfig {
   type: "user" | "campaign";
   id: string; // userId or campaignId
+  userId: string; // Always required for database storage
 }
 
 // ============================================================================
@@ -185,10 +241,11 @@ export async function generateDirectPreviewImage(
   // Step 3: Upload to S3
   const filename = `preview-${previewId}.png`;
   let imageUrl: string;
+  let s3Key: string = "";
 
   try {
     const imageBuffer = Buffer.from(imageResult.imageBase64, "base64");
-    const s3Key =
+    s3Key =
       s3Config.type === "user"
         ? `users/${s3Config.id}/previews/${filename}`
         : `campaigns/${s3Config.id}/previews/${filename}`;
@@ -201,6 +258,16 @@ export async function generateDirectPreviewImage(
     console.log(`${logPrefix} Using base64 data URL fallback`);
   }
 
+  // Step 4: Save to database
+  const databaseId = await savePreviewImageToDatabase({
+    previewId,
+    imageUrl,
+    s3Key,
+    input,
+    geminiImagePrompt,
+    s3Config,
+  });
+
   return {
     success: true,
     preview_id: previewId,
@@ -209,6 +276,7 @@ export async function generateDirectPreviewImage(
     gemini_image_prompt: geminiImagePrompt,
     aspect_ratio,
     composition_mode: "direct",
+    database_id: databaseId || undefined,
   };
 }
 
@@ -356,19 +424,21 @@ export async function generateTwoStepPreviewImage(
   // Upload images to S3
   let imageUrl: string;
   let sceneImageUrl: string | undefined;
+  let s3Key: string = "";
+  let sceneS3Key: string | undefined;
   const basePath = s3Config.type === "user" ? `users/${s3Config.id}` : `campaigns/${s3Config.id}`;
 
   try {
     // Upload final composited image
     const imageBuffer = Buffer.from(compositionResult.finalImageBase64, "base64");
-    const s3Key = `${basePath}/previews/preview-${previewId}.png`;
+    s3Key = `${basePath}/previews/preview-${previewId}.png`;
     imageUrl = await uploadToS3(imageBuffer, s3Key, "image/png");
     console.log(`${logPrefix} Final image uploaded to S3: ${imageUrl}`);
 
     // Optionally upload scene image for debugging/reference
     if (compositionResult.sceneImageBase64) {
       const sceneBuffer = Buffer.from(compositionResult.sceneImageBase64, "base64");
-      const sceneS3Key = `${basePath}/previews/scene-${previewId}.png`;
+      sceneS3Key = `${basePath}/previews/scene-${previewId}.png`;
       sceneImageUrl = await uploadToS3(sceneBuffer, sceneS3Key, "image/png");
       console.log(`${logPrefix} Scene image uploaded to S3: ${sceneImageUrl}`);
     }
@@ -377,6 +447,19 @@ export async function generateTwoStepPreviewImage(
     imageUrl = `data:image/png;base64,${compositionResult.finalImageBase64}`;
     console.log(`${logPrefix} Using base64 data URL fallback`);
   }
+
+  // Save to database
+  const databaseId = await savePreviewImageToDatabase({
+    previewId,
+    imageUrl,
+    s3Key,
+    input,
+    geminiImagePrompt: scenePromptResult.data?.prompt || "",
+    compositePrompt: compositePromptResult.data?.prompt,
+    sceneImageUrl,
+    sceneImageS3Key: sceneS3Key,
+    s3Config,
+  });
 
   return {
     success: true,
@@ -389,6 +472,7 @@ export async function generateTwoStepPreviewImage(
     composition_mode: "two_step",
     scene_image_url: sceneImageUrl,
     scene_image_base64: compositionResult.sceneImageBase64,
+    database_id: databaseId || undefined,
   };
 }
 

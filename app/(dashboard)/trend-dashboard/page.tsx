@@ -233,6 +233,19 @@ interface APIKeywordAnalysis {
 // API Functions
 // ============================================================================
 
+// Helper to get access token from Zustand persisted storage
+function getAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem("hydra-auth-storage");
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    return parsed.state?.accessToken || null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchKeywordAnalysis(keywords: string[], limit: number = 50, forceRefresh: boolean = false): Promise<APIKeywordAnalysis[]> {
   const params = new URLSearchParams({
     keywords: keywords.join(","),
@@ -243,8 +256,7 @@ async function fetchKeywordAnalysis(keywords: string[], limit: number = 50, forc
     params.set("refresh", "true");
   }
 
-  // Get auth token from localStorage
-  const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+  const token = getAccessToken();
 
   const response = await fetch(`/api/v1/trends/keyword-analysis?${params.toString()}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -260,8 +272,7 @@ async function fetchKeywordAnalysis(keywords: string[], limit: number = 50, forc
 
 async function fetchContentSummary(): Promise<ContentSummary> {
   try {
-    // Get auth token from localStorage
-    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const token = getAccessToken();
 
     const response = await fetch("/api/v1/dashboard/stats", {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
