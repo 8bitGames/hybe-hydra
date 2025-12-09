@@ -1486,10 +1486,13 @@ export default function TrendDashboardPage() {
   }, [keywordAnalysisData]);
 
   // Fetch analysis when selected keyword changes
-  const fetchAnalysisForKeyword = useCallback(async (keyword: string) => {
+  const fetchAnalysisForKeyword = useCallback(async (keyword: string, keywordId?: string) => {
     if (keywordAnalysisData[keyword]) return; // Already have data
 
-    setIsAnalysisLoading(true);
+    // Use per-keyword loading state
+    if (keywordId) {
+      setAnalyzingKeywords(prev => new Set(prev).add(keywordId));
+    }
     setError(null);
 
     try {
@@ -1505,13 +1508,20 @@ export default function TrendDashboardPage() {
       console.error("Failed to fetch analysis:", err);
       setError(isKorean ? "분석 데이터를 불러오는 중 오류가 발생했습니다." : "Failed to load analysis data.");
     } finally {
-      setIsAnalysisLoading(false);
+      // Remove from per-keyword loading state
+      if (keywordId) {
+        setAnalyzingKeywords(prev => {
+          const next = new Set(prev);
+          next.delete(keywordId);
+          return next;
+        });
+      }
     }
   }, [keywordAnalysisData, isKorean]);
 
   useEffect(() => {
     if (selectedKeyword && !keywordAnalysisData[selectedKeyword.keyword]) {
-      fetchAnalysisForKeyword(selectedKeyword.keyword);
+      fetchAnalysisForKeyword(selectedKeyword.keyword, selectedKeyword.id);
     }
   }, [selectedKeyword, keywordAnalysisData, fetchAnalysisForKeyword]);
 
@@ -1553,7 +1563,14 @@ export default function TrendDashboardPage() {
 
   // Refresh single keyword
   const handleRefreshKeyword = useCallback(async (keyword: string) => {
-    setIsAnalysisLoading(true);
+    // Find the keyword ID for per-keyword loading state
+    const keywordData = trackedKeywords.find(kw => kw.keyword === keyword);
+    const keywordId = keywordData?.id;
+
+    // Use per-keyword loading state
+    if (keywordId) {
+      setAnalyzingKeywords(prev => new Set(prev).add(keywordId));
+    }
     setError(null);
 
     try {
@@ -1583,9 +1600,16 @@ export default function TrendDashboardPage() {
       console.error("Failed to refresh keyword:", err);
       setError(isKorean ? "키워드 새로고침 중 오류가 발생했습니다." : "Failed to refresh keyword.");
     } finally {
-      setIsAnalysisLoading(false);
+      // Remove from per-keyword loading state
+      if (keywordId) {
+        setAnalyzingKeywords(prev => {
+          const next = new Set(prev);
+          next.delete(keywordId);
+          return next;
+        });
+      }
     }
-  }, [isKorean]);
+  }, [trackedKeywords, isKorean]);
 
   // Translations
   const t = {
@@ -1855,9 +1879,9 @@ export default function TrendDashboardPage() {
                 variant="outline"
                 size="sm"
                 onClick={handleRefresh}
-                disabled={isAnalysisLoading}
+                disabled={isAnalysisLoading || analyzingKeywords.size > 0}
               >
-                <RefreshCw className={cn("h-4 w-4 mr-1.5", isAnalysisLoading && "animate-spin")} />
+                <RefreshCw className={cn("h-4 w-4 mr-1.5", (isAnalysisLoading || analyzingKeywords.size > 0) && "animate-spin")} />
                 {isKorean ? "새로고침" : "Refresh"}
               </Button>
             )}
@@ -2041,7 +2065,7 @@ export default function TrendDashboardPage() {
         </Card>
 
         {/* Row 3: Trend Overview (Selected Keyword Detail) */}
-        {selectedKeyword && (isAnalysisLoading || analyzingKeywords.has(selectedKeyword.id)) && !keywordAnalysis && (
+        {selectedKeyword && analyzingKeywords.has(selectedKeyword.id) && !keywordAnalysis && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -2070,9 +2094,9 @@ export default function TrendDashboardPage() {
                     size="sm"
                     className="h-7 text-xs text-muted-foreground"
                     onClick={() => handleRefreshKeyword(selectedKeyword.keyword)}
-                    disabled={isAnalysisLoading}
+                    disabled={analyzingKeywords.has(selectedKeyword.id)}
                   >
-                    <RefreshCw className={cn("h-3 w-3 mr-1", isAnalysisLoading && "animate-spin")} />
+                    <RefreshCw className={cn("h-3 w-3 mr-1", analyzingKeywords.has(selectedKeyword.id) && "animate-spin")} />
                     {isKorean ? "새로고침" : "Refresh"}
                   </Button>
                   <Button
