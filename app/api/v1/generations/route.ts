@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
-import { GenerationType, GenerationStatus } from "@prisma/client";
+import { VideoGenerationType, VideoGenerationStatus } from "@prisma/client";
 
 /**
  * GET /api/v1/generations - List video generations
@@ -19,8 +19,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("page_size") || "50");
-    const type = searchParams.get("type") as GenerationType | null;
-    const status = searchParams.get("status") as GenerationStatus | null;
+    const type = searchParams.get("type") as VideoGenerationType | null;
+    const status = searchParams.get("status") as VideoGenerationStatus | null;
     const includeTest = searchParams.get("include_test") === "true";
     const campaignId = searchParams.get("campaign_id");
 
@@ -29,12 +29,12 @@ export async function GET(request: NextRequest) {
 
     // Filter by type if provided
     if (type) {
-      where.generationType = type.toUpperCase() as GenerationType;
+      where.generationType = type.toUpperCase() as VideoGenerationType;
     }
 
     // Filter by status if provided
     if (status) {
-      where.status = status.toUpperCase() as GenerationStatus;
+      where.status = status.toUpperCase() as VideoGenerationStatus;
     }
 
     // Filter by campaign
@@ -102,7 +102,6 @@ export async function GET(request: NextRequest) {
       aspect_ratio: gen.aspectRatio,
       duration_seconds: gen.durationSeconds,
       output_url: gen.outputUrl,
-      thumbnail_url: gen.thumbnailUrl,
       effect_preset: gen.effectPreset,
       script_data: gen.scriptData,
       image_assets: gen.imageAssets,
