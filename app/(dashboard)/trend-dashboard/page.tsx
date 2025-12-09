@@ -719,15 +719,40 @@ function MetricCard({
 function KeywordCard({
   keyword,
   isSelected,
+  isLoading,
   onClick,
   onDelete,
 }: {
   keyword: TrackedKeyword;
   isSelected: boolean;
+  isLoading?: boolean;
   onClick: () => void;
   onDelete: (e: React.MouseEvent) => void;
 }) {
   const isUser = keyword.type === "user";
+
+  // Show skeleton state when loading
+  if (isLoading) {
+    return (
+      <div
+        className={cn(
+          "flex-shrink-0 w-[160px] min-h-[88px] p-3 rounded-lg border transition-all text-left relative",
+          isSelected
+            ? "border-primary bg-primary/5 ring-1 ring-primary"
+            : "border-border bg-background"
+        )}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <Skeleton className="h-4 w-20 flex-1" />
+          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+        </div>
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1212,39 +1237,98 @@ function KeywordCardSkeleton() {
 function AnalysisSkeleton() {
   return (
     <div className="space-y-6">
-      {/* Metrics Skeleton */}
+      {/* Metrics + Hashtags Row */}
       <div className="grid grid-cols-2 gap-6">
+        {/* Metrics */}
         <div>
-          <Skeleton className="h-4 w-24 mb-3" />
+          <Skeleton className="h-3 w-20 mb-3" />
           <div className="grid grid-cols-2 gap-3">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="p-3 bg-muted/50 rounded-lg">
-                <Skeleton className="h-3 w-16 mb-1" />
-                <Skeleton className="h-6 w-20" />
+                <Skeleton className="h-2.5 w-14 mb-2" />
+                <Skeleton className="h-6 w-16" />
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Top Hashtags */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-6 w-16 rounded" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[...Array(8)].map((_, i) => (
+              <Skeleton key={i} className="h-6 w-20 rounded-full" />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* AI Suggestions + Top Creators Row */}
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <Skeleton className="h-3 w-24 mb-3" />
+          <div className="space-y-2">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <Skeleton className="h-3 w-3 mt-0.5 rounded-full flex-shrink-0" />
+                <Skeleton className="h-3 w-full" />
               </div>
             ))}
           </div>
         </div>
         <div>
-          <Skeleton className="h-4 w-24 mb-3" />
+          <Skeleton className="h-3 w-20 mb-3" />
           <div className="flex flex-wrap gap-2">
             {[...Array(5)].map((_, i) => (
-              <Skeleton key={i} className="h-6 w-16" />
+              <Skeleton key={i} className="h-6 w-24 rounded-full" />
             ))}
           </div>
         </div>
       </div>
-      {/* Table Skeleton */}
-      <div className="border rounded-lg p-4">
-        <div className="space-y-3">
+
+      {/* Viral Videos Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-4 w-4 rounded" />
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-5 w-8 rounded" />
+        </div>
+        <Skeleton className="h-8 w-36 rounded" />
+      </div>
+
+      {/* Video Table Skeleton */}
+      <div className="border rounded-lg overflow-hidden">
+        {/* Table Header */}
+        <div className="flex items-center gap-4 px-4 py-3 bg-muted/30 border-b">
+          <Skeleton className="h-3 w-8" />
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-3 w-24 flex-1" />
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-3 w-10" />
+          <Skeleton className="h-3 w-6" />
+        </div>
+        {/* Table Rows */}
+        <div className="divide-y divide-border">
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="flex items-center gap-4">
-              <Skeleton className="h-4 w-8" />
-              <Skeleton className="h-16 w-12 rounded" />
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-32 flex-1" />
-              <Skeleton className="h-4 w-16" />
+            <div key={i} className="flex items-center gap-4 px-4 py-3">
+              <Skeleton className="h-4 w-6" />
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-3 w-10" />
+              </div>
+              <Skeleton className="h-3 w-40 flex-1" />
               <Skeleton className="h-4 w-12" />
+              <Skeleton className="h-4 w-10" />
+              <div className="flex gap-1">
+                <Skeleton className="h-5 w-12 rounded" />
+                <Skeleton className="h-5 w-12 rounded" />
+              </div>
+              <Skeleton className="h-4 w-8" />
+              <Skeleton className="h-6 w-6 rounded" />
             </div>
           ))}
         </div>
@@ -1940,6 +2024,7 @@ export default function TrendDashboardPage() {
                       key={kw.id}
                       keyword={kw}
                       isSelected={kw.id === selectedKeywordId}
+                      isLoading={analyzingKeywords.has(kw.id)}
                       onClick={() => setSelectedKeywordId(kw.id)}
                       onDelete={(e) => {
                         e.stopPropagation();
@@ -1956,12 +2041,13 @@ export default function TrendDashboardPage() {
         </Card>
 
         {/* Row 3: Trend Overview (Selected Keyword Detail) */}
-        {selectedKeyword && isAnalysisLoading && !keywordAnalysis && (
+        {selectedKeyword && (isAnalysisLoading || analyzingKeywords.has(selectedKeyword.id)) && !keywordAnalysis && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Target className="h-4 w-4 text-muted-foreground" />
                 {t.trendOverview}: #{selectedKeyword.keyword}
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-2" />
               </CardTitle>
             </CardHeader>
             <CardContent>
