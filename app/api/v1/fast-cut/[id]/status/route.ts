@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
-import { getModalRenderStatus, modalStatusToDbStatus } from '@/lib/modal/client';
+import { getModalRenderStatus } from '@/lib/modal/client';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -82,44 +82,70 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       console.log(`[Fast Cut Status] Modal response for ${generationId}:`, modalStatus);
 
-      if (modalStatus.status === 'completed' && modalStatus.result?.output_url) {
-        // Update database with completion
-        const wasNotCompleted = true;
-
-        await prisma.videoGeneration.update({
+      if (modalStatus.status === 'completed') {
+        // For AWS Batch, output_url comes from callback, not from status check
+        // Check if we already have the output URL in database (set by callback)
+        const freshGeneration = await prisma.videoGeneration.findUnique({
           where: { id: generationId },
-          data: {
-            status: 'COMPLETED',
-            progress: 100,
-            composedOutputUrl: modalStatus.result.output_url,
-            outputUrl: modalStatus.result.output_url,
+          select: {
+            status: true,
+            composedOutputUrl: true,
+            outputUrl: true
           }
         });
 
-        // Trigger auto-schedule if this is a new completion
-        if (wasNotCompleted) {
-          const autoPublish = metadata?.autoPublish as { enabled?: boolean } | undefined;
+        const outputUrl = modalStatus.result?.output_url ||
+                         freshGeneration?.composedOutputUrl ||
+                         freshGeneration?.outputUrl;
 
-          if (autoPublish?.enabled) {
-            try {
-              const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-              fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-              }).catch(err => console.error('Auto-schedule failed:', err));
-            } catch (scheduleError) {
-              console.error('Auto-schedule error:', scheduleError);
+        if (outputUrl) {
+          // We have the output URL, mark as completed
+          const wasNotCompleted = freshGeneration?.status !== 'COMPLETED';
+
+          if (wasNotCompleted) {
+            await prisma.videoGeneration.update({
+              where: { id: generationId },
+              data: {
+                status: 'COMPLETED',
+                progress: 100,
+                composedOutputUrl: outputUrl,
+                outputUrl: outputUrl,
+              }
+            });
+
+            // Trigger auto-schedule if this is a new completion
+            const autoPublish = metadata?.autoPublish as { enabled?: boolean } | undefined;
+            if (autoPublish?.enabled) {
+              try {
+                const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+                fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                }).catch(err => console.error('Auto-schedule failed:', err));
+              } catch (scheduleError) {
+                console.error('Auto-schedule error:', scheduleError);
+              }
             }
           }
-        }
 
-        return NextResponse.json({
-          status: 'completed',
-          progress: 100,
-          currentStep: 'Completed',
-          outputUrl: modalStatus.result.output_url,
-          error: null
-        });
+          return NextResponse.json({
+            status: 'completed',
+            progress: 100,
+            currentStep: 'Completed',
+            outputUrl: outputUrl,
+            error: null
+          });
+        } else {
+          // AWS Batch shows completed but callback hasn't arrived yet
+          // Return processing status while waiting for callback with output URL
+          return NextResponse.json({
+            status: 'processing',
+            progress: 95,
+            currentStep: 'Finalizing (waiting for output)',
+            outputUrl: null,
+            error: null
+          });
+        }
       }
 
       if (modalStatus.status === 'failed' || modalStatus.status === 'error') {
@@ -153,10 +179,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
         estimatedProgress = Math.min(90, Math.floor((elapsed / 50) * 100));
       }
 
+      // Determine render backend for status message
+      const renderBackend = metadata?.renderBackend as string | undefined;
+      let backendName = 'Cloud';
+      if (renderBackend === 'local') backendName = 'Local';
+      else if (renderBackend === 'batch') backendName = 'AWS Batch (GPU)';
+      else if (renderBackend === 'modal') backendName = 'Modal';
+
       return NextResponse.json({
         status: 'processing',
         progress: estimatedProgress,
-        currentStep: `Rendering on ${(metadata?.renderBackend as string) === 'local' ? 'Local' : 'Modal'} (CPU)`,
+        currentStep: `Rendering on ${backendName}`,
         outputUrl: null,
         error: null
       });

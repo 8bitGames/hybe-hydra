@@ -217,7 +217,7 @@ resource "aws_batch_job_definition" "gpu_render" {
   }
 
   timeout {
-    attempt_duration_seconds = 900  # 15 minutes max
+    attempt_duration_seconds = 1800  # 30 minutes (GPU cold start + rendering)
   }
 
   tags = {

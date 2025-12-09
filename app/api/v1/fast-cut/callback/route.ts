@@ -2,16 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 
 /**
- * Modal Callback Endpoint
+ * Render Callback Endpoint
  *
- * Called by Modal when a render job completes (success or failure).
+ * Called by Modal or AWS Batch when a render job completes (success or failure).
  * Updates the database with the final status.
  *
  * POST /api/v1/fast-cut/callback
  * Body: { job_id, status, output_url, error, secret }
  */
 
-const CALLBACK_SECRET = process.env.MODAL_CALLBACK_SECRET || 'hydra-modal-callback-secret';
+// Support both Modal and AWS Batch callback secrets
+const MODAL_CALLBACK_SECRET = process.env.MODAL_CALLBACK_SECRET || 'hydra-modal-callback-secret';
+const BATCH_CALLBACK_SECRET = process.env.BATCH_CALLBACK_SECRET || MODAL_CALLBACK_SECRET;
+
+function isValidSecret(secret: string): boolean {
+  return secret === MODAL_CALLBACK_SECRET || secret === BATCH_CALLBACK_SECRET;
+}
 
 interface CallbackPayload {
   job_id: string;
@@ -26,8 +32,8 @@ export async function POST(request: NextRequest) {
     const body: CallbackPayload = await request.json();
     const { job_id, status, output_url, error, secret } = body;
 
-    // Validate secret
-    if (secret !== CALLBACK_SECRET) {
+    // Validate secret (supports both Modal and AWS Batch)
+    if (!isValidSecret(secret)) {
       console.error('[Fast Cut Callback] Invalid secret');
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
     }
