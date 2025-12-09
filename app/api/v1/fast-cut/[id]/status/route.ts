@@ -169,18 +169,32 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }
 
       // Still processing
-      // Estimate progress based on typical render times (45-60 seconds with CPU)
+      // AWS Batch with cold start: ~120s total (90s cold start + 20s GPU render)
+      // Modal/Local: ~50s total
       const createdAt = metadata?.createdAt as string | undefined;
+      const renderBackend = metadata?.renderBackend as string | undefined;
       let estimatedProgress = 50; // Default mid-way
 
       if (createdAt) {
         const elapsed = (Date.now() - new Date(createdAt).getTime()) / 1000;
-        // Assume ~50 seconds total render time with CPU
-        estimatedProgress = Math.min(90, Math.floor((elapsed / 50) * 100));
+
+        if (renderBackend === 'batch') {
+          // AWS Batch has cold start overhead (~90s) + GPU render (~20s)
+          if (elapsed < 90) {
+            // Cold start phase (0-90s) → show 5-35%
+            estimatedProgress = 5 + Math.floor((elapsed / 90) * 30);
+          } else {
+            // Rendering phase (90s+) → show 35-95%
+            const renderElapsed = elapsed - 90;
+            estimatedProgress = 35 + Math.min(60, Math.floor((renderElapsed / 30) * 60));
+          }
+        } else {
+          // Modal/Local: ~50 seconds total
+          estimatedProgress = Math.min(90, Math.floor((elapsed / 50) * 100));
+        }
       }
 
       // Determine render backend for status message
-      const renderBackend = metadata?.renderBackend as string | undefined;
       let backendName = 'Cloud';
       if (renderBackend === 'local') backendName = 'Local';
       else if (renderBackend === 'batch') backendName = 'AWS Batch (GPU)';
