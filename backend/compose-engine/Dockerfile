@@ -210,6 +210,11 @@ RUN mkdir -p /tmp/compose
 # Modal uses add_local_dir() instead, so this is optional
 COPY app/ /root/app/
 
+# Copy AWS Batch worker script
+COPY aws-batch/batch_worker.py /root/batch_worker.py
+
 EXPOSE 8000
 
+# Default command (for local testing / FastAPI mode)
+# AWS Batch overrides this with the batch_worker.py entry point
 CMD ["python3", "-c", "print('Hydra Compose Engine ready. Run: uvicorn app.main:app --host 0.0.0.0 --port 8000')"]

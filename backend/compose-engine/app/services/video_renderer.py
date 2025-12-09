@@ -457,12 +457,15 @@ class VideoRenderer:
 
         logger.info(f"Created default audio analysis: BPM={DEFAULT_BPM}, beats={len(beat_times)}")
 
+        # Generate energy curve: (time, energy) pairs with neutral energy
+        energy_curve = [(t, 0.5) for t in beat_times[:20]]  # First 20 beats
+
         return AudioAnalysis(
             bpm=DEFAULT_BPM,
             beat_times=beat_times,
             duration=DEFAULT_DURATION,
-            energy_profile=[0.5] * 10,  # Neutral energy
-            segments=[]
+            energy_curve=energy_curve,
+            suggested_vibe="Pop"  # Default vibe for videos without audio
         )
 
     async def _process_images_parallel(
