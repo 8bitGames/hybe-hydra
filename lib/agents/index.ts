@@ -169,6 +169,15 @@ export {
   ScriptWriterOutputSchema,
   type ScriptWriterInput,
   type ScriptWriterOutput,
+
+  // Fast Cut Idea
+  FastCutIdeaAgent,
+  createFastCutIdeaAgent,
+  FastCutIdeaConfig,
+  FastCutIdeaInputSchema,
+  FastCutIdeaOutputSchema,
+  type FastCutIdeaInput,
+  type FastCutIdeaOutput,
 } from './creators';
 
 // ============================================================================
@@ -321,6 +330,7 @@ export const AgentFactories = {
   // Creators
   creativeDirector: () => import('./creators/creative-director').then(m => m.createCreativeDirectorAgent()),
   scriptWriter: () => import('./creators/script-writer').then(m => m.createScriptWriterAgent()),
+  fastCutIdea: () => import('./creators/fast-cut-idea-agent').then(m => m.createFastCutIdeaAgent()),
 
   // Transformers
   promptEngineer: () => import('./transformers/prompt-engineer').then(m => m.createPromptEngineerAgent()),
@@ -341,7 +351,7 @@ export const AgentFactories = {
  */
 export const AgentCategories = {
   analyzer: ['vision-analyzer', 'text-pattern', 'visual-trend', 'strategy-synthesizer', 'keyword-insights', 'tiktok-vision', 'veo3-personalize'],
-  creator: ['creative-director', 'script-writer'],
+  creator: ['creative-director', 'script-writer', 'fast-cut-idea'],
   transformer: ['prompt-engineer', 'i2v-specialist'],
   publisher: ['publish-optimizer', 'copywriter'],
   'fast-cut': ['fast-cut-script-generator', 'fast-cut-effect-analyzer', 'fast-cut-conductor'],
@@ -365,6 +375,9 @@ export const AgentModels = {
   // Gemini 3 Pro - Deep reasoning
   'creative-director': 'gemini-3-pro-preview',
   'keyword-insights': 'gemini-3-pro-preview',
+
+  // Gemini 2.5 Flash - Fast Cut Idea (creator)
+  'fast-cut-idea': 'gemini-2.5-flash',
 
   // GPT-5.1 - Copywriting
   'publish-optimizer': 'gpt-5.1',

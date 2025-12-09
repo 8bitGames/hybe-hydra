@@ -83,6 +83,8 @@ interface GenerateIdeasRequest {
     viralBenchmark: number;
   } | null;
   language?: "ko" | "en";
+  // Content type - selected by user at Start stage
+  contentType?: "ai_video" | "fast-cut";
 }
 
 interface GenerateIdeasResponse {
@@ -231,10 +233,10 @@ function ContextReceptionPanel() {
   }
 
   return (
-    <div className="border border-neutral-200 rounded-lg p-4 bg-neutral-50">
+    <div className="border border-neutral-200 rounded-lg p-4 bg-neutral-50 w-full max-w-full overflow-hidden">
       {/* Header with data usage purpose */}
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-semibold text-neutral-700 flex items-center gap-2">
+      <div className="flex items-center justify-between mb-2 min-w-0">
+        <h3 className="text-sm font-semibold text-neutral-700 flex items-center gap-2 min-w-0 truncate">
           <BookmarkCheck className="h-4 w-4 text-neutral-900" />
           {language === "ko" ? "AI 생성에 활용될 데이터" : "Data for AI Generation"}
         </h3>
@@ -256,7 +258,7 @@ function ContextReceptionPanel() {
           : "The following data will be reflected in custom content idea generation"}
       </p>
 
-      <div className="space-y-3">
+      <div className="space-y-3 overflow-hidden">
         {/* Source Type Indicator */}
         {isVideoSource && (
           <div className="flex items-center gap-2 text-xs text-neutral-500">
@@ -356,7 +358,7 @@ function ContextReceptionPanel() {
 
             {/* Hook Analysis */}
             {videoSource.aiAnalysis.hookAnalysis && (
-              <div>
+              <div className="overflow-hidden">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "훅 분석" : "Hook Analysis"}
@@ -368,7 +370,7 @@ function ContextReceptionPanel() {
                   size="sm"
                 />
               </div>
-                <p className="text-xs text-neutral-600 line-clamp-2">
+                <p className="text-xs text-neutral-600 line-clamp-3 break-words">
                   {videoSource.aiAnalysis.hookAnalysis}
                 </p>
               </div>
@@ -376,7 +378,7 @@ function ContextReceptionPanel() {
 
             {/* Style Analysis */}
             {videoSource.aiAnalysis.styleAnalysis && (
-              <div>
+              <div className="overflow-hidden">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "스타일 분석" : "Style Analysis"}
@@ -388,7 +390,7 @@ function ContextReceptionPanel() {
                   size="sm"
                 />
               </div>
-                <p className="text-xs text-neutral-600 line-clamp-2">
+                <p className="text-xs text-neutral-600 line-clamp-3 break-words">
                   {videoSource.aiAnalysis.styleAnalysis}
                 </p>
               </div>
@@ -396,7 +398,7 @@ function ContextReceptionPanel() {
 
             {/* Concept Details */}
             {videoSource.aiAnalysis.conceptDetails && (
-              <div>
+              <div className="overflow-hidden">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "컨셉 요소" : "Concept Elements"}
@@ -410,17 +412,17 @@ function ContextReceptionPanel() {
               </div>
                 <div className="flex flex-wrap gap-1">
                   {videoSource.aiAnalysis.conceptDetails.visualStyle && (
-                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600">
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-full truncate">
                       {videoSource.aiAnalysis.conceptDetails.visualStyle}
                     </Badge>
                   )}
                   {videoSource.aiAnalysis.conceptDetails.mood && (
-                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600">
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-full truncate">
                       {videoSource.aiAnalysis.conceptDetails.mood}
                     </Badge>
                   )}
                   {videoSource.aiAnalysis.conceptDetails.pace && (
-                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600">
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-full truncate">
                       {videoSource.aiAnalysis.conceptDetails.pace}
                     </Badge>
                   )}
@@ -430,7 +432,7 @@ function ContextReceptionPanel() {
 
             {/* Suggested Approach */}
             {videoSource.aiAnalysis.suggestedApproach && (
-              <div>
+              <div className="overflow-hidden">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "추천 접근법" : "Suggested Approach"}
@@ -442,7 +444,7 @@ function ContextReceptionPanel() {
                   size="sm"
                 />
               </div>
-                <p className="text-xs text-neutral-600 line-clamp-2">
+                <p className="text-xs text-neutral-600 line-clamp-3 break-words">
                   {videoSource.aiAnalysis.suggestedApproach}
                 </p>
               </div>
@@ -568,7 +570,7 @@ function ContextReceptionPanel() {
                 <p className="text-[10px] text-neutral-400 mb-1">
                   {language === "ko" ? "타겟 오디언스" : "Target Audience"}
                 </p>
-                <p className="text-xs text-neutral-600 line-clamp-2">
+                <p className="text-xs text-neutral-600 line-clamp-3">
                   {aiInsights.audienceInsights}
                 </p>
               </div>
@@ -863,6 +865,8 @@ export default function AnalyzePage() {
   // Workflow store
   const discover = useWorkflowStore((state) => state.discover);
   const analyze = useWorkflowStore((state) => state.analyze);
+  const startSource = useWorkflowStore((state) => state.start.source);
+  const startContentType = useWorkflowStore((state) => state.start.contentType);
   const setAnalyzeUserIdea = useWorkflowStore((state) => state.setAnalyzeUserIdea);
   const setAnalyzeRecreationMode = useWorkflowStore((state) => state.setAnalyzeRecreationMode);
   const setAnalyzeAiIdeas = useWorkflowStore((state) => state.setAnalyzeAiIdeas);
@@ -950,6 +954,8 @@ export default function AnalyzePage() {
         trend_insights: trendInsights,
         performance_metrics: isRecreationMode ? null : discover.performanceMetrics,
         language: language,
+        // Content type - user-selected at Start stage
+        contentType: startContentType,
       };
 
       const response = await api.post<GenerateIdeasResponse, GenerateIdeasRequest>(
@@ -1037,11 +1043,11 @@ export default function AnalyzePage() {
       />
 
       {/* Main Content - Two Column */}
-      <div className="flex-1 flex overflow-hidden px-[7%]">
+      <div className="flex-1 flex overflow-hidden px-[5%]">
         {/* Left Column - Input */}
-        <div className="w-1/2 border-r border-neutral-200 flex flex-col">
+        <div className="w-[55%] min-w-0 border-r border-neutral-200 flex flex-col overflow-hidden">
           <ScrollArea className="flex-1">
-            <div className="p-4 space-y-4">
+            <div className="p-4 space-y-4 w-full">
               {/* Context from Discover */}
               <ContextReceptionPanel />
 
@@ -1124,17 +1130,35 @@ export default function AnalyzePage() {
         </div>
 
         {/* Right Column - AI Ideas */}
-        <div className="w-1/2 flex flex-col bg-neutral-50">
+        <div className="w-[45%] min-w-0 flex flex-col bg-neutral-50">
           <div className="p-4 border-b border-neutral-200 shrink-0">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold text-neutral-700 flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-neutral-900" />
                 {t.aiIdeas}
               </h2>
+              {/* Content Type Badge - shows user-selected type from Start stage */}
+              <Badge variant="outline" className="text-xs bg-neutral-100 text-neutral-600 border-neutral-300">
+                {startContentType === "fast-cut" ? (
+                  <>
+                    <ImageIcon className="h-3 w-3 mr-1" />
+                    {language === "ko" ? "Fast Cut" : "Fast Cut"}
+                  </>
+                ) : (
+                  <>
+                    <Video className="h-3 w-3 mr-1" />
+                    {language === "ko" ? "AI Video" : "AI Video"}
+                  </>
+                )}
+              </Badge>
               <InfoButton
                 content={language === "ko"
-                  ? "AI가 입력한 정보와 트렌드 데이터를 분석하여 생성한 콘텐츠 아이디어입니다. 원하는 아이디어를 선택하면 다음 단계에서 사용됩니다. 각 아이디어에는 최적화된 프롬프트가 포함되어 있어요."
-                  : "Content ideas generated by AI analyzing your inputs and trend data. Select your preferred idea to use in the next step. Each idea includes an optimized prompt."}
+                  ? startContentType === "fast-cut"
+                    ? "Fast Cut 모드로 아이디어가 생성됩니다. 이미지 + 음악을 조합한 빠른 편집 영상에 최적화된 아이디어입니다."
+                    : "AI가 입력한 정보와 트렌드 데이터를 분석하여 생성한 콘텐츠 아이디어입니다. 원하는 아이디어를 선택하면 다음 단계에서 사용됩니다. 각 아이디어에는 최적화된 프롬프트가 포함되어 있어요."
+                  : startContentType === "fast-cut"
+                    ? "Ideas will be generated in Fast Cut mode. Optimized for quick-edit videos combining images + music."
+                    : "Content ideas generated by AI analyzing your inputs and trend data. Select your preferred idea to use in the next step. Each idea includes an optimized prompt."}
                 side="bottom"
               />
             </div>

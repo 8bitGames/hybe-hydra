@@ -6,6 +6,40 @@
 import { api } from './api';
 import type { SelectedEffects } from './effects-api';
 
+// Style Set types (from lib/fast-cut/style-sets)
+export interface StyleSetSummary {
+  id: string;
+  name: string;
+  nameKo: string;
+  description: string;
+  descriptionKo: string;
+  icon: string;
+  previewColor: string;
+  vibe: string;
+  colorGrade: string;
+  textStyle: string;
+  intensity: 'low' | 'medium' | 'high';
+  bpmRange?: [number, number];
+}
+
+export interface StyleSetSelection {
+  styleSetId: string;
+  confidence: number;
+  reasoning: string;
+}
+
+export interface StyleSetSelectionResponse {
+  selection: StyleSetSelection;
+  selected: StyleSetSummary;
+  alternatives: Array<{
+    id: string;
+    name: string;
+    nameKo: string;
+    icon: string;
+    previewColor: string;
+  }>;
+}
+
 // Types
 export interface ScriptLine {
   text: string;
@@ -63,6 +97,14 @@ export interface TikTokSEO {
   suggestedPostingTimes: string[];
 }
 
+// Categorized keywords from ImageKeywordGeneratorAgent
+export interface KeywordCategories {
+  subject: string[];   // Artist/person focused keywords
+  scene: string[];     // Background/location keywords
+  moodVisual: string[]; // Visual mood/atmosphere keywords
+  style: string[];     // Photography style keywords
+}
+
 export interface ScriptGenerationResponse {
   script: {
     lines: ScriptLine[];
@@ -72,6 +114,7 @@ export interface ScriptGenerationResponse {
   vibeReason: string;
   suggestedBpmRange: { min: number; max: number };
   searchKeywords: string[];
+  keywordCategories?: KeywordCategories; // Detailed keyword breakdown by category
   effectRecommendation: string;
   groundingInfo?: GroundingInfo;
   // TikTok SEO optimization data
@@ -159,10 +202,13 @@ export interface RenderRequest {
   script?: {
     lines: ScriptLine[];
   };
-  effectPreset: string;
+  // Style Set ID - when provided, overrides individual settings
+  styleSetId?: string;
+  // Individual settings (used when styleSetId is not provided - legacy mode)
+  effectPreset?: string;
   aspectRatio: string;
   targetDuration: number;
-  vibe: string;
+  vibe?: string;
   textStyle?: string;
   colorGrade?: string;
   // Audio timing control
@@ -171,7 +217,7 @@ export interface RenderRequest {
   prompt?: string;  // User's original video concept prompt
   searchKeywords?: string[];
   tiktokSEO?: TikTokSEO;
-  // AI Effect Selection System
+  // AI Effect Selection System (legacy - used when styleSetId is not provided)
   useAiEffects?: boolean;  // Enable AI-based effect selection
   aiPrompt?: string;  // Prompt for AI effect analysis (defaults to prompt field)
   aiEffects?: SelectedEffects;  // Pre-selected AI effects (auto-selected if not provided)
@@ -423,7 +469,36 @@ export const fastCutApi = {
     }
 
     throw new Error('Render timed out');
-  }
+  },
+
+  // ============================================
+  // Style Sets API
+  // ============================================
+
+  /**
+   * Get all available style sets
+   */
+  getStyleSets: async (): Promise<{ styleSets: StyleSetSummary[]; total: number }> => {
+    const response = await api.get<{ styleSets: StyleSetSummary[]; total: number }>('/api/v1/fast-cut/style-sets');
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * AI-powered style set selection based on prompt
+   */
+  selectStyleSet: async (
+    prompt: string,
+    options?: { useAI?: boolean; campaignId?: string }
+  ): Promise<StyleSetSelectionResponse> => {
+    const response = await api.post<StyleSetSelectionResponse>('/api/v1/fast-cut/style-sets', {
+      prompt,
+      useAI: options?.useAI ?? true,
+      campaignId: options?.campaignId,
+    });
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
 };
 
 // Vibe presets configuration (for UI reference)

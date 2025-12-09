@@ -176,6 +176,43 @@ function FastCutContextPanel() {
                 </Badge>
               )}
             </div>
+
+            {/* Fast Cut Data - Script Outline Preview */}
+            {selectedIdea.fastCutData?.scriptOutline && selectedIdea.fastCutData.scriptOutline.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-neutral-200">
+                <h4 className="text-[10px] font-semibold text-neutral-500 mb-1.5 uppercase tracking-wide flex items-center gap-1">
+                  <FileText className="h-3 w-3" />
+                  {language === "ko" ? "스크립트 미리보기" : "Script Outline"}
+                </h4>
+                <ul className="text-xs text-neutral-600 space-y-0.5">
+                  {selectedIdea.fastCutData.scriptOutline.slice(0, 4).map((line, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      <span className="text-neutral-400 shrink-0">{i + 1}.</span>
+                      <span className="line-clamp-1">{line}</span>
+                    </li>
+                  ))}
+                  {selectedIdea.fastCutData.scriptOutline.length > 4 && (
+                    <li className="text-neutral-400 italic">
+                      +{selectedIdea.fastCutData.scriptOutline.length - 4} more...
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {/* Fast Cut Data - Suggested Vibe & BPM */}
+            {selectedIdea.fastCutData?.suggestedVibe && (
+              <div className="mt-2">
+                <Badge variant="secondary" className="text-[10px] bg-neutral-100 text-neutral-600">
+                  {language === "ko" ? "분위기:" : "Vibe:"} {selectedIdea.fastCutData.suggestedVibe}
+                  {selectedIdea.fastCutData.suggestedBpmRange && (
+                    <span className="ml-1.5 border-l border-neutral-300 pl-1.5">
+                      {selectedIdea.fastCutData.suggestedBpmRange.min}-{selectedIdea.fastCutData.suggestedBpmRange.max} BPM
+                    </span>
+                  )}
+                </Badge>
+              </div>
+            )}
           </div>
         )}
 
@@ -453,12 +490,23 @@ export function InlineFastCutFlow({
   const [generatingScript, setGeneratingScript] = useState(false);
   const [scriptData, setScriptData] = useState<ScriptGenerationResponse | null>(null);
 
+  // Fast Cut Data - pre-generated keywords and vibe from Analyze stage
+  const fastCutData = analyze.selectedIdea?.fastCutData;
+
+  // Use fastCutData.searchKeywords if available, otherwise fall back to discover.keywords
+  const initialKeywords = useMemo(() => {
+    if (fastCutData?.searchKeywords && fastCutData.searchKeywords.length > 0) {
+      return fastCutData.searchKeywords;
+    }
+    return discover.keywords;
+  }, [fastCutData?.searchKeywords, discover.keywords]);
+
   // Keyword state
   const [editableKeywords, setEditableKeywords] = useState<string[]>([
-    ...discover.keywords,
+    ...initialKeywords,
   ]);
   const [selectedSearchKeywords, setSelectedSearchKeywords] = useState<Set<string>>(
-    new Set(discover.keywords)
+    new Set(initialKeywords)
   );
 
   // Step 2: Images state
@@ -477,7 +525,8 @@ export function InlineFastCutFlow({
   const [musicSkipped, setMusicSkipped] = useState(false);
 
   // Step 4: Render state
-  const [effectPreset, setEffectPreset] = useState("zoom_beat");
+  const [styleSetId, setStyleSetId] = useState<string>("viral_tiktok");
+  const [styleSets, setStyleSets] = useState<import("@/lib/fast-cut-api").StyleSetSummary[]>([]);
   const [rendering, setRendering] = useState(false);
 
   // TikTok SEO state
@@ -496,6 +545,27 @@ export function InlineFastCutFlow({
   useEffect(() => {
     setCreateType("fast-cut");
   }, [setCreateType]);
+
+  // Fetch style sets on mount
+  useEffect(() => {
+    const fetchStyleSets = async () => {
+      try {
+        const result = await fastCutApi.getStyleSets();
+        setStyleSets(result.styleSets);
+      } catch (err) {
+        console.error("Failed to fetch style sets:", err);
+      }
+    };
+    fetchStyleSets();
+  }, []);
+
+  // Sync keywords when fastCutData becomes available (e.g., user selects a Fast Cut idea)
+  useEffect(() => {
+    if (fastCutData?.searchKeywords && fastCutData.searchKeywords.length > 0) {
+      setEditableKeywords([...fastCutData.searchKeywords]);
+      setSelectedSearchKeywords(new Set(fastCutData.searchKeywords));
+    }
+  }, [fastCutData?.searchKeywords]);
 
   // ========================================
   // Step 1: Script Generation
@@ -536,6 +606,16 @@ export function InlineFastCutFlow({
       if (result.tiktokSEO) {
         setTiktokSEO(result.tiktokSEO);
       }
+
+      // Auto-select style set based on prompt (async, don't block flow)
+      fastCutApi.selectStyleSet(prompt.trim(), { useAI: true, campaignId })
+        .then((selection) => {
+          setStyleSetId(selection.selected.id);
+          console.log("[FastCut] Auto-selected style set:", selection.selected.nameKo, "- Reason:", selection.selection.reasoning);
+        })
+        .catch((err) => {
+          console.warn("[FastCut] Style set auto-selection failed, using default:", err);
+        });
 
       // Merge AI keywords with user keywords
       const userKeywords = [...editableKeywords];
@@ -751,10 +831,10 @@ export function InlineFastCutFlow({
         audioAssetId: selectedAudio?.id || "", // Empty string when skipped, API handles this
         images: proxiedImages,
         script: { lines: scriptData.script.lines },
-        effectPreset,
+        // Use style set instead of individual effectPreset
+        styleSetId,
         aspectRatio,
         targetDuration: 0,
-        vibe: scriptData.vibe,
         audioStartTime: musicSkipped ? 0 : audioStartTime,
         prompt,
         searchKeywords: editableKeywords,
@@ -835,11 +915,11 @@ export function InlineFastCutFlow({
       },
       effects: {
         complete: false, // Never complete - final step
-        label: language === "ko" ? "효과" : "Effects",
-        detail: effectPreset.replace("_", " ")
+        label: language === "ko" ? "스타일" : "Style",
+        detail: styleSets.find(s => s.id === styleSetId)?.nameKo || styleSetId.replace("_", " ")
       }
     };
-  }, [scriptData, selectedImages.length, selectedAudio, musicSkipped, effectPreset, language]);
+  }, [scriptData, selectedImages.length, selectedAudio, musicSkipped, styleSetId, styleSets, language]);
 
   // ========================================
   // Navigation
@@ -971,8 +1051,9 @@ export function InlineFastCutFlow({
                 selectedAudio={selectedAudio}
                 musicSkipped={musicSkipped}
                 aspectRatio={aspectRatio}
-                effectPreset={effectPreset}
-                setEffectPreset={setEffectPreset}
+                styleSetId={styleSetId}
+                setStyleSetId={setStyleSetId}
+                styleSets={styleSets}
                 tiktokSEO={tiktokSEO}
                 setTiktokSEO={setTiktokSEO}
                 rendering={rendering}

@@ -118,12 +118,15 @@ class VideoRenderer:
             await self._update_progress(progress_callback, job_id, 15, "Analyzing audio" if audio_path else "Calculating timings")
 
             audio_url = request.audio.url if request.audio else None
+            logger.info(f"[{job_id}] STEP 2: Starting audio analysis...")
             audio_analysis = await self._get_audio_analysis(audio_path, audio_url)
             beat_times = audio_analysis.beat_times
+            logger.info(f"[{job_id}] STEP 2 COMPLETE: BPM={audio_analysis.bpm}, beats={len(beat_times)}")
 
             # ============================================================
             # STEP 3: CALCULATE TIMINGS (600ms per image, looping)
             # ============================================================
+            logger.info(f"[{job_id}] STEP 3: Calculating timings...")
             await self._update_progress(progress_callback, job_id, 20, "Calculating timings")
 
             preset = get_preset(request.settings.vibe.value)
@@ -158,10 +161,12 @@ class VideoRenderer:
                 cut_times.append((start_time, end_time))
 
             logger.info(f"[{job_id}] Using 600ms per image: {num_total_clips} clips for {target_duration:.1f}s video")
+            logger.info(f"[{job_id}] STEP 3 COMPLETE: calculated {len(cut_times)} cut times")
 
             # ============================================================
             # STEP 4: PARALLEL IMAGE PROCESSING
             # ============================================================
+            logger.info(f"[{job_id}] STEP 4: Processing images in parallel...")
             await self._update_progress(progress_callback, job_id, 25, "Processing images")
 
             processed_paths = await self._process_images_parallel(
@@ -176,20 +181,24 @@ class VideoRenderer:
             for i in range(num_total_clips):
                 looped_image_paths.append(processed_paths[i % len(processed_paths)])
             logger.info(f"[{job_id}] Looped {len(processed_paths)} images into {len(looped_image_paths)} clips")
+            logger.info(f"[{job_id}] STEP 4 COMPLETE")
 
             # ============================================================
             # STEP 5: CREATE CLIPS (can be parallelized for large batches)
             # ============================================================
+            logger.info(f"[{job_id}] STEP 5: Creating video clips...")
             await self._update_progress(progress_callback, job_id, 35, "Creating video clips")
 
             clips = await self._create_clips_parallel(
                 looped_image_paths, cut_times, preset,
                 request.settings.aspect_ratio.value, beat_times, job_id
             )
+            logger.info(f"[{job_id}] STEP 5 COMPLETE: created {len(clips)} clips")
 
             # ============================================================
             # STEP 6: GET AI EFFECTS (for transitions and text animations)
             # ============================================================
+            logger.info(f"[{job_id}] STEP 6: Getting AI effects...")
             ai_effects = None
             if request.settings.use_ai_effects:
                 ai_effects = await self._get_ai_effects(
@@ -199,20 +208,35 @@ class VideoRenderer:
                     job_id=job_id
                 )
                 logger.info(f"[{job_id}] AI effects - transitions: {len(ai_effects.transitions)}, text_animations: {len(ai_effects.text_animations)}")
+            logger.info(f"[{job_id}] STEP 6 COMPLETE")
 
             # ============================================================
-            # STEP 7: CONCATENATE CLIPS (no transitions)
+            # STEP 7: APPLY TRANSITIONS AND CONCATENATE
             # ============================================================
-            await self._update_progress(progress_callback, job_id, 55, "Concatenating clips")
+            logger.info(f"[{job_id}] STEP 7: Applying transitions...")
+            await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
 
-            # NO TRANSITIONS: Simply concatenate clips directly
-            # Transitions disabled per user request
-            logger.info(f"[{job_id}] Concatenating {len(clips)} clips (transitions disabled)")
-            video = concatenate_videoclips(clips, method="compose")
+            # Apply transitions based on style
+            try:
+                if ai_effects and ai_effects.transitions:
+                    logger.info(f"[{job_id}] Applying {len(ai_effects.transitions)} AI transitions")
+                    video = await self._apply_ai_transitions_with_effects(
+                        clips, ai_effects, preset, job_dir, job_id
+                    )
+                else:
+                    # Use preset-based transitions
+                    logger.info(f"[{job_id}] Applying preset transitions: {preset.transition_type}")
+                    transition_func = transitions.get_transition(preset.transition_type)
+                    video = transition_func(clips, duration=preset.transition_duration)
+            except Exception as e:
+                logger.warning(f"[{job_id}] Transition failed, using simple concatenate: {e}")
+                video = concatenate_videoclips(clips, method="compose")
+            logger.info(f"[{job_id}] STEP 7 COMPLETE: video duration={video.duration:.2f}s")
 
             # ============================================================
             # STEP 8: ADD TEXT OVERLAYS (with AI-selected animations)
             # ============================================================
+            logger.info(f"[{job_id}] STEP 8: Adding text overlays...")
             await self._update_progress(progress_callback, job_id, 65, "Adding text overlays")
 
             video_duration = video.duration
@@ -230,6 +254,7 @@ class VideoRenderer:
             # ============================================================
             # STEP 9: ADD AUDIO WITH TIKTOK HOOK (if audio provided)
             # ============================================================
+            logger.info(f"[{job_id}] STEP 9: Adding audio...")
             audio_clips_to_close = []
             if audio_path and request.audio:
                 await self._update_progress(progress_callback, job_id, 75, "Adding audio")
@@ -238,33 +263,79 @@ class VideoRenderer:
                 )
             else:
                 logger.info(f"[{job_id}] Skipping audio - generating silent video")
+            logger.info(f"[{job_id}] STEP 9 COMPLETE")
 
             # ============================================================
-            # STEP 10: COLOR GRADING (DISABLED)
+            # STEP 10: COLOR GRADING
             # ============================================================
-            await self._update_progress(progress_callback, job_id, 78, "Skipping color grading")
-            # Color grading disabled per user request
-            logger.info(f"[{job_id}] Color grading disabled")
+            logger.info(f"[{job_id}] STEP 10: Applying color grading...")
+            await self._update_progress(progress_callback, job_id, 78, "Applying color grading")
+            color_grade = preset.color_grade
+            if color_grade and color_grade != "natural":
+                try:
+                    logger.info(f"[{job_id}] Applying color grade: {color_grade}")
+                    video = filters.apply_color_grade(video, color_grade)
+                except Exception as e:
+                    logger.warning(f"[{job_id}] Color grading failed: {e}")
+            logger.info(f"[{job_id}] STEP 10 COMPLETE")
 
             # ============================================================
-            # STEP 11: OVERLAY EFFECTS (DISABLED)
+            # STEP 11: OVERLAY EFFECTS
             # ============================================================
-            # All overlay effects disabled per user request
-            logger.info(f"[{job_id}] Overlay effects disabled")
+            logger.info(f"[{job_id}] STEP 11: Applying overlay effects...")
+            await self._update_progress(progress_callback, job_id, 80, "Applying overlay effects")
+
+            # Apply preset-based effects (film_grain, vignette, etc.)
+            if preset.effects:
+                for effect_name in preset.effects:
+                    try:
+                        if effect_name == "film_grain":
+                            video = filters.apply_film_grain(video, intensity=0.03)
+                            logger.info(f"[{job_id}] Applied film grain effect")
+                        elif effect_name == "vignette":
+                            video = filters.apply_vignette(video, strength=0.25)
+                            logger.info(f"[{job_id}] Applied vignette effect")
+                        elif effect_name == "glow":
+                            video = filters.apply_bloom(video, threshold=0.7, intensity=0.3)
+                            logger.info(f"[{job_id}] Applied glow/bloom effect")
+                        elif effect_name == "slight_desaturate":
+                            # Already handled by cinematic color grade
+                            pass
+                        # Note: shake_on_beat and flash_transition are handled in motion/transitions
+                    except Exception as e:
+                        logger.warning(f"[{job_id}] Overlay effect {effect_name} failed: {e}")
+
+            # Apply AI-selected overlay effects if available
+            if ai_effects and ai_effects.filters:
+                try:
+                    logger.info(f"[{job_id}] Applying {len(ai_effects.filters)} AI overlay effects")
+                    video = filters.apply_overlay_effects_dynamic(
+                        video,
+                        ai_effects.filters,
+                        moods=getattr(ai_effects, 'moods', None),
+                        intensity="medium",
+                        bpm=request.audio.bpm if request.audio else None
+                    )
+                except Exception as e:
+                    logger.warning(f"[{job_id}] AI overlay effects failed: {e}")
+            logger.info(f"[{job_id}] STEP 11 COMPLETE")
 
             # ============================================================
             # STEP 12: GPU RENDER WITH OPTIMIZED NVENC
             # ============================================================
+            logger.info(f"[{job_id}] STEP 12: Rendering video with NVENC...")
             await self._update_progress(progress_callback, job_id, 85, "Rendering video")
 
             output_path = self.temp.get_path(job_id, "output.mp4")
             temp_audiofile = self.temp.get_path(job_id, f"temp_audio_{job_id}.mp4")
 
             await self._render_with_nvenc(video, output_path, temp_audiofile, job_id)
+            logger.info(f"[{job_id}] STEP 12 COMPLETE")
 
             # ============================================================
             # STEP 13: CLEANUP AND UPLOAD
             # ============================================================
+            logger.info(f"[{job_id}] STEP 13: Cleanup and upload...")
             self._cleanup_clips(video, clips, audio_clips_to_close)
 
             await self._update_progress(progress_callback, job_id, 95, "Uploading")
@@ -340,12 +411,26 @@ class VideoRenderer:
                 logger.info(f"Using cached audio analysis for {cache_key[:8]}...")
                 return _audio_cache[cache_key]
 
-        # Analyze audio (CPU-bound, run in thread pool)
+        # Analyze audio (CPU-bound, run in thread pool) with timeout
         loop = asyncio.get_event_loop()
-        analysis = await loop.run_in_executor(
-            get_cpu_executor(),
-            lambda: self.audio_analyzer.analyze(audio_path)
-        )
+        AUDIO_ANALYSIS_TIMEOUT = 60  # 60 seconds timeout
+
+        try:
+            logger.info(f"Starting audio analysis with {AUDIO_ANALYSIS_TIMEOUT}s timeout...")
+            analysis = await asyncio.wait_for(
+                loop.run_in_executor(
+                    get_cpu_executor(),
+                    lambda: self.audio_analyzer.analyze(audio_path)
+                ),
+                timeout=AUDIO_ANALYSIS_TIMEOUT
+            )
+            logger.info(f"Audio analysis completed successfully")
+        except asyncio.TimeoutError:
+            logger.warning(f"Audio analysis timed out after {AUDIO_ANALYSIS_TIMEOUT}s, using default analysis")
+            return self._create_default_audio_analysis()
+        except Exception as e:
+            logger.warning(f"Audio analysis failed: {e}, using default analysis")
+            return self._create_default_audio_analysis()
 
         # Cache the result
         async with _audio_cache_lock:
@@ -448,8 +533,14 @@ class VideoRenderer:
             duration = end - start
             clip = ImageClip(img_path).with_duration(duration)
 
-            # NO EFFECTS: Simple static image clips
-            # Ken Burns motion disabled per user request
+            # Apply Ken Burns motion effect based on style
+            motion_style = get_motion_style(clip_index, total_clips, preset.motion_style)
+            if motion_style != "static":
+                try:
+                    clip = motion.apply_ken_burns(clip, motion_style)
+                except Exception as e:
+                    logger.warning(f"Motion effect failed: {e}")
+
             return clip.with_start(start)
 
         total_clips = len(processed_paths)

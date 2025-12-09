@@ -1268,10 +1268,10 @@ export default function ProcessingPage() {
       <div className="h-full flex flex-col bg-white">
         {/* Header */}
         <WorkflowHeader
-        onBack={goToCreate}
-        onNext={handleProceedToPublish}
-        canProceed={true}
-      />
+          onBack={goToCreate}
+          onNext={handleProceedToPublish}
+          canProceed={true}
+        />
 
       {/* Stats Dashboard */}
       <div className="px-[7%] py-4 border-b border-neutral-200 bg-neutral-50">

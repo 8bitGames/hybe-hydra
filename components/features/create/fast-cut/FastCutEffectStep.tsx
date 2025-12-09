@@ -32,13 +32,14 @@ import {
   AlertCircle,
   ChevronRight,
   HelpCircle,
+  Palette,
 } from "lucide-react";
 import {
   ScriptGenerationResponse,
   ImageCandidate,
   AudioMatch,
   TikTokSEO,
-  EFFECT_PRESETS,
+  StyleSetSummary,
 } from "@/lib/fast-cut-api";
 import { KeywordInputPopover } from "@/components/ui/keyword-input-popover";
 
@@ -48,8 +49,9 @@ interface FastCutEffectStepProps {
   selectedAudio: AudioMatch | null;
   musicSkipped: boolean;
   aspectRatio: string;
-  effectPreset: string;
-  setEffectPreset: (preset: string) => void;
+  styleSetId: string;
+  setStyleSetId: (id: string) => void;
+  styleSets: StyleSetSummary[];
   tiktokSEO: TikTokSEO | null;
   setTiktokSEO: (seo: TikTokSEO | null) => void;
   rendering: boolean;
@@ -62,14 +64,20 @@ export function FastCutEffectStep({
   selectedAudio,
   musicSkipped,
   aspectRatio,
-  effectPreset,
-  setEffectPreset,
+  styleSetId,
+  setStyleSetId,
+  styleSets,
   tiktokSEO,
   setTiktokSEO,
   rendering,
   onStartRender,
 }: FastCutEffectStepProps) {
   const { language, translate } = useI18n();
+
+  // Get selected style set
+  const selectedStyleSet = useMemo(() => {
+    return styleSets.find(s => s.id === styleSetId);
+  }, [styleSets, styleSetId]);
 
   // Helper for tooltip icon
   const TooltipIcon = ({ tooltipKey }: { tooltipKey: string }) => (
@@ -138,12 +146,12 @@ export function FastCutEffectStep({
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-xl font-semibold text-neutral-900 mb-1">
-            {language === "ko" ? "효과 & 생성" : "Effects & Generate"}
+            {language === "ko" ? "스타일 & 생성" : "Style & Generate"}
           </h2>
           <p className="text-sm text-neutral-500">
             {language === "ko"
-              ? "효과를 선택하고 영상을 생성하세요"
-              : "Select effects and generate your video"}
+              ? "스타일을 선택하고 영상을 생성하세요"
+              : "Select a style and generate your video"}
           </p>
         </div>
 
@@ -211,48 +219,121 @@ export function FastCutEffectStep({
           <p className="text-lg font-bold text-neutral-900">{aspectRatio}</p>
         </div>
 
-        {/* Vibe */}
+        {/* Style */}
         <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg text-center">
-          <Sparkles className="h-5 w-5 text-neutral-500 mx-auto mb-1" />
-          <p className="text-xs text-neutral-500">Vibe</p>
+          <Palette className="h-5 w-5 text-neutral-500 mx-auto mb-1" />
+          <p className="text-xs text-neutral-500">
+            {language === "ko" ? "스타일" : "Style"}
+          </p>
           <p className="text-lg font-bold text-neutral-900 truncate">
-            {scriptData?.vibe || "-"}
+            {selectedStyleSet?.icon || "🎬"}
           </p>
         </div>
       </div>
 
-      {/* Effect Preset Selection */}
-      <div className="space-y-2">
+      {/* Style Set Selection */}
+      <div className="space-y-3">
         <Label className="text-sm font-medium text-neutral-700 flex items-center">
-          {language === "ko" ? "효과 프리셋" : "Effect Preset"}
-          <TooltipIcon tooltipKey="fastCut.tooltips.effects.preset" />
+          {language === "ko" ? "비디오 스타일" : "Video Style"}
+          <TooltipIcon tooltipKey="fastCut.tooltips.effects.styleSet" />
         </Label>
-        <Select value={effectPreset} onValueChange={setEffectPreset}>
-          <SelectTrigger className="w-full bg-neutral-50 border-neutral-200">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {EFFECT_PRESETS.map((preset) => (
-              <SelectItem key={preset.value} value={preset.value}>
-                <div className="flex items-center gap-2">
-                  <span>{preset.label}</span>
-                  <span className="text-xs text-neutral-400">
-                    - {preset.description}
-                  </span>
+
+        {/* Style Set Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {styleSets.map((styleSet) => {
+            const isSelected = styleSet.id === styleSetId;
+            return (
+              <button
+                key={styleSet.id}
+                onClick={() => setStyleSetId(styleSet.id)}
+                className={cn(
+                  "relative p-3 rounded-lg border-2 text-left transition-all",
+                  "hover:border-neutral-400 hover:bg-neutral-50",
+                  isSelected
+                    ? "border-neutral-900 bg-neutral-50"
+                    : "border-neutral-200 bg-white"
+                )}
+              >
+                {/* Selection indicator */}
+                {isSelected && (
+                  <div className="absolute top-1.5 right-1.5">
+                    <div className="w-4 h-4 bg-neutral-900 rounded-full flex items-center justify-center">
+                      <Check className="h-2.5 w-2.5 text-white" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Icon and preview color */}
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-xl">{styleSet.icon}</span>
+                  <div
+                    className="w-3 h-3 rounded-full border border-neutral-200"
+                    style={{ backgroundColor: styleSet.previewColor }}
+                  />
                 </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-neutral-400">
-          {scriptData?.effectRecommendation && (
-            <span className="flex items-center gap-1">
-              <Sparkles className="h-3 w-3" />
-              {language === "ko" ? "AI 추천:" : "AI recommends:"}{" "}
-              {scriptData.effectRecommendation}
-            </span>
-          )}
-        </p>
+
+                {/* Name */}
+                <p className="font-medium text-sm text-neutral-900 truncate">
+                  {language === "ko" ? styleSet.nameKo : styleSet.name}
+                </p>
+
+                {/* Description */}
+                <p className="text-[10px] text-neutral-500 line-clamp-2 mt-0.5">
+                  {language === "ko" ? styleSet.descriptionKo : styleSet.description}
+                </p>
+
+                {/* Intensity badge */}
+                <div className="mt-1.5">
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      "text-[9px] py-0",
+                      styleSet.intensity === "high" && "bg-red-100 text-red-700",
+                      styleSet.intensity === "medium" && "bg-yellow-100 text-yellow-700",
+                      styleSet.intensity === "low" && "bg-green-100 text-green-700"
+                    )}
+                  >
+                    {styleSet.intensity === "high" && (language === "ko" ? "강렬함" : "High")}
+                    {styleSet.intensity === "medium" && (language === "ko" ? "보통" : "Medium")}
+                    {styleSet.intensity === "low" && (language === "ko" ? "차분함" : "Low")}
+                  </Badge>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Selected style details */}
+        {selectedStyleSet && (
+          <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg">{selectedStyleSet.icon}</span>
+              <span className="font-medium text-neutral-900">
+                {language === "ko" ? selectedStyleSet.nameKo : selectedStyleSet.name}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-2 text-xs">
+              <div>
+                <span className="text-neutral-500 block">Vibe</span>
+                <span className="text-neutral-700">{selectedStyleSet.vibe}</span>
+              </div>
+              <div>
+                <span className="text-neutral-500 block">Color</span>
+                <span className="text-neutral-700">{selectedStyleSet.colorGrade}</span>
+              </div>
+              <div>
+                <span className="text-neutral-500 block">Text</span>
+                <span className="text-neutral-700">{selectedStyleSet.textStyle}</span>
+              </div>
+              <div>
+                <span className="text-neutral-500 block">BPM</span>
+                <span className="text-neutral-700">
+                  {selectedStyleSet.bpmRange ? `${selectedStyleSet.bpmRange[0]}-${selectedStyleSet.bpmRange[1]}` : "-"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* TikTok SEO Editing */}
@@ -384,10 +465,10 @@ export function FastCutEffectStep({
                   </p>
                 </div>
               )}
-              {/* Effect Badge */}
+              {/* Style Badge */}
               <div className="absolute top-2 right-2">
                 <Badge variant="secondary" className="bg-black/50 text-white text-[9px] backdrop-blur-sm">
-                  {EFFECT_PRESETS.find(p => p.value === effectPreset)?.label || effectPreset}
+                  {selectedStyleSet?.icon} {language === "ko" ? selectedStyleSet?.nameKo : selectedStyleSet?.name}
                 </Badge>
               </div>
               {/* Audio Info */}
@@ -402,8 +483,8 @@ export function FastCutEffectStep({
             </div>
             <p className="text-[10px] text-neutral-400 text-center mt-1">
               {language === "ko"
-                ? "실제 영상은 선택한 효과에 따라 달라질 수 있습니다"
-                : "Actual video may vary based on selected effects"}
+                ? "실제 영상은 선택한 스타일에 따라 달라질 수 있습니다"
+                : "Actual video may vary based on selected style"}
             </p>
           </div>
         </div>

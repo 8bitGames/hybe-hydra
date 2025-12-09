@@ -52,7 +52,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { InlineFastCutFlow } from "@/components/features/create/fast-cut/InlineFastCutFlow";
 import { ChevronDown } from "lucide-react";
 
 // ============================================================================
@@ -86,7 +85,7 @@ function StepProgressIndicator({
   selectedMethod,
 }: {
   status: StepStatus;
-  selectedMethod: "ai" | "fast-cut" | null;
+  selectedMethod: "ai" | null;
 }) {
   const { language } = useI18n();
   const isKorean = language === "ko";
@@ -109,18 +108,13 @@ function StepProgressIndicator({
     }
     if (!status.methodSelected) {
       return isKorean
-        ? "AI 생성 또는 패스트컷 중 생성 방식을 선택하세요"
-        : "Choose between AI Generated or Fast Cut video";
+        ? "AI 생성 방식을 선택하세요"
+        : "Select AI video generation method";
     }
     // Ready to generate (assets are optional)
-    if (selectedMethod === "ai") {
-      return isKorean
-        ? "준비 완료! 'Veo3로 생성하기' 버튼을 클릭하세요"
-        : "Ready! Click 'Generate with Veo3' to create";
-    }
     return isKorean
-      ? "준비 완료! '패스트컷 시작' 버튼을 클릭하세요"
-      : "Ready! Click 'Start Fast Cut' to create";
+      ? "준비 완료! 'Veo3로 생성하기' 버튼을 클릭하세요"
+      : "Ready! Click 'Generate with Veo3' to create";
   };
 
   // Build steps - assets are now optional extras
@@ -269,14 +263,9 @@ function ContextPanel() {
               </h3>
               <Badge
                 variant="outline"
-                className={cn(
-                  "text-[10px]",
-                  selectedIdea.type === "ai_video"
-                    ? "border-neutral-900 text-neutral-900"
-                    : "border-neutral-500 text-neutral-500"
-                )}
+                className="text-[10px] border-neutral-900 text-neutral-900"
               >
-                {selectedIdea.type === "ai_video" ? "AI Video" : "Compose"}
+                AI Video
               </Badge>
             </div>
 
@@ -319,17 +308,6 @@ function ContextPanel() {
               )}
             </div>
 
-            {/* Fast Cut recommendation hint */}
-            {selectedIdea.type === "fast-cut" && (
-              <div className="mt-3 p-2 bg-neutral-100 rounded-md">
-                <p className="text-[11px] text-neutral-600 flex items-center gap-1.5">
-                  <Images className="h-3 w-3" />
-                  {language === "ko"
-                    ? "이 아이디어는 패스트 컷 영상에 최적화되어 있습니다"
-                    : "This idea is optimized for Fast Cut Video"}
-                </p>
-              </div>
-            )}
           </div>
         )}
 
@@ -941,13 +919,11 @@ function CreateMethodCards({
   selectedMethod,
   onSelectMethod,
   onGenerate,
-  onCompose,
   isGenerating,
 }: {
-  selectedMethod: "ai" | "fast-cut" | null;
-  onSelectMethod: (method: "ai" | "fast-cut") => void;
+  selectedMethod: "ai" | null;
+  onSelectMethod: (method: "ai") => void;
   onGenerate: () => void;
-  onCompose: () => void;
   isGenerating: boolean;
 }) {
   const { language } = useI18n();
@@ -1024,73 +1000,6 @@ function CreateMethodCards({
           </div>
         )}
       </div>
-
-      {/* Fast Cut Video */}
-      <div
-        onClick={() => onSelectMethod("fast-cut")}
-        className={cn(
-          "border rounded-lg p-4 cursor-pointer transition-all",
-          selectedMethod === "fast-cut"
-            ? "border-neutral-900 bg-neutral-50"
-            : "border-neutral-200 hover:border-neutral-300"
-        )}
-      >
-        <div className="flex items-start gap-3">
-          <div
-            className={cn(
-              "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-              selectedMethod === "fast-cut" ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500"
-            )}
-          >
-            <Images className="h-5 w-5" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <h4 className="text-sm font-semibold text-neutral-900">
-                {language === "ko" ? "패스트 컷 영상" : "Fast Cut Video"}
-              </h4>
-            </div>
-            <p className="text-xs text-neutral-500 mb-3">
-              {language === "ko"
-                ? "이미지들을 음악에 맞춰 슬라이드쇼 형태로 조합합니다"
-                : "Combine images into a slideshow synced with music"}
-            </p>
-            <p className="text-[10px] text-neutral-400">
-              {language === "ko"
-                ? "추천: 포토 몽타주, 비하인드 씬, 제품 쇼케이스"
-                : "Best for: Photo montages, behind-the-scenes, product showcases"}
-            </p>
-          </div>
-          {selectedMethod === "fast-cut" && (
-            <Check className="h-5 w-5 text-neutral-900 shrink-0" />
-          )}
-        </div>
-
-        {selectedMethod === "fast-cut" && (
-          <div className="mt-4 pt-4 border-t border-neutral-200">
-            <Button
-              onClick={(e) => {
-                e.stopPropagation();
-                onCompose();
-              }}
-              disabled={isGenerating}
-              className="w-full bg-neutral-900 text-white hover:bg-neutral-800"
-            >
-              {isGenerating ? (
-                <>
-                  <Images className="h-4 w-4 mr-2 animate-pulse" />
-                  {language === "ko" ? "준비 중..." : "Preparing..."}
-                </>
-              ) : (
-                <>
-                  <Images className="h-4 w-4 mr-2" />
-                  {language === "ko" ? "패스트컷 시작" : "Start Fast Cut"}
-                </>
-              )}
-            </Button>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -1109,10 +1018,11 @@ export default function CreatePage() {
   const { goToAnalyze } = useWorkflowNavigation();
 
   // Workflow store
-  const { analyze, setAnalyzeCampaign } = useWorkflowStore(
+  const { analyze, setAnalyzeCampaign, startContentType } = useWorkflowStore(
     useShallow((state) => ({
       analyze: state.analyze,
       setAnalyzeCampaign: state.setAnalyzeCampaign,
+      startContentType: state.start.contentType,
     }))
   );
 
@@ -1163,12 +1073,15 @@ export default function CreatePage() {
     setImageAssets([]);
   };
 
-  // Local state
-  const [selectedMethod, setSelectedMethod] = useState<"ai" | "fast-cut" | null>(null);
+  // Local state - Initialize selectedMethod based on startContentType from Start stage
+  const [selectedMethod, setSelectedMethod] = useState<"ai" | null>(() => {
+    // Use startContentType from Start stage selection (AI Video only on this page)
+    if (startContentType === "ai_video") return "ai";
+    return null;
+  });
   const [audioAsset, setAudioAsset] = useState<UploadedAsset | null>(null);
   const [imageAssets, setImageAssets] = useState<UploadedAsset[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showFastCutFlow, setShowFastCutFlow] = useState(false);
 
   // Personalization modal state
   const [showPersonalizeModal, setShowPersonalizeModal] = useState(false);
@@ -1177,12 +1090,12 @@ export default function CreatePage() {
     metadata: { duration: string; aspectRatio: string; style: string };
   } | null>(null);
 
-  // Auto-select method based on selected idea
+  // Sync selectedMethod when startContentType changes (e.g., user navigated back and changed it)
   useEffect(() => {
-    if (analyze.selectedIdea) {
-      setSelectedMethod(analyze.selectedIdea.type === "fast-cut" ? "fast-cut" : "ai");
+    if (startContentType === "ai_video") {
+      setSelectedMethod("ai");
     }
-  }, [analyze.selectedIdea]);
+  }, [startContentType]);
 
   // Handle AI generation
   const handleGenerate = useCallback(async () => {
@@ -1410,20 +1323,6 @@ export default function CreatePage() {
     };
   }, [analyze, selectedCampaignName, selectedCampaign]);
 
-  // Handle compose - show inline compose flow instead of navigating
-  const handleCompose = useCallback(() => {
-    if (!selectedCampaignId) {
-      toast.warning(
-        language === "ko" ? "캠페인 필요" : "Campaign needed",
-        language === "ko" ? "먼저 캠페인을 선택하세요" : "Please select a campaign first"
-      );
-      return;
-    }
-
-    // Show inline compose flow instead of navigating to a new page
-    setShowFastCutFlow(true);
-  }, [selectedCampaignId, language, toast]);
-
   // Translations
   const t = {
     title: language === "ko" ? "콘텐츠 만들기" : "Create Content",
@@ -1434,28 +1333,6 @@ export default function CreatePage() {
     back: language === "ko" ? "분석으로" : "Back to Analyze",
     selectCampaign: language === "ko" ? "캠페인 선택" : "Select Campaign",
   };
-
-  // If compose flow is active, show the inline compose flow WITH partially disabled WorkflowHeader
-  if (showFastCutFlow && selectedCampaignId) {
-    return (
-      <TooltipProvider>
-      <div className="h-full flex flex-col bg-white">
-        {/* WorkflowHeader - can go back to Analyze, but cannot go forward to Processing */}
-        <WorkflowHeader
-          onBack={goToAnalyze}
-          disableForward={true}
-          subtitle={language === "ko" ? "패스트 컷 영상 생성 중..." : "Creating Fast Cut Video..."}
-        />
-        {/* Inline Fast Cut Flow - has its own step navigation */}
-        <InlineFastCutFlow
-          campaignId={selectedCampaignId}
-          campaignName={selectedCampaignName}
-          onBack={() => setShowFastCutFlow(false)}
-        />
-      </div>
-      </TooltipProvider>
-    );
-  }
 
   return (
     <TooltipProvider>
@@ -1542,7 +1419,7 @@ export default function CreatePage() {
               )}
             </div>
 
-            {/* Step 2: Create Methods */}
+            {/* Step 2: Create Methods - Pre-selected from Start stage */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <div className={cn(
@@ -1556,10 +1433,16 @@ export default function CreatePage() {
                 <Label className="text-sm font-medium text-neutral-700">
                   {language === "ko" ? "생성 방식 선택" : "Choose Creation Method"}
                 </Label>
+                {/* Show pre-selected indicator from Start stage */}
+                {startContentType === "ai_video" && (
+                  <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-500">
+                    {language === "ko" ? "Start에서 AI Video 선택됨" : "AI Video selected from Start"}
+                  </Badge>
+                )}
                 <InfoButton
                   content={language === "ko"
-                    ? "AI 생성: Veo3로 이미지에서 영상을 자동 생성합니다. Compose: 에셋을 직접 조합하여 영상을 만듭니다. AI 생성은 크리에이티브한 영상에, Compose는 정확한 편집에 적합합니다."
-                    : "AI Generate: Auto-create video from images with Veo3. Compose: Manually combine assets. AI Generate is best for creative videos, Compose for precise editing."}
+                    ? "Start 단계에서 선택한 콘텐츠 타입이 자동 선택됩니다. 필요시 변경할 수 있습니다."
+                    : "Content type selected at Start stage is auto-selected. You can change it if needed."}
                   side="bottom"
                 />
               </div>
@@ -1567,7 +1450,6 @@ export default function CreatePage() {
                 selectedMethod={selectedMethod}
                 onSelectMethod={setSelectedMethod}
                 onGenerate={handleGenerate}
-                onCompose={handleCompose}
                 isGenerating={isGenerating}
               />
             </div>

@@ -5,10 +5,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 import logging
+import sys
 
 from .config import get_settings
 from .utils.job_queue import JobQueue
 from .dependencies import set_job_queue, init_render_semaphore
+
+# Configure logging to output to stdout
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# Set log level for our app modules
+logging.getLogger('app').setLevel(logging.INFO)
+logging.getLogger('app.services').setLevel(logging.INFO)
+logging.getLogger('app.services.video_renderer').setLevel(logging.INFO)
+logging.getLogger('app.services.audio_analyzer').setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

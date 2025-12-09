@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { createCreativeDirectorAgent } from "@/lib/agents/creators/creative-director";
+import { createFastCutIdeaAgent } from "@/lib/agents/creators/fast-cut-idea-agent";
 import { AgentContext, ContentStrategy } from "@/lib/agents/types";
 
 // ============================================================================
@@ -59,6 +60,15 @@ interface GenerateIdeasRequest {
   // Artist/Brand context
   artistName?: string;
   language?: "ko" | "en";
+  // Content type - selected by user at Start stage (ai_video or fast-cut)
+  contentType?: "ai_video" | "fast-cut";
+}
+
+interface FastCutData {
+  searchKeywords: string[];
+  suggestedVibe: string;
+  suggestedBpmRange: { min: number; max: number };
+  scriptOutline: string[];
 }
 
 interface ContentIdea {
@@ -68,7 +78,10 @@ interface ContentIdea {
   hook: string;
   description: string;
   estimatedEngagement: "high" | "medium" | "low";
+  // AI Video용 (VEO cinematic prompt)
   optimizedPrompt: string;
+  // Fast Cut용 데이터
+  fastCutData?: FastCutData;
   suggestedMusic?: {
     bpm: number;
     genre: string;
@@ -108,6 +121,7 @@ export async function POST(request: NextRequest) {
       performance_metrics,
       artistName = "Brand",
       language = "ko",
+      contentType = "ai_video",
     } = body;
 
     // Build strategy from trend data
@@ -118,15 +132,13 @@ export async function POST(request: NextRequest) {
       trend_insights,
     });
 
-    // Create agent and context
-    const creativeDirector = createCreativeDirectorAgent();
-
+    // Common agent context
     const agentContext: AgentContext = {
       workflow: {
         artistName,
         platform: "tiktok",
         language,
-        genre: genre || undefined,  // Music genre for viral content generation
+        genre: genre || undefined,
         sessionId: `analyze-ideas-${Date.now()}`,
       },
       discover: {
@@ -136,9 +148,80 @@ export async function POST(request: NextRequest) {
       },
     };
 
+    // ========================================================================
+    // Branch: Fast Cut vs AI Video based on user-selected contentType
+    // ========================================================================
+
+    if (contentType === "fast-cut") {
+      // Use FastCutIdeaAgent for slideshow-type content
+      const fastCutAgent = createFastCutIdeaAgent();
+
+      const fastCutInput = {
+        userIdea: user_idea || undefined,
+        campaignDescription: campaign_description || undefined,
+        artistName,
+        genre: genre || undefined,
+        trendKeywords: keywords,
+        language: language as "ko" | "en",
+      };
+
+      // Fast Cut doesn't support streaming yet
+      const agentResult = await fastCutAgent.execute(fastCutInput, agentContext);
+
+      if (!agentResult.success || !agentResult.data) {
+        console.error("FastCutIdeaAgent execution failed:", agentResult.error);
+        return NextResponse.json(
+          {
+            success: false,
+            error: agentResult.error || "Failed to generate Fast Cut ideas",
+          },
+          { status: 500 }
+        );
+      }
+
+      const output = agentResult.data;
+
+      // Transform Fast Cut agent output
+      const ideas: ContentIdea[] = output.ideas.map((idea) => ({
+        id: uuidv4(),
+        type: "fast-cut" as const,
+        title: idea.title,
+        hook: idea.hook,
+        description: idea.description,
+        estimatedEngagement: idea.estimatedEngagement,
+        // Empty VEO prompt for Fast Cut ideas
+        optimizedPrompt: "",
+        // Fast Cut specific data
+        fastCutData: {
+          searchKeywords: idea.searchKeywords,
+          suggestedVibe: idea.suggestedVibe,
+          suggestedBpmRange: idea.suggestedBpmRange,
+          scriptOutline: idea.scriptOutline,
+        },
+        suggestedMusic: {
+          bpm: Math.round((idea.suggestedBpmRange.min + idea.suggestedBpmRange.max) / 2),
+          genre: idea.suggestedVibe.toLowerCase(),
+        },
+        scriptOutline: idea.scriptOutline,
+      }));
+
+      return NextResponse.json({
+        success: true,
+        ideas,
+        optimized_hashtags: output.optimizedHashtags,
+        content_strategy: output.contentStrategy,
+      } as GenerateIdeasResponse);
+    }
+
+    // ========================================================================
+    // Default: AI Video (VEO) using CreativeDirectorAgent
+    // ========================================================================
+
+    const creativeDirector = createCreativeDirectorAgent();
+
     const agentInput = {
       userIdea: user_idea || undefined,
-      campaignDescription: campaign_description || undefined,  // Central context for all prompts
+      campaignDescription: campaign_description || undefined,
       strategy: strategy,
       audience: target_audience.length > 0 ? target_audience.join(", ") : undefined,
       goals: content_goals.length > 0 ? content_goals : undefined,

@@ -84,8 +84,13 @@ export interface StartFromIdea {
 
 export type StartSource = StartFromTrends | StartFromVideo | StartFromIdea | null;
 
+// Content creation type - selected by user at Start stage
+export type ContentType = "ai_video" | "fast-cut";
+
 export interface StartData {
   source: StartSource;
+  // Content type selection (user chooses based on AI recommendation)
+  contentType: ContentType;
   // Common fields populated after entry
   selectedHashtags: string[];
   savedInspiration: TrendVideo[];
@@ -155,6 +160,13 @@ export interface DiscoverData {
 }
 
 // Analyze Stage Types
+export interface FastCutData {
+  searchKeywords: string[];
+  suggestedVibe: string;
+  suggestedBpmRange: { min: number; max: number };
+  scriptOutline: string[];
+}
+
 export interface ContentIdea {
   id: string;
   type: "ai_video" | "fast-cut";
@@ -162,7 +174,10 @@ export interface ContentIdea {
   hook: string;
   description: string;
   estimatedEngagement: "high" | "medium" | "low";
+  // AI Video용 (VEO cinematic prompt)
   optimizedPrompt: string;
+  // Fast Cut용 데이터
+  fastCutData?: FastCutData;
   suggestedMusic?: {
     bpm: number;
     genre: string;
@@ -361,6 +376,7 @@ interface WorkflowState {
 
   // Actions - Start (new workflow entry point)
   setStartSource: (source: StartSource) => void;
+  setStartContentType: (contentType: ContentType) => void;
   setStartFromTrends: (data: Omit<StartFromTrends, "type">) => void;
   setStartFromVideo: (data: Omit<StartFromVideo, "type">) => void;
   setStartFromIdea: (data: Omit<StartFromIdea, "type">) => void;
@@ -454,6 +470,7 @@ interface WorkflowState {
 
 const initialStartData: StartData = {
   source: null,
+  contentType: "ai_video", // Default to AI Video, user can change based on recommendation
   selectedHashtags: [],
   savedInspiration: [],
   performanceMetrics: null,
@@ -559,6 +576,10 @@ export const useWorkflowStore = create<WorkflowState>()(
           set((state) => ({
             start: { ...state.start, source },
           })),
+        setStartContentType: (contentType) =>
+          set((state) => ({
+            start: { ...state.start, contentType },
+          })),
 
         setStartFromTrends: (data) =>
           set((state) => ({
@@ -600,9 +621,12 @@ export const useWorkflowStore = create<WorkflowState>()(
         updateVideoAiAnalysis: (analysis) =>
           set((state) => {
             if (state.start.source?.type !== "video") return state;
+            // Auto-select fast-cut when slideshow is detected (user can still change)
+            const autoSelectContentType = analysis?.isComposeVideo ? "fast-cut" : state.start.contentType;
             return {
               start: {
                 ...state.start,
+                contentType: autoSelectContentType,
                 source: {
                   ...state.start.source,
                   aiAnalysis: analysis,

@@ -3,6 +3,7 @@ import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import { submitRenderToModal, ModalRenderRequest, isLocalMode } from '@/lib/modal/client';
+import { getStyleSetById, styleSetToRenderSettings } from '@/lib/fast-cut/style-sets';
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
@@ -30,10 +31,13 @@ interface RenderRequest {
       duration: number;
     }>;
   };
-  effectPreset: string;
+  // Style Set ID - when provided, overrides individual settings
+  styleSetId?: string;
+  // Individual settings (used when styleSetId is not provided)
+  effectPreset?: string;
   aspectRatio: string;
   targetDuration: number;
-  vibe: string;
+  vibe?: string;
   textStyle?: string;
   colorGrade?: string;
   // Audio timing control
@@ -58,7 +62,7 @@ interface RenderRequest {
     searchIntent?: string;
     suggestedPostingTimes?: string[];
   };
-  // AI Effect Selection System
+  // AI Effect Selection System (legacy - used when styleSetId is not provided)
   useAiEffects?: boolean;
   aiPrompt?: string;
   aiEffects?: AIEffectSelection;
@@ -76,31 +80,67 @@ export async function POST(request: NextRequest) {
     const body: RenderRequest = await request.json();
     const {
       generationId,
-      campaignId,
+      campaignId: rawCampaignId,
       audioAssetId,
       images,
       script,
-      effectPreset,
+      styleSetId,
       aspectRatio,
       targetDuration,
-      vibe,
-      textStyle = 'bold_pop',
-      colorGrade = 'vibrant',
       audioStartTime = 0,  // Default to 0 if not provided
       prompt = 'Fast cut video generation',
       searchKeywords = [],
       tiktokSEO,
-      // AI Effect Selection
-      useAiEffects = true,
-      aiPrompt,
-      aiEffects,
     } = body;
+
+    // Convert empty campaignId and audioAssetId to null (for test mode)
+    const campaignId = rawCampaignId && rawCampaignId.trim() ? rawCampaignId : null;
+    const audioAssetIdClean = audioAssetId && audioAssetId.trim() ? audioAssetId : null;
+
+    // Resolve settings from style set or individual parameters
+    let vibe: string;
+    let effectPreset: string;
+    let textStyle: string;
+    let colorGrade: string;
+    let useAiEffects: boolean;
+    let aiEffects: AIEffectSelection | undefined;
+
+    if (styleSetId) {
+      // Use style set settings
+      const styleSet = getStyleSetById(styleSetId);
+      if (!styleSet) {
+        return NextResponse.json(
+          { detail: `Invalid style set ID: ${styleSetId}` },
+          { status: 400 }
+        );
+      }
+
+      const renderSettings = styleSetToRenderSettings(styleSet);
+      vibe = renderSettings.vibe;
+      effectPreset = renderSettings.effectPreset;
+      textStyle = renderSettings.textStyle;
+      colorGrade = renderSettings.colorGrade;
+      useAiEffects = false; // Style sets use predefined effects
+      aiEffects = renderSettings.aiEffects;
+
+      console.log(`[Fast Cut Render] Using style set: ${styleSetId} (${styleSet.nameKo})`);
+    } else {
+      // Use individual parameters (legacy mode)
+      vibe = body.vibe || 'Exciting';
+      effectPreset = body.effectPreset || 'zoom_beat';
+      textStyle = body.textStyle || 'bold_pop';
+      colorGrade = body.colorGrade || 'vibrant';
+      useAiEffects = body.useAiEffects ?? true;
+      aiEffects = body.aiEffects;
+    }
+
+    const aiPrompt = body.aiPrompt;
 
     // Get audio asset URL (optional - audio is no longer required)
     let audioAsset = null;
-    if (audioAssetId) {
+    if (audioAssetIdClean) {
       audioAsset = await prisma.asset.findUnique({
-        where: { id: audioAssetId },
+        where: { id: audioAssetIdClean },
         select: { s3Url: true }
       });
 
@@ -117,6 +157,8 @@ export async function POST(request: NextRequest) {
     const fastCutData = JSON.parse(JSON.stringify({
       script: script?.lines || [],
       searchKeywords,
+      // Style set or individual settings
+      styleSetId: styleSetId || null,
       vibe,
       effectPreset,
       textStyle,
@@ -163,7 +205,7 @@ export async function POST(request: NextRequest) {
         campaignId,
         generationType: 'COMPOSE',
         prompt,
-        audioAssetId,
+        audioAssetId: audioAssetIdClean,
         audioStartTime,
         aspectRatio,
         durationSeconds: Math.ceil(targetDuration) || 15,
@@ -243,7 +285,10 @@ export async function POST(request: NextRequest) {
       images_count: images.length,
       has_script: !!(script && script.lines && script.lines.length > 0),
       script_lines_count: script?.lines?.length || 0,
+      // Style set or individual settings
+      style_set_id: styleSetId || null,
       vibe,
+      effect_preset: effectPreset,
       target_duration: targetDuration,
       audio_start_time: audioStartTime,
       // AI Effects

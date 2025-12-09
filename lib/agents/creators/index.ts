@@ -28,3 +28,14 @@ export {
   type ScriptWriterInput,
   type ScriptWriterOutput,
 } from './script-writer';
+
+// Fast Cut Idea - Slideshow content ideation
+export {
+  FastCutIdeaAgent,
+  createFastCutIdeaAgent,
+  FastCutIdeaConfig,
+  FastCutIdeaInputSchema,
+  FastCutIdeaOutputSchema,
+  type FastCutIdeaInput,
+  type FastCutIdeaOutput,
+} from './fast-cut-idea-agent';
