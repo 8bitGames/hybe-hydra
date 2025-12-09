@@ -112,7 +112,6 @@ export async function POST(request: NextRequest) {
     console.log(`[Image Search] ❌ CACHE MISS - calling Google API for: ${keywords.join(', ')}`);
 
     // Search images using multiple keywords for better coverage
-    // Using Creative Commons licenses to filter out copyrighted images
     const searchResults = await searchImagesMultiQuery(keywords, {
       maxResultsPerQuery: Math.ceil(maxImages / keywords.length) + 2,
       totalMaxResults: maxImages * 2, // Get more to filter
@@ -120,7 +119,6 @@ export async function POST(request: NextRequest) {
       imageSize: "huge",  // Filter for huge images (1024x768+) at API level
       gl,  // Region filter based on user's language
       hl,  // Language filter based on user's language
-      rights: "cc_publicdomain,cc_attribute,cc_sharealike,cc_noncommercial",  // Only free-to-use images
     });
 
     // Debug: log search results
