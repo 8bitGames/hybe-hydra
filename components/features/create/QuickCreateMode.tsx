@@ -36,7 +36,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, downloadFile } from "@/lib/utils";
 import { SaveToCampaignModal } from "./SaveToCampaignModal";
 
 // Helper to get access token from Zustand persisted storage
@@ -585,18 +585,11 @@ export function QuickCreateMode({
 
                 <Button
                   variant="outline"
-                  asChild
                   className="flex-1"
+                  onClick={() => downloadFile(outputUrl!, `quick-compose-${generationId}.mp4`)}
                 >
-                  <a
-                    href={outputUrl}
-                    download={`quick-compose-${generationId}.mp4`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    {language === "ko" ? "다운로드" : "Download"}
-                  </a>
+                  <Download className="h-4 w-4 mr-2" />
+                  {language === "ko" ? "다운로드" : "Download"}
                 </Button>
 
                 {!savedToCampaign ? (
@@ -698,18 +691,11 @@ export function QuickCreateMode({
 
               <Button
                 variant="outline"
-                asChild
                 className="flex-1"
+                onClick={() => downloadFile(generation.output_url!, `quick-create-${generation.id}.mp4`)}
               >
-                <a
-                  href={generation.output_url}
-                  download={`quick-create-${generation.id}.mp4`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  {language === "ko" ? "다운로드" : "Download"}
-                </a>
+                <Download className="h-4 w-4 mr-2" />
+                {language === "ko" ? "다운로드" : "Download"}
               </Button>
 
               {!savedToCampaign ? (

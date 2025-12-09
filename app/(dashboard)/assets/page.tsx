@@ -38,6 +38,7 @@ import {
   ChevronRight,
   Package,
 } from "lucide-react";
+import { downloadFile } from "@/lib/utils";
 
 export default function AssetsPage() {
   const router = useRouter();
@@ -389,11 +390,9 @@ export default function AssetsPage() {
                       variant="secondary"
                       size="icon"
                       className="h-7 w-7"
-                      asChild
+                      onClick={() => downloadFile(asset.s3_url, asset.original_filename)}
                     >
-                      <a href={asset.s3_url} download={asset.original_filename}>
-                        <Download className="h-3 w-3" />
-                      </a>
+                      <Download className="h-3 w-3" />
                     </Button>
                   </div>
                 </div>
@@ -440,10 +439,12 @@ export default function AssetsPage() {
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" asChild>
-                        <a href={asset.s3_url} download={asset.original_filename}>
-                          <Download className="h-4 w-4" />
-                        </a>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => downloadFile(asset.s3_url, asset.original_filename)}
+                      >
+                        <Download className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="icon">
                         <Trash2 className="h-4 w-4 text-destructive" />

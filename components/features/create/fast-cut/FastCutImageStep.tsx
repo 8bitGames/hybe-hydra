@@ -20,6 +20,7 @@ import {
   Sparkles,
   AlertCircle,
   ChevronRight,
+  ChevronLeft,
   HelpCircle,
 } from "lucide-react";
 import { ImageCandidate } from "@/lib/fast-cut-api";
@@ -36,6 +37,7 @@ interface FastCutImageStepProps {
   selectedSearchKeywords: Set<string>;
   setSelectedSearchKeywords: (keywords: Set<string>) => void;
   onToggleSelection: (image: ImageCandidate) => void;
+  onReorderImage: (fromIndex: number, direction: "left" | "right") => void;
   onSearchImages: () => void;
   onNext?: () => void;
 }
@@ -50,6 +52,7 @@ export function FastCutImageStep({
   selectedSearchKeywords,
   setSelectedSearchKeywords,
   onToggleSelection,
+  onReorderImage,
   onSearchImages,
   onNext,
 }: FastCutImageStepProps) {
@@ -367,7 +370,7 @@ export function FastCutImageStep({
         {selectedImages.length > 0 ? (
           <div className="flex gap-2 overflow-x-auto pb-2 p-2 bg-neutral-50 rounded-lg border border-neutral-200">
             {selectedImages.map((image, idx) => (
-              <div key={image.id} className="relative flex-shrink-0 w-16">
+              <div key={image.id} className="relative flex-shrink-0 w-16 group">
                 <div className="aspect-[3/4] rounded-lg overflow-hidden border border-neutral-200">
                   <img
                     src={image.thumbnailUrl || image.sourceUrl}
@@ -384,6 +387,39 @@ export function FastCutImageStep({
                 >
                   <X className="h-3 w-3" />
                 </button>
+                {/* Reorder Buttons - visible on hover */}
+                <div className="absolute inset-x-0 bottom-0 flex justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity pb-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReorderImage(idx, "left");
+                    }}
+                    disabled={idx === 0}
+                    className={cn(
+                      "w-5 h-5 rounded-full flex items-center justify-center text-white transition-colors",
+                      idx === 0
+                        ? "bg-neutral-300 cursor-not-allowed"
+                        : "bg-neutral-700 hover:bg-neutral-900"
+                    )}
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReorderImage(idx, "right");
+                    }}
+                    disabled={idx === selectedImages.length - 1}
+                    className={cn(
+                      "w-5 h-5 rounded-full flex items-center justify-center text-white transition-colors",
+                      idx === selectedImages.length - 1
+                        ? "bg-neutral-300 cursor-not-allowed"
+                        : "bg-neutral-700 hover:bg-neutral-900"
+                    )}
+                  >
+                    <ChevronRight className="h-3 w-3" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

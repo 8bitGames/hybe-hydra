@@ -44,7 +44,9 @@ import {
   Clock,
   TrendingUp,
   TrendingDown,
+  MessageSquare,
 } from 'lucide-react';
+import { PromptRefinerChat } from '@/components/admin/prompt-refiner-chat';
 
 interface AgentPrompt {
   id: string;
@@ -473,6 +475,10 @@ export default function PromptsAdminPage() {
                       <TabsTrigger value="prompt" className="data-[state=active]:bg-gray-700 data-[state=active]:text-white text-gray-400">System Prompt</TabsTrigger>
                       <TabsTrigger value="templates" className="data-[state=active]:bg-gray-700 data-[state=active]:text-white text-gray-400">Templates</TabsTrigger>
                       <TabsTrigger value="config" className="data-[state=active]:bg-gray-700 data-[state=active]:text-white text-gray-400">Model Config</TabsTrigger>
+                      <TabsTrigger value="refine" className="data-[state=active]:bg-gray-700 data-[state=active]:text-white text-gray-400">
+                        <MessageSquare className="w-4 h-4 mr-1" />
+                        Refine
+                      </TabsTrigger>
                       <TabsTrigger value="evaluation" className="data-[state=active]:bg-gray-700 data-[state=active]:text-white text-gray-400">
                         <BarChart3 className="w-4 h-4 mr-1" />
                         Evaluation
@@ -678,6 +684,32 @@ export default function PromptsAdminPage() {
                           {selectedPrompt.is_active ? 'Active' : 'Inactive'}
                         </Button>
                       </div>
+                    </TabsContent>
+
+                    {/* Refine Tab - AI-assisted prompt improvement */}
+                    <TabsContent value="refine" className="space-y-4">
+                      <PromptRefinerChat
+                        agentId={selectedPrompt.agent_id}
+                        currentPrompt={{
+                          systemPrompt: selectedPrompt.system_prompt,
+                          templates: selectedPrompt.templates,
+                          name: selectedPrompt.name,
+                          description: selectedPrompt.description || undefined,
+                        }}
+                        onApplyImprovement={(improvement) => {
+                          setSelectedPrompt(prev => {
+                            if (!prev) return prev;
+                            return {
+                              ...prev,
+                              ...(improvement.systemPrompt && { system_prompt: improvement.systemPrompt }),
+                              ...(improvement.templates && {
+                                templates: { ...prev.templates, ...improvement.templates }
+                              }),
+                            };
+                          });
+                          setMessage({ type: 'success', text: 'Improvement applied! Review and save when ready.' });
+                        }}
+                      />
                     </TabsContent>
 
                     {/* Evaluation Tab */}

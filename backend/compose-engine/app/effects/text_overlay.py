@@ -8,7 +8,7 @@ import textwrap
 
 # Get the font path relative to this file
 FONTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fonts")
-NOTO_SANS_BOLD = os.path.join(FONTS_DIR, "NotoSans-Bold.ttf")
+COOPER_BLACK = os.path.join(FONTS_DIR, "COOPBL.TTF")
 
 # Animation registry - maps animation IDs to effect configurations
 # Each animation defines: in/out durations and effect type
@@ -50,7 +50,7 @@ def create_text_clip(
     Create a text clip with the specified style.
 
     Improvements:
-    - Uses Noto Sans Bold 700 font for better readability
+    - Uses Cooper Black font for bold, impactful text
     - Larger font size (4% of height = ~77px for 1920)
     - White text with black outline for visibility
     - Position at bottom 18% for TikTok safe zone
@@ -76,10 +76,10 @@ def create_text_clip(
         if len(lines) > 2:
             wrapped_text = wrapped_text.rstrip() + "..."
 
-    # Check if Noto Sans Bold font exists
-    font_path = NOTO_SANS_BOLD if os.path.exists(NOTO_SANS_BOLD) else None
+    # Check if Cooper Black font exists
+    font_path = COOPER_BLACK if os.path.exists(COOPER_BLACK) else None
 
-    # All styles now use Noto Sans Bold with white text and black outline
+    # All styles now use Cooper Black with white text and black outline
     style_configs = {
         "bold_pop": {
             "font": font_path,

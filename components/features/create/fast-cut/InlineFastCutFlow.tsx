@@ -630,6 +630,16 @@ export function InlineFastCutFlow({
     });
   };
 
+  const reorderImage = (fromIndex: number, direction: "left" | "right") => {
+    setSelectedImages((prev) => {
+      const newImages = [...prev];
+      const toIndex = direction === "left" ? fromIndex - 1 : fromIndex + 1;
+      if (toIndex < 0 || toIndex >= newImages.length) return prev;
+      [newImages[fromIndex], newImages[toIndex]] = [newImages[toIndex], newImages[fromIndex]];
+      return newImages;
+    });
+  };
+
   // ========================================
   // Step 3: Music Matching
   // ========================================
@@ -939,6 +949,7 @@ export function InlineFastCutFlow({
                 selectedSearchKeywords={selectedSearchKeywords}
                 setSelectedSearchKeywords={setSelectedSearchKeywords}
                 onToggleSelection={toggleImageSelection}
+                onReorderImage={reorderImage}
                 onSearchImages={() => handleSearchImages()}
                 onNext={handleNext}
               />
