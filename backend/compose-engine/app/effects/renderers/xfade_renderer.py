@@ -93,6 +93,49 @@ XFADE_TRANSITIONS = {
     # - hblur: makes images invisible
 }
 
+# =============================================================================
+# FFmpeg POST-PROCESSING FILTERS
+# These run AFTER xfade transitions, in FFmpeg (not MoviePy per-frame)
+# =============================================================================
+
+# Color grading presets mapped to FFmpeg filter chains
+FFMPEG_COLOR_GRADES = {
+    # vibrant: +30% saturation
+    "vibrant": "eq=saturation=1.3",
+
+    # cinematic: orange/teal look - slight blue in shadows, desaturate, more contrast
+    "cinematic": "colorbalance=rs=-0.05:bs=0.05:rm=-0.03:bm=0.03,eq=saturation=0.9:contrast=1.1",
+
+    # bright: +10% brightness, slight gamma boost
+    "bright": "eq=brightness=0.1:gamma=1.1",
+
+    # moody: darker, blue tint, desaturated, high contrast
+    "moody": "colorbalance=bs=0.1:bm=0.05,eq=saturation=0.7:contrast=1.15:brightness=-0.1",
+
+    # bw: convert to grayscale
+    "bw": "colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3",
+
+    # natural: no changes
+    "natural": None,
+}
+
+# Vignette filter with configurable strength (0.0-1.0)
+# angle controls darkness spread: PI/4 is standard, lower = more vignette
+def get_vignette_filter(strength: float = 0.3) -> str:
+    """Get FFmpeg vignette filter string."""
+    # FFmpeg vignette: angle controls how far darkness spreads from edges
+    # PI/4 (~0.785) is standard, PI/5 (~0.628) is stronger
+    angle = 0.785 - (strength * 0.4)  # strength 0.3 → angle ~0.665
+    return f"vignette=a={angle:.3f}"
+
+# Film grain using noise filter
+def get_film_grain_filter(intensity: float = 0.05) -> str:
+    """Get FFmpeg noise filter for film grain effect."""
+    # FFmpeg noise: alls=strength (0-100), allf=t for temporal noise
+    # intensity 0.05 → ~5% noise → strength ~12
+    strength = int(intensity * 240)  # 0.05 → 12, 0.1 → 24
+    return f"noise=alls={strength}:allf=t"
+
 
 @dataclass
 class ClipSegment:
@@ -203,9 +246,13 @@ class XfadeRenderer:
         transition_duration: float = 0.5,
         use_gpu: bool = True,
         target_size: Optional[Tuple[int, int]] = None,
+        # Post-processing filters (applied in FFmpeg, not MoviePy)
+        color_grade: Optional[str] = None,
+        vignette_strength: Optional[float] = None,
+        film_grain_intensity: Optional[float] = None,
     ) -> bool:
         """
-        Render a sequence of clips with transitions.
+        Render a sequence of clips with transitions and post-processing.
 
         Args:
             clips: List of ClipSegment objects
@@ -213,6 +260,10 @@ class XfadeRenderer:
             transitions: List of transition names (len should be len(clips) - 1)
             transition_duration: Duration for each transition
             use_gpu: Use GPU encoding if available
+            target_size: Optional target resolution (width, height)
+            color_grade: Color grading preset (vibrant, cinematic, bright, moody, bw)
+            vignette_strength: Vignette strength 0.0-1.0 (None to disable)
+            film_grain_intensity: Film grain intensity 0.0-0.2 (None to disable)
 
         Returns:
             True if successful
@@ -353,10 +404,48 @@ class XfadeRenderer:
 
             print(f"[XFADE_RENDERER] Filter chain: {len(filter_parts)} transitions")
             print(f"[XFADE_RENDERER] Effects being applied: {transitions}")
+
+            # =================================================================
+            # POST-PROCESSING FILTERS (color grade, vignette, film grain)
+            # Applied in FFmpeg = FAST (vs MoviePy per-frame = SLOW)
+            # =================================================================
+            post_filters = []
+
+            # Color grading
+            if color_grade and color_grade != "natural":
+                grade_filter = FFMPEG_COLOR_GRADES.get(color_grade)
+                if grade_filter:
+                    post_filters.append(grade_filter)
+                    print(f"[XFADE_RENDERER] Adding color grade: {color_grade} -> {grade_filter}")
+
+            # Vignette
+            if vignette_strength is not None and vignette_strength > 0:
+                vignette_filter = get_vignette_filter(vignette_strength)
+                post_filters.append(vignette_filter)
+                print(f"[XFADE_RENDERER] Adding vignette: strength={vignette_strength} -> {vignette_filter}")
+
+            # Film grain
+            if film_grain_intensity is not None and film_grain_intensity > 0:
+                grain_filter = get_film_grain_filter(film_grain_intensity)
+                post_filters.append(grain_filter)
+                print(f"[XFADE_RENDERER] Adding film grain: intensity={film_grain_intensity} -> {grain_filter}")
+
+            # If we have post-processing, need to chain them after xfade
+            if post_filters:
+                # Last xfade currently has no output label, give it one
+                # Find the last xfade filter and add output label
+                last_filter_idx = len(filter_parts) - 1
+                filter_parts[last_filter_idx] = filter_parts[last_filter_idx] + "[xfade_out]"
+
+                # Chain post-processing filters
+                post_chain = ",".join(post_filters)
+                filter_parts.append(f"[xfade_out]{post_chain}")
+                print(f"[XFADE_RENDERER] Post-processing chain: {post_chain}")
+
             print(f"[XFADE_RENDERER] Each filter part:")
             for idx, part in enumerate(filter_parts):
                 print(f"  [{idx}] {part}")
-            logger.info(f"xfade filter chain: {len(filter_parts)} transitions with effects: {transitions}")
+            logger.info(f"xfade filter chain: {len(filter_parts)} parts with effects: {transitions}")
             logger.info(f"xfade final duration: ~{accumulated_duration:.1f}s")
 
             filter_complex = ";".join(filter_parts)
@@ -538,10 +627,11 @@ class XfadeRenderer:
 
         try:
             # Actually test NVENC encoding, not just encoder listing
+            # NVENC requires minimum 128x128 frame size, using 256x256 to be safe
             result = subprocess.run(
                 [
                     self.ffmpeg_path, "-hide_banner", "-loglevel", "error",
-                    "-f", "lavfi", "-i", "color=black:s=64x64:d=0.1",
+                    "-f", "lavfi", "-i", "color=black:s=256x256:d=0.1",
                     "-c:v", "h264_nvenc", "-f", "null", "-"
                 ],
                 capture_output=True,

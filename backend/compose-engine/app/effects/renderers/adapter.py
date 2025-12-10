@@ -152,6 +152,10 @@ class RendererAdapter:
         transitions: List[TransitionSpec],
         temp_dir: str,
         job_id: str = "render",
+        # Post-processing filters (applied in FFmpeg xfade step for speed)
+        color_grade: Optional[str] = None,
+        vignette_strength: Optional[float] = None,
+        film_grain_intensity: Optional[float] = None,
     ) -> CompositeVideoClip:
         """
         Apply transitions to MoviePy clips.
@@ -164,6 +168,9 @@ class RendererAdapter:
             transitions: List of TransitionSpec for each transition
             temp_dir: Temporary directory for intermediate files
             job_id: Job ID for logging
+            color_grade: Color grade to apply in FFmpeg (vibrant, cinematic, etc.)
+            vignette_strength: Vignette strength 0.0-1.0 (applied in FFmpeg)
+            film_grain_intensity: Film grain intensity 0.0-0.2 (applied in FFmpeg)
 
         Returns:
             CompositeVideoClip with transitions applied
@@ -199,8 +206,15 @@ class RendererAdapter:
         # If all transitions can use xfade, or GL failed, process as xfade batch
         # Map GL transitions to xfade equivalents
         print(f"[ADAPTER][{job_id}] Using xfade batch renderer for {len(transitions)} transitions")
+        if color_grade or vignette_strength or film_grain_intensity:
+            print(f"[ADAPTER][{job_id}] FFmpeg post-processing: color_grade={color_grade}, vignette={vignette_strength}, grain={film_grain_intensity}")
         logger.info(f"[{job_id}] Using xfade batch renderer for {len(transitions)} transitions")
-        result = self._apply_xfade_batch(clips, transitions, temp_dir, job_id)
+        result = self._apply_xfade_batch(
+            clips, transitions, temp_dir, job_id,
+            color_grade=color_grade,
+            vignette_strength=vignette_strength,
+            film_grain_intensity=film_grain_intensity
+        )
         if result is not None:
             print(f"[ADAPTER][{job_id}] xfade batch SUCCESS!")
             return result
@@ -331,11 +345,16 @@ class RendererAdapter:
         transitions: List[TransitionSpec],
         temp_dir: str,
         job_id: str,
+        color_grade: Optional[str] = None,
+        vignette_strength: Optional[float] = None,
+        film_grain_intensity: Optional[float] = None,
     ) -> Optional[CompositeVideoClip]:
         """
         Apply transitions using FFmpeg xfade in batch.
 
         This is more efficient than processing transitions individually.
+        Post-processing filters (color_grade, vignette, grain) are applied
+        in the same FFmpeg command for maximum speed.
         """
         try:
             # Export clips as video files
@@ -438,7 +457,7 @@ class RendererAdapter:
             print(f"[ADAPTER][{job_id}] xfade effects to apply: {xfade_names}")
             logger.info(f"[{job_id}] xfade effects to apply: {xfade_names}")
 
-            # Render with xfade
+            # Render with xfade + post-processing filters
             output_path = os.path.join(temp_dir, f"{job_id}_xfade_output.mp4")
             avg_duration = sum(t.duration for t in transitions) / len(transitions)
 
@@ -447,7 +466,11 @@ class RendererAdapter:
                 output_path=output_path,
                 transitions=xfade_names,
                 transition_duration=avg_duration,
-                use_gpu=self.prefer_gpu
+                use_gpu=self.prefer_gpu,
+                # Post-processing applied in FFmpeg (fast) instead of MoviePy (slow)
+                color_grade=color_grade,
+                vignette_strength=vignette_strength,
+                film_grain_intensity=film_grain_intensity,
             )
 
             if success and os.path.exists(output_path):
