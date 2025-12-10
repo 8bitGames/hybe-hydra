@@ -44,7 +44,11 @@ function getBatchClient(): BatchClient {
 
 // Callback URL for AWS Batch to notify us when render completes
 function getCallbackUrl(): string {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://hydra-sand-theta.vercel.app';
+  // In development, use localhost; in production, use hydra.ai.kr
+  const isDev = process.env.NODE_ENV === 'development';
+  const baseUrl = isDev
+    ? 'http://localhost:3000'
+    : (process.env.NEXT_PUBLIC_APP_URL || 'https://hydra.ai.kr');
   return `${baseUrl}/api/v1/fast-cut/callback`;
 }
 
