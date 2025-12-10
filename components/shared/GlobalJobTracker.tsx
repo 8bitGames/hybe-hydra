@@ -11,7 +11,10 @@ import {
   X,
   Eye,
   Send,
+  ArrowRight,
+  Settings2,
 } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -92,7 +95,24 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
   const totalActive = counts.processing + counts.queued;
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative flex items-center gap-1", className)}>
+      {/* Quick link to processing when there are active jobs */}
+      {hasActiveJobs && (
+        <Link href="/processing">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+            title={language === "ko" ? "프로세싱 페이지로 이동" : "Go to Processing Page"}
+          >
+            <Settings2 className="h-4 w-4" />
+            <span className="hidden sm:inline text-xs">
+              {language === "ko" ? "프로세싱" : "Processing"}
+            </span>
+          </Button>
+        </Link>
+      )}
+
       {/* Trigger button */}
       <Button
         variant={hasActiveJobs ? "default" : "ghost"}
@@ -181,17 +201,38 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
             </div>
           </ScrollArea>
 
-          {/* Footer with counts */}
-          <div className="px-4 py-2 border-t bg-muted/50 text-xs text-muted-foreground flex justify-between">
-            <span>
-              {language === "ko" ? "처리중" : "Processing"}: {counts.processing}
-            </span>
-            <span>
-              {language === "ko" ? "대기중" : "Queued"}: {counts.queued}
-            </span>
-            <span>
-              {language === "ko" ? "완료" : "Completed"}: {counts.completed}
-            </span>
+          {/* Footer with counts and processing link */}
+          <div className="border-t bg-muted/50">
+            {/* Processing page shortcut */}
+            <Link href="/processing" onClick={toggleJobTracker}>
+              <div className="px-4 py-3 flex items-center justify-between hover:bg-accent/50 transition-colors cursor-pointer border-b">
+                <div className="flex items-center gap-2">
+                  <Settings2 className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">
+                    {language === "ko" ? "프로세싱 페이지" : "Processing Page"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-muted-foreground">
+                  <span className="text-xs">
+                    {language === "ko" ? "영상 확인하기" : "View Videos"}
+                  </span>
+                  <ArrowRight className="h-3 w-3" />
+                </div>
+              </div>
+            </Link>
+
+            {/* Counts */}
+            <div className="px-4 py-2 text-xs text-muted-foreground flex justify-between">
+              <span>
+                {language === "ko" ? "처리중" : "Processing"}: {counts.processing}
+              </span>
+              <span>
+                {language === "ko" ? "대기중" : "Queued"}: {counts.queued}
+              </span>
+              <span>
+                {language === "ko" ? "완료" : "Completed"}: {counts.completed}
+              </span>
+            </div>
           </div>
         </div>
       )}

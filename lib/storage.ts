@@ -168,6 +168,27 @@ export async function getPresignedUrl(key: string, expiresIn = 3600): Promise<st
 }
 
 /**
+ * Generate a presigned URL for direct upload to S3
+ * This allows browsers to upload large files directly to S3 without going through the server
+ */
+export async function getPresignedUploadUrl(
+  key: string,
+  contentType: string,
+  expiresIn = 3600
+): Promise<{ uploadUrl: string; publicUrl: string }> {
+  const command = new PutObjectCommand({
+    Bucket: getBucketName(),
+    Key: key,
+    ContentType: contentType,
+  });
+
+  const uploadUrl = await getSignedUrl(getS3Client(), command, { expiresIn });
+  const publicUrl = getPublicUrl(key);
+
+  return { uploadUrl, publicUrl };
+}
+
+/**
  * Upload video from base64 encoded data
  */
 export async function uploadVideoFromBase64(

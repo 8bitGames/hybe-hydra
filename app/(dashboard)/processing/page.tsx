@@ -54,6 +54,8 @@ import {
   CheckCheck,
   X,
   Image,
+  Copy,
+  Star,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { LazyVideo } from "@/components/ui/lazy-video";
@@ -70,6 +72,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { VariationPanel, VariationButton, VariationBadge } from "@/components/features/processing/VariationPanel";
+import { ComparePanel, CompareButton } from "@/components/features/processing/ComparePanel";
+import { api } from "@/lib/api";
 
 type StatusFilter = "all" | "processing" | "completed" | "approved" | "rejected" | "failed";
 type ViewMode = "grid" | "list";
@@ -655,11 +660,13 @@ function ProcessingVideoCard({
   isSelected,
   onToggleSelect,
   onClick,
+  onVariation,
 }: {
   video: ProcessingVideo;
   isSelected: boolean;
   onToggleSelect: () => void;
   onClick: () => void;
+  onVariation?: () => void;
 }) {
   const { language } = useI18n();
   const isKorean = language === "ko";
@@ -717,11 +724,19 @@ function ProcessingVideoCard({
             </Badge>
           </div>
 
-          {/* Type Badge */}
-          <div className="absolute top-2 left-2">
+          {/* Type Badge + Variation Badge */}
+          <div className="absolute top-2 left-2 flex flex-col gap-1">
             <Badge variant="secondary" className="bg-black/60 text-white border-0 text-[10px]">
               {video.generationType === "AI" ? "AI" : "Fast Cut"}
             </Badge>
+            {/* Show Original badge if this video has variations */}
+            {video.id.startsWith("compose-") && !video.id.includes("-var-") && (
+              <VariationBadge video={video} isOriginal />
+            )}
+            {/* Show Variation badge if this is a variation */}
+            {video.id.includes("-var-") && (
+              <VariationBadge video={video} />
+            )}
           </div>
 
           {/* Duration Badge */}
@@ -736,15 +751,38 @@ function ProcessingVideoCard({
         </div>
 
         {/* View Details Button */}
-        <Button
-          size="sm"
-          variant="outline"
-          className="w-full h-9 rounded-none border-x-0 border-t-0 border-b border-neutral-200 text-xs font-medium text-neutral-700 bg-neutral-50 hover:bg-neutral-100 gap-1.5"
-          onClick={onClick}
-        >
-          <Eye className="w-3.5 h-3.5" />
-          {isKorean ? "상세보기" : "View Details"}
-        </Button>
+        <div className="flex">
+          <Button
+            size="sm"
+            variant="outline"
+            className={cn(
+              "h-9 rounded-none border-x-0 border-t-0 border-b border-neutral-200 text-xs font-medium text-neutral-700 bg-neutral-50 hover:bg-neutral-100 gap-1.5",
+              // Full width if no variation button, otherwise flex-1
+              video.status === "completed" && video.generationType === "COMPOSE" && !video.id.includes("-var-") && onVariation
+                ? "flex-1 border-r"
+                : "w-full"
+            )}
+            onClick={onClick}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            {isKorean ? "상세보기" : "View"}
+          </Button>
+          {/* Variation Button - Only for completed COMPOSE videos that are not variations */}
+          {video.status === "completed" && video.generationType === "COMPOSE" && !video.id.includes("-var-") && onVariation && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 rounded-none border-x-0 border-t-0 border-b border-neutral-200 text-xs font-medium text-neutral-700 bg-neutral-50 hover:bg-neutral-100 gap-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                onVariation();
+              }}
+            >
+              <Copy className="w-3.5 h-3.5" />
+              {isKorean ? "변형" : "Vary"}
+            </Button>
+          )}
+        </div>
 
         {/* Info - Click to select */}
         <div
@@ -807,7 +845,19 @@ export default function ProcessingPage() {
 
   // Sync workflow stage
   useWorkflowSync("processing");
-  const { goToCreate, goToPublish, proceedToPublish } = useWorkflowNavigation();
+  const { goToPublish, proceedToPublish } = useWorkflowNavigation();
+
+  // Get content type to determine correct "back" navigation
+  const contentType = useWorkflowStore((state) => state.start.contentType);
+
+  // Custom navigation function that respects workflow type
+  const handleGoToCreate = useCallback(() => {
+    if (contentType === "fast-cut") {
+      router.push("/fast-cut/effects");
+    } else {
+      router.push("/create");
+    }
+  }, [contentType, router]);
 
   // Workflow store actions
   const {
@@ -886,34 +936,27 @@ export default function ProcessingPage() {
   });
 
   // Convert video generations to ProcessingVideo format
-  // Use a ref to track approved/rejected statuses to avoid infinite loop
-  const approvedRejectedRef = React.useRef<Map<string, "approved" | "rejected">>(new Map());
-
-  // Track if we've initialized the ref from persisted state
-  const refInitializedRef = React.useRef(false);
-
-  // Initialize ref from persisted store state on first render and update on changes
-  useEffect(() => {
-    // On first run, populate from persisted videos (this preserves approved/rejected status)
-    if (!refInitializedRef.current && videos.length > 0) {
-      videos.forEach((v) => {
-        if (v.status === "approved" || v.status === "rejected") {
-          approvedRejectedRef.current.set(v.id, v.status);
-        }
-      });
-      refInitializedRef.current = true;
-    } else {
-      // On subsequent updates, just add new approved/rejected statuses
-      videos.forEach((v) => {
-        if (v.status === "approved" || v.status === "rejected") {
-          approvedRejectedRef.current.set(v.id, v.status);
-        }
-      });
-    }
-  }, [videos]);
+  // Get preserved statuses directly from zustand store (more reliable than ref timing)
+  const getPreservedStatusMap = useCallback(() => {
+    const storeVideos = useWorkflowStore.getState().processing.videos;
+    const statusMap = new Map<string, "approved" | "rejected">();
+    storeVideos.forEach((v) => {
+      if (v.status === "approved" || v.status === "rejected") {
+        statusMap.set(v.id, v.status);
+      }
+    });
+    return statusMap;
+  }, []);
 
   useEffect(() => {
+    // Wait for zustand hydration before processing API data
+    // This ensures preserved statuses (approved/rejected) are loaded from localStorage
+    if (!isHydrated) return;
+
     if (allGenerations && allGenerations.length > 0) {
+      // Get preserved statuses from store before processing
+      const preservedStatusMap = getPreservedStatusMap();
+
       const seenIds = new Set<string>();
       const processingVideos: ProcessingVideo[] = allGenerations
         .filter((gen: VideoGeneration & { campaign_name?: string }) => {
@@ -932,8 +975,8 @@ export default function ProcessingPage() {
           else if (gen.status === "failed") status = "failed";
           else if (gen.status === "pending" || gen.status === "processing") status = "processing";
 
-          // Check if already approved/rejected (from ref to avoid dependency loop)
-          const preservedStatus = approvedRejectedRef.current.get(gen.id);
+          // Check if already approved/rejected (from store directly - more reliable than ref)
+          const preservedStatus = preservedStatusMap.get(gen.id);
           if (preservedStatus) {
             status = preservedStatus;
           }
@@ -991,7 +1034,7 @@ export default function ProcessingPage() {
       );
       setHasProcessing(hasProcessingVideos);
     }
-  }, [allGenerations, setProcessingVideos, campaignNames]);
+  }, [allGenerations, setProcessingVideos, campaignNames, getPreservedStatusMap, isHydrated]);
 
   // Poll compose status API for processing COMPOSE videos
   // This triggers Modal polling and database updates
@@ -1045,6 +1088,13 @@ export default function ProcessingPage() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isBulkRetrying, setIsBulkRetrying] = useState(false);
 
+  // Variation panel state
+  const [variationTargetVideo, setVariationTargetVideo] = useState<ProcessingVideo | null>(null);
+  const [isCreatingVariations, setIsCreatingVariations] = useState(false);
+
+  // Compare panel state
+  const [showComparePanel, setShowComparePanel] = useState(false);
+
   // Handle refresh
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1091,8 +1141,6 @@ export default function ProcessingPage() {
       await videoApi.delete(selectedVideo.id, true);
       // Remove from local state
       removeProcessingVideo(selectedVideo.id);
-      // Remove from approvedRejectedRef to prevent restoration
-      approvedRejectedRef.current.delete(selectedVideo.id);
       // Refresh the list
       await refetchGenerations();
       // Invalidate video caches so /videos page shows updated data
@@ -1152,8 +1200,6 @@ export default function ProcessingPage() {
         await videoApi.delete(id, true);
         // Remove from local state
         removeProcessingVideo(id);
-        // Also remove from approvedRejectedRef to prevent restoration
-        approvedRejectedRef.current.delete(id);
         return { id, success: true };
       } catch (error) {
         console.error(`Failed to delete video ${id}:`, error);
@@ -1195,6 +1241,81 @@ export default function ProcessingPage() {
   const handleClearSelection = useCallback(() => {
     setSelectedProcessingVideos([]);
   }, [setSelectedProcessingVideos]);
+
+  // Handle create variations
+  const handleCreateVariations = useCallback(async (settings: {
+    effectPresets: string[];
+    colorGrades: string[];
+    textStyles: string[];
+    vibeVariations: string[];
+    variationCount: number;
+  }) => {
+    if (!variationTargetVideo) return;
+
+    setIsCreatingVariations(true);
+    try {
+      const response = await api.post(`/api/v1/generations/${variationTargetVideo.id}/compose-variations`, {
+        effect_presets: settings.effectPresets,
+        color_grades: settings.colorGrades,
+        text_styles: settings.textStyles,
+        vibe_variations: settings.vibeVariations,
+        variation_count: Math.min(settings.variationCount, 9),
+      });
+
+      if (response.error) {
+        console.error('Failed to create variations:', response.error);
+        throw new Error(response.error.message);
+      }
+
+      console.log('[Processing] Created variations:', response.data);
+
+      // Refresh the list to show new variations
+      await refetchGenerations();
+
+      // Close the panel
+      setVariationTargetVideo(null);
+    } catch (error) {
+      console.error('Failed to create variations:', error);
+    }
+    setIsCreatingVariations(false);
+  }, [variationTargetVideo, refetchGenerations]);
+
+  // Open variation panel for a video
+  const handleOpenVariationPanel = useCallback((video: ProcessingVideo) => {
+    setVariationTargetVideo(video);
+  }, []);
+
+  // Close variation panel
+  const handleCloseVariationPanel = useCallback(() => {
+    setVariationTargetVideo(null);
+  }, []);
+
+  // Open compare panel
+  const handleOpenComparePanel = useCallback(() => {
+    if (selectedVideos.length >= 2) {
+      setShowComparePanel(true);
+    }
+  }, [selectedVideos.length]);
+
+  // Close compare panel
+  const handleCloseComparePanel = useCallback(() => {
+    setShowComparePanel(false);
+  }, []);
+
+  // Get videos for comparison
+  const videosForComparison = useMemo(() => {
+    return videos.filter((v) => selectedVideos.includes(v.id));
+  }, [videos, selectedVideos]);
+
+  // Handle approve from compare panel
+  const handleApproveFromCompare = useCallback((videoId: string) => {
+    approveProcessingVideo(videoId);
+  }, [approveProcessingVideo]);
+
+  // Handle reject from compare panel
+  const handleRejectFromCompare = useCallback((videoId: string) => {
+    rejectProcessingVideo(videoId);
+  }, [rejectProcessingVideo]);
 
   // Filter and sort videos - only show pre-publish videos (processing, completed, approved)
   const filteredVideos = useMemo(() => {
@@ -1268,9 +1389,10 @@ export default function ProcessingPage() {
       <div className="h-full flex flex-col bg-white">
         {/* Header */}
         <WorkflowHeader
-          onBack={goToCreate}
+          onBack={handleGoToCreate}
           onNext={handleProceedToPublish}
           canProceed={true}
+          contentType={contentType}
         />
 
       {/* Stats Dashboard */}
@@ -1442,12 +1564,12 @@ export default function ProcessingPage() {
             </h3>
             <p className="text-sm text-neutral-500 mb-4">
               {isKorean
-                ? "생성 단계에서 영상을 만들어보세요"
-                : "Create videos in the Create stage"}
+                ? (contentType === "fast-cut" ? "효과 단계에서 영상을 생성해보세요" : "생성 단계에서 영상을 만들어보세요")
+                : (contentType === "fast-cut" ? "Generate videos in the Effects stage" : "Create videos in the Create stage")}
             </p>
-            <Button onClick={goToCreate} variant="outline">
+            <Button onClick={handleGoToCreate} variant="outline">
               <ArrowLeft className="w-4 h-4 mr-2" />
-              {isKorean ? "생성으로 이동" : "Go to Create"}
+              {isKorean ? (contentType === "fast-cut" ? "효과로 이동" : "생성으로 이동") : (contentType === "fast-cut" ? "Go to Effects" : "Go to Create")}
             </Button>
           </div>
         ) : viewMode === "grid" ? (
@@ -1459,6 +1581,7 @@ export default function ProcessingPage() {
                 isSelected={selectedVideos.includes(video.id)}
                 onToggleSelect={() => toggleProcessingVideoSelection(video.id)}
                 onClick={() => setSelectedVideo(video)}
+                onVariation={() => handleOpenVariationPanel(video)}
               />
             ))}
           </div>
@@ -1514,9 +1637,31 @@ export default function ProcessingPage() {
                         <Badge variant="outline" className="text-xs">
                           {video.generationType}
                         </Badge>
+                        {/* Variation badges */}
+                        {video.id.startsWith("compose-") && !video.id.includes("-var-") && (
+                          <VariationBadge video={video} isOriginal />
+                        )}
+                        {video.id.includes("-var-") && (
+                          <VariationBadge video={video} />
+                        )}
                         <span className="text-xs text-neutral-400">
                           {video.campaignName}
                         </span>
+                        {/* Variation button for list view */}
+                        {video.status === "completed" && video.generationType === "COMPOSE" && !video.id.includes("-var-") && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs ml-auto"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenVariationPanel(video);
+                            }}
+                          >
+                            <Copy className="w-3 h-3 mr-1" />
+                            {isKorean ? "변형" : "Vary"}
+                          </Button>
+                        )}
                       </div>
                       <p className="text-sm line-clamp-2">{video.prompt}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-neutral-500">
@@ -1555,6 +1700,30 @@ export default function ProcessingPage() {
             ))}
           </div>
         )}
+
+        {/* Inline Variation Panel - Shows when a video is selected for variations */}
+        {variationTargetVideo && (
+          <div className="mt-6">
+            <VariationPanel
+              video={variationTargetVideo}
+              onCreateVariations={handleCreateVariations}
+              isCreating={isCreatingVariations}
+              onClose={handleCloseVariationPanel}
+            />
+          </div>
+        )}
+
+        {/* Compare Panel - Shows when 2+ videos are selected and Compare is clicked */}
+        {showComparePanel && videosForComparison.length >= 2 && (
+          <div className="mt-6">
+            <ComparePanel
+              videos={videosForComparison}
+              onClose={handleCloseComparePanel}
+              onApprove={handleApproveFromCompare}
+              onReject={handleRejectFromCompare}
+            />
+          </div>
+        )}
       </div>
 
       {/* Fixed Bottom Footer */}
@@ -1563,11 +1732,11 @@ export default function ProcessingPage() {
           {/* Left: Back Button */}
           <Button
             variant="outline"
-            onClick={goToCreate}
+            onClick={handleGoToCreate}
             className="h-10 px-4 border-neutral-300 text-neutral-700 hover:bg-neutral-100"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            {isKorean ? "생성" : "Create"}
+            {isKorean ? (contentType === "fast-cut" ? "효과" : "생성") : (contentType === "fast-cut" ? "Effects" : "Create")}
           </Button>
 
           {/* Center: Bulk Actions */}
@@ -1589,6 +1758,12 @@ export default function ProcessingPage() {
                 </div>
 
                 <div className="h-6 w-px bg-neutral-200" />
+
+                {/* Compare Button - Enabled when 2+ videos selected */}
+                <CompareButton
+                  selectedCount={selectedVideos.length}
+                  onClick={handleOpenComparePanel}
+                />
 
                 {/* Bulk Retry - only show if any selected are failed */}
                 {selectedVideos.some((id) => {

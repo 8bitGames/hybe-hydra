@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
@@ -9,6 +9,16 @@ import { useToast } from "@/components/ui/toast";
 import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
 import { FastCutMusicStep } from "@/components/features/create/fast-cut/FastCutMusicStep";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ArrowRight } from "lucide-react";
 
 export default function FastCutMusicPage() {
@@ -112,12 +122,27 @@ export default function FastCutMusicPage() {
     }
   };
 
-  const canProceed = selectedAudio !== null || musicSkipped;
+  // State for skip confirmation dialog
+  const [showSkipConfirm, setShowSkipConfirm] = useState(false);
+
+  // Allow proceeding if audio selected, music skipped, OR music is still matching (will show confirmation)
+  const canProceed = selectedAudio !== null || musicSkipped || matchingMusic;
 
   const handleNext = () => {
+    // If music is still matching and no audio selected, show confirmation
+    if (matchingMusic && !selectedAudio && !musicSkipped) {
+      setShowSkipConfirm(true);
+      return;
+    }
     if (canProceed) {
       router.push("/fast-cut/effects");
     }
+  };
+
+  const handleConfirmSkip = () => {
+    setShowSkipConfirm(false);
+    handleSkipMusic();
+    router.push("/fast-cut/effects");
   };
 
   const handleBack = () => {
@@ -166,6 +191,32 @@ export default function FastCutMusicPage() {
             icon: <ArrowRight className="h-4 w-4" />,
           }}
         />
+
+        {/* Skip Music Confirmation Dialog */}
+        <AlertDialog open={showSkipConfirm} onOpenChange={setShowSkipConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {language === "ko"
+                  ? "음악 매칭이 진행 중입니다"
+                  : "Music matching in progress"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {language === "ko"
+                  ? "음악 추천을 기다리지 않고 다음 단계로 넘어가시겠습니까? 음악 없이 영상이 생성됩니다."
+                  : "Do you want to proceed without waiting for music recommendations? The video will be generated without music."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>
+                {language === "ko" ? "기다리기" : "Wait"}
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmSkip}>
+                {language === "ko" ? "넘어가기" : "Skip"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </TooltipProvider>
   );

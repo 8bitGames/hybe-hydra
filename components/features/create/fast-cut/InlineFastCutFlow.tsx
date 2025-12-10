@@ -410,7 +410,10 @@ function StepNavigation({
         const Icon = step.icon;
         const isActive = step.step === currentStep;
         const isComplete = isStepComplete(step.step);
-        const isAccessible = step.step <= currentStep || isComplete;
+        // Step 4 (processing) can be accessed directly if all prerequisites (1, 2, 3) are complete
+        const canAccessStep4Directly = step.step === 4 &&
+          isStepComplete(1) && isStepComplete(2) && isStepComplete(3);
+        const isAccessible = step.step <= currentStep || isComplete || canAccessStep4Directly;
         // Map render step key to effects for tooltip
         const tooltipStepKey = step.key === "render" ? "effects" : step.key;
 
@@ -1050,6 +1053,7 @@ export function InlineFastCutFlow({
             {currentStep === 4 && (
               <FastCutEffectStep
                 scriptData={scriptData}
+                setScriptData={setScriptData}
                 selectedImages={selectedImages}
                 selectedAudio={selectedAudio}
                 musicSkipped={musicSkipped}

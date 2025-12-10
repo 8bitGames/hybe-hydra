@@ -32,6 +32,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { MainNavigation } from "@/components/layout/main-navigation";
+import { GlobalJobTracker } from "@/components/shared/GlobalJobTracker";
 
 function DashboardContent({
   children,
@@ -78,6 +79,11 @@ function DashboardContent({
 
           {/* Right Side */}
           <div className="flex items-center gap-2">
+            {/* Global Job Tracker - Processing Shortcut */}
+            <GlobalJobTracker />
+
+            <Separator orientation="vertical" className="h-6" />
+
             <LanguageSwitcher />
 
             <Separator orientation="vertical" className="h-6 mx-2" />

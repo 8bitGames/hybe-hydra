@@ -142,6 +142,50 @@ const initialState: FastCutState = {
 };
 
 // ============================================================================
+// Session Storage Persistence
+// ============================================================================
+
+const STORAGE_KEY = "fast-cut-state";
+
+function saveToSessionStorage(state: FastCutState) {
+  try {
+    // Convert Set to Array for JSON serialization
+    const serializable = {
+      ...state,
+      selectedSearchKeywords: Array.from(state.selectedSearchKeywords),
+    };
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
+  } catch (err) {
+    console.error("Failed to save Fast Cut state to sessionStorage:", err);
+  }
+}
+
+function loadFromSessionStorage(): Partial<FastCutState> | null {
+  try {
+    const stored = sessionStorage.getItem(STORAGE_KEY);
+    if (!stored) return null;
+
+    const parsed = JSON.parse(stored);
+    // Convert Array back to Set
+    return {
+      ...parsed,
+      selectedSearchKeywords: new Set(parsed.selectedSearchKeywords || []),
+    };
+  } catch (err) {
+    console.error("Failed to load Fast Cut state from sessionStorage:", err);
+    return null;
+  }
+}
+
+function clearSessionStorage() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch (err) {
+    console.error("Failed to clear Fast Cut state from sessionStorage:", err);
+  }
+}
+
+// ============================================================================
 // Context
 // ============================================================================
 
@@ -173,9 +217,19 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
     }))
   );
 
-  // State
+  // State - restore from sessionStorage if available
   const [state, setState] = useState<FastCutState>(() => {
-    // Initialize with data from workflow store
+    // First try to restore from sessionStorage
+    const storedState = loadFromSessionStorage();
+    if (storedState && storedState.scriptData) {
+      // We have valid stored state with script data, use it
+      return {
+        ...initialState,
+        ...storedState,
+      } as FastCutState;
+    }
+
+    // Otherwise initialize with data from workflow store
     const initialPrompt = analyze.optimizedPrompt || analyze.selectedIdea?.description || "";
     const fastCutData = analyze.selectedIdea?.fastCutData;
     const initialKeywords = fastCutData?.searchKeywords?.length
@@ -190,6 +244,11 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
       campaignName: analyze.campaignName || "",
     };
   });
+
+  // Save state to sessionStorage whenever it changes
+  useEffect(() => {
+    saveToSessionStorage(state);
+  }, [state]);
 
   // Fetch style sets on mount
   useEffect(() => {
@@ -341,6 +400,7 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
 
   // Reset
   const reset = useCallback(() => {
+    clearSessionStorage();
     setState(initialState);
   }, []);
 

@@ -18,6 +18,7 @@ export default function FastCutEffectsPage() {
 
   const {
     scriptData,
+    setScriptData,
     selectedImages,
     selectedAudio,
     musicSkipped,
@@ -137,6 +138,7 @@ export default function FastCutEffectsPage() {
           <div className="max-w-3xl mx-auto">
             <FastCutEffectStep
               scriptData={scriptData}
+              setScriptData={setScriptData}
               selectedImages={selectedImages}
               selectedAudio={selectedAudio}
               musicSkipped={musicSkipped}
