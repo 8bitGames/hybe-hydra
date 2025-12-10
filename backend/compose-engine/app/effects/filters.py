@@ -1026,6 +1026,10 @@ OVERLAY_EFFECTS = {
     "light_streak_diagonal": lambda v, i=0.4: apply_light_streak(v, i, "diagonal"),
     "light_streak_horizontal": lambda v, i=0.4: apply_light_streak(v, i, "horizontal"),
     "light_streak_vertical": lambda v, i=0.4: apply_light_streak(v, i, "vertical"),
+    # Filter effects (color grading as overlay)
+    "filter_vibrant": lambda v, i=0.3: apply_color_wash(v, "warm", i * 0.5),  # Subtle warm vibrant effect
+    "filter_bright": lambda v, i=0.2: apply_haze(v, i * 0.3, "white"),  # Subtle brightening
+    "filter_moody": lambda v, i=0.3: apply_moody_shadow(v, i, "edges"),  # Moody shadow edges
 }
 
 

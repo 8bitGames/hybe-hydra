@@ -13,12 +13,12 @@ class VibePreset:
 
     name: str
     bpm_range: tuple[int, int]
-    cut_style: Literal["fast", "medium", "slow"]
+    cut_style: Literal["fast", "medium", "slow", "rapid", "upbeat"]
     base_cut_duration: float  # seconds per image
-    transition_type: Literal["zoom_beat", "crossfade", "bounce", "slide", "cut"]
+    transition_type: Literal["zoom_beat", "crossfade", "bounce", "slide", "cut", "swirl", "glitch_wave", "pulse_flow"]
     transition_duration: float
-    motion_style: Literal["zoom_in", "zoom_out", "pan", "static"]
-    color_grade: Literal["vibrant", "cinematic", "bright", "natural", "bw"]
+    motion_style: Literal["zoom_in", "zoom_out", "pan", "static", "slow_zoom", "shake", "float", "bounce"]
+    color_grade: Literal["vibrant", "cinematic", "bright", "natural", "bw", "moody"]
     text_style: Literal["bold_pop", "fade_in", "slide_in", "minimal"]
     effects: list[str]
 

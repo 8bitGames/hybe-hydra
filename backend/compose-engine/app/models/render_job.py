@@ -11,6 +11,10 @@ class VibeType(str, Enum):
     EMOTIONAL = "Emotional"
     POP = "Pop"
     MINIMAL = "Minimal"
+    CHILL = "Chill"
+    INTENSE = "Intense"
+    DREAMY = "Dreamy"
+    ENERGETIC = "Energetic"
 
 
 class EffectPreset(str, Enum):
@@ -19,6 +23,10 @@ class EffectPreset(str, Enum):
     CROSSFADE = "crossfade"
     BOUNCE = "bounce"
     MINIMAL = "minimal"
+    PULSE_FLOW = "pulse_flow"
+    GLITCH_WAVE = "glitch_wave"
+    SLIDE = "slide"
+    SWIRL = "swirl"
 
 
 class AspectRatio(str, Enum):

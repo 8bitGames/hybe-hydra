@@ -474,8 +474,9 @@ export default function StyleSetTestPage() {
     }
   }, [images, selectedStyleSetId, selectedAudioId, aspectRatio, language, selectedStyleSet, selectedAudio]);
 
-  // Reset test
+  // Reset test (also clears rendering state for killed jobs)
   const resetTest = useCallback(() => {
+    setRendering(false);
     setRenderStatus(null);
     setGenerationId(null);
     setError(null);
@@ -1007,6 +1008,15 @@ export default function StyleSetTestPage() {
                           <p className="text-white/60 text-xs mt-1">
                             {renderStatus?.progress ? `${Math.round(renderStatus.progress)}%` : ""}
                           </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={resetTest}
+                            className="mt-3 bg-white/20 border-white/30 text-white hover:bg-white/30"
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            {language === "ko" ? "취소" : "Cancel"}
+                          </Button>
                         </div>
                       ) : (
                         <div className="text-center">

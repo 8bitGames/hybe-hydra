@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     aws_region: str = "ap-northeast-2"  # Seoul region
-    aws_s3_bucket: str = "hydra-assets-hybe"
+    aws_s3_bucket: str = "hydra-assets-seoul"
 
     # Google Custom Search
     google_search_api_key: str = ""
