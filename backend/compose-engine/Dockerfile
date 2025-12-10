@@ -220,6 +220,12 @@ RUN echo "=== Verifying PyOpenGL + OSMesa ===" \
 RUN pip3 install --no-cache-dir \
     google-generativeai==0.8.3
 
+# GCP Workload Identity Federation (WIF) for Vertex AI
+RUN pip3 install --no-cache-dir \
+    google-auth>=2.36.0 \
+    google-auth-httplib2>=0.2.0 \
+    requests>=2.31.0
+
 # =============================================================================
 # STEP 5: Verify all installations work together
 # =============================================================================
@@ -237,6 +243,7 @@ RUN echo "=== Final Verification ===" \
     && python3 -c "import boto3; print('boto3: OK')" \
     && python3 -c "import fastapi; print('fastapi: OK')" \
     && python3 -c "from OpenGL import GL; from OpenGL.osmesa import OSMesaCreateContext, OSMESA_RGBA; print('GL Transitions (OSMesa): OK')" \
+    && python3 -c "import google.auth; print(f'google-auth: {google.auth.__version__} (GCP WIF ready)')" \
     && echo "=== All verifications passed ==="
 
 # =============================================================================
@@ -258,8 +265,14 @@ RUN mkdir -p /tmp/compose
 # Modal uses add_local_dir() instead, so this is optional
 COPY app/ /root/app/
 
-# Copy AWS Batch worker script
+# Copy AWS Batch worker scripts
 COPY aws-batch/batch_worker.py /root/batch_worker.py
+COPY aws-batch/ai_worker.py /root/ai_worker.py
+
+# Copy GCP WIF credential config (for Vertex AI authentication)
+# This file is used by google-auth to exchange AWS credentials for GCP tokens
+COPY clientLibraryConfig-hyb-hydra-dev.json /root/clientLibraryConfig.json
+ENV GOOGLE_APPLICATION_CREDENTIALS=/root/clientLibraryConfig.json
 
 EXPOSE 8000
 
