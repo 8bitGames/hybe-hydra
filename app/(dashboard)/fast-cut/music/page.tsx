@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
+import { useSessionStore } from "@/lib/stores/session-store";
+import { useShallow } from "zustand/react/shallow";
 import { fastCutApi, AudioMatch } from "@/lib/fast-cut-api";
 import { useToast } from "@/components/ui/toast";
 import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
@@ -26,6 +28,15 @@ export default function FastCutMusicPage() {
   const { language } = useI18n();
   const toast = useToast();
 
+  // Session store for persisting Fast Cut data
+  const { setStageData, proceedToStage, activeSession } = useSessionStore(
+    useShallow((state) => ({
+      setStageData: state.setStageData,
+      proceedToStage: state.proceedToStage,
+      activeSession: state.activeSession,
+    }))
+  );
+
   const {
     scriptData,
     audioMatches,
@@ -45,16 +56,18 @@ export default function FastCutMusicPage() {
     setMusicSkipped,
     selectedImages,
     setError,
+    isHydrated,
   } = useFastCut();
 
-  // Redirect if no script data or images
+  // Redirect if no script data or images (only after hydration)
   useEffect(() => {
+    if (!isHydrated) return;
     if (!scriptData) {
       router.replace("/fast-cut/script");
     } else if (selectedImages.length < 3) {
       router.replace("/fast-cut/images");
     }
-  }, [scriptData, selectedImages, router]);
+  }, [isHydrated, scriptData, selectedImages, router]);
 
   // Auto-match music on mount
   useEffect(() => {
@@ -128,20 +141,48 @@ export default function FastCutMusicPage() {
   // Allow proceeding if audio selected, music skipped, OR music is still matching (will show confirmation)
   const canProceed = selectedAudio !== null || musicSkipped || matchingMusic;
 
-  const handleNext = () => {
+  const handleNext = async () => {
     // If music is still matching and no audio selected, show confirmation
     if (matchingMusic && !selectedAudio && !musicSkipped) {
       setShowSkipConfirm(true);
       return;
     }
-    if (canProceed) {
+    if (canProceed && activeSession) {
+      // Save music stage data
+      setStageData("music", {
+        audioMatches,
+        selectedAudio,
+        audioStartTime,
+        audioAnalysis,
+        musicSkipped,
+      });
+
+      // Proceed to effects stage (saves to DB)
+      await proceedToStage("effects");
+      router.push("/fast-cut/effects");
+    } else if (canProceed) {
+      // No active session, just navigate
       router.push("/fast-cut/effects");
     }
   };
 
-  const handleConfirmSkip = () => {
+  const handleConfirmSkip = async () => {
     setShowSkipConfirm(false);
     handleSkipMusic();
+
+    if (activeSession) {
+      // Save music stage data with skipped = true
+      setStageData("music", {
+        audioMatches,
+        selectedAudio: null,
+        audioStartTime: 0,
+        audioAnalysis: null,
+        musicSkipped: true,
+      });
+
+      // Proceed to effects stage (saves to DB)
+      await proceedToStage("effects");
+    }
     router.push("/fast-cut/effects");
   };
 
@@ -149,7 +190,8 @@ export default function FastCutMusicPage() {
     router.push("/fast-cut/images");
   };
 
-  if (!scriptData || selectedImages.length < 3) {
+  // Show nothing while hydrating or if prerequisites not met
+  if (!isHydrated || !scriptData || selectedImages.length < 3) {
     return null;
   }
 

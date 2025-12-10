@@ -77,7 +77,7 @@ const STAGE_CONFIG: Record<
     id: "create",
     label: { ko: "생성", en: "Create" },
     description: { ko: "AI 영상 또는 컴포즈 영상 생성", en: "Generate AI or compose videos" },
-    route: "/create",
+    route: "/create/workflow",
     icon: "Video",
   },
   processing: {
@@ -94,9 +94,46 @@ const STAGE_CONFIG: Record<
     route: "/publish",
     icon: "Send",
   },
+  // Fast Cut stages
+  script: {
+    id: "script",
+    label: { ko: "스크립트", en: "Script" },
+    description: { ko: "AI 스크립트 생성", en: "Generate AI script" },
+    route: "/fast-cut/script",
+    icon: "FileText",
+  },
+  images: {
+    id: "images",
+    label: { ko: "이미지", en: "Images" },
+    description: { ko: "이미지 검색 및 선택", en: "Search and select images" },
+    route: "/fast-cut/images",
+    icon: "Image",
+  },
+  music: {
+    id: "music",
+    label: { ko: "음악", en: "Music" },
+    description: { ko: "배경 음악 선택", en: "Select background music" },
+    route: "/fast-cut/music",
+    icon: "Music",
+  },
+  effects: {
+    id: "effects",
+    label: { ko: "효과", en: "Effects" },
+    description: { ko: "스타일 및 효과 설정", en: "Set style and effects" },
+    route: "/fast-cut/effects",
+    icon: "Sparkles",
+  },
+  render: {
+    id: "render",
+    label: { ko: "렌더링", en: "Render" },
+    description: { ko: "영상 렌더링 중", en: "Rendering video" },
+    route: "/processing",
+    icon: "Loader2",
+  },
 };
 
 const STAGE_ORDER: WorkflowStage[] = ["start", "analyze", "create", "processing", "publish"];
+const FAST_CUT_STAGE_ORDER: WorkflowStage[] = ["start", "script", "images", "music", "effects", "render", "publish"];
 
 export function useWorkflowNavigation(): WorkflowNavigationResult {
   const router = useRouter();
@@ -128,7 +165,7 @@ export function useWorkflowNavigation(): WorkflowNavigationResult {
 
   const goToCreate = useCallback(() => {
     setCurrentStage("create");
-    router.push("/create");
+    router.push("/create/workflow");
   }, [router, setCurrentStage]);
 
   const goToProcessing = useCallback(() => {
@@ -159,7 +196,7 @@ export function useWorkflowNavigation(): WorkflowNavigationResult {
   const proceedToCreate = useCallback(() => {
     if (!canProceedToCreate) return;
     transferToCreate();
-    router.push("/create");
+    router.push("/create/workflow");
   }, [router, transferToCreate, canProceedToCreate]);
 
   const proceedToProcessing = useCallback(() => {
@@ -241,8 +278,11 @@ export function useWorkflowNavigation(): WorkflowNavigationResult {
   };
 }
 
-// Hook to sync URL with workflow stage
-export function useWorkflowSync(expectedStage: WorkflowStage) {
+// AI Video stages that have corresponding data in WorkflowState
+type AIVideoStage = "start" | "analyze" | "create" | "processing" | "publish";
+
+// Hook to sync URL with workflow stage (AI Video only)
+export function useWorkflowSync(expectedStage: AIVideoStage) {
   const setCurrentStage = useWorkflowStore((state) => state.setCurrentStage);
   const stageData = useWorkflowStore((state) => state[expectedStage]);
 

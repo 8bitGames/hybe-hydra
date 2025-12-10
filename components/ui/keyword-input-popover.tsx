@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Clock, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -10,6 +10,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { useKeywordHistory } from "@/lib/hooks/useKeywordHistory";
 
 interface KeywordInputPopoverProps {
   onAdd: (value: string) => void;
@@ -32,7 +33,11 @@ export function KeywordInputPopover({
 }: KeywordInputPopoverProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const { addToHistory, getSuggestions } = useKeywordHistory();
 
   // Support both controlled and uncontrolled modes
   const isControlled = controlledOpen !== undefined;
@@ -46,6 +51,10 @@ export function KeywordInputPopover({
     }
   }, [isControlled, controlledOnOpenChange]);
 
+  // Get suggestions based on current input
+  const suggestions = getSuggestions(inputValue, 8);
+  const showSuggestions = suggestions.length > 0;
+
   // Auto-focus input when popover opens
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -56,32 +65,68 @@ export function KeywordInputPopover({
     }
   }, [isOpen]);
 
-  const handleAdd = useCallback(() => {
-    const trimmedValue = inputValue.trim();
+  // Reset selected index when input changes
+  useEffect(() => {
+    setSelectedIndex(-1);
+  }, [inputValue]);
+
+  const handleAdd = useCallback((value?: string) => {
+    const trimmedValue = (value || inputValue).trim();
     if (trimmedValue) {
       onAdd(trimmedValue);
+      addToHistory(trimmedValue);
       setInputValue("");
+      setSelectedIndex(-1);
       setOpen(false);
     }
-  }, [inputValue, onAdd, setOpen]);
+  }, [inputValue, onAdd, addToHistory, setOpen]);
+
+  const handleSelectSuggestion = useCallback((suggestion: string) => {
+    handleAdd(suggestion);
+  }, [handleAdd]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter") {
         e.preventDefault();
-        handleAdd();
+        if (selectedIndex >= 0 && selectedIndex < suggestions.length) {
+          handleSelectSuggestion(suggestions[selectedIndex]);
+        } else {
+          handleAdd();
+        }
       } else if (e.key === "Escape") {
         setOpen(false);
         setInputValue("");
+        setSelectedIndex(-1);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          prev < suggestions.length - 1 ? prev + 1 : prev
+        );
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
       }
     },
-    [handleAdd, setOpen]
+    [handleAdd, handleSelectSuggestion, suggestions, selectedIndex, setOpen]
   );
+
+  // Scroll selected item into view
+  useEffect(() => {
+    if (selectedIndex >= 0 && listRef.current) {
+      const items = listRef.current.querySelectorAll('[data-suggestion-item]');
+      const selectedItem = items[selectedIndex] as HTMLElement;
+      if (selectedItem) {
+        selectedItem.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [selectedIndex]);
 
   const handleOpenChange = (open: boolean) => {
     setOpen(open);
     if (!open) {
       setInputValue("");
+      setSelectedIndex(-1);
     }
   };
 
@@ -103,19 +148,61 @@ export function KeywordInputPopover({
       <PopoverContent
         align="start"
         sideOffset={4}
-        className="w-64 p-3"
+        className="w-72 p-3"
       >
-        <div className="flex flex-col gap-3">
-          <Input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            className="h-9 text-sm bg-neutral-50 border-neutral-200 focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
-          />
-          <div className="flex items-center justify-end gap-2">
+        <div className="flex flex-col gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400" />
+            <Input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={placeholder}
+              className="h-9 pl-8 text-sm bg-neutral-50 border-neutral-200 focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
+            />
+          </div>
+
+          {/* Suggestions List */}
+          {showSuggestions && (
+            <div
+              ref={listRef}
+              className="max-h-[180px] overflow-y-auto border border-neutral-200 rounded-md bg-white"
+            >
+              <div className="py-1">
+                {!inputValue && (
+                  <div className="px-2 py-1 text-[10px] font-medium text-neutral-400 uppercase tracking-wider flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Recent
+                  </div>
+                )}
+                {suggestions.map((suggestion, index) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    data-suggestion-item
+                    onClick={() => handleSelectSuggestion(suggestion)}
+                    onMouseEnter={() => setSelectedIndex(index)}
+                    className={cn(
+                      "w-full px-3 py-1.5 text-left text-sm transition-colors",
+                      selectedIndex === index
+                        ? "bg-neutral-100 text-neutral-900"
+                        : "text-neutral-700 hover:bg-neutral-50"
+                    )}
+                  >
+                    {inputValue ? (
+                      <HighlightMatch text={suggestion} query={inputValue} />
+                    ) : (
+                      suggestion
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-1">
             <button
               type="button"
               onClick={() => handleOpenChange(false)}
@@ -125,7 +212,7 @@ export function KeywordInputPopover({
             </button>
             <button
               type="button"
-              onClick={handleAdd}
+              onClick={() => handleAdd()}
               disabled={!inputValue.trim()}
               className="px-4 py-1.5 text-xs bg-neutral-900 text-white rounded hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
@@ -135,5 +222,26 @@ export function KeywordInputPopover({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+// Helper component to highlight matching text
+function HighlightMatch({ text, query }: { text: string; query: string }) {
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const index = lowerText.indexOf(lowerQuery);
+
+  if (index === -1) {
+    return <>{text}</>;
+  }
+
+  return (
+    <>
+      {text.slice(0, index)}
+      <span className="font-semibold text-neutral-900">
+        {text.slice(index, index + query.length)}
+      </span>
+      {text.slice(index + query.length)}
+    </>
   );
 }

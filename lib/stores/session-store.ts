@@ -13,6 +13,46 @@ import {
 } from "./workflow-store";
 
 // ============================================
+// STORAGE CLEANUP UTILITIES
+// ============================================
+
+/**
+ * Clear Fast Cut session storage.
+ * This is a standalone function to avoid circular dependency with fast-cut-context.tsx
+ */
+const clearFastCutStorage = () => {
+  try {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("fast-cut-state");
+      console.log("[SessionStore] Cleared fast-cut sessionStorage");
+    }
+  } catch (err) {
+    console.error("[SessionStore] Failed to clear fast-cut sessionStorage:", err);
+  }
+};
+
+/**
+ * Clear all session-related storage when starting a new session.
+ * This prevents stale data from previous sessions from persisting.
+ * Exported for use in components that need to ensure clean state.
+ */
+export const clearAllSessionStorage = () => {
+  console.log("[SessionStore] Clearing all session-related storage for new session");
+
+  // 1. Clear workflow store localStorage (handled by resetWorkflow, but do it explicitly too)
+  try {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("hydra-workflow-state");
+    }
+  } catch (err) {
+    console.error("[SessionStore] Failed to clear workflow localStorage:", err);
+  }
+
+  // 2. Clear fast-cut sessionStorage
+  clearFastCutStorage();
+};
+
+// ============================================
 // TYPES
 // ============================================
 
@@ -33,12 +73,55 @@ export interface SessionMetadata {
   title: string;
 }
 
+// Fast Cut stage data types (simplified for session persistence)
+export interface ScriptStageData {
+  prompt: string;
+  aspectRatio: string;
+  editableKeywords: string[];
+  selectedSearchKeywords: string[];
+  scriptData: unknown | null;
+  tiktokSEO: unknown | null;
+}
+
+export interface ImagesStageData {
+  imageCandidates: unknown[];
+  selectedImages: unknown[];
+  generationId: string | null;
+}
+
+export interface MusicStageData {
+  audioMatches: unknown[];
+  selectedAudio: unknown | null;
+  audioStartTime: number;
+  audioAnalysis: unknown | null;
+  musicSkipped: boolean;
+}
+
+export interface EffectsStageData {
+  styleSetId: string;
+  styleSets: unknown[];
+}
+
+export interface RenderStageData {
+  renderedVideoUrl: string | null;
+  thumbnailUrl: string | null;
+  renderStatus: "pending" | "rendering" | "completed" | "failed";
+}
+
 export interface StageData {
+  // Common start stage
   start: StartData | null;
+  // AI Video stages
   analyze: AnalyzeData | null;
   create: CreateData | null;
   processing: ProcessingData | null;
   publish: PublishData | null;
+  // Fast Cut stages
+  script: ScriptStageData | null;
+  images: ImagesStageData | null;
+  music: MusicStageData | null;
+  effects: EffectsStageData | null;
+  render: RenderStageData | null;
 }
 
 export interface CreationSession {
@@ -70,11 +153,19 @@ export interface SessionSummary {
 // ============================================
 
 const createInitialStageData = (): StageData => ({
+  // Common start stage
   start: null,
+  // AI Video stages
   analyze: null,
   create: null,
   processing: null,
   publish: null,
+  // Fast Cut stages
+  script: null,
+  images: null,
+  music: null,
+  effects: null,
+  render: null,
 });
 
 const createInitialMetadata = (): SessionMetadata => ({
@@ -266,11 +357,19 @@ const sessionToDBRow = (session: CreationSession) => ({
   status: session.status,
   current_stage: session.currentStage,
   completed_stages: session.completedStages,
+  // AI Video stage data
   start_data: session.stageData.start,
   analyze_data: session.stageData.analyze,
   create_data: session.stageData.create,
   processing_data: session.stageData.processing,
   publish_data: session.stageData.publish,
+  // Fast Cut stage data
+  script_data: session.stageData.script,
+  images_data: session.stageData.images,
+  music_data: session.stageData.music,
+  effects_data: session.stageData.effects,
+  render_data: session.stageData.render,
+  // Metadata
   entry_source: session.metadata.entrySource,
   content_type: session.metadata.contentType,
   total_generations: session.metadata.totalGenerations,
@@ -287,11 +386,19 @@ const dbRowToSession = (row: Record<string, unknown>): CreationSession => ({
   currentStage: row.current_stage as WorkflowStage,
   completedStages: (row.completed_stages as WorkflowStage[]) || [],
   stageData: {
+    // Common start stage
     start: row.start_data as StartData | null,
+    // AI Video stages
     analyze: row.analyze_data as AnalyzeData | null,
     create: row.create_data as CreateData | null,
     processing: row.processing_data as ProcessingData | null,
     publish: row.publish_data as PublishData | null,
+    // Fast Cut stages
+    script: row.script_data as ScriptStageData | null,
+    images: row.images_data as ImagesStageData | null,
+    music: row.music_data as MusicStageData | null,
+    effects: row.effects_data as EffectsStageData | null,
+    render: row.render_data as RenderStageData | null,
   },
   metadata: {
     entrySource: row.entry_source as EntrySource | null,
@@ -320,6 +427,95 @@ const dbRowToSummary = (row: Record<string, unknown>): SessionSummary => ({
   createdAt: new Date(row.created_at as string),
   updatedAt: new Date(row.updated_at as string),
 });
+
+// ============================================
+// FAST CUT SESSION STORAGE HELPER
+// ============================================
+
+const FAST_CUT_STORAGE_KEY = "fast-cut-state";
+
+/**
+ * Builds a FastCutState object from session data for sessionStorage restoration.
+ * This allows resuming Fast Cut workflows from a loaded session.
+ */
+const buildFastCutStateFromSession = (session: CreationSession): Record<string, unknown> | null => {
+  const { stageData, campaignId, metadata } = session;
+  const { script, images, music, effects } = stageData;
+
+  // If no script data, cannot restore Fast Cut state
+  if (!script?.scriptData) {
+    console.log("[SessionStore] Cannot restore Fast Cut state: no script data");
+    return null;
+  }
+
+  // Map session stage to Fast Cut step
+  const stageToStep: Record<string, string> = {
+    script: "script",
+    images: "images",
+    music: "music",
+    effects: "effects",
+    render: "effects",
+  };
+
+  const currentStep = stageToStep[session.currentStage] || "script";
+
+  // Build the Fast Cut state object matching the FastCutState interface
+  const fastCutState = {
+    // Current step
+    currentStep,
+
+    // Campaign info
+    campaignId: campaignId || null,
+    campaignName: metadata.title || "",
+
+    // Script step
+    prompt: script.prompt || "",
+    aspectRatio: script.aspectRatio || "9:16",
+    editableKeywords: script.editableKeywords || [],
+    // Note: selectedSearchKeywords is stored as Array in sessionStorage
+    selectedSearchKeywords: script.selectedSearchKeywords || [],
+    generatingScript: false,
+    scriptData: script.scriptData,
+    tiktokSEO: script.tiktokSEO || null,
+
+    // Images step
+    searchingImages: false,
+    imageCandidates: images?.imageCandidates || [],
+    selectedImages: images?.selectedImages || [],
+    generationId: images?.generationId || null,
+
+    // Music step
+    matchingMusic: false,
+    audioMatches: music?.audioMatches || [],
+    selectedAudio: music?.selectedAudio || null,
+    audioStartTime: music?.audioStartTime || 0,
+    audioAnalysis: music?.audioAnalysis || null,
+    analyzingAudio: false,
+    musicSkipped: music?.musicSkipped || false,
+
+    // Effects step
+    styleSetId: effects?.styleSetId || "viral_tiktok",
+    styleSets: effects?.styleSets || [],
+    rendering: false,
+
+    // Error state
+    error: null,
+  };
+
+  return fastCutState;
+};
+
+/**
+ * Saves Fast Cut state to sessionStorage so FastCutProvider can restore it
+ */
+const saveFastCutStateToSessionStorage = (state: Record<string, unknown>): void => {
+  try {
+    sessionStorage.setItem(FAST_CUT_STORAGE_KEY, JSON.stringify(state));
+    console.log("[SessionStore] Restored Fast Cut state to sessionStorage");
+  } catch (err) {
+    console.error("[SessionStore] Failed to save Fast Cut state to sessionStorage:", err);
+  }
+};
 
 // ============================================
 // AUTO-SAVE DEBOUNCE
@@ -386,8 +582,13 @@ export const useSessionStore = create<SessionStore>()(
         throw new Error("User not authenticated - userId is required");
       }
 
+      // CRITICAL: Clear ALL session-related storage FIRST
+      // This must happen before resetWorkflow to ensure no stale data persists
+      clearAllSessionStorage();
+
       // IMPORTANT: Reset workflow store BEFORE creating new session
       // This clears any leftover data from previous sessions
+      // Note: resetWorkflow also clears localStorage, but we clear it explicitly above too
       const workflowStore = useWorkflowStore.getState();
       workflowStore.resetWorkflow();
       console.log("[SessionStore] Reset workflow store for new session");
@@ -460,8 +661,11 @@ export const useSessionStore = create<SessionStore>()(
       set({ isLoading: true });
 
       try {
-        // CRITICAL: Reset workflow store BEFORE loading new session
+        // CRITICAL: Clear ALL session-related storage FIRST when switching sessions
         // This prevents data leakage from previously active sessions
+        clearAllSessionStorage();
+
+        // Reset workflow store (also clears localStorage, but we clear it explicitly above too)
         const workflowStore = useWorkflowStore.getState();
         workflowStore.resetWorkflow();
         console.log("[SessionStore] Reset workflow store before loading session:", sessionId);
@@ -505,6 +709,15 @@ export const useSessionStore = create<SessionStore>()(
           isLoading: false,
           lastSavedAt: session.updatedAt,
         });
+
+        // Restore Fast Cut state to sessionStorage if this is a Fast Cut session
+        if (session.metadata.contentType === "fast-cut") {
+          const fastCutState = buildFastCutStateFromSession(session);
+          if (fastCutState) {
+            saveFastCutStateToSessionStorage(fastCutState);
+            console.log("[SessionStore] Restored Fast Cut state for session:", sessionId);
+          }
+        }
 
         console.log("[SessionStore] Loaded session:", sessionId);
       } catch (error) {
@@ -933,14 +1146,30 @@ export const useSessionStore = create<SessionStore>()(
     // ==========================================
 
     clearActiveSession: () => {
+      // Clear all session-related storage when clearing active session
+      clearAllSessionStorage();
+
+      // Reset workflow store to clear in-memory state
+      const workflowStore = useWorkflowStore.getState();
+      workflowStore.resetWorkflow();
+
       set({
         activeSession: null,
         lastSavedAt: null,
         saveError: null,
       });
+
+      console.log("[SessionStore] Cleared active session and all related storage");
     },
 
     reset: () => {
+      // Clear all session-related storage on full reset
+      clearAllSessionStorage();
+
+      // Reset workflow store to clear in-memory state
+      const workflowStore = useWorkflowStore.getState();
+      workflowStore.resetWorkflow();
+
       set({
         activeSession: null,
         sessions: [],
@@ -952,6 +1181,8 @@ export const useSessionStore = create<SessionStore>()(
         hasLocalRecovery: false,
         localRecoveryData: null,
       });
+
+      console.log("[SessionStore] Full reset completed with all storage cleared");
     },
   }))
 );

@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
+import { useSessionStore } from "@/lib/stores/session-store";
+import { useShallow } from "zustand/react/shallow";
 import { fastCutApi } from "@/lib/fast-cut-api";
 import { useToast } from "@/components/ui/toast";
 import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
@@ -16,6 +18,15 @@ export default function FastCutEffectsPage() {
   const router = useRouter();
   const { language } = useI18n();
   const toast = useToast();
+
+  // Session store for persisting Fast Cut data
+  const { setStageData, proceedToStage, activeSession } = useSessionStore(
+    useShallow((state) => ({
+      setStageData: state.setStageData,
+      proceedToStage: state.proceedToStage,
+      activeSession: state.activeSession,
+    }))
+  );
 
   const {
     scriptData,
@@ -37,14 +48,16 @@ export default function FastCutEffectsPage() {
     editableKeywords,
     audioStartTime,
     setError,
+    isHydrated,
   } = useFastCut();
 
   // Processing session store
   const initSession = useProcessingSessionStore((state) => state.initSession);
   const updateOriginalVideo = useProcessingSessionStore((state) => state.updateOriginalVideo);
 
-  // Redirect if prerequisites not met
+  // Redirect if prerequisites not met (only after hydration)
   useEffect(() => {
+    if (!isHydrated) return;
     if (!scriptData) {
       router.replace("/fast-cut/script");
     } else if (selectedImages.length < 3) {
@@ -52,7 +65,7 @@ export default function FastCutEffectsPage() {
     } else if (!selectedAudio && !musicSkipped) {
       router.replace("/fast-cut/music");
     }
-  }, [scriptData, selectedImages, selectedAudio, musicSkipped, router]);
+  }, [isHydrated, scriptData, selectedImages, selectedAudio, musicSkipped, router]);
 
   const handleStartRender = async () => {
     const hasValidMusicChoice = selectedAudio !== null || musicSkipped;
@@ -149,6 +162,15 @@ export default function FastCutEffectsPage() {
 
       console.log("[FastCut Effects] Session initialized, navigating to /processing");
 
+      // Save effects stage data and proceed to render stage
+      if (activeSession) {
+        setStageData("effects", {
+          styleSetId,
+          styleSets,
+        });
+        await proceedToStage("render");
+      }
+
       // Navigate to processing page
       router.push("/processing");
     } catch (err) {
@@ -168,7 +190,8 @@ export default function FastCutEffectsPage() {
     selectedImages.length >= 3 &&
     (selectedAudio !== null || musicSkipped);
 
-  if (!prerequisitesMet) {
+  // Show nothing while hydrating or if prerequisites not met
+  if (!isHydrated || !prerequisitesMet) {
     return null;
   }
 

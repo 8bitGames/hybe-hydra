@@ -6,7 +6,12 @@ import { useState, useEffect } from "react";
 // TYPES
 // ============================================
 
-export type WorkflowStage = "start" | "analyze" | "create" | "processing" | "publish";
+// AI Video stages: start → analyze → create → processing → publish (5 stages)
+// Fast Cut stages: start → script → images → music → effects → render → publish (7 stages)
+export type WorkflowStage =
+  | "start"
+  | "analyze" | "create" | "processing" | "publish"  // AI Video
+  | "script" | "images" | "music" | "effects" | "render";  // Fast Cut
 
 // Start Stage Types - Entry point with three paths
 export interface StartEntryPath {
@@ -565,7 +570,19 @@ export const useWorkflowStore = create<WorkflowState>()(
               : [...state.completedStages, stage],
           })),
 
-        resetWorkflow: () =>
+        resetWorkflow: () => {
+          // CRITICAL: Clear localStorage FIRST to prevent persist middleware from
+          // re-hydrating stale data on page navigation/reload
+          // This fixes the issue where old session data persists in new sessions
+          try {
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("hydra-workflow-state");
+              console.log("[WorkflowStore] Cleared localStorage for new session");
+            }
+          } catch (err) {
+            console.error("[WorkflowStore] Failed to clear localStorage:", err);
+          }
+
           set({
             currentStage: "start",
             completedStages: [],
@@ -575,7 +592,8 @@ export const useWorkflowStore = create<WorkflowState>()(
             create: initialCreateData,
             processing: initialProcessingData,
             publish: initialPublishData,
-          }),
+          });
+        },
 
         // Start Actions (new workflow entry point)
         setStartSource: (source) =>
@@ -1101,8 +1119,11 @@ export const useWorkflowStore = create<WorkflowState>()(
             keywords = startSource.keywords || [];
           }
 
+          // Set next stage based on content type
+          const nextStage = state.start.contentType === "fast-cut" ? "script" : "analyze";
+
           set({
-            currentStage: "analyze",
+            currentStage: nextStage,
             completedStages: [...state.completedStages, "start" as WorkflowStage].filter(
               (v, i, a) => a.indexOf(v) === i
             ) as WorkflowStage[],

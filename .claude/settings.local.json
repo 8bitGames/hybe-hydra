@@ -154,7 +154,15 @@
       "Bash(dir:*)",
       "Bash(claude mcp add:*)",
       "Bash(claude mcp:*)",
-      "SlashCommand(/sc:troubleshoot)"
+      "SlashCommand(/sc:troubleshoot)",
+      "Bash(git pull:*)",
+      "Bash(git stash pop:*)",
+      "Bash(terraform plan:*)",
+      "Bash(terraform apply:*)",
+      "Bash(aws batch update-job-queue:*)",
+      "Bash(aws batch delete-job-queue:*)",
+      "Bash(terraform import:*)",
+      "Bash(aws ecr get-login-password:*)"
     ],
     "deny": [],
     "ask": []

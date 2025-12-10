@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
+import { useSessionStore } from "@/lib/stores/session-store";
 import { useShallow } from "zustand/react/shallow";
 import {
   fastCutApi,
@@ -58,6 +59,9 @@ interface FastCutState {
 
   // Error state
   error: string | null;
+
+  // Hydration state (for SSR)
+  isHydrated: boolean;
 }
 
 interface FastCutActions {
@@ -139,6 +143,7 @@ const initialState: FastCutState = {
   styleSets: [],
   rendering: false,
   error: null,
+  isHydrated: false,
 };
 
 // ============================================================================
@@ -147,12 +152,19 @@ const initialState: FastCutState = {
 
 const STORAGE_KEY = "fast-cut-state";
 
-function saveToSessionStorage(state: FastCutState) {
+// Extended state type that includes sessionId for validation
+interface StoredFastCutState extends Omit<FastCutState, "selectedSearchKeywords"> {
+  selectedSearchKeywords: string[];
+  _sessionId?: string; // Track which session this data belongs to
+}
+
+function saveToSessionStorage(state: FastCutState, sessionId?: string | null) {
   try {
     // Convert Set to Array for JSON serialization
-    const serializable = {
+    const serializable: StoredFastCutState = {
       ...state,
       selectedSearchKeywords: Array.from(state.selectedSearchKeywords),
+      _sessionId: sessionId || undefined, // Store session ID for validation
     };
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
   } catch (err) {
@@ -160,12 +172,27 @@ function saveToSessionStorage(state: FastCutState) {
   }
 }
 
-function loadFromSessionStorage(): Partial<FastCutState> | null {
+function loadFromSessionStorage(currentSessionId?: string | null): Partial<FastCutState> | null {
   try {
     const stored = sessionStorage.getItem(STORAGE_KEY);
     if (!stored) return null;
 
-    const parsed = JSON.parse(stored);
+    const parsed = JSON.parse(stored) as StoredFastCutState;
+
+    // CRITICAL: Validate session ID to prevent loading stale data from previous sessions
+    // If the stored session ID doesn't match current session, ignore the stored state
+    if (currentSessionId && parsed._sessionId && parsed._sessionId !== currentSessionId) {
+      console.log(
+        "[FastCutContext] Session ID mismatch - stored:",
+        parsed._sessionId,
+        "current:",
+        currentSessionId,
+        "- ignoring stored state"
+      );
+      clearFastCutSessionStorage(); // Clean up stale data
+      return null;
+    }
+
     // Convert Array back to Set
     return {
       ...parsed,
@@ -177,9 +204,14 @@ function loadFromSessionStorage(): Partial<FastCutState> | null {
   }
 }
 
-function clearSessionStorage() {
+/**
+ * Clear Fast Cut session storage.
+ * Exported for use by session-store when creating new sessions.
+ */
+export function clearFastCutSessionStorage() {
   try {
     sessionStorage.removeItem(STORAGE_KEY);
+    console.log("[FastCutContext] Cleared sessionStorage");
   } catch (err) {
     console.error("Failed to clear Fast Cut state from sessionStorage:", err);
   }
@@ -217,38 +249,64 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
     }))
   );
 
-  // State - restore from sessionStorage if available
+  // Get current session ID for state validation
+  const activeSessionId = useSessionStore((state) => state.activeSession?.id);
+
+  // Track if we've hydrated from sessionStorage (client-side only)
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // State - initialize with default, will hydrate from sessionStorage after mount
   const [state, setState] = useState<FastCutState>(() => {
-    // First try to restore from sessionStorage
-    const storedState = loadFromSessionStorage();
-    if (storedState && storedState.scriptData) {
-      // We have valid stored state with script data, use it
-      return {
-        ...initialState,
-        ...storedState,
-      } as FastCutState;
-    }
-
-    // Otherwise initialize with data from workflow store
-    const initialPrompt = analyze.optimizedPrompt || analyze.selectedIdea?.description || "";
-    const fastCutData = analyze.selectedIdea?.fastCutData;
-    const initialKeywords = fastCutData?.searchKeywords?.length
-      ? fastCutData.searchKeywords
-      : discover.keywords;
-
-    return {
-      ...initialState,
-      prompt: initialPrompt,
-      editableKeywords: [...initialKeywords],
-      selectedSearchKeywords: new Set(initialKeywords),
-      campaignName: analyze.campaignName || "",
-    };
+    // During SSR or initial mount, start with initial state
+    // Actual restoration from sessionStorage happens in useEffect below
+    return initialState;
   });
 
-  // Save state to sessionStorage whenever it changes
+  // Hydrate from sessionStorage after mount (client-side only)
+  // This is necessary because sessionStorage is not available during SSR
   useEffect(() => {
-    saveToSessionStorage(state);
-  }, [state]);
+    if (isHydrated) return;
+
+    // CRITICAL: Pass current session ID to validate stored state
+    // This prevents loading stale data from previous sessions
+    const storedState = loadFromSessionStorage(activeSessionId);
+    if (storedState && storedState.scriptData) {
+      // We have valid stored state with script data that matches current session
+      console.log("[FastCutProvider] Restoring state from sessionStorage for session:", activeSessionId);
+      setState({
+        ...initialState,
+        ...storedState,
+        isHydrated: true,
+      } as FastCutState);
+    } else {
+      // Otherwise initialize with data from workflow store (fresh state for new session)
+      console.log("[FastCutProvider] Initializing fresh state for session:", activeSessionId);
+      const initialPrompt = analyze.optimizedPrompt || analyze.selectedIdea?.description || "";
+      const fastCutData = analyze.selectedIdea?.fastCutData;
+      const initialKeywords = fastCutData?.searchKeywords?.length
+        ? fastCutData.searchKeywords
+        : discover.keywords;
+
+      setState({
+        ...initialState,
+        prompt: initialPrompt,
+        editableKeywords: [...initialKeywords],
+        selectedSearchKeywords: new Set(initialKeywords),
+        campaignName: analyze.campaignName || "",
+        isHydrated: true,
+      });
+    }
+
+    setIsHydrated(true);
+  }, [isHydrated, activeSessionId, analyze.optimizedPrompt, analyze.selectedIdea, analyze.campaignName, discover.keywords]);
+
+  // Save state to sessionStorage whenever it changes (only after hydration)
+  // Include session ID for future validation
+  useEffect(() => {
+    if (isHydrated) {
+      saveToSessionStorage(state, activeSessionId);
+    }
+  }, [state, isHydrated, activeSessionId]);
 
   // Fetch style sets on mount
   useEffect(() => {
@@ -400,7 +458,7 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
 
   // Reset
   const reset = useCallback(() => {
-    clearSessionStorage();
+    clearFastCutSessionStorage();
     setState(initialState);
   }, []);
 

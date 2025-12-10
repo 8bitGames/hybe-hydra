@@ -74,7 +74,13 @@ function SessionCard({
   const { language } = useI18n();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const stages = ["start", "analyze", "create", "processing", "publish"] as const;
+  // Use different stage lists based on content type
+  // AI Video: start → analyze → create → processing → publish (5 stages)
+  // Fast Cut: start → script → images → music → effects → render → publish (7 stages)
+  const isFastCut = session.metadata.contentType === "fast-cut";
+  const stages: readonly string[] = isFastCut
+    ? ["start", "script", "images", "music", "effects", "render", "publish"]
+    : ["start", "analyze", "create", "processing", "publish"];
   const currentStageIndex = stages.indexOf(session.currentStage);
 
   const statusConfig: Record<
@@ -113,6 +119,22 @@ function SessionCard({
     },
   };
 
+  const contentTypeConfig: Record<
+    string,
+    { label: string; labelKo: string; icon: React.ReactNode }
+  > = {
+    "fast-cut": {
+      label: "Fast Cut",
+      labelKo: "Fast Cut",
+      icon: <Sparkles className="h-3 w-3" />,
+    },
+    "ai-video": {
+      label: "AI Video",
+      labelKo: "AI Video",
+      icon: <Video className="h-3 w-3" />,
+    },
+  };
+
   const entrySourceConfig: Record<
     string,
     { label: string; labelKo: string; icon: React.ReactNode }
@@ -135,6 +157,9 @@ function SessionCard({
   };
 
   const status = statusConfig[session.status];
+  const contentType = session.metadata.contentType
+    ? contentTypeConfig[session.metadata.contentType]
+    : null;
   const entrySource = session.metadata.entrySource
     ? entrySourceConfig[session.metadata.entrySource]
     : null;
@@ -227,7 +252,7 @@ function SessionCard({
         {/* Progress Stages */}
         <div className="flex items-center gap-1 mb-3">
           {stages.map((stage, index) => {
-            const isCompleted = session.completedStages.includes(stage);
+            const isCompleted = (session.completedStages as string[]).includes(stage);
             const isCurrent = stage === session.currentStage;
 
             return (
@@ -272,11 +297,10 @@ function SessionCard({
             <Clock className="h-3 w-3" />
             {formatRelativeTime(session.updatedAt)}
           </span>
-          {session.metadata.totalGenerations > 0 && (
+          {contentType && (
             <span className="flex items-center gap-1">
-              <Sparkles className="h-3 w-3" />
-              {session.metadata.totalGenerations}{" "}
-              {language === "ko" ? "생성" : "generations"}
+              {contentType.icon}
+              {language === "ko" ? contentType.labelKo : contentType.label}
             </span>
           )}
         </div>
@@ -406,11 +430,18 @@ export function SessionDashboard() {
 
   // Stage to route mapping (using existing routes for compatibility)
   const stageToRoute: Record<string, string> = {
+    // AI Video stages
     start: "/start",
     analyze: "/analyze",
-    create: "/create/workflow",  // New route for actual create stage
+    create: "/create/workflow",
     processing: "/processing",
     publish: "/publish",
+    // Fast Cut stages
+    script: "/fast-cut/script",
+    images: "/fast-cut/images",
+    music: "/fast-cut/music",
+    effects: "/fast-cut/effects",
+    render: "/processing",
   };
 
   // Handlers

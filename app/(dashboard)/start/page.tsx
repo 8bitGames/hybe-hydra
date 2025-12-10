@@ -587,6 +587,10 @@ export default function StartPage() {
 
   // Proceed to next step based on content type
   const handleProceedToAnalyze = () => {
+    // CRITICAL: Sync start data to session store BEFORE transferToAnalyze changes the stage
+    // This ensures start data is persisted even if the unmount sync doesn't complete in time
+    syncNow();
+
     transferToAnalyze();
 
     // Route based on content type

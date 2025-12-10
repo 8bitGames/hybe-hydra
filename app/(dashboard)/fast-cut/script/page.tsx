@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
+import { useSessionStore } from "@/lib/stores/session-store";
 import { fastCutApi } from "@/lib/fast-cut-api";
 import { useToast } from "@/components/ui/toast";
 import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
@@ -31,6 +32,16 @@ export default function FastCutScriptPage() {
   const { analyze } = useWorkflowStore(
     useShallow((state) => ({
       analyze: state.analyze,
+    }))
+  );
+
+  // Session store for persisting Fast Cut data
+  const { setStageData, updateMetadata, proceedToStage, activeSession } = useSessionStore(
+    useShallow((state) => ({
+      setStageData: state.setStageData,
+      updateMetadata: state.updateMetadata,
+      proceedToStage: state.proceedToStage,
+      activeSession: state.activeSession,
     }))
   );
 
@@ -178,8 +189,28 @@ export default function FastCutScriptPage() {
 
   const canProceed = scriptData !== null;
 
-  const handleNext = () => {
-    if (canProceed) {
+  const handleNext = async () => {
+    if (canProceed && activeSession) {
+      // Mark this as a Fast Cut session
+      if (activeSession.metadata.contentType !== "fast-cut") {
+        updateMetadata({ contentType: "fast-cut", title: campaignName || "Fast Cut" });
+      }
+
+      // Save script stage data
+      setStageData("script", {
+        prompt,
+        aspectRatio,
+        editableKeywords,
+        selectedSearchKeywords: Array.from(selectedSearchKeywords),
+        scriptData,
+        tiktokSEO,
+      });
+
+      // Proceed to images stage (saves to DB)
+      await proceedToStage("images");
+      router.push("/fast-cut/images");
+    } else if (canProceed) {
+      // No active session, just navigate
       router.push("/fast-cut/images");
     }
   };

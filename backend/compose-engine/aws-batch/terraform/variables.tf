@@ -65,3 +65,16 @@ variable "spot_bid_percentage" {
   type        = number
   default     = 100
 }
+
+# GCP Settings (for Vertex AI via WIF)
+variable "gcp_project_id" {
+  description = "GCP project ID for Vertex AI"
+  type        = string
+  default     = "hyb-hydra-dev"
+}
+
+variable "gcp_location" {
+  description = "GCP region for Vertex AI"
+  type        = string
+  default     = "us-central1"
+}

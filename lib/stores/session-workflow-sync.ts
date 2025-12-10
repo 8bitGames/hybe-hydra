@@ -199,55 +199,61 @@ export function syncWorkflowToSession(): void {
     void sessionStore.proceedToStage(workflowCurrentStage);
   }
 
-  // Update stage data based on current stage
-  const currentStage = workflowCurrentStage;
+  // CRITICAL FIX: Sync ALL stage data that has content, not just current stage
+  // This ensures data is preserved when navigating between stages
+  // (e.g., start data must persist when moving to analyze stage)
 
-  switch (currentStage) {
-    case "start":
-      sessionStore.updateStageData("start", {
-        source: workflowState.start.source,
-        contentType: workflowState.start.contentType,
-        selectedHashtags: workflowState.discover.selectedHashtags,
-      });
-      break;
-
-    case "analyze":
-      sessionStore.updateStageData("analyze", {
-        campaignId: workflowState.analyze.campaignId,
-        campaignName: workflowState.analyze.campaignName,
-        userIdea: workflowState.analyze.userIdea,
-        selectedIdea: workflowState.analyze.selectedIdea,
-        optimizedPrompt: workflowState.analyze.optimizedPrompt,
-        hashtags: workflowState.analyze.hashtags,
-        aiGeneratedIdeas: workflowState.analyze.aiGeneratedIdeas,
-      });
-      break;
-
-    case "create":
-      // Capture all create stage data from workflow store
-      sessionStore.updateStageData("create", {
-        creationType: workflowState.create.creationType,
-        generations: workflowState.create.generations,
-        selectedGenerations: workflowState.create.selectedGenerations,
-        pipelineStatus: workflowState.create.pipelineStatus,
-      });
-      break;
-
-    case "processing":
-      sessionStore.updateStageData("processing", {
-        videos: workflowState.processing.videos,
-        selectedVideos: workflowState.processing.selectedVideos,
-        filterStatus: workflowState.processing.filterStatus,
-      });
-      break;
-
-    case "publish":
-      sessionStore.updateStageData("publish", {
-        scheduledPosts: workflowState.publish.scheduledPosts,
-        selectedPlatforms: workflowState.publish.selectedPlatforms,
-      });
-      break;
+  // Always sync start data if it has a source
+  if (workflowState.start.source) {
+    sessionStore.updateStageData("start", {
+      source: workflowState.start.source,
+      contentType: workflowState.start.contentType,
+      selectedHashtags: workflowState.discover.selectedHashtags,
+    });
+    console.log("[SyncWorkflowToSession] Synced start data:", workflowState.start.source?.type);
   }
+
+  // Always sync analyze data if it has meaningful content
+  if (workflowState.analyze.campaignId || workflowState.analyze.userIdea || workflowState.analyze.selectedIdea) {
+    sessionStore.updateStageData("analyze", {
+      campaignId: workflowState.analyze.campaignId,
+      campaignName: workflowState.analyze.campaignName,
+      userIdea: workflowState.analyze.userIdea,
+      selectedIdea: workflowState.analyze.selectedIdea,
+      optimizedPrompt: workflowState.analyze.optimizedPrompt,
+      hashtags: workflowState.analyze.hashtags,
+      aiGeneratedIdeas: workflowState.analyze.aiGeneratedIdeas,
+    });
+  }
+
+  // Always sync create data if it has generations
+  if (workflowState.create.generations?.length || workflowState.create.creationType) {
+    sessionStore.updateStageData("create", {
+      creationType: workflowState.create.creationType,
+      generations: workflowState.create.generations,
+      selectedGenerations: workflowState.create.selectedGenerations,
+      pipelineStatus: workflowState.create.pipelineStatus,
+    });
+  }
+
+  // Always sync processing data if it has videos
+  if (workflowState.processing.videos?.length) {
+    sessionStore.updateStageData("processing", {
+      videos: workflowState.processing.videos,
+      selectedVideos: workflowState.processing.selectedVideos,
+      filterStatus: workflowState.processing.filterStatus,
+    });
+  }
+
+  // Always sync publish data if it has scheduled posts or platforms
+  if (workflowState.publish.scheduledPosts?.length || workflowState.publish.selectedPlatforms?.length) {
+    sessionStore.updateStageData("publish", {
+      scheduledPosts: workflowState.publish.scheduledPosts,
+      selectedPlatforms: workflowState.publish.selectedPlatforms,
+    });
+  }
+
+  console.log("[SyncWorkflowToSession] Completed sync for stage:", workflowCurrentStage);
 }
 
 /**

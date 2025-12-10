@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
+import { useSessionStore } from "@/lib/stores/session-store";
+import { useShallow } from "zustand/react/shallow";
 import { fastCutApi, ImageCandidate } from "@/lib/fast-cut-api";
 import { useToast } from "@/components/ui/toast";
 import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
@@ -15,6 +17,15 @@ export default function FastCutImagesPage() {
   const router = useRouter();
   const { language } = useI18n();
   const toast = useToast();
+
+  // Session store for persisting Fast Cut data
+  const { setStageData, proceedToStage, activeSession } = useSessionStore(
+    useShallow((state) => ({
+      setStageData: state.setStageData,
+      proceedToStage: state.proceedToStage,
+      activeSession: state.activeSession,
+    }))
+  );
 
   const {
     imageCandidates,
@@ -29,14 +40,15 @@ export default function FastCutImagesPage() {
     generationId,
     scriptData,
     setError,
+    isHydrated,
   } = useFastCut();
 
-  // Redirect if no script data
+  // Redirect if no script data (only after hydration)
   useEffect(() => {
-    if (!scriptData) {
+    if (isHydrated && !scriptData) {
       router.replace("/fast-cut/script");
     }
-  }, [scriptData, router]);
+  }, [isHydrated, scriptData, router]);
 
   // Auto-search images on mount if we have keywords and no candidates
   const keywordCount = selectedSearchKeywords?.size ?? 0;
@@ -92,8 +104,20 @@ export default function FastCutImagesPage() {
 
   const canProceed = selectedImages.length >= 3;
 
-  const handleNext = () => {
-    if (canProceed) {
+  const handleNext = async () => {
+    if (canProceed && activeSession) {
+      // Save images stage data
+      setStageData("images", {
+        imageCandidates,
+        selectedImages,
+        generationId,
+      });
+
+      // Proceed to music stage (saves to DB)
+      await proceedToStage("music");
+      router.push("/fast-cut/music");
+    } else if (canProceed) {
+      // No active session, just navigate
       router.push("/fast-cut/music");
     }
   };
@@ -102,7 +126,8 @@ export default function FastCutImagesPage() {
     router.push("/fast-cut/script");
   };
 
-  if (!scriptData) {
+  // Show nothing while hydrating or if prerequisites not met
+  if (!isHydrated || !scriptData) {
     return null;
   }
 

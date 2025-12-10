@@ -347,8 +347,105 @@ resource "aws_batch_job_definition" "audio_analysis" {
 }
 
 # =============================================================================
+# AI Generation Job Queue (Veo 3, Imagen 3 via Vertex AI)
+# =============================================================================
+
+resource "aws_batch_job_queue" "ai_gpu" {
+  name     = "${var.project_name}-ai-gpu-queue"
+  state    = "ENABLED"
+  priority = 15  # Highest priority for AI generation
+
+  compute_environment_order {
+    order               = 1
+    compute_environment = aws_batch_compute_environment.gpu_spot.arn
+  }
+
+  tags = {
+    Name        = "${var.project_name}-ai-gpu-queue"
+    Project     = var.project_name
+    Environment = var.environment
+    Type        = "AI"
+  }
+}
+
+# AI Generation Job Definition (Veo 3 / Imagen 3)
+resource "aws_batch_job_definition" "ai_generation" {
+  name = "${var.project_name}-ai-gpu-worker"
+  type = "container"
+
+  platform_capabilities = ["EC2"]
+
+  container_properties = jsonencode({
+    image = "${aws_ecr_repository.compose_engine.repository_url}:latest"
+
+    resourceRequirements = [
+      { type = "VCPU", value = "4" },
+      { type = "MEMORY", value = "14000" },
+      { type = "GPU", value = "1" }
+    ]
+
+    jobRoleArn       = aws_iam_role.batch_job.arn
+    executionRoleArn = aws_iam_role.ecs_execution.arn
+
+    environment = [
+      { name = "AWS_REGION", value = var.aws_region },
+      { name = "SECRETS_NAME", value = "hydra/compose-engine" },
+      { name = "GCP_SECRETS_NAME", value = "hydra/gcp-config" },
+      { name = "GCP_PROJECT_ID", value = var.gcp_project_id },
+      { name = "GCP_LOCATION", value = var.gcp_location },
+      { name = "GOOGLE_APPLICATION_CREDENTIALS", value = "/root/clientLibraryConfig.json" }
+    ]
+
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.batch.name
+        "awslogs-region"        = var.aws_region
+        "awslogs-stream-prefix" = "ai-generation"
+      }
+    }
+
+    # Use ai_worker.py for AI generation jobs
+    command = ["python3", "/root/ai_worker.py"]
+  })
+
+  retry_strategy {
+    attempts = 2
+    evaluate_on_exit {
+      on_status_reason = "Host EC2*"
+      action           = "RETRY"
+    }
+    evaluate_on_exit {
+      on_reason = "CannotInspectContainerError*"
+      action    = "RETRY"
+    }
+  }
+
+  timeout {
+    attempt_duration_seconds = 900  # 15 minutes (Veo can take 5-10 min)
+  }
+
+  tags = {
+    Name        = "${var.project_name}-ai-gpu-worker"
+    Project     = var.project_name
+    Environment = var.environment
+    Type        = "AI"
+  }
+}
+
+# =============================================================================
 # Outputs
 # =============================================================================
+
+output "ai_job_queue_arn" {
+  description = "ARN of AI generation job queue"
+  value       = aws_batch_job_queue.ai_gpu.arn
+}
+
+output "ai_job_definition_arn" {
+  description = "ARN of AI generation job definition"
+  value       = aws_batch_job_definition.ai_generation.arn
+}
 
 output "gpu_job_queue_arn" {
   description = "ARN of GPU job queue"
