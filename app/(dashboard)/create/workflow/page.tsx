@@ -900,15 +900,16 @@ function InlinePromptPersonalizer({
 }: InlinePromptPersonalizerProps) {
   const { language } = useI18n();
   const analyzeState = useWorkflowStore((state) => state.analyze);
+  const setAnalyzeImagePrompt = useWorkflowStore((state) => state.setAnalyzeImagePrompt);
 
   const [isGeneratingImagePrompt, setIsGeneratingImagePrompt] = useState(false);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  // Prompts
+  // Prompts - imagePrompt comes from store for persistence
   const [videoPrompt, setVideoPrompt] = useState("");
-  const [imagePrompt, setImagePrompt] = useState<string | null>(null);
+  const imagePrompt = analyzeState.imagePrompt || null;
   const [previewImage, setPreviewImage] = useState<PreviewImageData | null>(null);
 
   // Lightbox for full-size image view
@@ -944,14 +945,13 @@ function InlinePromptPersonalizer({
       setError(null);
       setPreviewError(null);
       setVideoPrompt(prompt);
-      setImagePrompt(null);
+      // Don't reset imagePrompt - let user manually generate/regenerate
+      // setImagePrompt(null);
       setPreviewImage(null);
       setLightboxOpen(false);
 
-      // Auto-generate image prompt if video prompt exists
-      if (prompt) {
-        generateImagePrompt(prompt);
-      }
+      // Don't auto-generate - user must click "Generate Prompt" button
+      // This prevents regeneration on every page refresh
     }
   }, [isActive, getVideoPrompt]);
 
@@ -961,7 +961,8 @@ function InlinePromptPersonalizer({
     if (!videoPromptToUse) return;
 
     setIsGeneratingImagePrompt(true);
-    setImagePrompt(null);
+    // Clear current prompt while generating
+    setAnalyzeImagePrompt("");
 
     try {
       const imageDescription =
@@ -980,13 +981,14 @@ function InlinePromptPersonalizer({
         throw new Error(response.error?.message || "Failed to generate image prompt");
       }
 
-      setImagePrompt(response.data.image_prompt);
+      // Save to store for persistence across refreshes
+      setAnalyzeImagePrompt(response.data.image_prompt);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate image prompt");
     } finally {
       setIsGeneratingImagePrompt(false);
     }
-  }, [videoPrompt, metadata, context]);
+  }, [videoPrompt, metadata, context, setAnalyzeImagePrompt]);
 
   // Generate preview image (first frame for I2V)
   const generatePreviewImage = useCallback(async () => {

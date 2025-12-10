@@ -373,6 +373,7 @@ export function PersonalizePromptModal({
 
   // Get prompt directly from workflow store as backup
   const analyzeState = useWorkflowStore((state) => state.analyze);
+  const setAnalyzeImagePrompt = useWorkflowStore((state) => state.setAnalyzeImagePrompt);
 
   // Current step: 1 = prompt review, 2 = image generation/result
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
@@ -383,9 +384,9 @@ export function PersonalizePromptModal({
   const [error, setError] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  // Prompts
+  // Prompts - imagePrompt comes from store for persistence
   const [videoPrompt, setVideoPrompt] = useState("");
-  const [imagePrompt, setImagePrompt] = useState<string | null>(null);
+  const imagePrompt = analyzeState.imagePrompt || null;
 
   const [metadata, setMetadata] = useState<{
     duration: string;
@@ -437,15 +438,14 @@ export function PersonalizePromptModal({
       setError(null);
       setPreviewError(null);
       setVideoPrompt(prompt);
-      setImagePrompt(null);
+      // Don't reset imagePrompt - let user manually regenerate
+      // setImagePrompt(null);
       setPreviewImage(null);
       setCompositionMode("direct");
       setHandPose("elegantly holding");
 
-      // Auto-generate image prompt if video prompt exists
-      if (prompt) {
-        generateImagePrompt(prompt);
-      }
+      // Don't auto-generate - let user click the button to generate
+      // This prevents regeneration on every page refresh
     }
   }, [open, getVideoPrompt, context.optimizedPrompt, analyzeState.userIdea, analyzeState.optimizedPrompt]);
 
@@ -455,7 +455,8 @@ export function PersonalizePromptModal({
     if (!videoPromptToUse) return;
 
     setIsGeneratingImagePrompt(true);
-    setImagePrompt(null);
+    // Clear current prompt while generating
+    setAnalyzeImagePrompt("");
 
     console.log("[PERSONALIZE] 🔧 Generating image prompt from video prompt...");
 
@@ -477,7 +478,8 @@ export function PersonalizePromptModal({
       }
 
       console.log("[PERSONALIZE] ✅ Image prompt generated:", response.data.image_prompt.slice(0, 100) + "...");
-      setImagePrompt(response.data.image_prompt);
+      // Save to store for persistence across refreshes
+      setAnalyzeImagePrompt(response.data.image_prompt);
     } catch (err) {
       console.error("[PERSONALIZE] ❌ Image prompt generation error:", err);
       setError(
@@ -486,7 +488,7 @@ export function PersonalizePromptModal({
     } finally {
       setIsGeneratingImagePrompt(false);
     }
-  }, [videoPrompt, metadata, context]);
+  }, [videoPrompt, metadata, context, setAnalyzeImagePrompt]);
 
   // Generate preview image (first frame for I2V)
   const generatePreviewImage = useCallback(async () => {

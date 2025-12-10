@@ -212,6 +212,7 @@ export interface AnalyzeData {
     name: string;
   }[];
   optimizedPrompt: string;
+  imagePrompt: string;  // AI-generated image prompt for first frame
   settings: {
     aspectRatio: "9:16" | "16:9" | "1:1";
     duration: number;
@@ -425,6 +426,7 @@ interface WorkflowState {
   addAnalyzeAsset: (asset: AnalyzeData["assets"][0]) => void;
   removeAnalyzeAsset: (assetId: string) => void;
   setAnalyzeOptimizedPrompt: (prompt: string) => void;
+  setAnalyzeImagePrompt: (prompt: string) => void;
   setAnalyzeSettings: (settings: Partial<AnalyzeData["settings"]>) => void;
   setAnalyzeHashtags: (hashtags: string[]) => void;
 
@@ -510,6 +512,7 @@ const initialAnalyzeData: AnalyzeData = {
   selectedIdea: null,
   assets: [],
   optimizedPrompt: "",
+  imagePrompt: "",
   settings: {
     aspectRatio: "9:16",
     duration: 30,
@@ -880,6 +883,11 @@ export const useWorkflowStore = create<WorkflowState>()(
         setAnalyzeOptimizedPrompt: (prompt) =>
           set((state) => ({
             analyze: { ...state.analyze, optimizedPrompt: prompt },
+          })),
+
+        setAnalyzeImagePrompt: (prompt) =>
+          set((state) => ({
+            analyze: { ...state.analyze, imagePrompt: prompt },
           })),
 
         setAnalyzeSettings: (settings) =>
