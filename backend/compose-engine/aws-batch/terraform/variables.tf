@@ -5,7 +5,7 @@
 variable "aws_region" {
   description = "AWS region to deploy resources"
   type        = string
-  default     = "ap-southeast-2"
+  default     = "ap-northeast-2"
 }
 
 variable "project_name" {
@@ -56,7 +56,7 @@ variable "cpu_instance_types" {
 variable "s3_bucket" {
   description = "S3 bucket for assets"
   type        = string
-  default     = "hydra-assets-hybe"
+  default     = "hydra-assets-seoul"
 }
 
 # Spot Settings

@@ -4,12 +4,13 @@ import os
 import platform
 
 # CRITICAL: Set FFmpeg path BEFORE importing moviepy/imageio
-# This tells imageio_ffmpeg to use jellyfin-ffmpeg with NVENC support
+# This tells imageio_ffmpeg to use our compiled FFmpeg with NVENC support
 if platform.system() != "Darwin":  # Not macOS
-    JELLYFIN_FFMPEG = "/usr/lib/jellyfin-ffmpeg/ffmpeg"
-    if os.path.exists(JELLYFIN_FFMPEG):
-        os.environ["IMAGEIO_FFMPEG_EXE"] = JELLYFIN_FFMPEG
-        print(f"[FFmpeg] Using jellyfin-ffmpeg: {JELLYFIN_FFMPEG}")
+    NVENC_FFMPEG = "/usr/local/bin/ffmpeg"
+    if os.path.exists(NVENC_FFMPEG):
+        os.environ["IMAGEIO_FFMPEG_EXE"] = NVENC_FFMPEG
+        os.environ["FFMPEG_BINARY"] = NVENC_FFMPEG
+        print(f"[FFmpeg] Using NVENC FFmpeg: {NVENC_FFMPEG}")
 
 import asyncio
 import logging
@@ -457,15 +458,15 @@ class VideoRenderer:
 
         logger.info(f"Created default audio analysis: BPM={DEFAULT_BPM}, beats={len(beat_times)}")
 
-        # Generate energy curve: (time, energy) pairs with neutral energy
-        energy_curve = [(t, 0.5) for t in beat_times[:20]]  # First 20 beats
+        # Generate energy curve as (time, energy) pairs
+        energy_curve = [(i * 0.5, 0.5) for i in range(int(DEFAULT_DURATION * 2))]  # Neutral energy
 
         return AudioAnalysis(
             bpm=DEFAULT_BPM,
             beat_times=beat_times,
             duration=DEFAULT_DURATION,
             energy_curve=energy_curve,
-            suggested_vibe="Pop"  # Default vibe for videos without audio
+            suggested_vibe="Exciting"  # Default vibe for social media content
         )
 
     async def _process_images_parallel(
@@ -651,110 +652,23 @@ class VideoRenderer:
     def _check_nvenc_available(self) -> bool:
         """Check if NVENC is available on this GPU."""
         import subprocess
-        import sys
-
-        print("[NVENC] Starting availability check...", flush=True)
-
         try:
-            # Step 0: Check nvidia-smi for GPU access
-            print("[NVENC] Step 0: Checking GPU with nvidia-smi...", flush=True)
-            sys.stdout.flush()
-
-            try:
-                nvidia_result = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader"],
-                    capture_output=True, text=True, timeout=10
-                )
-                if nvidia_result.returncode == 0:
-                    gpu_info = nvidia_result.stdout.strip()
-                    print(f"[NVENC] GPU detected: {gpu_info}", flush=True)
-                else:
-                    print(f"[NVENC] nvidia-smi failed: {nvidia_result.stderr[:100]}", flush=True)
-            except FileNotFoundError:
-                print("[NVENC] nvidia-smi not found - GPU might not be accessible", flush=True)
-            except Exception as e:
-                print(f"[NVENC] nvidia-smi error: {e}", flush=True)
-
-            # Step 0b: Check for libnvidia-encode.so (required for NVENC)
-            # This is informational only - we'll try NVENC test regardless
-            print("[NVENC] Step 0b: Checking for libnvidia-encode.so...", flush=True)
-            try:
-                lib_result = subprocess.run(
-                    ["ldconfig", "-p"],
-                    capture_output=True, text=True, timeout=10
-                )
-                if "libnvidia-encode" in lib_result.stdout:
-                    print("[NVENC] libnvidia-encode.so found in ldconfig", flush=True)
-                else:
-                    print("[NVENC] libnvidia-encode.so not in ldconfig cache", flush=True)
-            except FileNotFoundError:
-                print("[NVENC] ldconfig not available, skipping library check", flush=True)
-            except Exception as e:
-                print(f"[NVENC] ldconfig check error (non-fatal): {e}", flush=True)
-
-            # Check common paths for the library
-            import os
-            lib_paths = [
-                "/usr/lib/x86_64-linux-gnu/libnvidia-encode.so",
-                "/usr/lib/x86_64-linux-gnu/libnvidia-encode.so.1",
-                "/usr/lib/libnvidia-encode.so",
-                "/usr/lib/libnvidia-encode.so.1",
-                "/usr/local/nvidia/lib64/libnvidia-encode.so",
-                "/usr/local/nvidia/lib64/libnvidia-encode.so.1"
-            ]
-            found_lib = None
-            for path in lib_paths:
-                if os.path.exists(path):
-                    found_lib = path
-                    print(f"[NVENC] Found library: {path}", flush=True)
-                    break
-            if not found_lib:
-                print("[NVENC] NOTE: libnvidia-encode.so not found in common paths (may be OK)", flush=True)
-
-            print("[NVENC] Step 1: Checking ffmpeg encoders...", flush=True)
-            sys.stdout.flush()
-
             result = subprocess.run(
                 ["ffmpeg", "-hide_banner", "-encoders"],
                 capture_output=True, text=True, timeout=10
             )
-
-            has_nvenc = "h264_nvenc" in result.stdout
-            print(f"[NVENC] Step 1 complete: h264_nvenc in list = {has_nvenc}", flush=True)
-
-            if not has_nvenc:
-                print("[NVENC] h264_nvenc not found in encoders, using CPU", flush=True)
-                return False
-
-            # Try a quick encode test
-            print("[NVENC] Step 2: Testing NVENC encoding...", flush=True)
-            sys.stdout.flush()
-
-            test_result = subprocess.run(
-                ["ffmpeg", "-hide_banner", "-f", "lavfi", "-i", "color=black:s=64x64:d=0.1",
-                 "-c:v", "h264_nvenc", "-f", "null", "-"],
-                capture_output=True, text=True, timeout=10
-            )
-
-            success = test_result.returncode == 0
-            print(f"[NVENC] Step 2 complete: test encode success = {success}", flush=True)
-
-            if not success:
-                # Print full stderr to diagnose the actual error
-                print(f"[NVENC] Test encode FAILED! Full stderr:", flush=True)
-                print(f"{test_result.stderr}", flush=True)
-                print(f"[NVENC] Test returncode: {test_result.returncode}", flush=True)
-
-            return success
-
-        except subprocess.TimeoutExpired as e:
-            print(f"[NVENC] Timeout during check: {e}", flush=True)
-            return False
-        except Exception as e:
-            print(f"[NVENC] Check failed with error: {e}", flush=True)
-            import traceback
-            print(f"[NVENC] Traceback: {traceback.format_exc()}", flush=True)
-            return False
+            # Check if h264_nvenc is listed and test if it works
+            if "h264_nvenc" in result.stdout:
+                # Try a quick encode test
+                test_result = subprocess.run(
+                    ["ffmpeg", "-hide_banner", "-f", "lavfi", "-i", "color=black:s=64x64:d=0.1",
+                     "-c:v", "h264_nvenc", "-f", "null", "-"],
+                    capture_output=True, text=True, timeout=10
+                )
+                return test_result.returncode == 0
+        except Exception:
+            pass
+        return False
 
     async def _render_with_nvenc(
         self,
@@ -764,61 +678,21 @@ class VideoRenderer:
         job_id: str
     ) -> None:
         """Render video with optimized settings - NVENC if available, else CPU."""
-        import sys
-        import time
-        import traceback
-
-        def log(msg: str):
-            """Flush log immediately."""
-            print(f"[{job_id}] [RENDER] {msg}", flush=True)
-            sys.stdout.flush()
-
-        log("=" * 60)
-        log("ENTERING _render_with_nvenc()")
-        log("=" * 60)
-
-        # Log video properties
-        try:
-            log(f"Video duration: {video.duration:.2f}s")
-            log(f"Video size: {video.size}")
-            log(f"Video FPS: {getattr(video, 'fps', 'unknown')}")
-            log(f"Has audio: {video.audio is not None}")
-            log(f"Output path: {output_path}")
-            log(f"Temp audio: {temp_audiofile}")
-        except Exception as e:
-            log(f"Error getting video properties: {e}")
-
         is_mac = platform.system() == "Darwin"
-        log(f"Platform: {platform.system()}, is_mac: {is_mac}")
-
         loop = asyncio.get_event_loop()
 
-        # Check NVENC availability
-        log("-" * 40)
-        log("STEP 1: Checking NVENC availability...")
-        log("-" * 40)
+        # Check if NVENC is actually available (some cloud GPUs don't expose it)
+        use_nvenc = not is_mac and self._check_nvenc_available()
 
-        start_time = time.time()
-        try:
-            use_nvenc = not is_mac and self._check_nvenc_available()
-            elapsed = time.time() - start_time
-            log(f"NVENC check completed in {elapsed:.2f}s, result: {use_nvenc}")
-        except Exception as e:
-            elapsed = time.time() - start_time
-            log(f"NVENC check FAILED after {elapsed:.2f}s: {e}")
-            log(f"Traceback: {traceback.format_exc()}")
-            use_nvenc = False
-
-        # Render timeout: 10 minutes max (should be ~2-3 min normally)
-        RENDER_TIMEOUT = 600
-
-        def do_render_nvenc():
-            """NVENC GPU rendering."""
-            log("NVENC: Entering do_render_nvenc()")
-            log("NVENC: About to call video.write_videofile()...")
-            start = time.time()
-            try:
-                video.write_videofile(
+        if use_nvenc:
+            # GPU encoding with optimized NVENC parameters for TikTok
+            # - preset p4 (balanced speed/quality)
+            # - cq 23 (constant quality, good for social media)
+            # - b:v 8M (target bitrate for TikTok HD)
+            logger.info(f"[{job_id}] Using NVENC GPU encoding")
+            await loop.run_in_executor(
+                None,
+                lambda: video.write_videofile(
                     output_path,
                     fps=30,
                     codec="h264_nvenc",
@@ -826,32 +700,26 @@ class VideoRenderer:
                     audio_bitrate="192k",
                     temp_audiofile=temp_audiofile,
                     ffmpeg_params=[
-                        "-preset", "p4",
-                        "-tune", "hq",
-                        "-rc", "vbr",
-                        "-cq", "23",
-                        "-b:v", "8M",
-                        "-maxrate", "12M",
-                        "-bufsize", "16M",
-                        "-profile:v", "high",
+                        "-preset", "p4",       # Fast encoding (p1=fastest, p7=slowest)
+                        "-tune", "hq",         # High quality tuning
+                        "-rc", "vbr",          # Variable bitrate
+                        "-cq", "23",           # Constant quality (18-28, lower=better)
+                        "-b:v", "8M",          # Target bitrate
+                        "-maxrate", "12M",     # Max bitrate spike
+                        "-bufsize", "16M",     # Buffer size
+                        "-profile:v", "high",  # H.264 High profile (auto level)
                     ],
                     logger=None
                 )
-                elapsed = time.time() - start
-                log(f"NVENC: write_videofile() completed in {elapsed:.2f}s!")
-            except Exception as e:
-                elapsed = time.time() - start
-                log(f"NVENC: write_videofile() FAILED after {elapsed:.2f}s: {e}")
-                log(f"NVENC: Traceback: {traceback.format_exc()}")
-                raise
-
-        def do_render_cpu():
-            """CPU libx264 rendering."""
-            log("CPU: Entering do_render_cpu()")
-            log("CPU: About to call video.write_videofile()...")
-            start = time.time()
-            try:
-                video.write_videofile(
+            )
+            logger.info(f"[{job_id}] Rendered with GPU (NVENC h264_nvenc, preset=p4)")
+        else:
+            # CPU encoding with optimized libx264 (fast preset, 8 threads)
+            # Still benefits from GPU for cupy image processing and color grading
+            logger.info(f"[{job_id}] Using CPU encoding (libx264) - NVENC not available")
+            await loop.run_in_executor(
+                None,
+                lambda: video.write_videofile(
                     output_path,
                     fps=30,
                     codec="libx264",
@@ -863,73 +731,8 @@ class VideoRenderer:
                     temp_audiofile=temp_audiofile,
                     logger=None
                 )
-                elapsed = time.time() - start
-                log(f"CPU: write_videofile() completed in {elapsed:.2f}s!")
-            except Exception as e:
-                elapsed = time.time() - start
-                log(f"CPU: write_videofile() FAILED after {elapsed:.2f}s: {e}")
-                log(f"CPU: Traceback: {traceback.format_exc()}")
-                raise
-
-        log("-" * 40)
-        log(f"STEP 2: Starting render (use_nvenc={use_nvenc}, timeout={RENDER_TIMEOUT}s)")
-        log("-" * 40)
-
-        if use_nvenc:
-            log("Selected encoder: NVENC (GPU)")
-            logger.info(f"[{job_id}] Using NVENC GPU encoding")
-
-            try:
-                log("Creating executor task for NVENC...")
-                render_task = loop.run_in_executor(None, do_render_nvenc)
-                log("Executor task created, awaiting with timeout...")
-
-                await asyncio.wait_for(render_task, timeout=RENDER_TIMEOUT)
-
-                log("NVENC render completed successfully!")
-                logger.info(f"[{job_id}] Rendered with GPU (NVENC h264_nvenc, preset=p4)")
-
-            except asyncio.TimeoutError:
-                log(f"NVENC TIMEOUT after {RENDER_TIMEOUT}s! Falling back to CPU...")
-                logger.warning(f"[{job_id}] NVENC timed out, falling back to CPU")
-
-                log("Creating executor task for CPU fallback...")
-                await asyncio.wait_for(
-                    loop.run_in_executor(None, do_render_cpu),
-                    timeout=RENDER_TIMEOUT
-                )
-                log("CPU fallback render completed!")
-                logger.info(f"[{job_id}] Rendered with CPU fallback after NVENC timeout")
-
-            except Exception as e:
-                log(f"NVENC ERROR: {e}")
-                log(f"Full traceback: {traceback.format_exc()}")
-                log("Falling back to CPU...")
-                logger.warning(f"[{job_id}] NVENC failed: {e}, falling back to CPU")
-
-                log("Creating executor task for CPU fallback...")
-                await asyncio.wait_for(
-                    loop.run_in_executor(None, do_render_cpu),
-                    timeout=RENDER_TIMEOUT
-                )
-                log("CPU fallback render completed!")
-                logger.info(f"[{job_id}] Rendered with CPU fallback after NVENC error")
-
-        else:
-            log("Selected encoder: libx264 (CPU)")
-            logger.info(f"[{job_id}] Using CPU encoding (libx264) - NVENC not available")
-
-            log("Creating executor task for CPU...")
-            await asyncio.wait_for(
-                loop.run_in_executor(None, do_render_cpu),
-                timeout=RENDER_TIMEOUT
             )
-            log("CPU render completed successfully!")
             logger.info(f"[{job_id}] Rendered with CPU (libx264, preset=fast, threads=8)")
-
-        log("=" * 60)
-        log("EXITING _render_with_nvenc() - SUCCESS")
-        log("=" * 60)
 
     def _cleanup_clips(
         self,

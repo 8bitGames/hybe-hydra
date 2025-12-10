@@ -338,105 +338,141 @@ export default function StyleSetTestPage() {
 
   // Start rendering
   const startRender = useCallback(async () => {
+    const startTime = Date.now();
+    const LOG_PREFIX = "[Fast-Cut Test]";
+
+    console.log(`${LOG_PREFIX} ========================================`);
+    console.log(`${LOG_PREFIX} RENDER START - ${new Date().toISOString()}`);
+    console.log(`${LOG_PREFIX} ========================================`);
+
+    // Validation logging
+    console.log(`${LOG_PREFIX} Pre-render validation:`, {
+      imageCount: images.length,
+      requiredImages: 3,
+      selectedAudioId,
+      selectedStyleSetId,
+      aspectRatio,
+      selectedStyleSet: selectedStyleSet ? {
+        id: selectedStyleSet.id,
+        name: selectedStyleSet.name,
+        vibe: selectedStyleSet.vibe,
+        colorGrade: selectedStyleSet.colorGrade,
+      } : null,
+      selectedAudio: selectedAudio ? {
+        id: selectedAudio.id,
+        filename: selectedAudio.original_filename,
+        bpm: selectedAudio.metadata?.bpm,
+        duration: selectedAudio.metadata?.duration,
+      } : null,
+    });
+
     if (images.length < 3) {
+      console.warn(`${LOG_PREFIX} Validation failed: Need at least 3 images (have ${images.length})`);
       setError(language === "ko" ? "최소 3장의 이미지가 필요합니다" : "Need at least 3 images");
       return;
     }
 
     if (!selectedAudioId) {
+      console.warn(`${LOG_PREFIX} Validation failed: No audio selected`);
       setError(language === "ko" ? "음원을 선택해주세요" : "Please select an audio track");
       return;
     }
 
+    console.log(`${LOG_PREFIX} Validation passed, starting render...`);
     setRendering(true);
     setError(null);
     setRenderStatus(null);
 
     const newGenerationId = uuidv4();
     setGenerationId(newGenerationId);
+    console.log(`${LOG_PREFIX} Generated job ID: ${newGenerationId}`);
 
     try {
-      // Step 1: Proxy images to S3 first (required for Modal/Batch to access)
-      console.log("[Style Test] Proxying images to S3...");
-      setRenderStatus({
-        status: "processing",
-        progress: 5,
-        currentStep: language === "ko" ? "이미지 업로드 중..." : "Uploading images...",
-      });
-
-      const proxyResult = await fastCutApi.proxyImages(
-        newGenerationId,
-        images.map((img) => ({ url: img.url, id: img.id }))
-      );
-
-      console.log("[Style Test] Proxy result:", proxyResult);
-
-      if (proxyResult.successful < 3) {
-        setError(
-          language === "ko"
-            ? `이미지 업로드 실패: ${proxyResult.failed}개 실패. 최소 3개 필요.`
-            : `Image upload failed: ${proxyResult.failed} failed. Need at least 3 images.`
-        );
-        setRendering(false);
-        return;
-      }
-
-      // Build proxied image URLs map
-      const imageUrlMap = new Map(
-        proxyResult.results
-          .filter((r) => r.success)
-          .map((r) => [r.id, r.minioUrl])
-      );
-
-      const proxiedImages = images
-        .filter((img) => imageUrlMap.has(img.id))
-        .map((img, idx) => ({
-          url: imageUrlMap.get(img.id)!,
-          order: idx,
-        }));
-
-      // Step 2: Start render with proxied S3 URLs
-      setRenderStatus({
-        status: "processing",
-        progress: 15,
-        currentStep: language === "ko" ? "렌더링 시작 중..." : "Starting render...",
-      });
-
-      const response = await fastCutApi.startRender({
+      const renderRequest = {
         generationId: newGenerationId,
         campaignId: "", // Empty = no campaign (test mode)
         audioAssetId: selectedAudioId,
-        images: proxiedImages,
+        images: images.map((img) => ({
+          url: img.url,
+          order: img.order,
+        })),
         styleSetId: selectedStyleSetId,
         aspectRatio,
         targetDuration: 0, // Auto-calculate
         prompt: "Style set test video",
-      });
+      };
 
-      console.log("[Style Test] Render started:", response);
+      console.log(`${LOG_PREFIX} Render request payload:`, JSON.stringify(renderRequest, null, 2));
+      console.log(`${LOG_PREFIX} Image URLs:`, images.map((img, idx) => `[${idx}] ${img.url.substring(0, 100)}...`));
 
-      // Poll for status
+      // Start render
+      const apiStartTime = Date.now();
+      console.log(`${LOG_PREFIX} Calling fastCutApi.startRender() at ${new Date().toISOString()}`);
+
+      const response = await fastCutApi.startRender(renderRequest);
+
+      const apiDuration = Date.now() - apiStartTime;
+      console.log(`${LOG_PREFIX} ========================================`);
+      console.log(`${LOG_PREFIX} API RESPONSE (${apiDuration}ms):`);
+      console.log(`${LOG_PREFIX}   Job ID: ${response.jobId}`);
+      console.log(`${LOG_PREFIX}   Status: ${response.status}`);
+      console.log(`${LOG_PREFIX}   Estimated seconds: ${response.estimatedSeconds}`);
+      console.log(`${LOG_PREFIX}   Output key: ${response.outputKey}`);
+      console.log(`${LOG_PREFIX}   Full response:`, JSON.stringify(response, null, 2));
+      console.log(`${LOG_PREFIX} ========================================`);
+
+      // Poll for status with detailed logging
+      let pollCount = 0;
+      const pollStartTime = Date.now();
+      console.log(`${LOG_PREFIX} Starting status polling (interval: 2000ms, max: 150 attempts)`);
+
       const finalStatus = await fastCutApi.waitForRender(
         newGenerationId,
         (status) => {
+          pollCount++;
+          const pollElapsed = Math.floor((Date.now() - pollStartTime) / 1000);
+          console.log(`${LOG_PREFIX} [Poll #${pollCount}] Status update at +${pollElapsed}s:`, {
+            status: status.status,
+            progress: status.progress,
+            currentStep: status.currentStep,
+            outputUrl: status.outputUrl ? `${status.outputUrl.substring(0, 80)}...` : null,
+            error: status.error,
+          });
           setRenderStatus(status);
         },
         2000, // Poll every 2 seconds
         150 // 5 minute timeout
       );
 
+      const totalDuration = Math.floor((Date.now() - startTime) / 1000);
+      console.log(`${LOG_PREFIX} ========================================`);
+      console.log(`${LOG_PREFIX} RENDER COMPLETE`);
+      console.log(`${LOG_PREFIX}   Total time: ${totalDuration}s`);
+      console.log(`${LOG_PREFIX}   Poll count: ${pollCount}`);
+      console.log(`${LOG_PREFIX}   Final status: ${finalStatus.status}`);
+      console.log(`${LOG_PREFIX}   Output URL: ${finalStatus.outputUrl || 'N/A'}`);
+      console.log(`${LOG_PREFIX} ========================================`);
+
       setRenderStatus(finalStatus);
 
       if (finalStatus.status === "failed") {
+        console.error(`${LOG_PREFIX} RENDER FAILED:`, finalStatus.error);
         setError(finalStatus.error || "Render failed");
       }
     } catch (err) {
-      console.error("[Style Test] Render error:", err);
+      const totalDuration = Math.floor((Date.now() - startTime) / 1000);
+      console.error(`${LOG_PREFIX} ========================================`);
+      console.error(`${LOG_PREFIX} RENDER ERROR after ${totalDuration}s`);
+      console.error(`${LOG_PREFIX} Error type: ${err instanceof Error ? err.constructor.name : typeof err}`);
+      console.error(`${LOG_PREFIX} Error message: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`${LOG_PREFIX} Stack trace:`, err instanceof Error ? err.stack : 'N/A');
+      console.error(`${LOG_PREFIX} ========================================`);
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setRendering(false);
+      console.log(`${LOG_PREFIX} Render process ended at ${new Date().toISOString()}`);
     }
-  }, [images, selectedStyleSetId, selectedAudioId, aspectRatio, language]);
+  }, [images, selectedStyleSetId, selectedAudioId, aspectRatio, language, selectedStyleSet, selectedAudio]);
 
   // Reset test
   const resetTest = useCallback(() => {

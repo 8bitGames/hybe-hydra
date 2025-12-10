@@ -170,7 +170,7 @@ test_submit_job() {
         "target_duration": 5
     },
     "output": {
-        "s3_bucket": "hydra-assets-hybe",
+        "s3_bucket": "hydra-assets-seoul",
         "s3_key": "renders/test/${JOB_ID}.mp4"
     }
 }
