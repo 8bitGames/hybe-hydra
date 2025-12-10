@@ -265,16 +265,26 @@ class RendererAdapter:
             segment_videos = []
 
             for i in range(len(clips)):
-                # Export the full clip segment as video
+                # Export the full clip segment as video with GPU acceleration
                 clip_path = os.path.join(temp_dir, f"{job_id}_segment_{i}.mp4")
-                clips[i].write_videofile(
-                    clip_path,
-                    fps=30,
-                    codec="libx264",
-                    preset="ultrafast",
-                    audio=False,
-                    logger=None
-                )
+                try:
+                    clips[i].write_videofile(
+                        clip_path,
+                        fps=30,
+                        codec="h264_nvenc",
+                        preset="p4",
+                        audio=False,
+                        logger=None
+                    )
+                except Exception:
+                    clips[i].write_videofile(
+                        clip_path,
+                        fps=30,
+                        codec="libx264",
+                        preset="ultrafast",
+                        audio=False,
+                        logger=None
+                    )
                 segment_videos.append(clip_path)
 
                 # Render transition if not last clip
@@ -387,15 +397,27 @@ class RendererAdapter:
                         print(f"[ADAPTER][{job_id}] Resizing clip {i} from {current_w}x{current_h} to {target_w}x{target_h}")
                         export_clip = clip.resized((target_w, target_h))
 
-                    # Write clip to file (without audio for now)
-                    export_clip.write_videofile(
-                        clip_path,
-                        fps=30,
-                        codec="libx264",
-                        preset="ultrafast",
-                        audio=False,
-                        logger="bar"  # Show progress bar for debugging
-                    )
+                    # Write clip to file with GPU acceleration
+                    # Try NVENC first, fall back to libx264 if not available
+                    try:
+                        export_clip.write_videofile(
+                            clip_path,
+                            fps=30,
+                            codec="h264_nvenc",
+                            preset="p4",  # Fast NVENC preset
+                            audio=False,
+                            logger=None  # Disable progress bar for speed
+                        )
+                    except Exception:
+                        # Fall back to CPU encoding
+                        export_clip.write_videofile(
+                            clip_path,
+                            fps=30,
+                            codec="libx264",
+                            preset="ultrafast",
+                            audio=False,
+                            logger=None
+                        )
                 except Exception as write_err:
                     print(f"[ADAPTER][{job_id}] ERROR writing clip {i}: {write_err}")
                     import traceback

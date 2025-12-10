@@ -4,12 +4,13 @@ import os
 import platform
 
 # CRITICAL: Set FFmpeg path BEFORE importing moviepy/imageio
-# This tells imageio_ffmpeg to use jellyfin-ffmpeg with NVENC support
+# This tells imageio_ffmpeg to use our compiled FFmpeg with NVENC support
 if platform.system() != "Darwin":  # Not macOS
-    JELLYFIN_FFMPEG = "/usr/lib/jellyfin-ffmpeg/ffmpeg"
-    if os.path.exists(JELLYFIN_FFMPEG):
-        os.environ["IMAGEIO_FFMPEG_EXE"] = JELLYFIN_FFMPEG
-        print(f"[FFmpeg] Using jellyfin-ffmpeg: {JELLYFIN_FFMPEG}")
+    NVENC_FFMPEG = "/usr/local/bin/ffmpeg"
+    if os.path.exists(NVENC_FFMPEG):
+        os.environ["IMAGEIO_FFMPEG_EXE"] = NVENC_FFMPEG
+        os.environ["FFMPEG_BINARY"] = NVENC_FFMPEG
+        print(f"[FFmpeg] Using NVENC FFmpeg: {NVENC_FFMPEG}")
 
 import asyncio
 import logging
