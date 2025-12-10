@@ -22,10 +22,12 @@ resource "aws_batch_compute_environment" "gpu_spot" {
     type                = "SPOT"
     allocation_strategy = "SPOT_CAPACITY_OPTIMIZED"
 
-    # Scale to ZERO when idle (serverless behavior)
-    min_vcpus     = 0
+    # Keep 1 instance warm to avoid cold starts (4 vCPU = 1x g4dn.xlarge)
+    # Cost: ~$0.16/hr Spot (~$115/month if 24/7)
+    # Set to 0 for pure serverless (cold starts but cheaper)
+    min_vcpus     = 4
     max_vcpus     = var.gpu_max_vcpus
-    desired_vcpus = 0
+    desired_vcpus = 4
 
     instance_type = var.gpu_instance_types
 
