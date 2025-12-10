@@ -8,7 +8,7 @@
  * - OpenAIClient: OpenAI API - uses OPENAI_API_KEY
  *
  * Media Generation:
- * - VertexAIMediaClient: GCP Vertex AI for Veo 3 (video) and Imagen 3 (image)
+ * - VertexAIMediaClient: GCP Vertex AI for Veo 3.1 (video) and Gemini 3 Pro Image (image)
  *   Uses GCP service account or Application Default Credentials
  */
 
@@ -30,7 +30,7 @@ export {
   type GeminiClientConfig,
 } from './gemini-client';
 
-// Vertex AI Media Client - GCP Vertex AI for Veo 3 (video) and Imagen 3 (image)
+// Vertex AI Media Client - GCP Vertex AI for Veo 3.1 (video) and Gemini 3 Pro Image (image)
 export {
   VertexAIMediaClient,
   getVertexAIMediaClient,

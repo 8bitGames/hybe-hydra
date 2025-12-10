@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
-import { useWorkflowStore } from "@/lib/stores/workflow-store";
+import { useWorkflowStore, type PreviewImageData as StorePreviewImageData } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
 import { useCampaigns, useAssets } from "@/lib/queries";
@@ -900,6 +900,7 @@ function InlinePromptPersonalizer({
   const { language } = useI18n();
   const analyzeState = useWorkflowStore((state) => state.analyze);
   const setAnalyzeImagePrompt = useWorkflowStore((state) => state.setAnalyzeImagePrompt);
+  const setAnalyzePreviewImage = useWorkflowStore((state) => state.setAnalyzePreviewImage);
 
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -934,7 +935,7 @@ function InlinePromptPersonalizer({
     return prompt;
   }, [context, analyzeState]);
 
-  // Initialize when component becomes active
+  // Initialize when component becomes active - restore preview image from store
   useEffect(() => {
     if (isActive) {
       const prompt = getVideoPrompt();
@@ -943,10 +944,20 @@ function InlinePromptPersonalizer({
       setPreviewError(null);
       setVideoPrompt(prompt);
       // Don't reset imagePrompt - let user manually generate/regenerate
-      setPreviewImage(null);
+      // Restore preview image from store if available (convert camelCase → snake_case)
+      if (analyzeState.previewImage) {
+        setPreviewImage({
+          preview_id: analyzeState.previewImage.previewId,
+          image_url: analyzeState.previewImage.imageUrl,
+          image_base64: analyzeState.previewImage.imageBase64 || "",
+          gemini_image_prompt: analyzeState.previewImage.geminiImagePrompt,
+        });
+      } else {
+        setPreviewImage(null);
+      }
       setLightboxOpen(false);
     }
-  }, [isActive, getVideoPrompt]);
+  }, [isActive, getVideoPrompt, analyzeState.previewImage]);
 
   // Generate preview image (first frame for I2V)
   const generatePreviewImage = useCallback(async () => {
@@ -979,24 +990,35 @@ function InlinePromptPersonalizer({
         throw new Error(response.error?.message || "Failed to generate preview image");
       }
 
-      setPreviewImage({
+      const newPreviewImage = {
         preview_id: response.data.preview_id,
         image_url: response.data.image_url,
         image_base64: response.data.image_base64,
         gemini_image_prompt: response.data.gemini_image_prompt,
+      };
+      setPreviewImage(newPreviewImage);
+
+      // Persist to store (convert snake_case → camelCase)
+      setAnalyzePreviewImage({
+        previewId: response.data.preview_id,
+        imageUrl: response.data.image_url,
+        imageBase64: response.data.image_base64,
+        geminiImagePrompt: response.data.gemini_image_prompt,
+        createdAt: new Date().toISOString(),
       });
     } catch (err) {
       setPreviewError(err instanceof Error ? err.message : "Failed to generate preview image");
     } finally {
       setIsGeneratingPreview(false);
     }
-  }, [videoPrompt, metadata, images, context]);
+  }, [videoPrompt, metadata, images, context, setAnalyzePreviewImage]);
 
   // Handle regenerate
   const handleRegenerate = useCallback(() => {
     setPreviewImage(null);
+    setAnalyzePreviewImage(null);  // Clear store too
     generatePreviewImage();
-  }, [generatePreviewImage]);
+  }, [generatePreviewImage, setAnalyzePreviewImage]);
 
   // Handle complete
   const handleComplete = useCallback(() => {
@@ -1186,6 +1208,7 @@ function InlinePromptPersonalizer({
           onClick={() => {
             if (previewImage && !isGeneratingPreview) {
               setPreviewImage(null);
+              setAnalyzePreviewImage(null);  // Clear store too
               setPreviewError(null);
             }
           }}

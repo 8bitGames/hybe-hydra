@@ -3,14 +3,24 @@
  *
  * Shared logic for generating preview images (first frames) for I2V workflow.
  * Used by both /create and /campaigns/[id] API endpoints.
+ *
+ * NOTE: Image generation is routed to AWS Batch backend where Vertex AI Gemini 3 Pro Image
+ * can run with WIF (Workload Identity Federation) authentication.
+ * Vercel serverless doesn't have access to AWS metadata service needed for WIF.
  */
 
 import { v4 as uuidv4 } from "uuid";
-import { generateImage, convertAspectRatioForImagen, generateTwoStepComposition } from "@/lib/imagen";
+import { convertAspectRatioForGeminiImage, generateTwoStepComposition } from "@/lib/imagen";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import type { AgentContext } from "@/lib/agents/types";
-import { uploadToS3 } from "@/lib/storage";
+import { uploadToS3, downloadFromS3AsBase64, getPresignedUrl } from "@/lib/storage";
 import { prisma } from "@/lib/db/prisma";
+import {
+  submitImageGeneration,
+  getAIJobStatus,
+  generateAIJobId,
+  type ImageAspectRatio,
+} from "@/lib/batch/ai-client";
 
 // ============================================================================
 // Types
@@ -43,6 +53,114 @@ export interface PreviewImageResult {
   database_id?: string; // ID of saved GeneratedPreviewImage record
   // Error info
   error?: string;
+}
+
+// ============================================================================
+// AWS Batch Helper Functions
+// ============================================================================
+
+const AWS_S3_BUCKET = process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
+const POLL_INTERVAL_MS = 3000; // 3 seconds
+const MAX_WAIT_TIME_MS = 180000; // 3 minutes
+
+interface BatchImageGenerationResult {
+  success: boolean;
+  imageBase64?: string;
+  imageUrl?: string;
+  s3Key?: string;
+  error?: string;
+}
+
+/**
+ * Generate image via AWS Batch backend (Vertex AI Gemini 3 Pro Image)
+ * Submits job, polls for completion, and downloads result from S3
+ */
+async function generateImageViaBatch(
+  prompt: string,
+  aspectRatio: string,
+  negativePrompt?: string,
+  logPrefix: string = "[Preview Image]"
+): Promise<BatchImageGenerationResult> {
+  const jobId = generateAIJobId("img");
+  const s3Key = `ai/images/${jobId}/output.png`;
+
+  console.log(`${logPrefix} [AWS Batch] Submitting image generation job: ${jobId}`);
+
+  // Submit job to AWS Batch
+  const submitResult = await submitImageGeneration(
+    jobId,
+    {
+      prompt,
+      negative_prompt: negativePrompt,
+      aspect_ratio: convertAspectRatioForGeminiImage(aspectRatio) as ImageAspectRatio,
+      number_of_images: 1,
+      safety_filter_level: "block_some",
+      person_generation: "allow_adult",
+    },
+    {
+      s3_bucket: AWS_S3_BUCKET,
+      s3_key: s3Key,
+    }
+  );
+
+  if (submitResult.status === "error") {
+    console.error(`${logPrefix} [AWS Batch] Job submit failed: ${submitResult.error}`);
+    return {
+      success: false,
+      error: `AWS Batch submit failed: ${submitResult.error}`,
+    };
+  }
+
+  console.log(`${logPrefix} [AWS Batch] Job queued: ${submitResult.batch_job_id}`);
+
+  // Poll for completion
+  const startTime = Date.now();
+  while (Date.now() - startTime < MAX_WAIT_TIME_MS) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+    const status = await getAIJobStatus(submitResult.batch_job_id, "image_generation");
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+
+    console.log(`${logPrefix} [AWS Batch] Status: ${status.status} (${elapsed}s elapsed)`);
+
+    if (status.mappedStatus === "completed") {
+      // Job completed - download image from S3
+      console.log(`${logPrefix} [AWS Batch] Job completed! Downloading from S3: ${s3Key}`);
+
+      try {
+        const imageBase64 = await downloadFromS3AsBase64(s3Key);
+        const imageUrl = await getPresignedUrl(s3Key, 604800); // 7 days
+
+        return {
+          success: true,
+          imageBase64,
+          imageUrl,
+          s3Key,
+        };
+      } catch (downloadError) {
+        console.error(`${logPrefix} [AWS Batch] Failed to download from S3:`, downloadError);
+        return {
+          success: false,
+          error: `Failed to download generated image: ${downloadError instanceof Error ? downloadError.message : "Unknown error"}`,
+        };
+      }
+    }
+
+    if (status.mappedStatus === "failed") {
+      console.error(`${logPrefix} [AWS Batch] Job failed: ${status.statusReason}`);
+      return {
+        success: false,
+        error: `Image generation failed: ${status.statusReason || "Unknown error"}`,
+      };
+    }
+  }
+
+  // Timeout
+  console.error(`${logPrefix} [AWS Batch] Job timed out after ${MAX_WAIT_TIME_MS / 1000}s`);
+  return {
+    success: false,
+    error: `Image generation timed out after ${MAX_WAIT_TIME_MS / 1000} seconds`,
+  };
 }
 
 // ============================================================================
@@ -198,33 +316,24 @@ export async function generateDirectPreviewImage(
     console.log(`${logPrefix} Full image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
   }
 
-  // Step 2: Generate image with Imagen
-  console.log(`${logPrefix} Step 2: Generating image with Imagen...`);
-  let imageResult;
-  try {
-    imageResult = await generateImage({
-      prompt: geminiImagePrompt,
-      negativePrompt: negative_prompt,
-      aspectRatio: convertAspectRatioForImagen(aspect_ratio),
-      style,
-      referenceImageUrl: product_image_url,
-    });
-  } catch (imagenError) {
-    console.error(`${logPrefix} Imagen generation threw exception:`, imagenError);
-    return {
-      success: false,
-      preview_id: previewId,
-      image_url: "",
-      image_base64: "",
-      gemini_image_prompt: geminiImagePrompt,
-      aspect_ratio,
-      composition_mode: "direct",
-      error: `Image generation failed: ${imagenError instanceof Error ? imagenError.message : "Unknown error"}`,
-    };
+  // Step 2: Generate image via AWS Batch backend (Vertex AI Gemini 3 Pro Image)
+  console.log(`${logPrefix} Step 2: Generating image via AWS Batch backend (Gemini 3 Pro Image)...`);
+
+  // Note: product_image_url (reference image) is not yet supported in batch mode
+  // TODO: Add reference image support to AWS Batch ai_worker.py
+  if (product_image_url) {
+    console.warn(`${logPrefix} Warning: Reference image (product_image_url) is not yet supported in batch mode. Generating without reference.`);
   }
 
+  const imageResult = await generateImageViaBatch(
+    geminiImagePrompt,
+    aspect_ratio,
+    negative_prompt,
+    logPrefix
+  );
+
   if (!imageResult.success || !imageResult.imageBase64) {
-    console.error(`${logPrefix} Imagen generation returned failure: ${imageResult.error}`);
+    console.error(`${logPrefix} AWS Batch image generation failed: ${imageResult.error}`);
     return {
       success: false,
       preview_id: previewId,
@@ -237,7 +346,7 @@ export async function generateDirectPreviewImage(
     };
   }
 
-  console.log(`${logPrefix} Image generated successfully!`);
+  console.log(`${logPrefix} Image generated successfully via AWS Batch!`);
 
   // Step 3: Upload to S3
   const filename = `preview-${previewId}.png`;
@@ -387,7 +496,7 @@ export async function generateTwoStepPreviewImage(
       scenePrompt: scenePromptResult.data.prompt,
       productImageUrl: product_image_url,
       compositePrompt: compositePromptResult.data.prompt,
-      aspectRatio: convertAspectRatioForImagen(aspect_ratio),
+      aspectRatio: convertAspectRatioForGeminiImage(aspect_ratio),
       style,
     });
   } catch (compositionError) {
@@ -482,9 +591,9 @@ export async function generateTwoStepPreviewImage(
 // ============================================================================
 
 /**
- * Generate preview image with automatic mode selection.
- * - If composition_mode is "two_step" and product_image_url is provided: Use two-step mode
- * - Otherwise: Use direct mode
+ * Generate preview image.
+ * - Default: Direct mode (AWS Batch → Vertex AI Gemini 3 Pro Image)
+ * - Two-step mode: Only if explicitly requested with composition_mode: "two_step"
  */
 export async function generatePreviewImage(
   input: PreviewImageInput,
@@ -493,17 +602,19 @@ export async function generatePreviewImage(
 ): Promise<PreviewImageResult> {
   const { composition_mode, product_image_url } = input;
 
-  // Determine effective composition mode
-  const effectiveMode = composition_mode || (product_image_url ? "two_step" : "direct");
+  // Use direct mode by default, two-step only if explicitly requested
+  const effectiveMode = composition_mode || "direct";
 
   console.log(`${logPrefix} Starting preview generation`);
   console.log(`${logPrefix} Video prompt: ${input.video_prompt.slice(0, 100)}...`);
   console.log(`${logPrefix} Image description: ${input.image_description.slice(0, 100)}...`);
   console.log(`${logPrefix} Composition mode: ${effectiveMode}`);
 
+  // Two-step mode requires explicit request AND product_image_url
   if (effectiveMode === "two_step" && product_image_url) {
     return generateTwoStepPreviewImage(input, s3Config, logPrefix);
   }
 
+  // Default: Direct mode via AWS Batch (Vertex AI Gemini 3 Pro Image)
   return generateDirectPreviewImage(input, s3Config, logPrefix);
 }

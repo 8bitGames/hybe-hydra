@@ -8,7 +8,7 @@ import { analyzeAudio } from "@/lib/audio-analyzer";
 // Use Modal for audio composition (GPU-accelerated, works in serverless)
 import { composeVideoWithAudioModal, type AudioComposeRequest } from "@/lib/modal/client";
 import { generateS3Key } from "@/lib/storage";
-import { generateImage, convertAspectRatioForImagen } from "@/lib/imagen";
+import { generateImage, convertAspectRatioForGeminiImage } from "@/lib/imagen";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import type { AgentContext } from "@/lib/agents/types";
 
@@ -187,7 +187,7 @@ async function startVideoGeneration(
           imageResult = await generateImage({
             prompt: geminiImagePrompt,
             negativePrompt: params.negativePrompt,
-            aspectRatio: convertAspectRatioForImagen(params.aspectRatio || "16:9"),
+            aspectRatio: convertAspectRatioForGeminiImage(params.aspectRatio || "16:9"),
             style: params.style,
             // Pass reference image URL for product/subject incorporation
             referenceImageUrl: params.referenceImageUrl,

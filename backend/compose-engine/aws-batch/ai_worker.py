@@ -1,5 +1,5 @@
 """
-AWS Batch Worker for AI Generation (Veo 3, Imagen 3).
+AWS Batch Worker for AI Generation (Veo 3.1, Gemini 3 Pro Image).
 
 This script runs inside the AWS Batch container for AI generation jobs.
 It uses GCP Workload Identity Federation to authenticate with Vertex AI.
@@ -294,7 +294,7 @@ async def process_image_generation(
     client: VertexAIClient,
     auth_manager: GCPAuthManager,
 ) -> AIJobResponse:
-    """Process image generation job with Imagen 3."""
+    """Process image generation job with Gemini 3 Pro Image."""
     settings = request.image_settings
     if not settings:
         return AIJobResponse(

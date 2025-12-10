@@ -2,9 +2,9 @@
  * Image Generation Service
  *
  * Generates images for I2V video generation.
- * Priority: Vertex AI Imagen 3 > Google AI Gemini API
+ * Uses Gemini 3 Pro Image model via Vertex AI or Google AI API.
  *
- * - Production: Uses Vertex AI with Imagen 3 (imagen-3.0-generate-002)
+ * - Production: Uses Vertex AI with Gemini 3 Pro Image (gemini-3-pro-image-preview)
  * - Fallback: Uses Google AI API with Gemini (gemini-3-pro-image-preview)
  */
 
@@ -68,11 +68,11 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; m
 }
 
 /**
- * Generate an image using Vertex AI Imagen 3 (preferred) or Google Gemini API (fallback)
+ * Generate an image using Vertex AI Gemini 3 Pro Image (preferred) or Google Gemini API (fallback)
  * This image will be used as the starting point for I2V video generation
  *
  * Priority:
- * 1. Vertex AI Imagen 3 - Production quality, better results
+ * 1. Vertex AI Gemini 3 Pro Image - Production quality, better results
  * 2. Google AI Gemini - Fallback when Vertex AI is not configured
  *
  * When a reference image (product image) is provided, the model will incorporate
@@ -88,7 +88,7 @@ export async function generateImage(
 
   // Check if Vertex AI is available (preferred for production)
   if (isVertexAIAvailable()) {
-    console.log("[IMAGE-GEN] Using Vertex AI Imagen 3 (production mode)");
+    console.log("[IMAGE-GEN] Using Vertex AI Gemini 3 Pro Image (production mode)");
     return generateImageWithVertexAI(params);
   }
 
@@ -98,7 +98,7 @@ export async function generateImage(
 }
 
 /**
- * Generate image using Vertex AI Imagen 3
+ * Generate image using Vertex AI Gemini 3 Pro Image
  */
 async function generateImageWithVertexAI(
   params: ImageGenerationParams
@@ -106,7 +106,7 @@ async function generateImageWithVertexAI(
   try {
     const client = getVertexAIMediaClient();
 
-    console.log(`[VERTEX-IMAGE] Starting image generation with Imagen 3`);
+    console.log(`[VERTEX-IMAGE] Starting image generation with Gemini 3 Pro Image`);
     console.log(`[VERTEX-IMAGE] Prompt: ${params.prompt.slice(0, 100)}...`);
 
     // Build prompt with style
@@ -337,9 +337,9 @@ export function optimizePromptForI2V(prompt: string, videoAspectRatio: string): 
 }
 
 /**
- * Convert video aspect ratio to Imagen-compatible format
+ * Convert video aspect ratio to Gemini Image-compatible format
  */
-export function convertAspectRatioForImagen(videoAspectRatio: string): "1:1" | "3:4" | "4:3" | "9:16" | "16:9" {
+export function convertAspectRatioForGeminiImage(videoAspectRatio: string): "1:1" | "3:4" | "4:3" | "9:16" | "16:9" {
   switch (videoAspectRatio) {
     case "9:16":
       return "9:16";

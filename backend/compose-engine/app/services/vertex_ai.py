@@ -2,8 +2,8 @@
 Vertex AI Client for Video and Image Generation.
 
 Provides high-level interface for:
-- Veo 3: Video generation from text/image prompts
-- Imagen 3: Image generation from text prompts
+- Veo 3.1: Video generation from text/image prompts
+- Gemini 3 Pro Image: Image generation from text prompts
 
 Uses GCP WIF authentication via gcp_auth module.
 """
@@ -94,8 +94,8 @@ class VertexAIClient:
     """
 
     # Model endpoints
-    VEO_MODEL = "veo-3.0-generate-preview"  # Veo 3
-    IMAGEN_MODEL = "imagen-3.0-generate-002"  # Imagen 3
+    VEO_MODEL = "veo-3.1-generate-001"  # Veo 3.1
+    IMAGE_MODEL = "gemini-3-pro-image-preview"  # Gemini 3 Pro Image
 
     def __init__(
         self,
@@ -263,7 +263,7 @@ class VertexAIClient:
         output_gcs_uri: Optional[str] = None,
     ) -> GenerationResult:
         """
-        Generate an image using Imagen 3.
+        Generate an image using Gemini 3 Pro Image.
 
         Args:
             config: Image generation configuration
@@ -303,8 +303,8 @@ class VertexAIClient:
         }
 
         try:
-            endpoint = self._get_model_endpoint(self.IMAGEN_MODEL, "predict")
-            logger.info(f"Calling Imagen endpoint: {endpoint}")
+            endpoint = self._get_model_endpoint(self.IMAGE_MODEL, "predict")
+            logger.info(f"Calling Gemini Image endpoint: {endpoint}")
 
             response = await self._make_request("POST", endpoint, request_body)
 

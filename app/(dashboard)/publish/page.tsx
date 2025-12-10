@@ -3,6 +3,11 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWorkflowStore, ProcessingVideo, useWorkflowHydrated } from "@/lib/stores/workflow-store";
+import {
+  useProcessingSessionStore,
+  useProcessingSessionHydrated,
+  selectSession,
+} from "@/lib/stores/processing-session-store";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
 import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 import { useI18n } from "@/lib/i18n";
@@ -102,7 +107,19 @@ export default function PublishPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Wait for store hydration before rendering
-  const isHydrated = useWorkflowHydrated();
+  const isWorkflowHydrated = useWorkflowHydrated();
+  const isSessionHydrated = useProcessingSessionHydrated();
+  const isHydrated = isWorkflowHydrated && isSessionHydrated;
+
+  // Processing session store (for fast-cut flow)
+  const processingSession = useProcessingSessionStore(selectSession);
+  const getApprovedVideosFromSession = useProcessingSessionStore((state) => state.getApprovedVideos);
+
+  // Check if coming from fast-cut flow (sessionId in URL)
+  const isFastCutFlow = useMemo(() => {
+    const sessionIdParam = searchParams.get("sessionId");
+    return !!sessionIdParam && !!processingSession;
+  }, [searchParams, processingSession]);
 
   // Sync workflow stage
   useWorkflowSync("publish");
@@ -222,8 +239,33 @@ export default function PublishPage() {
   }, [socialAccounts, selectedAccountId]);
 
   // Get videos for publishing based on current selection
-  // Priority: selectedVideos > approved status (fallback)
-  const approvedVideos = useMemo(() => {
+  // Priority: Fast-cut flow (processing-session-store) > AI Video flow (workflow-store)
+  const approvedVideos = useMemo((): ProcessingVideo[] => {
+    // If coming from fast-cut flow, use processing-session-store
+    if (isFastCutFlow && processingSession) {
+      const sessionApproved = getApprovedVideosFromSession();
+      // Convert to ProcessingVideo format
+      return sessionApproved.map((v): ProcessingVideo => ({
+        id: v.id,
+        generationId: v.id,
+        campaignId: processingSession.campaignId,
+        campaignName: processingSession.campaignName,
+        prompt: v.styleName,
+        status: "approved",
+        progress: 100,
+        outputUrl: v.outputUrl,
+        thumbnailUrl: v.thumbnailUrl || null,
+        duration: 15, // Default duration
+        aspectRatio: "9:16",
+        qualityScore: null,
+        generationType: "COMPOSE",
+        createdAt: processingSession.createdAt,
+        completedAt: new Date().toISOString(),
+        metadata: {},
+      }));
+    }
+
+    // AI Video flow: use workflow-store
     // If there are selected videos, use them as source of truth
     if (processing.selectedVideos.length > 0) {
       return processing.videos.filter(
@@ -233,7 +275,7 @@ export default function PublishPage() {
     }
     // Fallback: show all approved videos if no selection
     return processing.videos.filter((v) => v.status === "approved");
-  }, [processing.videos, processing.selectedVideos]);
+  }, [isFastCutFlow, processingSession, getApprovedVideosFromSession, processing.videos, processing.selectedVideos]);
 
   // Current video
   const currentVideo = approvedVideos[currentVideoIndex] || null;

@@ -171,6 +171,38 @@ export async function getPresignedUrl(key: string, expiresIn = 3600): Promise<st
 }
 
 /**
+ * Download file from S3 and return as Buffer
+ */
+export async function downloadFromS3(key: string): Promise<Buffer> {
+  const command = new GetObjectCommand({
+    Bucket: getBucketName(),
+    Key: key,
+  });
+
+  const response = await getS3Client().send(command);
+
+  if (!response.Body) {
+    throw new Error(`No body in S3 response for key: ${key}`);
+  }
+
+  // Convert stream to buffer
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
+    chunks.push(chunk);
+  }
+
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Download file from S3 and return as base64 string
+ */
+export async function downloadFromS3AsBase64(key: string): Promise<string> {
+  const buffer = await downloadFromS3(key);
+  return buffer.toString('base64');
+}
+
+/**
  * Generate a presigned URL for direct upload to S3
  * This allows browsers to upload large files directly to S3 without going through the server
  */

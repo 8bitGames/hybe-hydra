@@ -1,7 +1,7 @@
 /**
  * Vertex AI Client for Video & Image Generation
  * ==============================================
- * Client for Veo 3 (video) and Imagen 3 (image) via Vertex AI.
+ * Client for Veo 3.1 (video) and Gemini 3 Pro Image (image) via Vertex AI.
  *
  * Uses GCP authentication (service account or ADC).
  * For text generation, use GeminiClient with Google AI API instead.
@@ -78,8 +78,8 @@ export class VertexAIMediaClient {
   private location: string;
 
   // Model IDs
-  private static readonly VEO_MODEL = 'veo-3.0-generate-preview';
-  private static readonly IMAGEN_MODEL = 'imagen-3.0-generate-002';
+  private static readonly VEO_MODEL = 'veo-3.1-generate-001';  // Veo 3.1
+  private static readonly IMAGE_MODEL = 'gemini-3-pro-image-preview';  // Gemini 3 Pro Image
 
   constructor(config?: { projectId?: string; location?: string }) {
     this.authManager = getGCPAuthManager({
@@ -203,7 +203,7 @@ export class VertexAIMediaClient {
   }
 
   /**
-   * Generate image using Imagen 3
+   * Generate image using Gemini 3 Pro Image
    */
   async generateImage(
     config: ImageGenerationConfig,
@@ -212,7 +212,7 @@ export class VertexAIMediaClient {
     console.log(`[VertexAI] Starting image generation: ${config.prompt.slice(0, 50)}...`);
 
     try {
-      const endpoint = this.getModelEndpoint(VertexAIMediaClient.IMAGEN_MODEL, 'predict');
+      const endpoint = this.getModelEndpoint(VertexAIMediaClient.IMAGE_MODEL, 'predict');
 
       const instances = [{
         prompt: config.prompt,

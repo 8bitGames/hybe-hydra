@@ -13,7 +13,7 @@
 import { inngest } from "./client";
 import { prisma } from "@/lib/db/prisma";
 import { generateVideo as generateVideoWithVeo, VeoGenerationParams } from "@/lib/veo";
-import { generateImage, convertAspectRatioForImagen } from "@/lib/imagen";
+import { generateImage, convertAspectRatioForGeminiImage } from "@/lib/imagen";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import type { AgentContext } from "@/lib/agents/types";
 import {
@@ -183,7 +183,7 @@ export const generateVideo = inngest.createFunction(
       // Generate new image with Gemini 3 Pro using reference
       const imageResult = await generateImage({
         prompt: imagePrompt,
-        aspectRatio: convertAspectRatioForImagen(options?.aspectRatio || "16:9"),
+        aspectRatio: convertAspectRatioForGeminiImage(options?.aspectRatio || "16:9"),
         style: options?.stylePreset,
         referenceImageUrl: referenceImageUrl, // Use reference for product incorporation
       });

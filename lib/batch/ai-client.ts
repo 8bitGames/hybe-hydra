@@ -1,5 +1,5 @@
 /**
- * AWS Batch Client for AI Generation (Veo 3, Imagen 3)
+ * AWS Batch Client for AI Generation (Veo 3.1, Gemini 3 Pro Image)
  *
  * Submits AI generation jobs to AWS Batch GPU queue.
  * Uses the same infrastructure as video rendering but with different job parameters.
@@ -9,7 +9,7 @@
  * GPU Stack (AWS Batch):
  *   - Instance: g4dn.xlarge (T4 GPU) or g4dn.2xlarge
  *   - Authentication: GCP Workload Identity Federation (WIF)
- *   - AI Models: Veo 3 (video), Imagen 3 (image) via Vertex AI
+ *   - AI Models: Veo 3.1 (video), Gemini 3 Pro Image (image) via Vertex AI
  *
  * Required Environment Variables:
  *   - AWS_ACCESS_KEY_ID: IAM user with Batch permissions

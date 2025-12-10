@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { generateVideo, VeoGenerationParams, getVeoConfig } from "@/lib/veo";
-import { generateImage, convertAspectRatioForImagen } from "@/lib/imagen";
+import { generateImage, convertAspectRatioForGeminiImage } from "@/lib/imagen";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import type { AgentContext } from "@/lib/agents/types";
 
@@ -70,7 +70,7 @@ async function startQuickVideoGeneration(
             const imageResult = await generateImage({
               prompt: geminiImagePrompt,
               negativePrompt: params.negativePrompt,
-              aspectRatio: convertAspectRatioForImagen(params.aspectRatio || "16:9"),
+              aspectRatio: convertAspectRatioForGeminiImage(params.aspectRatio || "16:9"),
               style: params.style,
             });
 

@@ -192,6 +192,15 @@ export interface ContentIdea {
   isRecreationIdea?: boolean;
 }
 
+// Preview image data persisted in workflow store
+export interface PreviewImageData {
+  previewId: string;
+  imageUrl: string;
+  imageBase64?: string;  // Optional: may not persist due to size
+  geminiImagePrompt: string;
+  createdAt: string;
+}
+
 export interface AnalyzeData {
   campaignId: string | null;
   campaignName: string | null;
@@ -213,6 +222,7 @@ export interface AnalyzeData {
   }[];
   optimizedPrompt: string;
   imagePrompt: string;  // AI-generated image prompt for first frame
+  previewImage: PreviewImageData | null;  // Generated preview image (persisted)
   settings: {
     aspectRatio: "9:16" | "16:9" | "1:1";
     duration: number;
@@ -427,6 +437,7 @@ interface WorkflowState {
   removeAnalyzeAsset: (assetId: string) => void;
   setAnalyzeOptimizedPrompt: (prompt: string) => void;
   setAnalyzeImagePrompt: (prompt: string) => void;
+  setAnalyzePreviewImage: (previewImage: PreviewImageData | null) => void;
   setAnalyzeSettings: (settings: Partial<AnalyzeData["settings"]>) => void;
   setAnalyzeHashtags: (hashtags: string[]) => void;
 
@@ -513,6 +524,7 @@ const initialAnalyzeData: AnalyzeData = {
   assets: [],
   optimizedPrompt: "",
   imagePrompt: "",
+  previewImage: null,
   settings: {
     aspectRatio: "9:16",
     duration: 30,
@@ -888,6 +900,11 @@ export const useWorkflowStore = create<WorkflowState>()(
         setAnalyzeImagePrompt: (prompt) =>
           set((state) => ({
             analyze: { ...state.analyze, imagePrompt: prompt },
+          })),
+
+        setAnalyzePreviewImage: (previewImage) =>
+          set((state) => ({
+            analyze: { ...state.analyze, previewImage },
           })),
 
         setAnalyzeSettings: (settings) =>

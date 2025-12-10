@@ -101,6 +101,12 @@ export function syncSessionToWorkflow(session: CreationSession): void {
     if (analyzeData.hashtags?.length) {
       workflowStore.setAnalyzeHashtags(analyzeData.hashtags);
     }
+    if (analyzeData.imagePrompt) {
+      workflowStore.setAnalyzeImagePrompt(analyzeData.imagePrompt);
+    }
+    if (analyzeData.previewImage) {
+      workflowStore.setAnalyzePreviewImage(analyzeData.previewImage);
+    }
   }
   // Note: No else clause needed - resetWorkflow already cleared analyze data
 
@@ -260,7 +266,7 @@ export function syncWorkflowToSession(): void {
   }
 
   // Always sync analyze data if it has meaningful content
-  if (workflowState.analyze.campaignId || workflowState.analyze.userIdea || workflowState.analyze.selectedIdea) {
+  if (workflowState.analyze.campaignId || workflowState.analyze.userIdea || workflowState.analyze.selectedIdea || workflowState.analyze.previewImage) {
     sessionStore.updateStageData("analyze", {
       campaignId: workflowState.analyze.campaignId,
       campaignName: workflowState.analyze.campaignName,
@@ -269,6 +275,8 @@ export function syncWorkflowToSession(): void {
       optimizedPrompt: workflowState.analyze.optimizedPrompt,
       hashtags: workflowState.analyze.hashtags,
       aiGeneratedIdeas: workflowState.analyze.aiGeneratedIdeas,
+      imagePrompt: workflowState.analyze.imagePrompt,
+      previewImage: workflowState.analyze.previewImage,
     });
   }
 
