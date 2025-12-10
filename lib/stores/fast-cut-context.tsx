@@ -292,13 +292,14 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
         prompt: initialPrompt,
         editableKeywords: [...initialKeywords],
         selectedSearchKeywords: new Set(initialKeywords),
+        campaignId: analyze.campaignId || null,  // CRITICAL: Also sync campaignId from workflow
         campaignName: analyze.campaignName || "",
         isHydrated: true,
       });
     }
 
     setIsHydrated(true);
-  }, [isHydrated, activeSessionId, analyze.optimizedPrompt, analyze.selectedIdea, analyze.campaignName, discover.keywords]);
+  }, [isHydrated, activeSessionId, analyze.optimizedPrompt, analyze.selectedIdea, analyze.campaignId, analyze.campaignName, discover.keywords]);
 
   // Save state to sessionStorage whenever it changes (only after hydration)
   // Include session ID for future validation

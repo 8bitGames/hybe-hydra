@@ -141,6 +141,15 @@ export function FastCutMusicStep({
       const formData = new FormData();
       formData.append('file', file);
 
+      console.log('[FastCut Upload] Uploading file:', {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        campaignId,
+        hasToken: !!accessToken,
+        tokenPreview: accessToken?.slice(0, 20) + '...',
+      });
+
       const response = await fetch(`/api/v1/campaigns/${campaignId}/assets`, {
         method: 'POST',
         headers: {
@@ -149,9 +158,36 @@ export function FastCutMusicStep({
         body: formData,
       });
 
+      console.log('[FastCut Upload] Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        contentType: response.headers.get('content-type'),
+      });
+
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail || 'Upload failed');
+        // Check if response is JSON before parsing
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+          throw new Error(data.detail || 'Upload failed');
+        } else {
+          // Handle non-JSON response (e.g., plain text "Forbidden")
+          const text = await response.text();
+          console.error('[FastCut Upload] Non-JSON error response:', text);
+
+          // Check for common Vercel errors
+          if (response.status === 413 || text.includes('too large') || text.includes('size')) {
+            throw new Error(language === 'ko'
+              ? '파일이 너무 큽니다. 50MB 이하의 파일을 업로드해주세요.'
+              : 'File is too large. Please upload a file under 50MB.');
+          }
+          if (response.status === 403 || text.toLowerCase().includes('forbidden')) {
+            throw new Error(language === 'ko'
+              ? '업로드 권한이 없습니다. 페이지를 새로고침하고 다시 시도해주세요.'
+              : 'Upload not authorized. Please refresh the page and try again.');
+          }
+          throw new Error(text || `Upload failed with status ${response.status}`);
+        }
       }
 
       const data = await response.json();

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
 import { useSessionStore } from "@/lib/stores/session-store";
+import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
 import { fastCutApi, AudioMatch } from "@/lib/fast-cut-api";
 import { useToast } from "@/components/ui/toast";
@@ -27,6 +28,13 @@ export default function FastCutMusicPage() {
   const router = useRouter();
   const { language } = useI18n();
   const toast = useToast();
+
+  // Workflow store for campaign data fallback
+  const { analyze } = useWorkflowStore(
+    useShallow((state) => ({
+      analyze: state.analyze,
+    }))
+  );
 
   // Session store for persisting Fast Cut data
   const { setStageData, proceedToStage, activeSession } = useSessionStore(
@@ -52,6 +60,7 @@ export default function FastCutMusicPage() {
     analyzingAudio,
     setAnalyzingAudio,
     campaignId,
+    setCampaignId,
     musicSkipped,
     setMusicSkipped,
     selectedImages,
@@ -68,6 +77,14 @@ export default function FastCutMusicPage() {
       router.replace("/fast-cut/images");
     }
   }, [isHydrated, scriptData, selectedImages, router]);
+
+  // Sync campaignId from workflow store if not set (fallback for direct navigation)
+  useEffect(() => {
+    if (!campaignId && analyze.campaignId) {
+      console.log("[FastCut Music] Syncing campaignId from workflow store:", analyze.campaignId);
+      setCampaignId(analyze.campaignId);
+    }
+  }, [campaignId, analyze.campaignId, setCampaignId]);
 
   // Auto-match music on mount
   useEffect(() => {
