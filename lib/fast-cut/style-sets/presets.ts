@@ -192,7 +192,7 @@ export const RETRO_AESTHETIC: FastCutStyleSet = {
 
   video: {
     vibe: 'Pop',
-    colorGrade: 'vintage',
+    colorGrade: 'moody', // 'vintage' not supported by compose server
     effectPreset: 'crossfade',
     transitions: ['fade', 'dissolve', 'vhs'],
     motions: ['subtle_zoom', 'scan_lines'],
@@ -234,7 +234,7 @@ export const PROFESSIONAL_CORP: FastCutStyleSet = {
 
   video: {
     vibe: 'Minimal',
-    colorGrade: 'cool',
+    colorGrade: 'cinematic', // 'cool' not supported by compose server
     effectPreset: 'minimal',
     transitions: ['fade', 'slide', 'wipe'],
     motions: ['subtle_zoom', 'parallax'],
@@ -276,7 +276,7 @@ export const DREAMY_SOFT: FastCutStyleSet = {
 
   video: {
     vibe: 'Emotional',
-    colorGrade: 'warm',
+    colorGrade: 'natural', // 'warm' not supported by compose server
     effectPreset: 'crossfade',
     transitions: ['fade', 'dissolve', 'blur'],
     motions: ['slow_zoom', 'float'],
@@ -318,7 +318,7 @@ export const BOLD_IMPACT: FastCutStyleSet = {
 
   video: {
     vibe: 'Exciting',
-    colorGrade: 'dramatic',
+    colorGrade: 'moody', // 'dramatic' not supported by compose server
     effectPreset: 'zoom_beat',
     transitions: ['zoom', 'flash', 'slam'],
     motions: ['zoom_in', 'shake', 'punch'],

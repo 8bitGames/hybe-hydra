@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useWorkflowStore, ContentIdea, StartFromVideo } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
+import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 import { useCampaigns } from "@/lib/queries";
 import { useI18n } from "@/lib/i18n";
 import { useToast } from "@/components/ui/toast";
@@ -845,10 +846,15 @@ export default function AnalyzePage() {
   const { language } = useI18n();
   const toast = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Sync workflow stage
   useWorkflowSync("analyze");
   const { goToStart, proceedToCreate, canProceedToCreate } = useWorkflowNavigation();
+
+  // Session sync for persisted state management
+  const sessionId = searchParams.get("session");
+  const { activeSession, syncNow } = useSessionWorkflowSync("analyze");
 
   // Workflow store
   const discover = useWorkflowStore((state) => state.discover);

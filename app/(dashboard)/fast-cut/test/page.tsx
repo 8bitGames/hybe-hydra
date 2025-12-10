@@ -356,15 +356,57 @@ export default function StyleSetTestPage() {
     setGenerationId(newGenerationId);
 
     try {
-      // Start render
+      // Step 1: Proxy images to S3 first (required for Modal/Batch to access)
+      console.log("[Style Test] Proxying images to S3...");
+      setRenderStatus({
+        status: "processing",
+        progress: 5,
+        currentStep: language === "ko" ? "이미지 업로드 중..." : "Uploading images...",
+      });
+
+      const proxyResult = await fastCutApi.proxyImages(
+        newGenerationId,
+        images.map((img) => ({ url: img.url, id: img.id }))
+      );
+
+      console.log("[Style Test] Proxy result:", proxyResult);
+
+      if (proxyResult.successful < 3) {
+        setError(
+          language === "ko"
+            ? `이미지 업로드 실패: ${proxyResult.failed}개 실패. 최소 3개 필요.`
+            : `Image upload failed: ${proxyResult.failed} failed. Need at least 3 images.`
+        );
+        setRendering(false);
+        return;
+      }
+
+      // Build proxied image URLs map
+      const imageUrlMap = new Map(
+        proxyResult.results
+          .filter((r) => r.success)
+          .map((r) => [r.id, r.minioUrl])
+      );
+
+      const proxiedImages = images
+        .filter((img) => imageUrlMap.has(img.id))
+        .map((img, idx) => ({
+          url: imageUrlMap.get(img.id)!,
+          order: idx,
+        }));
+
+      // Step 2: Start render with proxied S3 URLs
+      setRenderStatus({
+        status: "processing",
+        progress: 15,
+        currentStep: language === "ko" ? "렌더링 시작 중..." : "Starting render...",
+      });
+
       const response = await fastCutApi.startRender({
         generationId: newGenerationId,
         campaignId: "", // Empty = no campaign (test mode)
         audioAssetId: selectedAudioId,
-        images: images.map((img) => ({
-          url: img.url,
-          order: img.order,
-        })),
+        images: proxiedImages,
         styleSetId: selectedStyleSetId,
         aspectRatio,
         targetDuration: 0, // Auto-calculate

@@ -67,6 +67,8 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
+import { useSessionStore } from "@/lib/stores/session-store";
+import { useAuthStore } from "@/lib/auth-store";
 
 // ============================================================================
 // Types
@@ -1346,7 +1348,11 @@ export default function TrendDashboardPage() {
   const router = useRouter();
   const isKorean = language === "ko";
 
-  // Workflow store actions
+  // Session store for creating new sessions
+  const createSession = useSessionStore((state) => state.createSession);
+  const user = useAuthStore((state) => state.user);
+
+  // Workflow store actions (kept for compatibility during transition)
   const {
     setStartFromTrends,
     setStartFromVideo,
@@ -2191,10 +2197,15 @@ export default function TrendDashboardPage() {
                   videoCount: keywordAnalysis.viralVideos.length,
                 }}
                 isKorean={isKorean}
-                onCreateFromTrend={() => {
-                  // Clear previous data and set trend data
-                  clearStartData();
-                  setStartFromTrends({
+                onCreateFromTrend={async () => {
+                  // Create a new session with trend data
+                  if (!user?.id) {
+                    console.error("[TrendDashboard] Cannot create session - no user");
+                    return;
+                  }
+
+                  const trendSource = {
+                    type: "trends" as const,
                     keywords: [selectedKeyword.keyword],
                     analysis: {
                       totalVideos: keywordAnalysis.aggregateStats.totalVideos,
@@ -2218,44 +2229,70 @@ export default function TrendDashboardPage() {
                         viralScore: v.viralScore,
                       })),
                     },
-                  });
-                  // Set AI insights from trend analysis
-                  if (keywordAnalysis.aiInsights) {
-                    setStartAiInsights({
-                      summary: keywordAnalysis.aiInsights.summary,
-                      contentStrategy: keywordAnalysis.aiInsights.contentStrategy,
-                      hashtagStrategy: keywordAnalysis.aiInsights.hashtagStrategy,
-                      videoIdeas: keywordAnalysis.aiInsights.videoIdeas,
+                  };
+
+                  try {
+                    await createSession({
+                      entrySource: "trends",
+                      userId: user.id,
+                      initialStartData: {
+                        source: trendSource,
+                        selectedHashtags: keywordAnalysis.topHashtags.map(h => h.tag),
+                        aiInsights: keywordAnalysis.aiInsights ? {
+                          summary: keywordAnalysis.aiInsights.summary,
+                          contentStrategy: keywordAnalysis.aiInsights.contentStrategy,
+                          hashtagStrategy: keywordAnalysis.aiInsights.hashtagStrategy,
+                          videoIdeas: keywordAnalysis.aiInsights.videoIdeas,
+                        } : null,
+                      },
                     });
+                    router.push("/start");
+                  } catch (error) {
+                    console.error("[TrendDashboard] Failed to create session from trend:", error);
                   }
-                  setCurrentStage("start");
-                  router.push("/start");
                 }}
-                onCreateFromVideo={(videoId: string) => {
+                onCreateFromVideo={async (videoId: string) => {
                   // Navigate to Start page with video context
                   const video = keywordAnalysis.viralVideos.find(v => v.id === videoId);
-                  if (video) {
-                    clearStartData();
-                    setStartFromVideo({
-                      videoId: video.id,
-                      videoUrl: video.videoUrl,
-                      thumbnailUrl: null,
-                      basicStats: {
-                        playCount: video.views,
-                        likeCount: 0,
-                        commentCount: 0,
-                        shareCount: 0,
-                        engagementRate: video.engagement,
+                  if (!video) return;
+
+                  if (!user?.id) {
+                    console.error("[TrendDashboard] Cannot create session - no user");
+                    return;
+                  }
+
+                  const videoSource = {
+                    type: "video" as const,
+                    videoId: video.id,
+                    videoUrl: video.videoUrl,
+                    thumbnailUrl: null,
+                    basicStats: {
+                      playCount: video.views,
+                      likeCount: 0,
+                      commentCount: 0,
+                      shareCount: 0,
+                      engagementRate: video.engagement,
+                    },
+                    author: {
+                      id: video.author,
+                      name: video.author,
+                    },
+                    description: video.description,
+                    hashtags: video.hashtags,
+                  };
+
+                  try {
+                    await createSession({
+                      entrySource: "video",
+                      userId: user.id,
+                      initialStartData: {
+                        source: videoSource,
+                        selectedHashtags: video.hashtags,
                       },
-                      author: {
-                        id: video.author,
-                        name: video.author,
-                      },
-                      description: video.description,
-                      hashtags: video.hashtags,
                     });
-                    setCurrentStage("start");
                     router.push("/start");
+                  } catch (error) {
+                    console.error("[TrendDashboard] Failed to create session from video:", error);
                   }
                 }}
               />

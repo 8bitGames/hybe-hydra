@@ -10,6 +10,7 @@ import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHe
 import { FastCutEffectStep } from "@/components/features/create/fast-cut/FastCutEffectStep";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sparkles } from "lucide-react";
+import { useProcessingSessionStore } from "@/lib/stores/processing-session-store";
 
 export default function FastCutEffectsPage() {
   const router = useRouter();
@@ -37,6 +38,10 @@ export default function FastCutEffectsPage() {
     audioStartTime,
     setError,
   } = useFastCut();
+
+  // Processing session store
+  const initSession = useProcessingSessionStore((state) => state.initSession);
+  const updateOriginalVideo = useProcessingSessionStore((state) => state.updateOriginalVideo);
 
   // Redirect if prerequisites not met
   useEffect(() => {
@@ -105,6 +110,44 @@ export default function FastCutEffectsPage() {
         language === "ko" ? "생성 시작" : "Generation started",
         language === "ko" ? "영상 생성이 시작되었습니다" : "Video generation has started"
       );
+
+      // Initialize processing session with GENERATING state
+      console.log("[FastCut Effects] Initializing processing session...");
+      console.log("[FastCut Effects] renderResult:", renderResult);
+
+      // Initialize the session
+      initSession({
+        campaignId: campaignId || "",
+        campaignName: "Fast Cut Video",
+        content: {
+          script: scriptData.script.lines.map(l => l.text).join("\n"),
+          images: selectedImages.map((img) => ({
+            id: img.id,
+            url: img.sourceUrl,
+            thumbnailUrl: img.sourceUrl,
+          })),
+          musicTrack: selectedAudio ? {
+            id: selectedAudio.id,
+            name: selectedAudio.filename || "Selected Track",
+            duration: selectedAudio.duration || 0,
+            url: selectedAudio.s3Url || "",
+          } : undefined,
+          effectPreset: styleSetId ? {
+            id: styleSetId,
+            name: styleSetId,
+          } : undefined,
+        },
+      });
+
+      // Update with render ID so polling can work
+      updateOriginalVideo({
+        id: renderResult.jobId,
+        status: "generating",
+        progress: 0,
+        currentStep: language === "ko" ? "준비 중..." : "Preparing...",
+      });
+
+      console.log("[FastCut Effects] Session initialized, navigating to /processing");
 
       // Navigate to processing page
       router.push("/processing");

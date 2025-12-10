@@ -135,7 +135,7 @@ const secondaryItems: NavItem[] = [
   },
   {
     name: { ko: "영상 만들기", en: "Video Create" },
-    href: "/start",
+    href: "/create",
     icon: Sparkles,
   },
 ];

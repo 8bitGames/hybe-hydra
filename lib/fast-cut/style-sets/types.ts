@@ -10,18 +10,13 @@ export type VibeType = 'Exciting' | 'Emotional' | 'Pop' | 'Minimal';
 // Available text styles
 export type TextStyleType = 'bold_pop' | 'fade_in' | 'slide_in' | 'minimal';
 
-// Available color grades
+// Available color grades (must match compose server's allowed values)
 export type ColorGradeType =
   | 'natural'
   | 'vibrant'
   | 'cinematic'
   | 'moody'
-  | 'bright'
-  | 'warm'
-  | 'cool'
-  | 'vintage'
-  | 'neon'
-  | 'dramatic';
+  | 'bright';
 
 // Intensity levels
 export type IntensityType = 'low' | 'medium' | 'high';

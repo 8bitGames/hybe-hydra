@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore, useWorkflowHydrated } from "@/lib/stores/workflow-store";
+import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 import { InfoButton } from "@/components/ui/info-button";
 import { cn } from "@/lib/utils";
 
@@ -81,8 +82,13 @@ function detectTikTokUrl(input: string): { isTikTok: boolean; url: string | null
 
 export default function StartPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { translate, language } = useI18n();
   const hydrated = useWorkflowHydrated();
+
+  // Session sync for persisted state management
+  const sessionId = searchParams.get("session");
+  const { activeSession, syncNow } = useSessionWorkflowSync("start");
 
   const [ideaInput, setIdeaInput] = useState("");
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);

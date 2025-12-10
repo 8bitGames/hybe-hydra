@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useWorkflowStore, ProcessingVideo, useWorkflowHydrated } from "@/lib/stores/workflow-store";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
+import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 import { useI18n } from "@/lib/i18n";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/api";
@@ -96,6 +97,7 @@ export default function PublishPage() {
   const { language } = useI18n();
   const toast = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const isKorean = language === "ko";
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -105,6 +107,10 @@ export default function PublishPage() {
   // Sync workflow stage
   useWorkflowSync("publish");
   const { goToProcessing, resetWorkflow } = useWorkflowNavigation();
+
+  // Session sync for persisted state management
+  const sessionId = searchParams.get("session");
+  const { activeSession, syncNow } = useSessionWorkflowSync("publish");
 
   // Workflow store
   const discover = useWorkflowStore((state) => state.discover);

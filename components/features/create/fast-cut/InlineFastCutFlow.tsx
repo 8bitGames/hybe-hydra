@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
+import { useProcessingSessionStore } from "@/lib/stores/processing-session-store";
 import { useShallow } from "zustand/react/shallow";
 import { useAssets } from "@/lib/queries";
 import { useToast } from "@/components/ui/toast";
@@ -828,6 +829,7 @@ export function InlineFastCutFlow({
         }));
 
       // Start render - audioAssetId is optional when music is skipped
+      console.log("[FastCut] 🚀 Starting render API call...");
       const renderResult = await fastCutApi.startRender({
         generationId,
         campaignId,
@@ -843,6 +845,57 @@ export function InlineFastCutFlow({
         searchKeywords: editableKeywords,
         tiktokSEO: tiktokSEO || undefined,
       });
+      console.log("[FastCut] 📦 Render API response received");
+
+      // Initialize processing session before navigating
+      console.log("[FastCut] ✅ Render API call succeeded, now initializing session...");
+      console.log("[FastCut] renderResult:", JSON.stringify(renderResult));
+
+      try {
+        const selectedStyleSet = styleSets.find(s => s.id === styleSetId);
+        console.log("[FastCut] selectedStyleSet:", selectedStyleSet?.name);
+        console.log("[FastCut] generationId:", renderResult.generationId);
+
+        const sessionData = {
+          campaignId,
+          campaignName,
+          generationId: renderResult.generationId,
+          content: {
+            script: scriptData.script.lines.map(l => l.text).join("\n"),
+            images: selectedImages.map((img) => ({
+              id: img.id,
+              url: imageUrlMap.get(img.id) || img.sourceUrl,
+              thumbnailUrl: img.thumbnailUrl,
+            })),
+            musicTrack: selectedAudio ? {
+              id: selectedAudio.id,
+              name: selectedAudio.filename,
+              duration: selectedAudio.duration,
+              url: selectedAudio.s3Url,
+            } : undefined,
+            effectPreset: selectedStyleSet ? {
+              id: selectedStyleSet.id,
+              name: selectedStyleSet.name,
+              description: selectedStyleSet.description,
+            } : undefined,
+          },
+        };
+
+        console.log("[FastCut] sessionData prepared:", JSON.stringify(sessionData, null, 2));
+
+        useProcessingSessionStore.getState().initSession(sessionData);
+        console.log("[FastCut] initSession called");
+
+        // Verify session was created
+        const createdSession = useProcessingSessionStore.getState().session;
+        console.log("[FastCut] Session created:", createdSession?.id, "State:", createdSession?.state);
+
+        // Double-check localStorage
+        const storedData = localStorage.getItem("hydra-processing-session");
+        console.log("[FastCut] localStorage after init:", storedData ? "EXISTS" : "MISSING");
+      } catch (sessionError) {
+        console.error("[FastCut] ❌ Session initialization error:", sessionError);
+      }
 
       toast.success(
         language === "ko" ? "생성 시작" : "Generation started",
@@ -852,6 +905,8 @@ export function InlineFastCutFlow({
       // Navigate to processing page
       router.push("/processing");
     } catch (err) {
+      console.error("[FastCut] ❌ handleStartRender error:", err);
+      console.error("[FastCut] Error stack:", err instanceof Error ? err.stack : "No stack");
       setError(err instanceof Error ? err.message : "Render failed");
       setRendering(false);
     }
