@@ -36,12 +36,13 @@ export default function FastCutScriptPage() {
   );
 
   // Session store for persisting Fast Cut data
-  const { setStageData, updateMetadata, proceedToStage, activeSession } = useSessionStore(
+  const { setStageData, updateMetadata, proceedToStage, activeSession, setSessionCampaignId } = useSessionStore(
     useShallow((state) => ({
       setStageData: state.setStageData,
       updateMetadata: state.updateMetadata,
       proceedToStage: state.proceedToStage,
       activeSession: state.activeSession,
+      setSessionCampaignId: state.setSessionCampaignId,
     }))
   );
 
@@ -64,6 +65,7 @@ export default function FastCutScriptPage() {
     campaignName,
     setCampaignId,
     setCampaignName,
+    generationId,
     setGenerationId,
     setStyleSetId,
     setError,
@@ -77,11 +79,13 @@ export default function FastCutScriptPage() {
   useEffect(() => {
     if (!campaignId && analyze.campaignId) {
       setCampaignId(analyze.campaignId);
+      // Also sync to session store for persistence
+      setSessionCampaignId(analyze.campaignId);
       if (analyze.campaignName) {
         setCampaignName(analyze.campaignName);
       }
     }
-  }, [campaignId, analyze.campaignId, analyze.campaignName, setCampaignId, setCampaignName]);
+  }, [campaignId, analyze.campaignId, analyze.campaignName, setCampaignId, setCampaignName, setSessionCampaignId]);
 
   // Use the existing campaignId or analyze.campaignId for rendering
   const effectiveCampaignId = campaignId || analyze.campaignId || "";
@@ -89,13 +93,17 @@ export default function FastCutScriptPage() {
   // Handle campaign selection change
   const handleCampaignChange = (newCampaignId: string) => {
     setCampaignId(newCampaignId);
+    // Also update the session's campaignId for persistence across page refreshes
+    setSessionCampaignId(newCampaignId);
     // Campaign name will be updated by the CampaignSelector internally
-    // We need to fetch it here for display purposes
+    // We need to fetch it here for display purposes and session metadata
     import("@/lib/api").then(({ api }) => {
       api.get<{ name: string; artist_name?: string }>(`/api/v1/campaigns/${newCampaignId}`)
         .then((res) => {
           if (res.data?.name) {
             setCampaignName(res.data.name);
+            // Also update session metadata title for proper restoration
+            updateMetadata({ title: res.data.name });
           }
         })
         .catch(console.error);
@@ -191,12 +199,10 @@ export default function FastCutScriptPage() {
 
   const handleNext = async () => {
     if (canProceed && activeSession) {
-      // Mark this as a Fast Cut session
-      if (activeSession.metadata.contentType !== "fast-cut") {
-        updateMetadata({ contentType: "fast-cut", title: campaignName || "Fast Cut" });
-      }
+      // Mark this as a Fast Cut session and always update title for proper restoration
+      updateMetadata({ contentType: "fast-cut", title: campaignName || "Fast Cut" });
 
-      // Save script stage data
+      // Save script stage data (including generationId for session restoration)
       setStageData("script", {
         prompt,
         aspectRatio,
@@ -204,6 +210,7 @@ export default function FastCutScriptPage() {
         selectedSearchKeywords: Array.from(selectedSearchKeywords),
         scriptData,
         tiktokSEO,
+        generationId,
       });
 
       // Proceed to images stage (saves to DB)

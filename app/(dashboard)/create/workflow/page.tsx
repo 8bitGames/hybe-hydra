@@ -10,6 +10,7 @@ import { useCampaigns, useAssets } from "@/lib/queries";
 import { useToast } from "@/components/ui/toast";
 import { useAuthStore } from "@/lib/auth-store";
 import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
+import { ImagePromptGenerator } from "@/components/features/create/ImagePromptGenerator";
 import { videoApi, previewImageApi } from "@/lib/video-api";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,6 @@ import { cn } from "@/lib/utils";
 import {
   Sparkles,
   ArrowLeft,
-  ArrowRight,
   Video,
   Images,
   Music,
@@ -42,7 +42,6 @@ import {
   FolderOpen,
   Check,
   Library,
-  Wand2,
   AlertCircle,
   RefreshCw,
   ImagePlus,
@@ -902,7 +901,6 @@ function InlinePromptPersonalizer({
   const analyzeState = useWorkflowStore((state) => state.analyze);
   const setAnalyzeImagePrompt = useWorkflowStore((state) => state.setAnalyzeImagePrompt);
 
-  const [isGeneratingImagePrompt, setIsGeneratingImagePrompt] = useState(false);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -940,55 +938,15 @@ function InlinePromptPersonalizer({
   useEffect(() => {
     if (isActive) {
       const prompt = getVideoPrompt();
-      setIsGeneratingImagePrompt(false);
       setIsGeneratingPreview(false);
       setError(null);
       setPreviewError(null);
       setVideoPrompt(prompt);
       // Don't reset imagePrompt - let user manually generate/regenerate
-      // setImagePrompt(null);
       setPreviewImage(null);
       setLightboxOpen(false);
-
-      // Don't auto-generate - user must click "Generate Prompt" button
-      // This prevents regeneration on every page refresh
     }
   }, [isActive, getVideoPrompt]);
-
-  // Generate image prompt from video prompt
-  const generateImagePrompt = useCallback(async (prompt?: string) => {
-    const videoPromptToUse = prompt || videoPrompt;
-    if (!videoPromptToUse) return;
-
-    setIsGeneratingImagePrompt(true);
-    // Clear current prompt while generating
-    setAnalyzeImagePrompt("");
-
-    try {
-      const imageDescription =
-        context.selectedIdea?.description ||
-        context.campaignName ||
-        "Product promotional video";
-
-      const response = await previewImageApi.generateImagePrompt({
-        video_prompt: videoPromptToUse,
-        image_description: imageDescription,
-        style: metadata.style,
-        aspect_ratio: metadata.aspectRatio,
-      });
-
-      if (response.error || !response.data?.image_prompt) {
-        throw new Error(response.error?.message || "Failed to generate image prompt");
-      }
-
-      // Save to store for persistence across refreshes
-      setAnalyzeImagePrompt(response.data.image_prompt);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate image prompt");
-    } finally {
-      setIsGeneratingImagePrompt(false);
-    }
-  }, [videoPrompt, metadata, context, setAnalyzeImagePrompt]);
 
   // Generate preview image (first frame for I2V)
   const generatePreviewImage = useCallback(async () => {
@@ -1125,81 +1083,14 @@ function InlinePromptPersonalizer({
             </div>
           </div>
 
-          {/* Right: Image Prompt */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Wand2 className="h-3.5 w-3.5 text-blue-500" />
-              <span className="text-xs font-medium text-neutral-700">
-                {language === "ko" ? "이미지 프롬프트" : "Image Prompt"}
-              </span>
-              <Badge variant="secondary" className="text-[9px] bg-blue-100 text-blue-600">AI</Badge>
-              {/* Generate/Regenerate button in header */}
-              {videoPrompt && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => generateImagePrompt()}
-                  disabled={isGeneratingImagePrompt || isGeneratingPreview}
-                  className="ml-auto text-[10px] text-blue-600 hover:text-blue-700 h-5 px-2 disabled:opacity-50"
-                >
-                  {isGeneratingImagePrompt ? (
-                    <svg className="h-2.5 w-2.5 mr-1" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                  ) : (
-                    <RefreshCw className="h-2.5 w-2.5 mr-1" />
-                  )}
-                  {isGeneratingImagePrompt
-                    ? (language === "ko" ? "생성 중..." : "Generating...")
-                    : imagePrompt
-                      ? (language === "ko" ? "다시 생성" : "Regenerate")
-                      : (language === "ko" ? "생성" : "Generate")
-                  }
-                </Button>
-              )}
-            </div>
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg h-[140px] overflow-y-auto">
-              {isGeneratingImagePrompt ? (
-                <div className="flex flex-col items-center justify-center gap-3 h-full">
-                  <svg
-                    className="h-8 w-8 text-blue-600"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    style={{ animation: 'spin 1s linear infinite' }}
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                  <span className="text-xs text-blue-600">
-                    {language === "ko" ? "이미지 프롬프트 생성 중..." : "Generating image prompt..."}
-                  </span>
-                </div>
-              ) : imagePrompt ? (
-                <p className="text-xs text-blue-800 whitespace-pre-wrap leading-relaxed">
-                  {imagePrompt}
-                </p>
-              ) : (
-                <div className="flex items-center justify-center h-full text-blue-400 text-xs">
-                  {videoPrompt
-                    ? (language === "ko" ? "상단의 '생성' 버튼을 클릭하세요" : "Click 'Generate' above")
-                    : (language === "ko" ? "영상 프롬프트 필요" : "Video prompt required")
-                  }
-                </div>
-              )}
-            </div>
-          </div>
+          {/* Right: Image Prompt - Using new isolated component */}
+          <ImagePromptGenerator
+            videoPrompt={videoPrompt}
+            imagePrompt={imagePrompt}
+            onImagePromptChange={setAnalyzeImagePrompt}
+            metadata={metadata}
+            context={context}
+          />
         </div>
 
         {/* Preview Image Section - Below prompts */}
@@ -1306,7 +1197,7 @@ function InlinePromptPersonalizer({
 
         <div className="flex items-center gap-2">
           {/* Generate Frame button - show when image prompt exists but no preview yet */}
-          {imagePrompt && !isGeneratingImagePrompt && !previewImage && (
+          {imagePrompt && !previewImage && (
             <Button
               onClick={generatePreviewImage}
               disabled={isGeneratingPreview}

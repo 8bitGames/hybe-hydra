@@ -384,12 +384,60 @@ export function createVertexAIMediaClient(config?: {
 }
 
 /**
- * Check if Vertex AI is available
+ * Check if Vertex AI is available and can be used in the current environment
+ *
+ * WIF (Workload Identity Federation) credentials only work in AWS environments
+ * (EC2, Lambda, EKS, Batch) where the AWS metadata service is accessible.
+ * On Vercel, WIF will fail, so we should skip Vertex AI and use Gemini directly.
  */
 export function isVertexAIAvailable(): boolean {
-  return !!(
+  // Check if explicitly disabled
+  if (process.env.VERTEX_AI_ENABLED === 'false') {
+    return false;
+  }
+
+  // Check for credentials
+  const hasCredentials = !!(
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON ||
     process.env.GOOGLE_APPLICATION_CREDENTIALS ||
     process.env.GCP_PROJECT_ID
   );
+
+  if (!hasCredentials) {
+    return false;
+  }
+
+  // Check if credentials are WIF (external_account) type
+  const credJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (credJson) {
+    try {
+      const creds = JSON.parse(credJson);
+      if (creds.type === 'external_account') {
+        // WIF credentials - only works in AWS environments
+        // Vercel runs on AWS Lambda-like environment but doesn't have IAM role attached
+        // Check if we're running on Vercel (where WIF won't work)
+        const isVercel = !!(
+          process.env.VERCEL ||
+          process.env.VERCEL_ENV ||
+          process.env.NEXT_PUBLIC_VERCEL_URL
+        );
+
+        if (isVercel) {
+          console.log('[VertexAI] WIF credentials detected on Vercel - skipping Vertex AI (use Gemini fallback)');
+          return false;
+        }
+
+        // In non-Vercel AWS environments, WIF should work
+        console.log('[VertexAI] WIF credentials detected in AWS environment - Vertex AI available');
+        return true;
+      }
+    } catch (e) {
+      // Invalid JSON, will fail anyway
+      console.warn('[VertexAI] Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON');
+      return false;
+    }
+  }
+
+  // Standard service account or ADC - should work anywhere
+  return true;
 }

@@ -80,10 +80,30 @@ export function FastCutMusicStep({
   // Handle file upload
   const handleFileUpload = useCallback(async (file: File) => {
     // Get the latest token from store (not from hook to avoid stale closure)
-    const accessToken = useAuthStore.getState().accessToken;
+    let authState = useAuthStore.getState();
+    let accessToken = authState.accessToken;
+    const hasHydrated = authState._hasHydrated;
+
+    // Wait for auth store to hydrate if it hasn't yet
+    if (!hasHydrated) {
+      console.log('[FastCut Upload] Auth store not hydrated yet, waiting...');
+      // Wait a bit for hydration to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+      // Retry getting the token after waiting
+      authState = useAuthStore.getState();
+      accessToken = authState.accessToken;
+
+      if (!authState._hasHydrated || !accessToken) {
+        setUploadError(language === 'ko'
+          ? '로그인 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.'
+          : 'Loading authentication. Please try again in a moment.');
+        return;
+      }
+    }
 
     // Check authentication first
     if (!accessToken) {
+      console.error('[FastCut Upload] No access token found in auth store');
       setUploadError(language === 'ko'
         ? '로그인이 필요합니다. 페이지를 새로고침 해주세요.'
         : 'Please log in. Try refreshing the page.');

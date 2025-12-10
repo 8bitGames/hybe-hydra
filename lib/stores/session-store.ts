@@ -81,6 +81,7 @@ export interface ScriptStageData {
   selectedSearchKeywords: string[];
   scriptData: unknown | null;
   tiktokSEO: unknown | null;
+  generationId: string | null;
 }
 
 export interface ImagesStageData {
@@ -227,6 +228,9 @@ interface SessionActions {
   // Metadata
   updateMetadata: (metadata: Partial<SessionMetadata>) => void;
   setSessionTitle: (title: string) => void;
+
+  // Campaign
+  setSessionCampaignId: (campaignId: string | null) => void;
 
   // Session List
   fetchSessions: (options?: { userId?: string }) => Promise<void>;
@@ -461,6 +465,9 @@ const buildFastCutStateFromSession = (session: CreationSession): Record<string, 
 
   // Build the Fast Cut state object matching the FastCutState interface
   const fastCutState = {
+    // Session ID for validation (prevents loading stale data from different sessions)
+    _sessionId: session.id,
+
     // Current step
     currentStep,
 
@@ -482,7 +489,8 @@ const buildFastCutStateFromSession = (session: CreationSession): Record<string, 
     searchingImages: false,
     imageCandidates: images?.imageCandidates || [],
     selectedImages: images?.selectedImages || [],
-    generationId: images?.generationId || null,
+    // generationId can come from script stage (created there) or images stage (saved there)
+    generationId: images?.generationId || script.generationId || null,
 
     // Music step
     matchingMusic: false,
@@ -984,6 +992,21 @@ export const useSessionStore = create<SessionStore>()(
       get().updateMetadata({ title });
     },
 
+    setSessionCampaignId: (campaignId: string | null) => {
+      const { activeSession } = get();
+      if (!activeSession) return;
+
+      set({
+        activeSession: {
+          ...activeSession,
+          campaignId,
+          updatedAt: new Date(),
+        },
+      });
+
+      debouncedSave(() => get()._saveToIndexedDB());
+    },
+
     // ==========================================
     // SESSION LIST
     // ==========================================
@@ -1252,6 +1275,7 @@ export const useSessionActions = () =>
     markStageCompleted: state.markStageCompleted,
     updateMetadata: state.updateMetadata,
     setSessionTitle: state.setSessionTitle,
+    setSessionCampaignId: state.setSessionCampaignId,
     fetchSessions: state.fetchSessions,
     checkLocalRecovery: state.checkLocalRecovery,
     recoverFromLocal: state.recoverFromLocal,

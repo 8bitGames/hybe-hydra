@@ -273,27 +273,40 @@ export async function POST(request: NextRequest) {
       return handleStreamingResponse(creativeDirector, agentInput, agentContext);
     }
 
-    // Execute CreativeDirector agent (non-streaming)
-    const agentResult = await creativeDirector.execute(agentInput, agentContext);
-
-    // Check if agent execution was successful
-    if (!agentResult.success || !agentResult.data) {
-      console.error("Agent execution failed:", agentResult.error);
-      return NextResponse.json(
-        {
-          success: false,
-          error: agentResult.error || "Failed to generate ideas",
-        },
-        { status: 500 }
-      );
-    }
-
-    const output = agentResult.data;
-
     // ========================================================================
-    // Branch: Video-based start → 2 trend ideas + 2 recreation ideas
+    // Branch: Video-based start → Run both agents in PARALLEL for speed
     // ========================================================================
     if (video_analysis) {
+      // Prepare recreation agent input
+      const recreationInput = {
+        videoAnalysis: video_analysis,
+        videoDescription: video_description || undefined,
+        videoHashtags: video_hashtags || undefined,
+        campaignDescription: campaign_description || undefined,
+        artistName,
+        language: language as "ko" | "en",
+      };
+
+      // Run both agents in parallel (50% faster than sequential)
+      const [agentResult, recreationResult] = await Promise.all([
+        creativeDirector.execute(agentInput, agentContext),
+        createVideoRecreationIdeaAgent().execute(recreationInput, agentContext),
+      ]);
+
+      // Check if CreativeDirector execution was successful
+      if (!agentResult.success || !agentResult.data) {
+        console.error("CreativeDirector agent failed:", agentResult.error);
+        return NextResponse.json(
+          {
+            success: false,
+            error: agentResult.error || "Failed to generate trend ideas",
+          },
+          { status: 500 }
+        );
+      }
+
+      const output = agentResult.data;
+
       // Take first 2 trend-based ideas from CreativeDirector
       const trendIdeas: ContentIdea[] = output.ideas.slice(0, 2).map((idea) => ({
         id: uuidv4(),
@@ -307,20 +320,6 @@ export async function POST(request: NextRequest) {
         scriptOutline: idea.scriptOutline,
         isRecreationIdea: false,
       }));
-
-      // Generate 2 recreation ideas using VideoRecreationIdeaAgent
-      const recreationAgent = createVideoRecreationIdeaAgent();
-      const recreationResult = await recreationAgent.execute(
-        {
-          videoAnalysis: video_analysis,
-          videoDescription: video_description || undefined,
-          videoHashtags: video_hashtags || undefined,
-          campaignDescription: campaign_description || undefined,
-          artistName,
-          language: language as "ko" | "en",
-        },
-        agentContext
-      );
 
       let recreationIdeas: ContentIdea[] = [];
       if (recreationResult.success && recreationResult.data) {
@@ -355,6 +354,22 @@ export async function POST(request: NextRequest) {
     // ========================================================================
     // Non-video based: 3 trend-based ideas only
     // ========================================================================
+    const agentResult = await creativeDirector.execute(agentInput, agentContext);
+
+    // Check if agent execution was successful
+    if (!agentResult.success || !agentResult.data) {
+      console.error("Agent execution failed:", agentResult.error);
+      return NextResponse.json(
+        {
+          success: false,
+          error: agentResult.error || "Failed to generate ideas",
+        },
+        { status: 500 }
+      );
+    }
+
+    const output = agentResult.data;
+
     const ideas: ContentIdea[] = output.ideas.map((idea) => ({
       id: uuidv4(),
       type: "ai_video" as const,

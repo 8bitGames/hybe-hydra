@@ -62,9 +62,9 @@ export function GeneratingView({ className }: GeneratingViewProps) {
   return (
     <div className={cn("flex flex-col items-center justify-center min-h-[60vh]", className)}>
       {/* Main content area */}
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-5 gap-8 px-4">
-        {/* Left: Video Preview Area (60%) */}
-        <div className="lg:col-span-3">
+      <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-5 gap-8 px-4">
+        {/* Left: Video Preview Area (40%) */}
+        <div className="lg:col-span-2">
           <Card className="bg-neutral-900 border-neutral-700 overflow-hidden">
             <CardContent className="p-0">
               {/* Video frame placeholder */}
@@ -113,7 +113,7 @@ export function GeneratingView({ className }: GeneratingViewProps) {
 
               {/* Progress info below video */}
               <div className="p-4 bg-neutral-900 border-t border-neutral-800">
-                <Progress value={progressPercent} className="h-1.5 mb-3" />
+                <Progress value={progressPercent} className="h-1.5 mb-3 bg-neutral-600 [&>div]:bg-white" />
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-neutral-400">{currentStep}</span>
                   <span className="text-neutral-500">{estimateRemainingTime()}</span>
@@ -123,8 +123,8 @@ export function GeneratingView({ className }: GeneratingViewProps) {
           </Card>
         </div>
 
-        {/* Right: Content Summary (40%) */}
-        <div className="lg:col-span-2">
+        {/* Right: Content Summary (60%) */}
+        <div className="lg:col-span-3">
           <Card className="bg-white border-neutral-200">
             <CardContent className="p-6">
               <h3 className="font-semibold text-neutral-900 mb-4 flex items-center gap-2">
@@ -145,41 +145,40 @@ export function GeneratingView({ className }: GeneratingViewProps) {
                 </div>
 
                 {/* Images */}
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm text-neutral-500">
                     <ImageIcon className="w-4 h-4" />
                     {isKorean ? "이미지" : "Images"}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {content.images.slice(0, 3).map((img, idx) => (
-                      <div
-                        key={img.id || idx}
-                        className="w-12 h-12 rounded-md bg-neutral-100 overflow-hidden border border-neutral-200"
-                      >
-                        {img.thumbnailUrl || img.url ? (
-                          <img
-                            src={img.thumbnailUrl || img.url}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <ImageIcon className="w-4 h-4 text-neutral-400" />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {content.images.length > 3 && (
-                      <div className="w-12 h-12 rounded-md bg-neutral-100 border border-neutral-200 flex items-center justify-center text-xs text-neutral-500 font-medium">
-                        +{content.images.length - 3}
-                      </div>
-                    )}
-                    {content.images.length === 0 && (
-                      <span className="text-sm text-neutral-400">
-                        {isKorean ? "이미지 없음" : "No images"}
-                      </span>
+                    {content.images.length > 0 && (
+                      <span className="text-xs text-neutral-400">({content.images.length})</span>
                     )}
                   </div>
+                  {content.images.length > 0 ? (
+                    <div className="grid grid-cols-5 gap-2">
+                      {content.images.map((img, idx) => (
+                        <div
+                          key={img.id || idx}
+                          className="aspect-square rounded-lg bg-neutral-100 overflow-hidden border border-neutral-200"
+                        >
+                          {img.thumbnailUrl || img.url ? (
+                            <img
+                              src={img.thumbnailUrl || img.url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <ImageIcon className="w-5 h-5 text-neutral-400" />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-sm text-neutral-400">
+                      {isKorean ? "이미지 없음" : "No images"}
+                    </span>
+                  )}
                 </div>
 
                 {/* Music */}
