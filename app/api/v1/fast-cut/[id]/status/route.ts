@@ -8,25 +8,18 @@ interface RouteContext {
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
-  const requestStartTime = Date.now();
-  const LOG_PREFIX = '[Fast Cut Status API]';
-
   try {
     const authHeader = request.headers.get('authorization');
     const user = await getUserFromHeader(authHeader);
 
     if (!user) {
-      console.warn(`${LOG_PREFIX} Auth failed - no valid user`);
       return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
     }
 
     const params = await context.params;
     const generationId = params.id;
 
-    console.log(`${LOG_PREFIX} Status check for: ${generationId}`);
-
     // Get generation record to find the modal call ID
-    const dbLookupStart = Date.now();
     const generation = await prisma.videoGeneration.findUnique({
       where: { id: generationId },
       select: {
@@ -39,42 +32,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
         qualityMetadata: true
       }
     });
-    const dbLookupMs = Date.now() - dbLookupStart;
 
     if (!generation) {
-      console.warn(`${LOG_PREFIX} Generation not found: ${generationId} (lookup: ${dbLookupMs}ms)`);
       return NextResponse.json(
         { detail: 'Generation not found' },
         { status: 404 }
       );
     }
 
-    console.log(`${LOG_PREFIX} DB lookup (${dbLookupMs}ms):`, {
-      generationId,
-      dbStatus: generation.status,
-      dbProgress: generation.progress,
-      hasOutputUrl: !!generation.outputUrl,
-      hasComposedUrl: !!generation.composedOutputUrl,
-      hasError: !!generation.errorMessage,
-    });
-
     // If already completed or failed, return from database
     if (generation.status === 'COMPLETED') {
-      const outputUrl = generation.composedOutputUrl || generation.outputUrl;
-      console.log(`${LOG_PREFIX} Already COMPLETED - returning cached result (${Date.now() - requestStartTime}ms total)`);
       return NextResponse.json({
         status: 'completed',
         progress: 100,
         currentStep: 'Completed',
-        outputUrl,
+        outputUrl: generation.composedOutputUrl || generation.outputUrl,
         error: null
       });
     }
 
     if (generation.status === 'FAILED') {
-      console.log(`${LOG_PREFIX} Already FAILED - returning cached result (${Date.now() - requestStartTime}ms total)`, {
-        errorMessage: generation.errorMessage?.substring(0, 100),
-      });
       return NextResponse.json({
         status: 'failed',
         progress: 0,
@@ -87,19 +64,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     // Get Modal call ID from qualityMetadata
     const metadata = generation.qualityMetadata as Record<string, unknown> | null;
     const modalCallId = metadata?.modalCallId as string | undefined;
-    const renderBackend = metadata?.renderBackend as string | undefined;
-    const createdAt = metadata?.createdAt as string | undefined;
-
-    console.log(`${LOG_PREFIX} Metadata:`, {
-      hasModalCallId: !!modalCallId,
-      modalCallIdPreview: modalCallId?.substring(0, 20) + '...',
-      renderBackend: renderBackend || '(not set)',
-      createdAt: createdAt || '(not set)',
-    });
 
     if (!modalCallId) {
       // No Modal call ID - might be an old job or error
-      console.warn(`${LOG_PREFIX} No modalCallId found - returning DB status (${Date.now() - requestStartTime}ms total)`);
       return NextResponse.json({
         status: generation.status.toLowerCase(),
         progress: generation.progress || 0,
@@ -110,26 +77,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     // Poll Modal for current status
-    console.log(`${LOG_PREFIX} Polling backend for status...`);
-    const backendPollStart = Date.now();
     try {
       const modalStatus = await getModalRenderStatus(modalCallId);
-      const backendPollMs = Date.now() - backendPollStart;
 
-      console.log(`${LOG_PREFIX} Backend response (${backendPollMs}ms):`, {
-        generationId,
-        modalCallId: modalCallId.substring(0, 20) + '...',
-        backendStatus: modalStatus.status,
-        hasResult: !!modalStatus.result,
-        hasOutputUrl: !!modalStatus.result?.output_url,
-        hasError: !!modalStatus.error || !!modalStatus.result?.error,
-      });
+      console.log(`[Fast Cut Status] Modal response for ${generationId}:`, modalStatus);
 
       if (modalStatus.status === 'completed') {
-        console.log(`${LOG_PREFIX} Backend reports COMPLETED - checking for output URL...`);
         // For AWS Batch, output_url comes from callback, not from status check
         // Check if we already have the output URL in database (set by callback)
-        const freshDbStart = Date.now();
         const freshGeneration = await prisma.videoGeneration.findUnique({
           where: { id: generationId },
           select: {
@@ -137,11 +92,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
             composedOutputUrl: true,
             outputUrl: true
           }
-        });
-        console.log(`${LOG_PREFIX} Fresh DB lookup (${Date.now() - freshDbStart}ms):`, {
-          freshStatus: freshGeneration?.status,
-          hasComposedUrl: !!freshGeneration?.composedOutputUrl,
-          hasOutputUrl: !!freshGeneration?.outputUrl,
         });
 
         const outputUrl = modalStatus.result?.output_url ||
@@ -151,14 +101,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
         if (outputUrl) {
           // We have the output URL, mark as completed
           const wasNotCompleted = freshGeneration?.status !== 'COMPLETED';
-          console.log(`${LOG_PREFIX} Output URL found:`, {
-            outputUrlPreview: outputUrl.substring(0, 80) + '...',
-            wasNotCompleted,
-            willUpdateDb: wasNotCompleted,
-          });
 
           if (wasNotCompleted) {
-            const updateStart = Date.now();
             await prisma.videoGeneration.update({
               where: { id: generationId },
               data: {
@@ -168,26 +112,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
                 outputUrl: outputUrl,
               }
             });
-            console.log(`${LOG_PREFIX} DB updated to COMPLETED (${Date.now() - updateStart}ms)`);
 
             // Trigger auto-schedule if this is a new completion
             const autoPublish = metadata?.autoPublish as { enabled?: boolean } | undefined;
             if (autoPublish?.enabled) {
-              console.log(`${LOG_PREFIX} Auto-publish enabled - triggering auto-schedule...`);
               try {
                 const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
                 fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                }).catch(err => console.error(`${LOG_PREFIX} Auto-schedule failed:`, err));
+                }).catch(err => console.error('Auto-schedule failed:', err));
               } catch (scheduleError) {
-                console.error(`${LOG_PREFIX} Auto-schedule error:`, scheduleError);
+                console.error('Auto-schedule error:', scheduleError);
               }
             }
           }
 
-          const totalMs = Date.now() - requestStartTime;
-          console.log(`${LOG_PREFIX} ✅ Returning COMPLETED (${totalMs}ms total)`);
           return NextResponse.json({
             status: 'completed',
             progress: 100,
@@ -198,8 +138,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
         } else {
           // AWS Batch shows completed but callback hasn't arrived yet
           // Return processing status while waiting for callback with output URL
-          const totalMs = Date.now() - requestStartTime;
-          console.log(`${LOG_PREFIX} ⏳ Backend completed but no output URL yet - waiting for callback (${totalMs}ms total)`);
           return NextResponse.json({
             status: 'processing',
             progress: 95,
@@ -212,12 +150,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       if (modalStatus.status === 'failed' || modalStatus.status === 'error') {
         const errorMsg = modalStatus.result?.error || modalStatus.error || 'Modal render failed';
-        console.error(`${LOG_PREFIX} ❌ Backend reports FAILED:`, {
-          errorMsg: errorMsg.substring(0, 200),
-          backendStatus: modalStatus.status,
-        });
 
-        const updateStart = Date.now();
         await prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
@@ -225,10 +158,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             errorMessage: errorMsg
           }
         });
-        console.log(`${LOG_PREFIX} DB updated to FAILED (${Date.now() - updateStart}ms)`);
 
-        const totalMs = Date.now() - requestStartTime;
-        console.log(`${LOG_PREFIX} Returning FAILED (${totalMs}ms total)`);
         return NextResponse.json({
           status: 'failed',
           progress: 0,
@@ -238,28 +168,29 @@ export async function GET(request: NextRequest, context: RouteContext) {
         });
       }
 
-      // Still processing - calculate estimated progress
+      // Still processing
       // AWS Batch with cold start: ~120s total (90s cold start + 20s GPU render)
       // Modal/Local: ~50s total
+      const createdAt = metadata?.createdAt as string | undefined;
+      const renderBackend = metadata?.renderBackend as string | undefined;
       let estimatedProgress = 50; // Default mid-way
-      let elapsedSeconds = 0;
 
       if (createdAt) {
-        elapsedSeconds = (Date.now() - new Date(createdAt).getTime()) / 1000;
+        const elapsed = (Date.now() - new Date(createdAt).getTime()) / 1000;
 
         if (renderBackend === 'batch') {
           // AWS Batch has cold start overhead (~90s) + GPU render (~20s)
-          if (elapsedSeconds < 90) {
+          if (elapsed < 90) {
             // Cold start phase (0-90s) → show 5-35%
-            estimatedProgress = 5 + Math.floor((elapsedSeconds / 90) * 30);
+            estimatedProgress = 5 + Math.floor((elapsed / 90) * 30);
           } else {
             // Rendering phase (90s+) → show 35-95%
-            const renderElapsed = elapsedSeconds - 90;
+            const renderElapsed = elapsed - 90;
             estimatedProgress = 35 + Math.min(60, Math.floor((renderElapsed / 30) * 60));
           }
         } else {
           // Modal/Local: ~50 seconds total
-          estimatedProgress = Math.min(90, Math.floor((elapsedSeconds / 50) * 100));
+          estimatedProgress = Math.min(90, Math.floor((elapsed / 50) * 100));
         }
       }
 
@@ -268,14 +199,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (renderBackend === 'local') backendName = 'Local';
       else if (renderBackend === 'batch') backendName = 'AWS Batch (GPU)';
       else if (renderBackend === 'modal') backendName = 'Modal';
-
-      const totalMs = Date.now() - requestStartTime;
-      console.log(`${LOG_PREFIX} 🔄 Still PROCESSING (${totalMs}ms total):`, {
-        backendName,
-        elapsedSeconds: Math.round(elapsedSeconds),
-        estimatedProgress,
-        backendStatus: modalStatus.status,
-      });
 
       return NextResponse.json({
         status: 'processing',
@@ -286,15 +209,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
 
     } catch (modalError) {
-      const backendPollMs = Date.now() - backendPollStart;
-      console.error(`${LOG_PREFIX} ⚠️ Backend status check FAILED (${backendPollMs}ms):`, {
-        error: modalError instanceof Error ? modalError.message : 'Unknown error',
-        stack: modalError instanceof Error ? modalError.stack?.substring(0, 300) : undefined,
-      });
+      console.error('Modal status check error:', modalError);
 
       // Return current database status as fallback
-      const totalMs = Date.now() - requestStartTime;
-      console.log(`${LOG_PREFIX} Returning fallback DB status (${totalMs}ms total)`);
       return NextResponse.json({
         status: generation.status.toLowerCase(),
         progress: generation.progress || 0,
@@ -305,13 +222,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
   } catch (error) {
-    const totalMs = Date.now() - requestStartTime;
-    console.error(`${LOG_PREFIX} ========================================`);
-    console.error(`${LOG_PREFIX} REQUEST FAILED (${totalMs}ms)`);
-    console.error(`${LOG_PREFIX} Error:`, error);
-    console.error(`${LOG_PREFIX} Message:`, error instanceof Error ? error.message : 'Unknown');
-    console.error(`${LOG_PREFIX} Stack:`, error instanceof Error ? error.stack : '(no stack)');
-    console.error(`${LOG_PREFIX} ========================================`);
+    console.error('Status check error:', error);
     return NextResponse.json(
       { detail: 'Failed to check status' },
       { status: 500 }
