@@ -656,6 +656,61 @@ class VideoRenderer:
         print("[NVENC] Starting availability check...", flush=True)
 
         try:
+            # Step 0: Check nvidia-smi for GPU access
+            print("[NVENC] Step 0: Checking GPU with nvidia-smi...", flush=True)
+            sys.stdout.flush()
+
+            try:
+                nvidia_result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if nvidia_result.returncode == 0:
+                    gpu_info = nvidia_result.stdout.strip()
+                    print(f"[NVENC] GPU detected: {gpu_info}", flush=True)
+                else:
+                    print(f"[NVENC] nvidia-smi failed: {nvidia_result.stderr[:100]}", flush=True)
+            except FileNotFoundError:
+                print("[NVENC] nvidia-smi not found - GPU might not be accessible", flush=True)
+            except Exception as e:
+                print(f"[NVENC] nvidia-smi error: {e}", flush=True)
+
+            # Step 0b: Check for libnvidia-encode.so (required for NVENC)
+            # This is informational only - we'll try NVENC test regardless
+            print("[NVENC] Step 0b: Checking for libnvidia-encode.so...", flush=True)
+            try:
+                lib_result = subprocess.run(
+                    ["ldconfig", "-p"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if "libnvidia-encode" in lib_result.stdout:
+                    print("[NVENC] libnvidia-encode.so found in ldconfig", flush=True)
+                else:
+                    print("[NVENC] libnvidia-encode.so not in ldconfig cache", flush=True)
+            except FileNotFoundError:
+                print("[NVENC] ldconfig not available, skipping library check", flush=True)
+            except Exception as e:
+                print(f"[NVENC] ldconfig check error (non-fatal): {e}", flush=True)
+
+            # Check common paths for the library
+            import os
+            lib_paths = [
+                "/usr/lib/x86_64-linux-gnu/libnvidia-encode.so",
+                "/usr/lib/x86_64-linux-gnu/libnvidia-encode.so.1",
+                "/usr/lib/libnvidia-encode.so",
+                "/usr/lib/libnvidia-encode.so.1",
+                "/usr/local/nvidia/lib64/libnvidia-encode.so",
+                "/usr/local/nvidia/lib64/libnvidia-encode.so.1"
+            ]
+            found_lib = None
+            for path in lib_paths:
+                if os.path.exists(path):
+                    found_lib = path
+                    print(f"[NVENC] Found library: {path}", flush=True)
+                    break
+            if not found_lib:
+                print("[NVENC] NOTE: libnvidia-encode.so not found in common paths (may be OK)", flush=True)
+
             print("[NVENC] Step 1: Checking ffmpeg encoders...", flush=True)
             sys.stdout.flush()
 
@@ -685,7 +740,10 @@ class VideoRenderer:
             print(f"[NVENC] Step 2 complete: test encode success = {success}", flush=True)
 
             if not success:
-                print(f"[NVENC] Test encode failed: {test_result.stderr[:200]}", flush=True)
+                # Print full stderr to diagnose the actual error
+                print(f"[NVENC] Test encode FAILED! Full stderr:", flush=True)
+                print(f"{test_result.stderr}", flush=True)
+                print(f"[NVENC] Test returncode: {test_result.returncode}", flush=True)
 
             return success
 
@@ -694,6 +752,8 @@ class VideoRenderer:
             return False
         except Exception as e:
             print(f"[NVENC] Check failed with error: {e}", flush=True)
+            import traceback
+            print(f"[NVENC] Traceback: {traceback.format_exc()}", flush=True)
             return False
 
     async def _render_with_nvenc(
