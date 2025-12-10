@@ -245,24 +245,36 @@ export default function PublishPage() {
     if (isFastCutFlow && processingSession) {
       const sessionApproved = getApprovedVideosFromSession();
       // Convert to ProcessingVideo format
-      return sessionApproved.map((v): ProcessingVideo => ({
-        id: v.id,
-        generationId: v.id,
-        campaignId: processingSession.campaignId,
-        campaignName: processingSession.campaignName,
-        prompt: v.styleName,
-        status: "approved",
-        progress: 100,
-        outputUrl: v.outputUrl,
-        thumbnailUrl: v.thumbnailUrl || null,
-        duration: 15, // Default duration
-        aspectRatio: "9:16",
-        qualityScore: null,
-        generationType: "COMPOSE",
-        createdAt: processingSession.createdAt,
-        completedAt: new Date().toISOString(),
-        metadata: {},
-      }));
+      // Note: Only original video has a real generationId, variations have temp client IDs
+      return sessionApproved
+        .filter((v) => {
+          // Only include videos with valid generationIds (not temp variation IDs like "var-xxx")
+          // Original video: uses the actual generationId from DB
+          // Variations: have temp IDs starting with "var-" which won't work for publishing
+          const isValidGenerationId = v.id && !v.id.startsWith("var-");
+          if (!isValidGenerationId) {
+            console.warn(`[Publish] Skipping video with temp ID: ${v.id}`);
+          }
+          return isValidGenerationId;
+        })
+        .map((v): ProcessingVideo => ({
+          id: v.id,
+          generationId: v.id,
+          campaignId: processingSession.campaignId,
+          campaignName: processingSession.campaignName,
+          prompt: v.styleName,
+          status: "approved",
+          progress: 100,
+          outputUrl: v.outputUrl,
+          thumbnailUrl: v.thumbnailUrl || null,
+          duration: 15, // Default duration
+          aspectRatio: "9:16",
+          qualityScore: null,
+          generationType: "COMPOSE",
+          createdAt: processingSession.createdAt,
+          completedAt: new Date().toISOString(),
+          metadata: {},
+        }));
     }
 
     // AI Video flow: use workflow-store

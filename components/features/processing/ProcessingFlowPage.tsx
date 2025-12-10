@@ -255,6 +255,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
             className={className}
             onGoToVariation={handleGoToVariation}
             onGoToPublish={handleGoToPublish}
+            onStartGeneration={handleStartGeneration}
           />
         );
 

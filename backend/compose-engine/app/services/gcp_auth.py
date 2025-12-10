@@ -50,6 +50,12 @@ class GCPAuthManager:
         auth_manager = GCPAuthManager()
         credentials = auth_manager.get_credentials()
         access_token = auth_manager.get_access_token()
+
+    WIF Authentication Flow:
+        AWS Batch (IAM Role) → GCP WIF → STS Token → SA (from WIF config) → Vertex AI
+
+    If the WIF config already includes service_account_impersonation_url,
+    the credentials will already be impersonated and no additional impersonation is needed.
     """
 
     def __init__(
@@ -64,14 +70,23 @@ class GCPAuthManager:
 
         Args:
             target_service_account: SA to impersonate (e.g., sa-vertex@project.iam.gserviceaccount.com)
+                                    Set to empty string or "skip" to use WIF credentials directly
             project_id: GCP project ID
             location: GCP region for Vertex AI
             scopes: OAuth scopes (defaults to Vertex AI scopes)
         """
-        self.target_service_account = target_service_account or os.environ.get(
-            "GCP_TARGET_SERVICE_ACCOUNT",
-            "sa-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com"
-        )
+        # Check environment variable for target SA
+        env_target_sa = os.environ.get("GCP_TARGET_SERVICE_ACCOUNT", "")
+
+        # If env var is empty, "skip", or "none" - use WIF credentials directly
+        # This is the default behavior when WIF config already includes impersonation
+        if env_target_sa.lower() in ("", "skip", "none"):
+            self.target_service_account = None
+            self._skip_additional_impersonation = True
+        else:
+            self.target_service_account = target_service_account or env_target_sa
+            self._skip_additional_impersonation = False
+
         self.project_id = project_id or os.environ.get("GCP_PROJECT_ID", "hyb-hydra-dev")
         self.location = location or os.environ.get("GCP_LOCATION", DEFAULT_GCP_LOCATION)
         self.scopes = scopes or VERTEX_AI_SCOPES
@@ -82,7 +97,10 @@ class GCPAuthManager:
         self._token_expiry = None
 
         logger.info(f"GCPAuthManager initialized for project: {self.project_id}")
-        logger.info(f"Target SA: {self.target_service_account}")
+        if self._skip_additional_impersonation:
+            logger.info("Using WIF credentials directly (no additional impersonation)")
+        else:
+            logger.info(f"Will impersonate SA: {self.target_service_account}")
         logger.info(f"Location: {self.location}")
 
     def _get_source_credentials(self):
@@ -151,10 +169,18 @@ class GCPAuthManager:
         """
         Get authenticated credentials for GCP API calls.
 
+        If WIF config already includes impersonation, returns WIF credentials directly.
+        Otherwise, returns impersonated credentials for the target service account.
+
         Returns:
             google.auth.credentials.Credentials: Authenticated credentials
         """
-        return self._get_impersonated_credentials()
+        if self._skip_additional_impersonation:
+            # WIF config already includes impersonation, use directly
+            return self._get_source_credentials()
+        else:
+            # Additional impersonation needed
+            return self._get_impersonated_credentials()
 
     def get_access_token(self, force_refresh: bool = False) -> str:
         """
@@ -220,8 +246,9 @@ class GCPAuthManager:
         result = {
             "valid": False,
             "project_id": self.project_id,
-            "target_sa": self.target_service_account,
+            "target_sa": self.target_service_account or "(using WIF credentials directly)",
             "location": self.location,
+            "skip_impersonation": self._skip_additional_impersonation,
             "error": None,
         }
 

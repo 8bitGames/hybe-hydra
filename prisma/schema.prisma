@@ -882,6 +882,174 @@ model CachedImage {
 }
 
 // =====================================================
+// DEEP ANALYSIS - TikTok Account Analytics
+// =====================================================
+
+// Deep Analysis Status enum
+enum DeepAnalysisStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// Account Analysis - stores comprehensive TikTok account analysis results
+model AccountAnalysis {
+  id                String   @id @default(uuid())
+
+  // TikTok Account Info
+  tiktokUserId      String   @map("tiktok_user_id")
+  uniqueId          String   @map("unique_id")  // @username
+  nickname          String
+  avatarUrl         String?  @map("avatar_url")
+  signature         String?  // Bio
+  verified          Boolean  @default(false)
+
+  // Account Stats at Analysis Time
+  followers         BigInt
+  following         Int
+  totalLikes        BigInt   @map("total_likes")
+  totalVideos       Int      @map("total_videos")
+
+  // Analysis Parameters
+  videosAnalyzed    Int      @map("videos_analyzed")  // 50-100
+  analysisLanguage  String   @default("ko") @map("analysis_language")
+  status            DeepAnalysisStatus @default(PENDING)
+
+  // Calculated Metrics (JSON for flexibility)
+  basicMetrics      Json?    @map("basic_metrics")      // avg views, likes, etc.
+  engagementMetrics Json?    @map("engagement_metrics") // rates, ratios
+  contentMixMetrics Json?    @map("content_mix_metrics")// category breakdown
+  postingMetrics    Json?    @map("posting_metrics")    // posting frequency, consistency
+
+  // AI Analysis Results (JSON)
+  aiInsights        Json?    @map("ai_insights")
+  recommendations   Json?    @map("recommendations")
+
+  // Video Classifications
+  videoClassifications VideoClassification[]
+
+  // Comparison References
+  comparisonReports ComparisonReportAccount[]
+
+  // Metadata
+  analyzedBy        String?  @map("analyzed_by")  // user who ran analysis
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  expiresAt         DateTime? @map("expires_at")   // Optional TTL
+
+  @@index([uniqueId])
+  @@index([createdAt])
+  @@index([status])
+  @@map("account_analyses")
+}
+
+// Video Classification - stores per-video analysis results
+model VideoClassification {
+  id              String   @id @default(uuid())
+  analysisId      String   @map("analysis_id")
+  analysis        AccountAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  // Video Reference
+  tiktokVideoId   String   @map("tiktok_video_id")
+  videoUrl        String   @map("video_url")
+  thumbnailUrl    String?  @map("thumbnail_url")
+  description     String?
+
+  // Video Stats
+  playCount       BigInt   @map("play_count")
+  likeCount       Int      @map("like_count")
+  commentCount    Int      @map("comment_count")
+  shareCount      Int      @map("share_count")
+
+  // Calculated
+  engagementRate  Float    @map("engagement_rate")
+
+  // AI Classifications (dynamic categories)
+  aiCategories    String[] @map("ai_categories")     // AI generated categories
+  aiConfidence    Float    @default(0) @map("ai_confidence")
+  customTags      String[] @map("custom_tags")       // User-defined tags
+  reasoning       String?  // AI classification reasoning
+
+  // Music Info
+  musicTitle      String?  @map("music_title")
+  musicId         String?  @map("music_id")
+  isOwnMusic      Boolean  @default(false) @map("is_own_music")
+
+  // Publishing Info
+  publishedAt     DateTime? @map("published_at")
+  duration        Int?     // seconds
+
+  // AI Analysis for this video
+  contentAnalysis Json?    @map("content_analysis")
+
+  @@index([analysisId])
+  @@index([tiktokVideoId])
+  @@map("video_classifications")
+}
+
+// Comparison Report - stores multi-account comparison results
+model ComparisonReport {
+  id              String   @id @default(uuid())
+
+  // Report Info
+  title           String?
+  language        String   @default("ko")
+
+  // Accounts in Comparison
+  accounts        ComparisonReportAccount[]
+
+  // Comparison Results (JSON)
+  radarChartData  Json?    @map("radar_chart_data")
+  barChartData    Json?    @map("bar_chart_data")
+  rankingTable    Json?    @map("ranking_table")
+
+  // Significant Differences
+  significantDiffs Json?   @map("significant_diffs")
+  benchmarkComparison Json? @map("benchmark_comparison")
+
+  // AI Comparative Analysis
+  aiComparison    Json?    @map("ai_comparison")
+
+  // Metadata
+  createdBy       String?  @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("comparison_reports")
+}
+
+// Comparison Report Account - junction table
+model ComparisonReportAccount {
+  id              String   @id @default(uuid())
+  reportId        String   @map("report_id")
+  report          ComparisonReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  analysisId      String   @map("analysis_id")
+  analysis        AccountAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  // Order in comparison (1st, 2nd, etc.)
+  sortOrder       Int      @default(0) @map("sort_order")
+
+  @@unique([reportId, analysisId])
+  @@map("comparison_report_accounts")
+}
+
+// Custom Tag - user-defined tags for video classification
+model DeepAnalysisCustomTag {
+  id              String   @id @default(uuid())
+
+  name            String
+  createdBy       String?  @map("created_by")
+
+  usageCount      Int      @default(0) @map("usage_count")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([name, createdBy])
+  @@map("deep_analysis_custom_tags")
+}
+
+// =====================================================
 // PROMPT REFINEMENT CHAT SESSIONS
 // =====================================================
 

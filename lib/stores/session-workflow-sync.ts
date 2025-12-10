@@ -261,6 +261,10 @@ export function syncWorkflowToSession(): void {
       source: workflowState.start.source,
       contentType: workflowState.start.contentType,
       selectedHashtags: workflowState.discover.selectedHashtags,
+      // CRITICAL: Also sync these fields that were previously missing
+      aiInsights: workflowState.start.aiInsights,
+      performanceMetrics: workflowState.start.performanceMetrics,
+      savedInspiration: workflowState.discover.savedInspiration,
     });
     console.log("[SyncWorkflowToSession] Synced start data:", workflowState.start.source?.type);
   }
@@ -270,11 +274,23 @@ export function syncWorkflowToSession(): void {
     sessionStore.updateStageData("analyze", {
       campaignId: workflowState.analyze.campaignId,
       campaignName: workflowState.analyze.campaignName,
+      // CRITICAL: Also sync campaign details that were previously missing
+      campaignDescription: workflowState.analyze.campaignDescription,
+      campaignGenre: workflowState.analyze.campaignGenre,
+      artistName: workflowState.analyze.artistName,
+      artistStageName: workflowState.analyze.artistStageName,
       userIdea: workflowState.analyze.userIdea,
+      // CRITICAL: Sync recreation mode and targeting data
+      isRecreationMode: workflowState.analyze.isRecreationMode,
+      targetAudience: workflowState.analyze.targetAudience,
+      contentGoals: workflowState.analyze.contentGoals,
       selectedIdea: workflowState.analyze.selectedIdea,
       optimizedPrompt: workflowState.analyze.optimizedPrompt,
       hashtags: workflowState.analyze.hashtags,
       aiGeneratedIdeas: workflowState.analyze.aiGeneratedIdeas,
+      // CRITICAL: Sync assets and settings
+      assets: workflowState.analyze.assets,
+      settings: workflowState.analyze.settings,
       imagePrompt: workflowState.analyze.imagePrompt,
       previewImage: workflowState.analyze.previewImage,
     });
@@ -296,6 +312,9 @@ export function syncWorkflowToSession(): void {
       videos: workflowState.processing.videos,
       selectedVideos: workflowState.processing.selectedVideos,
       filterStatus: workflowState.processing.filterStatus,
+      // CRITICAL: Also sync these fields that were previously missing
+      sortBy: workflowState.processing.sortBy,
+      viewMode: workflowState.processing.viewMode,
     });
   }
 
@@ -304,6 +323,10 @@ export function syncWorkflowToSession(): void {
     sessionStore.updateStageData("publish", {
       scheduledPosts: workflowState.publish.scheduledPosts,
       selectedPlatforms: workflowState.publish.selectedPlatforms,
+      // CRITICAL: Also sync these fields that were previously missing
+      publishTime: workflowState.publish.publishTime,
+      caption: workflowState.publish.caption,
+      hashtags: workflowState.publish.hashtags,
     });
   }
 

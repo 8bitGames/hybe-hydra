@@ -258,7 +258,10 @@ function SessionCard({
         {/* Progress Stages */}
         <div className="flex items-center gap-1 mb-3">
           {stages.map((stage, index) => {
-            const isCompleted = (session.completedStages as string[]).includes(stage);
+            // A stage is completed if:
+            // 1. It's explicitly in completedStages, OR
+            // 2. Its index is less than the current stage index (already passed)
+            const isCompleted = (session.completedStages as string[]).includes(stage) || index < currentStageIndex;
             const isCurrent = stage === session.currentStage;
 
             return (
