@@ -260,6 +260,8 @@ resource "aws_iam_role_policy" "batch_job_s3" {
           "s3:ListBucket"
         ]
         Resource = [
+          "arn:aws:s3:::hydra-assets-seoul",
+          "arn:aws:s3:::hydra-assets-seoul/*",
           "arn:aws:s3:::hydra-assets-hybe",
           "arn:aws:s3:::hydra-assets-hybe/*"
         ]
