@@ -56,7 +56,7 @@ variable "cpu_instance_types" {
 variable "s3_bucket" {
   description = "S3 bucket for assets"
   type        = string
-  default     = "hydra-assets-seoul"
+  default     = "hydra-assets-hybe"
 }
 
 # Spot Settings
