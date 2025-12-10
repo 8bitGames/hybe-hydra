@@ -46,7 +46,9 @@ import {
   AlertCircle,
   ChevronRight,
   Sparkles,
+  Loader2,
 } from "lucide-react";
+import { useJobStore } from "@/lib/stores/job-store";
 
 // ============================================================================
 // Types
@@ -56,8 +58,10 @@ interface SessionCardProps {
   session: SessionSummary;
   onResume: (id: string) => void;
   onPause: (id: string) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string, cancelJobs?: boolean) => void;
   isActive?: boolean;
+  hasActiveJobs?: boolean;
+  isDeleting?: boolean;
 }
 
 // ============================================================================
@@ -70,6 +74,8 @@ function SessionCard({
   onPause,
   onDelete,
   isActive,
+  hasActiveJobs,
+  isDeleting,
 }: SessionCardProps) {
   const { language } = useI18n();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -313,27 +319,47 @@ function SessionCard({
             <DialogTitle>
               {language === "ko" ? "프로젝트 삭제" : "Delete Project"}
             </DialogTitle>
-            <DialogDescription>
-              {language === "ko"
-                ? "이 프로젝트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
-                : "Are you sure you want to delete this project? This action cannot be undone."}
+            <DialogDescription className="space-y-2">
+              <span className="block">
+                {language === "ko"
+                  ? "이 프로젝트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+                  : "Are you sure you want to delete this project? This action cannot be undone."}
+              </span>
+              {hasActiveJobs && (
+                <span className="block text-destructive font-medium">
+                  {language === "ko"
+                    ? "⚠️ 현재 진행 중인 작업이 있습니다. 삭제하면 진행 중인 작업도 함께 취소됩니다."
+                    : "⚠️ There are active tasks running. Deleting will also cancel the running tasks."}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setShowDeleteConfirm(false)}
+              disabled={isDeleting}
             >
               {language === "ko" ? "취소" : "Cancel"}
             </Button>
             <Button
               variant="destructive"
               onClick={() => {
-                onDelete(session.id);
+                onDelete(session.id, hasActiveJobs);
                 setShowDeleteConfirm(false);
               }}
+              disabled={isDeleting}
             >
-              {language === "ko" ? "삭제" : "Delete"}
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  {language === "ko" ? "삭제 중..." : "Deleting..."}
+                </>
+              ) : hasActiveJobs ? (
+                language === "ko" ? "작업 취소 및 삭제" : "Cancel Tasks & Delete"
+              ) : (
+                language === "ko" ? "삭제" : "Delete"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -402,6 +428,13 @@ export function SessionDashboard() {
   // Get user and hydration status from auth store
   const user = useAuthStore((state) => state.user);
   const hasHydrated = useAuthStore((state) => state._hasHydrated);
+  const accessToken = useAuthStore((state) => state.accessToken);
+
+  // Get active jobs from job store
+  const jobs = useJobStore((state) => state.jobs);
+  const hasActiveJobs = jobs.some(
+    (job) => job.status === "QUEUED" || job.status === "PROCESSING"
+  );
 
   // Derived state - use useShallow to prevent infinite loop from filter creating new arrays
   const inProgressSessions = useSessionStore(useShallow(selectInProgressSessions));
@@ -410,6 +443,7 @@ export function SessionDashboard() {
 
   // Local state
   const [isCreating, setIsCreating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Fetch sessions on mount - wait for auth hydration
   useEffect(() => {
@@ -486,11 +520,32 @@ export function SessionDashboard() {
     }
   };
 
-  const handleDelete = async (sessionId: string) => {
+  const handleDelete = async (sessionId: string, cancelJobs?: boolean) => {
+    setIsDeleting(true);
     try {
+      // Cancel all active jobs if requested
+      if (cancelJobs && accessToken) {
+        try {
+          const response = await fetch("/api/v1/jobs/cancel-all", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          });
+          if (response.ok) {
+            // Clear jobs from store immediately
+            useJobStore.getState().setJobs([]);
+          }
+        } catch {
+          console.error("Failed to cancel jobs");
+        }
+      }
+      // Delete the session
       await deleteSession(sessionId);
     } catch (error) {
       console.error("Failed to delete session:", error);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -569,6 +624,8 @@ export function SessionDashboard() {
                       onPause={handlePause}
                       onDelete={handleDelete}
                       isActive
+                      hasActiveJobs={hasActiveJobs}
+                      isDeleting={isDeleting}
                     />
                   ))}
                 </div>
@@ -595,6 +652,8 @@ export function SessionDashboard() {
                       onResume={handleResume}
                       onPause={handlePause}
                       onDelete={handleDelete}
+                      hasActiveJobs={hasActiveJobs}
+                      isDeleting={isDeleting}
                     />
                   ))}
                 </div>
@@ -621,6 +680,8 @@ export function SessionDashboard() {
                       onResume={handleResume}
                       onPause={handlePause}
                       onDelete={handleDelete}
+                      hasActiveJobs={hasActiveJobs}
+                      isDeleting={isDeleting}
                     />
                   ))}
                 </div>

@@ -1143,7 +1143,10 @@ function InlinePromptPersonalizer({
                   className="ml-auto text-[10px] text-blue-600 hover:text-blue-700 h-5 px-2 disabled:opacity-50"
                 >
                   {isGeneratingImagePrompt ? (
-                    <Loader2 className="h-2.5 w-2.5 mr-1 animate-spin" />
+                    <svg className="h-2.5 w-2.5 mr-1" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
                   ) : (
                     <RefreshCw className="h-2.5 w-2.5 mr-1" />
                   )}
@@ -1158,10 +1161,29 @@ function InlinePromptPersonalizer({
             </div>
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg h-[140px] overflow-y-auto">
               {isGeneratingImagePrompt ? (
-                <div className="flex items-center justify-center gap-2 h-full">
-                  <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+                <div className="flex flex-col items-center justify-center gap-3 h-full">
+                  <svg
+                    className="h-8 w-8 text-blue-600"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    style={{ animation: 'spin 1s linear infinite' }}
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
                   <span className="text-xs text-blue-600">
-                    {language === "ko" ? "생성 중..." : "Generating..."}
+                    {language === "ko" ? "이미지 프롬프트 생성 중..." : "Generating image prompt..."}
                   </span>
                 </div>
               ) : imagePrompt ? (

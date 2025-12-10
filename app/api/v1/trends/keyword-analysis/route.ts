@@ -7,6 +7,44 @@ import type { AgentContext } from "@/lib/agents/types";
 
 const CACHE_DURATION_HOURS = 24;
 
+// Sanitize strings to remove invalid Unicode sequences that break JSON
+function sanitizeString(str: string | null | undefined): string {
+  if (!str) return "";
+  return str
+    // Remove null characters
+    .replace(/\0/g, "")
+    // Remove incomplete surrogate pairs
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "")
+    .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
+    // Remove other problematic control characters (except newlines and tabs)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    // Ensure valid UTF-8
+    .normalize("NFC");
+}
+
+// Deep sanitize an object recursively
+function sanitizeForJson<T>(obj: T): T {
+  if (obj === null || obj === undefined) return obj;
+
+  if (typeof obj === "string") {
+    return sanitizeString(obj) as T;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeForJson) as T;
+  }
+
+  if (typeof obj === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = sanitizeForJson(value);
+    }
+    return result as T;
+  }
+
+  return obj;
+}
+
 interface VideoStats {
   playCount: number;
   likeCount: number;
@@ -713,6 +751,23 @@ async function saveAnalysisHistoryToDb(analysis: KeywordAnalysis): Promise<void>
 async function saveAnalysisToDb(analysis: KeywordAnalysis): Promise<void> {
   const expiresAt = new Date(Date.now() + CACHE_DURATION_HOURS * 60 * 60 * 1000);
 
+  // Sanitize all JSON fields to prevent invalid Unicode sequences
+  const sanitizedViralVideos = sanitizeForJson(analysis.performanceTiers.viral);
+  const sanitizedHighPerforming = sanitizeForJson(analysis.performanceTiers.highPerforming);
+  const sanitizedAverageVideos = sanitizeForJson(analysis.performanceTiers.average);
+  const sanitizedTopHashtags = sanitizeForJson(analysis.hashtagInsights.topHashtags);
+  const sanitizedHashtagCombos = sanitizeForJson(analysis.hashtagInsights.hashtagCombos);
+  const sanitizedRecommendedHashtags = sanitizeForJson(analysis.hashtagInsights.recommendedHashtags);
+  const sanitizedCommonPhrases = sanitizeForJson(analysis.contentPatterns.commonPhrases);
+  const sanitizedCallToActions = sanitizeForJson(analysis.contentPatterns.callToActions);
+  const sanitizedEmojiUsage = sanitizeForJson(analysis.contentPatterns.emojiUsage);
+  const sanitizedTopCreators = sanitizeForJson(analysis.creatorInsights.topCreators);
+  const sanitizedSuggestedHashtags = sanitizeForJson(analysis.recommendations.suggestedHashtags);
+  const sanitizedContentTips = sanitizeForJson(analysis.recommendations.contentTips);
+  const sanitizedEngagementBenchmarks = sanitizeForJson(analysis.recommendations.engagementBenchmarks);
+  const sanitizedAllVideos = sanitizeForJson(analysis.videos);
+  const sanitizedAiInsights = sanitizeForJson(analysis.aiInsights);
+
   await prisma.keywordAnalysis.upsert({
     where: {
       platform_keyword: {
@@ -733,24 +788,24 @@ async function saveAnalysisToDb(analysis: KeywordAnalysis): Promise<void> {
       avgEngagementRate: analysis.aggregateStats.avgEngagementRate,
       medianViews: BigInt(analysis.aggregateStats.medianViews),
       medianEngagementRate: analysis.aggregateStats.medianEngagementRate,
-      viralVideos: analysis.performanceTiers.viral as any,
-      highPerformingVideos: analysis.performanceTiers.highPerforming as any,
-      averageVideos: analysis.performanceTiers.average as any,
-      topHashtags: analysis.hashtagInsights.topHashtags as any,
-      hashtagCombos: analysis.hashtagInsights.hashtagCombos as any,
-      recommendedHashtags: analysis.hashtagInsights.recommendedHashtags,
+      viralVideos: sanitizedViralVideos as any,
+      highPerformingVideos: sanitizedHighPerforming as any,
+      averageVideos: sanitizedAverageVideos as any,
+      topHashtags: sanitizedTopHashtags as any,
+      hashtagCombos: sanitizedHashtagCombos as any,
+      recommendedHashtags: sanitizedRecommendedHashtags,
       avgDescriptionLength: analysis.contentPatterns.avgDescriptionLength,
-      commonPhrases: analysis.contentPatterns.commonPhrases as any,
-      callToActions: analysis.contentPatterns.callToActions as any,
-      emojiUsage: analysis.contentPatterns.emojiUsage as any,
-      topCreators: analysis.creatorInsights.topCreators as any,
+      commonPhrases: sanitizedCommonPhrases as any,
+      callToActions: sanitizedCallToActions as any,
+      emojiUsage: sanitizedEmojiUsage as any,
+      topCreators: sanitizedTopCreators as any,
       uniqueCreators: analysis.creatorInsights.uniqueCreators,
       optimalHashtagCount: analysis.recommendations.optimalHashtagCount,
-      suggestedHashtags: analysis.recommendations.suggestedHashtags,
-      contentTips: analysis.recommendations.contentTips,
-      engagementBenchmarks: analysis.recommendations.engagementBenchmarks as any,
-      allVideos: analysis.videos as any,
-      aiInsights: analysis.aiInsights as any,
+      suggestedHashtags: sanitizedSuggestedHashtags,
+      contentTips: sanitizedContentTips,
+      engagementBenchmarks: sanitizedEngagementBenchmarks as any,
+      allVideos: sanitizedAllVideos as any,
+      aiInsights: sanitizedAiInsights as any,
       analyzedAt: new Date(),
       expiresAt,
     },
@@ -769,24 +824,24 @@ async function saveAnalysisToDb(analysis: KeywordAnalysis): Promise<void> {
       avgEngagementRate: analysis.aggregateStats.avgEngagementRate,
       medianViews: BigInt(analysis.aggregateStats.medianViews),
       medianEngagementRate: analysis.aggregateStats.medianEngagementRate,
-      viralVideos: analysis.performanceTiers.viral as any,
-      highPerformingVideos: analysis.performanceTiers.highPerforming as any,
-      averageVideos: analysis.performanceTiers.average as any,
-      topHashtags: analysis.hashtagInsights.topHashtags as any,
-      hashtagCombos: analysis.hashtagInsights.hashtagCombos as any,
-      recommendedHashtags: analysis.hashtagInsights.recommendedHashtags,
+      viralVideos: sanitizedViralVideos as any,
+      highPerformingVideos: sanitizedHighPerforming as any,
+      averageVideos: sanitizedAverageVideos as any,
+      topHashtags: sanitizedTopHashtags as any,
+      hashtagCombos: sanitizedHashtagCombos as any,
+      recommendedHashtags: sanitizedRecommendedHashtags,
       avgDescriptionLength: analysis.contentPatterns.avgDescriptionLength,
-      commonPhrases: analysis.contentPatterns.commonPhrases as any,
-      callToActions: analysis.contentPatterns.callToActions as any,
-      emojiUsage: analysis.contentPatterns.emojiUsage as any,
-      topCreators: analysis.creatorInsights.topCreators as any,
+      commonPhrases: sanitizedCommonPhrases as any,
+      callToActions: sanitizedCallToActions as any,
+      emojiUsage: sanitizedEmojiUsage as any,
+      topCreators: sanitizedTopCreators as any,
       uniqueCreators: analysis.creatorInsights.uniqueCreators,
       optimalHashtagCount: analysis.recommendations.optimalHashtagCount,
-      suggestedHashtags: analysis.recommendations.suggestedHashtags,
-      contentTips: analysis.recommendations.contentTips,
-      engagementBenchmarks: analysis.recommendations.engagementBenchmarks as any,
-      allVideos: analysis.videos as any,
-      aiInsights: analysis.aiInsights as any,
+      suggestedHashtags: sanitizedSuggestedHashtags,
+      contentTips: sanitizedContentTips,
+      engagementBenchmarks: sanitizedEngagementBenchmarks as any,
+      allVideos: sanitizedAllVideos as any,
+      aiInsights: sanitizedAiInsights as any,
       expiresAt,
     },
   });

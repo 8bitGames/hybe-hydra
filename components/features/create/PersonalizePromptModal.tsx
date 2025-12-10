@@ -188,7 +188,7 @@ function PromptReviewStep({
               className="ml-auto text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-100 h-7 px-2 disabled:opacity-50"
             >
               {isGeneratingImagePrompt ? (
-                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                <Loader2 className="h-3 w-3 mr-1" style={{ animation: 'spin 1s linear infinite' }} />
               ) : (
                 <RefreshCw className="h-3 w-3 mr-1" />
               )}
@@ -203,8 +203,21 @@ function PromptReviewStep({
         </div>
         <div className="flex-1 p-4 bg-blue-50 border border-blue-200 rounded-lg overflow-y-auto min-h-[500px] max-h-[70vh]">
           {isGeneratingImagePrompt ? (
-            <div className="flex items-center justify-center gap-3 h-full">
-              <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+            <div className="flex flex-col items-center justify-center gap-4 h-full">
+              <div
+                className="h-10 w-10 border-blue-200 border-t-blue-600 rounded-full"
+                style={{
+                  borderWidth: '3px',
+                  borderStyle: 'solid',
+                  animation: 'spinner-rotate 1s linear infinite',
+                }}
+              />
+              <style>{`
+                @keyframes spinner-rotate {
+                  from { transform: rotate(0deg); }
+                  to { transform: rotate(360deg); }
+                }
+              `}</style>
               <span className="text-sm text-blue-600">
                 {language === "ko" ? "이미지 프롬프트 생성 중..." : "Generating image prompt..."}
               </span>
@@ -263,7 +276,7 @@ function PreviewImageStep({
               : "This may take 30 seconds to 1 minute"}
           </p>
         </div>
-        <Loader2 className="h-6 w-6 animate-spin" />
+        <Loader2 className="h-6 w-6" style={{ animation: 'spin 1s linear infinite' }} />
       </div>
     );
   }
@@ -577,6 +590,11 @@ export function PersonalizePromptModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}} />
       <DialogContent className="!max-w-5xl w-[95vw] h-[85vh] max-h-[85vh] flex flex-col overflow-hidden p-0">
         {/* Header - compact */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-neutral-100">
@@ -654,7 +672,7 @@ export function PersonalizePromptModal({
             >
               {isGeneratingPreview ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="h-4 w-4 mr-2" style={{ animation: 'spin 1s linear infinite' }} />
                   {language === "ko" ? "생성 중..." : "Generating..."}
                 </>
               ) : (

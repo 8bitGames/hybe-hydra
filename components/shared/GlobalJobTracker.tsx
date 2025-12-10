@@ -117,21 +117,32 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
     }
   };
 
-  // Navigate to specific job's processing page
+  // Navigate to specific job's page based on job type
   const handleNavigateToJob = (job: Job) => {
-    if (job.generationId) {
-      // Build URL with sessionId (generationId) for processing page
-      const params = new URLSearchParams();
-      params.set("sessionId", job.generationId);
-      if (job.campaignId) {
-        params.set("campaignId", job.campaignId);
-      }
-      if (job.campaignName) {
-        params.set("campaignName", job.campaignName);
-      }
-      router.push(`/processing?${params.toString()}`);
-      toggleJobTracker(); // Close the dropdown after navigation
+    // For VIDEO_GENERATION jobs with a campaign, go to the campaign generate page
+    if (job.type === "VIDEO_GENERATION" && job.campaignId) {
+      router.push(`/campaigns/${job.campaignId}/generate`);
+      toggleJobTracker();
+      return;
     }
+
+    // For VIDEO_COMPOSE (Fast Cut) jobs, go to create page
+    if (job.type === "VIDEO_COMPOSE") {
+      router.push("/create");
+      toggleJobTracker();
+      return;
+    }
+
+    // For other job types with campaignId, go to campaign page
+    if (job.campaignId) {
+      router.push(`/campaigns/${job.campaignId}`);
+      toggleJobTracker();
+      return;
+    }
+
+    // For jobs without campaign (quick create), go to create page
+    router.push("/create");
+    toggleJobTracker();
   };
 
   return (

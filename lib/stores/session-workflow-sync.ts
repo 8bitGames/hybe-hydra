@@ -208,10 +208,33 @@ export function syncWorkflowToSession(): void {
     metadataUpdates.contentType = workflowState.start.contentType;
   }
 
-  // Sync title from analyze stage (campaign name or selected idea title)
-  const title = workflowState.analyze.campaignName ||
+  // Sync title from multiple sources (prioritized)
+  // 1. analyze.campaignName (AI Video flow)
+  // 2. analyze.selectedIdea.title (AI Video flow)
+  // 3. start.source (Fast Cut flow - video/trends/idea)
+  let title = workflowState.analyze.campaignName ||
     workflowState.analyze.selectedIdea?.title ||
     "";
+
+  // If no title from analyze, try to extract from start source
+  if (!title && workflowState.start.source) {
+    const source = workflowState.start.source;
+    if (source.type === "video") {
+      // Use author name or truncated description for video source
+      title = source.author?.name
+        ? `@${source.author.name}`
+        : source.description?.slice(0, 30) || "";
+    } else if (source.type === "trends") {
+      // Use keywords for trends source
+      title = source.keywords?.length
+        ? source.keywords.slice(0, 3).map((k: string) => `#${k}`).join(" ")
+        : "";
+    } else if (source.type === "idea") {
+      // Use truncated idea text
+      title = source.idea?.slice(0, 30) || "";
+    }
+  }
+
   if (title && title !== sessionStore.activeSession.metadata.title) {
     metadataUpdates.title = title;
   }
