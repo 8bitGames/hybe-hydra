@@ -7,6 +7,23 @@ import { getStyleSetById, styleSetToRenderSettings } from '@/lib/fast-cut/style-
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
+/**
+ * Remove query string from S3 URL
+ * AWS Batch uses IAM role for S3 access, so pre-signed URL parameters are not needed
+ * and cause issues when parsing the S3 key (query string gets included in key)
+ */
+function cleanS3Url(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    // Remove all query parameters (pre-signed URL params)
+    urlObj.search = '';
+    return urlObj.toString();
+  } catch {
+    // If URL parsing fails, return original
+    return url;
+  }
+}
+
 // AI Effect Selection types
 interface AIEffectSelection {
   transitions?: string[];
@@ -328,16 +345,25 @@ export async function POST(request: NextRequest) {
     console.log(`${LOG_PREFIX} Output S3 key: ${outputKey}`);
 
     // Prepare render request for Modal
+    // Clean S3 URLs to remove pre-signed query parameters (AWS Batch uses IAM role)
+    const cleanedImages = images.map(img => ({
+      url: cleanS3Url(img.url),
+      order: img.order
+    }));
+
     console.log(`${LOG_PREFIX} Preparing Modal render request...`);
+    console.log(`${LOG_PREFIX} Cleaned image URLs (removed query strings):`, {
+      originalFirst: images[0]?.url?.substring(0, 100),
+      cleanedFirst: cleanedImages[0]?.url?.substring(0, 100),
+    });
+
     const modalRequest: ModalRenderRequest = {
       job_id: generationId,
-      images: images.map(img => ({
-        url: img.url,
-        order: img.order
-      })),
+      images: cleanedImages,
       // Audio is optional - only include if provided
+      // Clean audio URL as well (remove pre-signed query params)
       audio: audioAsset ? {
-        url: audioAsset.s3Url,
+        url: cleanS3Url(audioAsset.s3Url),
         start_time: audioStartTime,  // Use analyzed best segment or manual adjustment
         duration: null  // Let backend auto-calculate based on vibe/images
       } : null,
