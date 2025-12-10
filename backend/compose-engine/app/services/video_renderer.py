@@ -278,10 +278,11 @@ class VideoRenderer:
                 await self._update_progress(progress_callback, job_id, 95, "Uploading")
 
                 # Upload and cleanup
+                # Note: S3Client uses bucket from settings (Secrets Manager: hydra-assets-seoul)
                 s3_url = await self.s3.upload_file(
                     output_path,
-                    request.output.s3_bucket,
-                    request.output.s3_key
+                    request.output.s3_key,
+                    content_type="video/mp4"
                 )
                 logger.info(f"[{job_id}] Upload complete: {s3_url}")
                 self._cleanup_clips(video, clips, [])
