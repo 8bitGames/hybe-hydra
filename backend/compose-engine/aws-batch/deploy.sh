@@ -110,6 +110,152 @@ build_and_push() {
 
     log_info "Image pushed: ${ECR_URL}:latest"
     cd aws-batch
+
+    # Force job definitions to use new image
+    log_info "Updating job definitions to use new image..."
+    force_new_image
+}
+
+# Force AWS Batch to use the new image by updating job definitions
+force_new_image() {
+    log_info "Getting new image digest..."
+    IMAGE_DIGEST=$(aws ecr describe-images \
+        --repository-name ${ECR_REPO} \
+        --image-ids imageTag=latest \
+        --region ${AWS_REGION} \
+        --query 'imageDetails[0].imageDigest' \
+        --output text)
+
+    if [ -z "$IMAGE_DIGEST" ] || [ "$IMAGE_DIGEST" = "None" ]; then
+        log_error "Failed to get image digest"
+        return 1
+    fi
+
+    log_info "New image digest: ${IMAGE_DIGEST}"
+
+    ECR_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
+    IMAGE_WITH_DIGEST="${ECR_URL}@${IMAGE_DIGEST}"
+
+    # Update GPU job definition
+    log_info "Registering new GPU job definition..."
+    aws batch register-job-definition \
+        --job-definition-name "${PROJECT_NAME}-compose-gpu-render" \
+        --type container \
+        --platform-capabilities EC2 \
+        --container-properties "{
+            \"image\": \"${IMAGE_WITH_DIGEST}\",
+            \"resourceRequirements\": [
+                {\"type\": \"VCPU\", \"value\": \"4\"},
+                {\"type\": \"MEMORY\", \"value\": \"14000\"},
+                {\"type\": \"GPU\", \"value\": \"1\"}
+            ],
+            \"jobRoleArn\": \"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}-batch-job-role\",
+            \"executionRoleArn\": \"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}-ecs-execution-role\",
+            \"environment\": [
+                {\"name\": \"AWS_REGION\", \"value\": \"${AWS_REGION}\"},
+                {\"name\": \"AWS_S3_BUCKET\", \"value\": \"hydra-assets-seoul\"},
+                {\"name\": \"USE_NVENC\", \"value\": \"1\"},
+                {\"name\": \"RENDER_MODE\", \"value\": \"GPU\"},
+                {\"name\": \"DYNAMODB_JOBS_TABLE\", \"value\": \"${PROJECT_NAME}-compose-jobs\"},
+                {\"name\": \"USE_FFMPEG_PIPELINE\", \"value\": \"1\"}
+            ],
+            \"logConfiguration\": {
+                \"logDriver\": \"awslogs\",
+                \"options\": {
+                    \"awslogs-group\": \"/aws/batch/${PROJECT_NAME}-compose-engine\",
+                    \"awslogs-region\": \"${AWS_REGION}\",
+                    \"awslogs-stream-prefix\": \"gpu-render\"
+                }
+            },
+            \"command\": [\"python3\", \"-c\", \"import sys; sys.path.insert(0, '/root'); from batch_worker import process_job; process_job()\"]
+        }" \
+        --retry-strategy "attempts=2,evaluateOnExit=[{onStatusReason=Host EC2*,action=RETRY},{onReason=CannotInspectContainerError*,action=RETRY},{onExitCode=137,action=RETRY}]" \
+        --timeout "attemptDurationSeconds=1800" \
+        --region ${AWS_REGION} > /dev/null
+
+    # Update CPU job definition
+    log_info "Registering new CPU job definition..."
+    aws batch register-job-definition \
+        --job-definition-name "${PROJECT_NAME}-compose-cpu-render" \
+        --type container \
+        --platform-capabilities EC2 \
+        --container-properties "{
+            \"image\": \"${IMAGE_WITH_DIGEST}\",
+            \"resourceRequirements\": [
+                {\"type\": \"VCPU\", \"value\": \"4\"},
+                {\"type\": \"MEMORY\", \"value\": \"8000\"}
+            ],
+            \"jobRoleArn\": \"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}-batch-job-role\",
+            \"executionRoleArn\": \"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}-ecs-execution-role\",
+            \"environment\": [
+                {\"name\": \"AWS_REGION\", \"value\": \"${AWS_REGION}\"},
+                {\"name\": \"AWS_S3_BUCKET\", \"value\": \"hydra-assets-seoul\"},
+                {\"name\": \"USE_NVENC\", \"value\": \"0\"},
+                {\"name\": \"RENDER_MODE\", \"value\": \"CPU\"},
+                {\"name\": \"DYNAMODB_JOBS_TABLE\", \"value\": \"${PROJECT_NAME}-compose-jobs\"},
+                {\"name\": \"USE_FFMPEG_PIPELINE\", \"value\": \"1\"}
+            ],
+            \"logConfiguration\": {
+                \"logDriver\": \"awslogs\",
+                \"options\": {
+                    \"awslogs-group\": \"/aws/batch/${PROJECT_NAME}-compose-engine\",
+                    \"awslogs-region\": \"${AWS_REGION}\",
+                    \"awslogs-stream-prefix\": \"cpu-render\"
+                }
+            },
+            \"command\": [\"python3\", \"-c\", \"import sys; sys.path.insert(0, '/root'); from batch_worker import process_job; process_job()\"]
+        }" \
+        --retry-strategy "attempts=2,evaluateOnExit=[{onStatusReason=Host EC2*,action=RETRY},{onExitCode=137,action=RETRY}]" \
+        --timeout "attemptDurationSeconds=1800" \
+        --region ${AWS_REGION} > /dev/null
+
+    # Terminate running instances to force fresh pull
+    log_info "Terminating GPU spot instances to force fresh image pull..."
+    INSTANCE_IDS=$(aws ec2 describe-instances \
+        --filters "Name=tag:Name,Values=${PROJECT_NAME}-gpu-spot-instance" "Name=instance-state-name,Values=running" \
+        --region ${AWS_REGION} \
+        --query 'Reservations[].Instances[].InstanceId' \
+        --output text)
+
+    if [ -n "$INSTANCE_IDS" ] && [ "$INSTANCE_IDS" != "None" ]; then
+        aws ec2 terminate-instances --instance-ids $INSTANCE_IDS --region ${AWS_REGION} > /dev/null
+        log_info "Terminated instances: $INSTANCE_IDS"
+    else
+        log_info "No running GPU spot instances to terminate"
+    fi
+
+    # Deregister old job definition revisions
+    log_info "Deregistering old job definition revisions..."
+
+    # GPU render - keep only the latest
+    OLD_GPU_REVISIONS=$(aws batch describe-job-definitions \
+        --job-definition-name "${PROJECT_NAME}-compose-gpu-render" \
+        --status ACTIVE \
+        --region ${AWS_REGION} \
+        --query 'jobDefinitions[?revision!=`'$(aws batch describe-job-definitions --job-definition-name "${PROJECT_NAME}-compose-gpu-render" --status ACTIVE --region ${AWS_REGION} --query 'max(jobDefinitions[].revision)' --output text)'`].jobDefinitionArn' \
+        --output text)
+
+    for arn in $OLD_GPU_REVISIONS; do
+        if [ -n "$arn" ] && [ "$arn" != "None" ]; then
+            aws batch deregister-job-definition --job-definition "$arn" --region ${AWS_REGION} 2>/dev/null || true
+        fi
+    done
+
+    # CPU render - keep only the latest
+    OLD_CPU_REVISIONS=$(aws batch describe-job-definitions \
+        --job-definition-name "${PROJECT_NAME}-compose-cpu-render" \
+        --status ACTIVE \
+        --region ${AWS_REGION} \
+        --query 'jobDefinitions[?revision!=`'$(aws batch describe-job-definitions --job-definition-name "${PROJECT_NAME}-compose-cpu-render" --status ACTIVE --region ${AWS_REGION} --query 'max(jobDefinitions[].revision)' --output text)'`].jobDefinitionArn' \
+        --output text)
+
+    for arn in $OLD_CPU_REVISIONS; do
+        if [ -n "$arn" ] && [ "$arn" != "None" ]; then
+            aws batch deregister-job-definition --job-definition "$arn" --region ${AWS_REGION} 2>/dev/null || true
+        fi
+    done
+
+    log_info "Job definitions updated with digest: ${IMAGE_DIGEST}"
 }
 
 # Full deployment
@@ -310,18 +456,23 @@ case "$1" in
         check_prerequisites
         test_ai_job "image_generation"
         ;;
+    force-image)
+        check_prerequisites
+        force_new_image
+        ;;
     *)
-        echo "Usage: $0 {init|plan|apply|build|all|destroy|outputs|test|test-ai|test-ai-video|test-ai-image}"
+        echo "Usage: $0 {init|plan|apply|build|all|destroy|outputs|test|test-ai|test-ai-video|test-ai-image|force-image}"
         echo ""
         echo "Commands:"
         echo "  init           - Initialize Terraform"
         echo "  plan           - Preview infrastructure changes"
         echo "  apply          - Deploy infrastructure"
-        echo "  build          - Build and push Docker image"
+        echo "  build          - Build and push Docker image (+ force new image)"
         echo "  all            - Full deployment (init + plan + apply + build)"
         echo "  destroy        - Tear down all infrastructure"
         echo "  outputs        - Show Terraform outputs"
         echo "  test           - Submit a test render job"
+        echo "  force-image    - Force job definitions to use latest image"
         echo ""
         echo "AI Generation (Vertex AI):"
         echo "  test-ai        - Submit a test AI job (default: video)"

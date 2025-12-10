@@ -1,7 +1,18 @@
-"""Main video rendering service using MoviePy - Optimized for GPU and parallel processing."""
+"""Main video rendering service using MoviePy - Optimized for GPU and parallel processing.
+
+This module provides the VideoRenderer class which can use either:
+1. MoviePy-based rendering (default, legacy)
+2. Pure FFmpeg rendering (faster, enabled via USE_FFMPEG_PIPELINE=1)
+
+To enable the new FFmpeg pipeline, set environment variable:
+    export USE_FFMPEG_PIPELINE=1
+"""
 
 import os
 import platform
+
+# Feature flag for FFmpeg pipeline
+USE_FFMPEG_PIPELINE = os.environ.get("USE_FFMPEG_PIPELINE", "0") == "1"
 
 # CRITICAL: Set FFmpeg path BEFORE importing moviepy/imageio
 # This tells imageio_ffmpeg to use our compiled FFmpeg with NVENC support
@@ -75,9 +86,34 @@ def get_cpu_executor() -> ThreadPoolExecutor:
 
 
 class VideoRenderer:
-    """Main service for rendering composed videos - Optimized for GPU and parallel processing."""
+    """Main service for rendering composed videos - Optimized for GPU and parallel processing.
 
-    def __init__(self):
+    Can use either MoviePy (legacy) or pure FFmpeg (faster) based on the
+    USE_FFMPEG_PIPELINE environment variable.
+    """
+
+    def __init__(self, use_ffmpeg_pipeline: Optional[bool] = None):
+        """Initialize VideoRenderer.
+
+        Args:
+            use_ffmpeg_pipeline: If True, use new FFmpeg pipeline.
+                If None, check USE_FFMPEG_PIPELINE env var.
+                Default is False (MoviePy legacy mode).
+        """
+        self._use_ffmpeg = use_ffmpeg_pipeline
+        if self._use_ffmpeg is None:
+            self._use_ffmpeg = USE_FFMPEG_PIPELINE
+
+        if self._use_ffmpeg:
+            # Use pure FFmpeg renderer
+            from ..renderers.ffmpeg_renderer import FFmpegRenderer
+            self._ffmpeg_renderer = FFmpegRenderer()
+            logger.info("[VideoRenderer] Using FFmpeg pipeline (USE_FFMPEG_PIPELINE=1)")
+        else:
+            # Legacy MoviePy mode
+            self._ffmpeg_renderer = None
+            logger.info("[VideoRenderer] Using MoviePy pipeline (legacy)")
+
         self.s3 = S3Client()
         self.audio_analyzer = AudioAnalyzer()
         self.beat_sync = BeatSyncEngine()
@@ -94,7 +130,15 @@ class VideoRenderer:
         """
         Optimized rendering pipeline with parallel processing.
         Returns S3 URL of rendered video.
+
+        If USE_FFMPEG_PIPELINE=1, delegates to FFmpegRenderer for ~3x faster rendering.
         """
+        # Use FFmpeg pipeline if enabled
+        if self._use_ffmpeg and self._ffmpeg_renderer:
+            logger.info(f"[{request.job_id}] Delegating to FFmpeg pipeline")
+            return await self._ffmpeg_renderer.render(request, progress_callback)
+
+        # Legacy MoviePy pipeline below
         job_id = request.job_id
         job_dir = self.temp.get_job_dir(job_id)
 

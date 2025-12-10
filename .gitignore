@@ -109,3 +109,6 @@ lambda_submitter.zip
 # Google Cloud credentials
 google-vision-credentials.json
 *-credentials.json
+
+# GCP backend (local development only)
+backend/gcp/

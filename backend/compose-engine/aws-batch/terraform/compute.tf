@@ -25,9 +25,9 @@ resource "aws_batch_compute_environment" "gpu_spot" {
     # Keep 1 instance warm to avoid cold starts (4 vCPU = 1x g4dn.xlarge)
     # Cost: ~$0.16/hr Spot (~$115/month if 24/7)
     # Set to 0 for pure serverless (cold starts but cheaper)
-    min_vcpus     = 4
+    min_vcpus     = 0
     max_vcpus     = var.gpu_max_vcpus
-    desired_vcpus = 4
+    desired_vcpus = 0
 
     instance_type = var.gpu_instance_types
 
@@ -187,7 +187,8 @@ resource "aws_batch_job_definition" "gpu_render" {
       { name = "AWS_S3_BUCKET", value = var.s3_bucket },
       { name = "USE_NVENC", value = "1" },
       { name = "RENDER_MODE", value = "GPU" },
-      { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name }
+      { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name },
+      { name = "USE_FFMPEG_PIPELINE", value = "1" }
     ]
 
     logConfiguration = {
@@ -254,7 +255,8 @@ resource "aws_batch_job_definition" "cpu_render" {
       { name = "AWS_S3_BUCKET", value = var.s3_bucket },
       { name = "USE_NVENC", value = "0" },  # Use libx264 instead
       { name = "RENDER_MODE", value = "CPU" },
-      { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name }
+      { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name },
+      { name = "USE_FFMPEG_PIPELINE", value = "1" }
     ]
 
     logConfiguration = {
