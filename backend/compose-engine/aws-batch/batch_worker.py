@@ -24,7 +24,7 @@ from app.services.video_renderer import VideoRenderer
 
 def load_secrets_from_aws():
     """Load secrets from AWS Secrets Manager and set as environment variables."""
-    region = os.environ.get("AWS_REGION", "ap-southeast-2")
+    region = os.environ.get("AWS_REGION", "ap-northeast-2")
     secret_name = os.environ.get("SECRETS_NAME", "hydra/compose-engine")
 
     print(f"Loading secrets from AWS Secrets Manager: {secret_name}")
@@ -91,7 +91,7 @@ def send_callback(callback_url: str, job_id: str, status: str, output_url: str =
 def update_dynamodb_status(job_id: str, status: str, output_url: str = None, error: str = None):
     """Update job status in DynamoDB (optional - for status polling)."""
     try:
-        dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "ap-southeast-2"))
+        dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
         table = dynamodb.Table("hydra-compose-jobs")
 
         item = {
@@ -167,9 +167,78 @@ async def render_video(request_data: dict) -> dict:
         }
 
 
+def diagnose_gpu():
+    """Run GPU diagnostics at startup."""
+    import subprocess
+
+    print("=== GPU Diagnostics ===")
+
+    # Check nvidia-smi
+    try:
+        result = subprocess.run(
+            ["nvidia-smi"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            print(result.stdout)
+        else:
+            print(f"nvidia-smi failed: {result.stderr}")
+    except FileNotFoundError:
+        print("nvidia-smi not found - no NVIDIA driver installed")
+    except Exception as e:
+        print(f"nvidia-smi error: {e}")
+
+    # Check for NVENC libraries
+    print("\n=== NVENC Library Check ===")
+    try:
+        result = subprocess.run(
+            ["find", "/usr", "-name", "libnvidia-encode*", "-type", "f"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.stdout.strip():
+            print(f"Found libnvidia-encode: {result.stdout.strip()}")
+        else:
+            print("libnvidia-encode.so NOT FOUND in /usr")
+
+        # Also check /opt/nvidia
+        result2 = subprocess.run(
+            ["find", "/opt", "-name", "libnvidia-encode*", "-type", "f"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result2.stdout.strip():
+            print(f"Found in /opt: {result2.stdout.strip()}")
+    except Exception as e:
+        print(f"Library search error: {e}")
+
+    # Check LD_LIBRARY_PATH
+    print(f"\nLD_LIBRARY_PATH: {os.environ.get('LD_LIBRARY_PATH', 'not set')}")
+
+    # Test FFmpeg NVENC capability
+    # Note: NVENC requires minimum 128x128 frame size, using 256x256 to be safe
+    print("\n=== FFmpeg NVENC Test ===")
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-f", "lavfi", "-i", "color=black:s=256x256:d=0.1",
+             "-c:v", "h264_nvenc", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode == 0:
+            print("FFmpeg NVENC test: SUCCESS")
+        else:
+            print(f"FFmpeg NVENC test: FAILED")
+            print(f"stderr: {result.stderr}")
+    except Exception as e:
+        print(f"FFmpeg test error: {e}")
+
+    print("=== End GPU Diagnostics ===\n")
+
+
 def process_job():
     """Entry point for AWS Batch job."""
     print("=== AWS Batch Worker Starting ===")
+
+    # Run GPU diagnostics first
+    diagnose_gpu()
 
     # Load secrets from AWS Secrets Manager
     load_secrets_from_aws()
