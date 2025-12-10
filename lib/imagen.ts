@@ -1,11 +1,15 @@
 /**
- * Google Gemini Image Generation Service
+ * Image Generation Service
  *
- * Generates images using Google's Gemini model for use in I2V video generation.
- * Uses the models/gemini-3-pro-image-preview model for image generation.
+ * Generates images for I2V video generation.
+ * Priority: Vertex AI Imagen 3 > Google AI Gemini API
+ *
+ * - Production: Uses Vertex AI with Imagen 3 (imagen-3.0-generate-002)
+ * - Fallback: Uses Google AI API with Gemini (gemini-3-pro-image-preview)
  */
 
 import { GoogleGenAI } from "@google/genai";
+import { isVertexAIAvailable, getVertexAIMediaClient } from "@/lib/models";
 
 // Initialize Google Gen AI client
 const getClient = () => {
@@ -64,20 +68,90 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; m
 }
 
 /**
- * Generate an image using Google Gemini with optional reference image support
+ * Generate an image using Vertex AI Imagen 3 (preferred) or Google Gemini API (fallback)
  * This image will be used as the starting point for I2V video generation
  *
- * When a reference image (product image) is provided, Gemini will incorporate
+ * Priority:
+ * 1. Vertex AI Imagen 3 - Production quality, better results
+ * 2. Google AI Gemini - Fallback when Vertex AI is not configured
+ *
+ * When a reference image (product image) is provided, the model will incorporate
  * that actual product into the generated scene.
  */
 export async function generateImage(
   params: ImageGenerationParams
 ): Promise<ImageGenerationResult> {
   if (isMockMode()) {
-    console.log("[GEMINI-IMAGE] Running in mock mode");
+    console.log("[IMAGE-GEN] Running in mock mode");
     return generateMockImage(params);
   }
 
+  // Check if Vertex AI is available (preferred for production)
+  if (isVertexAIAvailable()) {
+    console.log("[IMAGE-GEN] Using Vertex AI Imagen 3 (production mode)");
+    return generateImageWithVertexAI(params);
+  }
+
+  // Fallback to Google AI Gemini API
+  console.log("[IMAGE-GEN] Vertex AI not available, falling back to Gemini API");
+  return generateImageWithGemini(params);
+}
+
+/**
+ * Generate image using Vertex AI Imagen 3
+ */
+async function generateImageWithVertexAI(
+  params: ImageGenerationParams
+): Promise<ImageGenerationResult> {
+  try {
+    const client = getVertexAIMediaClient();
+
+    console.log(`[VERTEX-IMAGE] Starting image generation with Imagen 3`);
+    console.log(`[VERTEX-IMAGE] Prompt: ${params.prompt.slice(0, 100)}...`);
+
+    // Build prompt with style
+    let fullPrompt = params.prompt;
+    if (params.style) {
+      fullPrompt = `${params.style} style: ${fullPrompt}`;
+    }
+
+    // Add quality modifiers
+    fullPrompt += ". High quality, detailed, sharp focus, professional photography.";
+
+    const result = await client.generateImage({
+      prompt: fullPrompt,
+      negativePrompt: params.negativePrompt,
+      aspectRatio: params.aspectRatio as "1:1" | "3:4" | "4:3" | "9:16" | "16:9" | undefined,
+      numberOfImages: params.numberOfImages || 1,
+    });
+
+    if (result.success && result.imageBase64) {
+      console.log("[VERTEX-IMAGE] Image generated successfully");
+      return {
+        success: true,
+        imageBase64: result.imageBase64,
+        mimeType: "image/png",
+      };
+    }
+
+    // If Vertex AI fails, try Gemini as fallback
+    console.warn(`[VERTEX-IMAGE] Failed: ${result.error}, trying Gemini fallback...`);
+    return generateImageWithGemini(params);
+
+  } catch (error) {
+    console.error("[VERTEX-IMAGE] Error:", error);
+    // Fallback to Gemini on error
+    console.log("[VERTEX-IMAGE] Falling back to Gemini API due to error");
+    return generateImageWithGemini(params);
+  }
+}
+
+/**
+ * Generate image using Google AI Gemini API (fallback)
+ */
+async function generateImageWithGemini(
+  params: ImageGenerationParams
+): Promise<ImageGenerationResult> {
   try {
     const ai = getClient();
     const model = "gemini-3-pro-image-preview"; // Gemini 3 Pro image generation model

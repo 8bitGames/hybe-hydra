@@ -13,7 +13,6 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import {
   Sparkles,
   Check,
@@ -22,6 +21,7 @@ import {
   RefreshCw,
   ImagePlus,
   Video,
+  Loader2,
 } from "lucide-react";
 
 // ============================================================================
@@ -187,7 +187,11 @@ function PromptReviewStep({
               disabled={isGeneratingImagePrompt}
               className="ml-auto text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-100 h-7 px-2 disabled:opacity-50"
             >
-              <RefreshCw className={`h-3 w-3 mr-1 ${isGeneratingImagePrompt ? "animate-spin" : ""}`} />
+              {isGeneratingImagePrompt ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3 mr-1" />
+              )}
               {isGeneratingImagePrompt
                 ? (language === "ko" ? "생성 중..." : "Generating...")
                 : imagePrompt
@@ -200,7 +204,7 @@ function PromptReviewStep({
         <div className="flex-1 p-4 bg-blue-50 border border-blue-200 rounded-lg overflow-y-auto min-h-[500px] max-h-[70vh]">
           {isGeneratingImagePrompt ? (
             <div className="flex items-center justify-center gap-3 h-full">
-              <Spinner className="h-5 w-5 text-blue-600" />
+              <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
               <span className="text-sm text-blue-600">
                 {language === "ko" ? "이미지 프롬프트 생성 중..." : "Generating image prompt..."}
               </span>
@@ -259,7 +263,7 @@ function PreviewImageStep({
               : "This may take 30 seconds to 1 minute"}
           </p>
         </div>
-        <Spinner className="h-6 w-6" />
+        <Loader2 className="h-6 w-6 animate-spin" />
       </div>
     );
   }
@@ -650,7 +654,7 @@ export function PersonalizePromptModal({
             >
               {isGeneratingPreview ? (
                 <>
-                  <Spinner className="h-4 w-4 mr-2" />
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   {language === "ko" ? "생성 중..." : "Generating..."}
                 </>
               ) : (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Clock,
   CheckCircle2,
@@ -11,10 +11,8 @@ import {
   X,
   Eye,
   Send,
-  ArrowRight,
-  Settings2,
 } from "lucide-react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +43,8 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
   const { accessToken, isAuthenticated } = useAuthStore();
   const jobs = useJobStore((state) => state.jobs);
   const recentJobs = useJobStore((state) => state.recentJobs);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const router = useRouter();
 
   // Compute derived values with useMemo to avoid infinite loops
   const activeJobs = useMemo(
@@ -94,33 +94,53 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
   const hasActiveJobs = activeJobs.length > 0;
   const totalActive = counts.processing + counts.queued;
 
+  // Cancel all active jobs
+  const handleCancelAll = async () => {
+    if (!accessToken || isCancelling) return;
+
+    setIsCancelling(true);
+    try {
+      const response = await fetch("/api/v1/jobs/cancel-all", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      if (response.ok) {
+        // Clear jobs from store immediately
+        useJobStore.getState().setJobs([]);
+      }
+    } catch {
+      // Silent fail
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
+  // Navigate to specific job's processing page
+  const handleNavigateToJob = (job: Job) => {
+    if (job.generationId) {
+      // Build URL with sessionId (generationId) for processing page
+      const params = new URLSearchParams();
+      params.set("sessionId", job.generationId);
+      if (job.campaignId) {
+        params.set("campaignId", job.campaignId);
+      }
+      if (job.campaignName) {
+        params.set("campaignName", job.campaignName);
+      }
+      router.push(`/processing?${params.toString()}`);
+      toggleJobTracker(); // Close the dropdown after navigation
+    }
+  };
+
   return (
     <div className={cn("relative flex items-center gap-1", className)}>
-      {/* Quick link to processing when there are active jobs */}
-      {hasActiveJobs && (
-        <Link href="/processing">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-            title={language === "ko" ? "프로세싱 페이지로 이동" : "Go to Processing Page"}
-          >
-            <Settings2 className="h-4 w-4" />
-            <span className="hidden sm:inline text-xs">
-              {language === "ko" ? "프로세싱" : "Processing"}
-            </span>
-          </Button>
-        </Link>
-      )}
-
-      {/* Trigger button */}
+      {/* Trigger button - opens dropdown to show job list */}
       <Button
         variant={hasActiveJobs ? "default" : "ghost"}
         size="sm"
-        className={cn(
-          "gap-2 relative",
-          hasActiveJobs && "animate-pulse"
-        )}
+        className={cn("gap-2 relative", hasActiveJobs && "animate-pulse")}
         onClick={toggleJobTracker}
       >
         {hasActiveJobs ? (
@@ -154,14 +174,28 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
             <h3 className="font-semibold text-sm">
               {language === "ko" ? "작업 상태" : "Task Status"}
             </h3>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={toggleJobTracker}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              {hasActiveJobs && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={handleCancelAll}
+                  disabled={isCancelling}
+                >
+                  <XCircle className="h-3 w-3 mr-1" />
+                  {language === "ko" ? "모두 취소" : "Cancel All"}
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={toggleJobTracker}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Job list */}
@@ -170,7 +204,12 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
               {/* Active jobs */}
               {activeJobs.length > 0 ? (
                 activeJobs.map((job) => (
-                  <JobItem key={job.id} job={job} language={language} />
+                  <JobItem
+                    key={job.id}
+                    job={job}
+                    language={language}
+                    onNavigate={() => handleNavigateToJob(job)}
+                  />
                 ))
               ) : (
                 <div className="text-center py-6 text-muted-foreground text-sm">
@@ -201,26 +240,8 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
             </div>
           </ScrollArea>
 
-          {/* Footer with counts and processing link */}
+          {/* Footer with counts */}
           <div className="border-t bg-muted/50">
-            {/* Processing page shortcut */}
-            <Link href="/processing" onClick={toggleJobTracker}>
-              <div className="px-4 py-3 flex items-center justify-between hover:bg-accent/50 transition-colors cursor-pointer border-b">
-                <div className="flex items-center gap-2">
-                  <Settings2 className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">
-                    {language === "ko" ? "프로세싱 페이지" : "Processing Page"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 text-muted-foreground">
-                  <span className="text-xs">
-                    {language === "ko" ? "영상 확인하기" : "View Videos"}
-                  </span>
-                  <ArrowRight className="h-3 w-3" />
-                </div>
-              </div>
-            </Link>
-
             {/* Counts */}
             <div className="px-4 py-2 text-xs text-muted-foreground flex justify-between">
               <span>
@@ -244,12 +265,15 @@ interface JobItemProps {
   job: Job;
   language: "ko" | "en";
   compact?: boolean;
+  onNavigate?: () => void;
 }
 
-function JobItem({ job, language, compact }: JobItemProps) {
+function JobItem({ job, language, compact, onNavigate }: JobItemProps) {
   const statusIcon = getStatusIcon(job.status);
   const statusColor = getStatusColor(job.status);
   const typeLabel = JOB_TYPE_LABELS[job.type];
+
+  const isActive = job.status === "QUEUED" || job.status === "PROCESSING";
 
   if (compact) {
     return (
@@ -270,7 +294,13 @@ function JobItem({ job, language, compact }: JobItemProps) {
   }
 
   return (
-    <div className="px-3 py-3 rounded-lg bg-accent/30 space-y-2">
+    <div
+      className={cn(
+        "px-3 py-3 rounded-lg bg-accent/30 space-y-2",
+        isActive && onNavigate && "cursor-pointer hover:bg-accent/50 transition-colors"
+      )}
+      onClick={isActive && onNavigate ? onNavigate : undefined}
+    >
       {/* Header row */}
       <div className="flex items-start gap-3">
         <span className={cn("mt-0.5", statusColor)}>{statusIcon}</span>

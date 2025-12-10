@@ -196,12 +196,6 @@ function SessionCard({
                     {language === "ko" ? status.labelKo : status.label}
                   </span>
                 </Badge>
-                {contentType && (
-                  <span className="text-[10px] text-neutral-500 flex items-center gap-1">
-                    {contentType.icon}
-                    {language === "ko" ? contentType.labelKo : contentType.label}
-                  </span>
-                )}
                 {entrySource && (
                   <span className="text-[10px] text-neutral-400 flex items-center gap-1">
                     {entrySource.icon}

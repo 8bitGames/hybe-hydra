@@ -1142,7 +1142,11 @@ function InlinePromptPersonalizer({
                   disabled={isGeneratingImagePrompt || isGeneratingPreview}
                   className="ml-auto text-[10px] text-blue-600 hover:text-blue-700 h-5 px-2 disabled:opacity-50"
                 >
-                  <RefreshCw className={`h-2.5 w-2.5 mr-1 ${isGeneratingImagePrompt ? "animate-spin" : ""}`} />
+                  {isGeneratingImagePrompt ? (
+                    <Loader2 className="h-2.5 w-2.5 mr-1 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-2.5 w-2.5 mr-1" />
+                  )}
                   {isGeneratingImagePrompt
                     ? (language === "ko" ? "생성 중..." : "Generating...")
                     : imagePrompt
@@ -1155,7 +1159,7 @@ function InlinePromptPersonalizer({
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg h-[140px] overflow-y-auto">
               {isGeneratingImagePrompt ? (
                 <div className="flex items-center justify-center gap-2 h-full">
-                  <Spinner className="h-4 w-4 text-blue-600" />
+                  <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
                   <span className="text-xs text-blue-600">
                     {language === "ko" ? "생성 중..." : "Generating..."}
                   </span>
