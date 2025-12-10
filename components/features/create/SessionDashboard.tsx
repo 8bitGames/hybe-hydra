@@ -128,9 +128,9 @@ function SessionCard({
       labelKo: "Fast Cut",
       icon: <Sparkles className="h-3 w-3" />,
     },
-    "ai-video": {
+    "ai_video": {
       label: "AI Video",
-      labelKo: "AI Video",
+      labelKo: "AI 영상",
       icon: <Video className="h-3 w-3" />,
     },
   };
@@ -196,6 +196,12 @@ function SessionCard({
                     {language === "ko" ? status.labelKo : status.label}
                   </span>
                 </Badge>
+                {contentType && (
+                  <span className="text-[10px] text-neutral-500 flex items-center gap-1">
+                    {contentType.icon}
+                    {language === "ko" ? contentType.labelKo : contentType.label}
+                  </span>
+                )}
                 {entrySource && (
                   <span className="text-[10px] text-neutral-400 flex items-center gap-1">
                     {entrySource.icon}

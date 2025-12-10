@@ -122,7 +122,8 @@ export function generateS3Key(campaignId: string, filename: string): string {
 export async function uploadToS3(
   buffer: Buffer,
   key: string,
-  mimeType: string
+  mimeType: string,
+  options?: { returnPresignedUrl?: boolean; presignedUrlExpiry?: number }
 ): Promise<string> {
   const bucketName = getBucketName();
   const command = new PutObjectCommand({
@@ -145,8 +146,10 @@ export async function uploadToS3(
     throw error;
   }
 
-  // Return public URL (AWS S3 format)
-  return getPublicUrl(key);
+  // Return presigned URL by default (bucket blocks public access)
+  // Presigned URL is valid for 7 days (604800 seconds) by default
+  const expiry = options?.presignedUrlExpiry ?? 604800;
+  return getPresignedUrl(key, expiry);
 }
 
 export async function deleteFromS3(key: string): Promise<void> {

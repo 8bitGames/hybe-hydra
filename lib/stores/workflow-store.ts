@@ -1312,9 +1312,28 @@ export const useWorkflowStore = create<WorkflowState>()(
           publish: state.publish, // Persist publish state (caption, hashtags, etc.)
           stashedPrompts: state.stashedPrompts,
         }),
+        // Merge persisted state with initial state to preserve new fields (like imagePrompt)
+        merge: (persistedState, currentState) => {
+          const persisted = persistedState as Partial<WorkflowState>;
+          return {
+            ...currentState,
+            ...persisted,
+            // Deep merge analyze to preserve new fields not in localStorage
+            analyze: {
+              ...currentState.analyze,
+              ...persisted.analyze,
+            },
+            // Deep merge start to preserve new fields
+            start: {
+              ...currentState.start,
+              ...persisted.start,
+            },
+          };
+        },
         onRehydrateStorage: () => (state) => {
           if (state) {
             console.log("[WorkflowStore] Rehydrated from localStorage");
+            console.log("[WorkflowStore] imagePrompt:", state.analyze?.imagePrompt);
           }
         },
       }

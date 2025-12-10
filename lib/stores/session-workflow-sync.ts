@@ -199,6 +199,29 @@ export function syncWorkflowToSession(): void {
     void sessionStore.proceedToStage(workflowCurrentStage);
   }
 
+  // CRITICAL: Sync metadata (title, contentType) from workflow to session
+  // This ensures session cards display correct info in SessionDashboard
+  const metadataUpdates: { title?: string; contentType?: "ai_video" | "fast-cut" | null } = {};
+
+  // Sync contentType from start stage
+  if (workflowState.start.contentType) {
+    metadataUpdates.contentType = workflowState.start.contentType;
+  }
+
+  // Sync title from analyze stage (campaign name or selected idea title)
+  const title = workflowState.analyze.campaignName ||
+    workflowState.analyze.selectedIdea?.title ||
+    "";
+  if (title && title !== sessionStore.activeSession.metadata.title) {
+    metadataUpdates.title = title;
+  }
+
+  // Apply metadata updates if any
+  if (Object.keys(metadataUpdates).length > 0) {
+    sessionStore.updateMetadata(metadataUpdates);
+    console.log("[SyncWorkflowToSession] Synced metadata:", metadataUpdates);
+  }
+
   // CRITICAL FIX: Sync ALL stage data that has content, not just current stage
   // This ensures data is preserved when navigating between stages
   // (e.g., start data must persist when moving to analyze stage)

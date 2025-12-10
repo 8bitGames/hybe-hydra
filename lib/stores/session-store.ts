@@ -604,6 +604,11 @@ export const useSessionStore = create<SessionStore>()(
         initialStageData.start = options.initialStartData as StartData;
       }
 
+      // Determine initial contentType from initialStartData or default based on entrySource
+      // AI Video workflow is the default for video and trends entries
+      const initialContentType = options?.initialStartData?.contentType ||
+        (options?.entrySource ? "ai_video" : null);
+
       const newSession: CreationSession = {
         id: sessionId,
         userId,
@@ -615,6 +620,7 @@ export const useSessionStore = create<SessionStore>()(
         metadata: {
           ...createInitialMetadata(),
           entrySource: options?.entrySource || null,
+          contentType: initialContentType,
         },
         createdAt: now,
         updatedAt: now,

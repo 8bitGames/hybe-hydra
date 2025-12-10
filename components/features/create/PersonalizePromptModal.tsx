@@ -177,7 +177,25 @@ function PromptReviewStep({
           <h4 className="text-sm font-semibold text-neutral-900">
             {language === "ko" ? "이미지 프롬프트" : "Image Prompt"}
           </h4>
-          <span className="text-xs text-blue-600 ml-auto px-2 py-0.5 bg-blue-100 rounded">AI Generated</span>
+          <span className="text-xs text-blue-600 px-2 py-0.5 bg-blue-100 rounded">AI</span>
+          {/* Generate/Regenerate button in header */}
+          {videoPrompt && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onGenerateImagePrompt}
+              disabled={isGeneratingImagePrompt}
+              className="ml-auto text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-100 h-7 px-2 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3 w-3 mr-1 ${isGeneratingImagePrompt ? "animate-spin" : ""}`} />
+              {isGeneratingImagePrompt
+                ? (language === "ko" ? "생성 중..." : "Generating...")
+                : imagePrompt
+                  ? (language === "ko" ? "다시 생성" : "Regenerate")
+                  : (language === "ko" ? "생성" : "Generate")
+              }
+            </Button>
+          )}
         </div>
         <div className="flex-1 p-4 bg-blue-50 border border-blue-200 rounded-lg overflow-y-auto min-h-[500px] max-h-[70vh]">
           {isGeneratingImagePrompt ? (
@@ -188,36 +206,15 @@ function PromptReviewStep({
               </span>
             </div>
           ) : imagePrompt ? (
-            <div className="flex flex-col h-full">
-              <p className="text-sm text-blue-800 whitespace-pre-wrap leading-relaxed flex-1">
-                {imagePrompt}
-              </p>
-              <div className="mt-3 pt-3 border-t border-blue-200">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onGenerateImagePrompt}
-                  className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-100 h-7 px-2"
-                >
-                  <RefreshCw className="h-3 w-3 mr-1" />
-                  {language === "ko" ? "다시 생성" : "Regenerate"}
-                </Button>
-              </div>
-            </div>
-          ) : videoPrompt ? (
-            <div className="flex items-center justify-center h-full">
-              <Button
-                onClick={onGenerateImagePrompt}
-                variant="outline"
-                className="border-blue-300 text-blue-600 hover:bg-blue-100"
-              >
-                <Wand2 className="h-4 w-4 mr-2" />
-                {language === "ko" ? "이미지 프롬프트 생성" : "Generate Image Prompt"}
-              </Button>
-            </div>
+            <p className="text-sm text-blue-800 whitespace-pre-wrap leading-relaxed">
+              {imagePrompt}
+            </p>
           ) : (
-            <div className="flex items-center justify-center h-full text-blue-500 text-sm">
-              {language === "ko" ? "먼저 영상 프롬프트가 필요합니다" : "Video prompt required first"}
+            <div className="flex items-center justify-center h-full text-blue-400 text-sm">
+              {videoPrompt
+                ? (language === "ko" ? "상단의 '생성' 버튼을 클릭하세요" : "Click 'Generate' above")
+                : (language === "ko" ? "먼저 영상 프롬프트가 필요합니다" : "Video prompt required first")
+              }
             </div>
           )}
         </div>
