@@ -104,16 +104,17 @@ model Label {
 
 // Artist model
 model Artist {
-  id                 String   @id @default(uuid())
+  id                 String    @id @default(uuid())
   name               String
-  stageName          String?  @map("stage_name")
-  groupName          String?  @map("group_name")
-  labelId            String   @map("label_id")
-  profileDescription String?  @map("profile_description")
-  brandGuidelines    String?  @map("brand_guidelines")
-  profileImageUrl    String?  @map("profile_image_url")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  stageName          String?   @map("stage_name")
+  groupName          String?   @map("group_name")
+  labelId            String    @map("label_id")
+  profileDescription String?   @map("profile_description")
+  brandGuidelines    String?   @map("brand_guidelines")
+  profileImageUrl    String?   @map("profile_image_url")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  deletedAt          DateTime? @map("deleted_at")
 
   // Relations
   label       Label             @relation(fields: [labelId], references: [id])
@@ -878,4 +879,45 @@ model CachedImage {
   @@index([contentHash])
   @@index([lastUsedAt])
   @@map("cached_images")
+}
+
+// =====================================================
+// PROMPT REFINEMENT CHAT SESSIONS
+// =====================================================
+
+// Prompt Refine Session - stores chat sessions for iterative prompt improvement
+model PromptRefineSession {
+  id        String   @id @default(uuid())
+  agentId   String   @map("agent_id") // Which agent prompt is being refined
+  title     String?  // Auto-generated or user-defined title
+
+  // Chat messages stored as JSON array
+  // [{role: "user"|"assistant", content: string, timestamp: ISO8601, improvedPrompts?: {...}}]
+  messages  Json     @default("[]")
+
+  // Snapshot of prompt at session start (for comparison)
+  initialPrompt Json @map("initial_prompt") // {systemPrompt, templates}
+
+  // Applied improvements tracking
+  appliedImprovements Json? @map("applied_improvements") // [{timestamp, systemPrompt?, templates?}]
+  improvementsCount   Int   @default(0) @map("improvements_count")
+
+  // Session metadata
+  messageCount Int      @default(0) @map("message_count")
+  lastMessageAt DateTime? @map("last_message_at")
+
+  // Organization
+  isFavorite Boolean @default(false) @map("is_favorite")
+  tags       String[] @default([])
+
+  // Metadata
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([agentId])
+  @@index([createdBy])
+  @@index([isFavorite])
+  @@index([createdAt])
+  @@map("prompt_refine_sessions")
 }

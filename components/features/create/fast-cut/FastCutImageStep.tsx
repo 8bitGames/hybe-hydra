@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -17,18 +16,29 @@ import {
   Check,
   X,
   Globe,
-  Sparkles,
   AlertCircle,
-  ChevronRight,
   HelpCircle,
 } from "lucide-react";
 import { ImageCandidate } from "@/lib/fast-cut-api";
-
-type ImageSourceMode = "search_only" | "mixed";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  horizontalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface FastCutImageStepProps {
-  imageSourceMode: ImageSourceMode;
-  setImageSourceMode: (mode: ImageSourceMode) => void;
   imageCandidates: ImageCandidate[];
   selectedImages: ImageCandidate[];
   searchingImages: boolean;
@@ -36,13 +46,79 @@ interface FastCutImageStepProps {
   selectedSearchKeywords: Set<string>;
   setSelectedSearchKeywords: (keywords: Set<string>) => void;
   onToggleSelection: (image: ImageCandidate) => void;
+  onReorderImages: (newImages: ImageCandidate[]) => void;
   onSearchImages: () => void;
   onNext?: () => void;
 }
 
+// Sortable Image Item Component
+function SortableImageItem({
+  image,
+  index,
+  onRemove,
+}: {
+  image: ImageCandidate;
+  index: number;
+  onRemove: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: image.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={cn(
+        "relative flex-shrink-0 w-32 cursor-grab active:cursor-grabbing touch-none",
+        isDragging && "z-50 opacity-80"
+      )}
+    >
+      <div
+        className={cn(
+          "relative aspect-[3/4] rounded-lg overflow-hidden border-2 transition-colors",
+          isDragging ? "border-neutral-900 shadow-lg" : "border-neutral-200"
+        )}
+      >
+        <img
+          src={image.thumbnailUrl || image.sourceUrl}
+          alt=""
+          className="w-full h-full object-cover pointer-events-none"
+          draggable={false}
+        />
+        {/* Order Number */}
+        <div className="absolute top-1.5 left-1.5 w-6 h-6 bg-neutral-900 text-white rounded-full flex items-center justify-center text-sm font-bold pointer-events-none">
+          {index + 1}
+        </div>
+        {/* Remove Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute top-1.5 right-1.5 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 z-10"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function FastCutImageStep({
-  imageSourceMode,
-  setImageSourceMode,
   imageCandidates,
   selectedImages,
   searchingImages,
@@ -50,10 +126,34 @@ export function FastCutImageStep({
   selectedSearchKeywords,
   setSelectedSearchKeywords,
   onToggleSelection,
+  onReorderImages,
   onSearchImages,
   onNext,
 }: FastCutImageStepProps) {
   const { language, translate } = useI18n();
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Handle drag end
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = selectedImages.findIndex((img) => img.id === active.id);
+      const newIndex = selectedImages.findIndex((img) => img.id === over.id);
+      const newImages = arrayMove(selectedImages, oldIndex, newIndex);
+      onReorderImages(newImages);
+    }
+  };
 
   // Helper for tooltip icon
   const TooltipIcon = ({ tooltipKey }: { tooltipKey: string }) => (
@@ -132,6 +232,16 @@ export function FastCutImageStep({
               </Badge>
             )}
 
+            {/* Image Dimensions */}
+            {(image.width > 0 && image.height > 0) && (
+              <Badge
+                variant="outline"
+                className="absolute top-7 left-1.5 text-[9px] bg-black/60 text-white border-none"
+              >
+                {image.width}×{image.height}
+              </Badge>
+            )}
+
             {/* Source Domain */}
             {showSource && image.sourceDomain && (
               <div className="absolute bottom-0 inset-x-0 p-1.5 bg-gradient-to-t from-black/70 to-transparent">
@@ -160,28 +270,15 @@ export function FastCutImageStep({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-neutral-900 mb-1">
-            {language === "ko" ? "이미지 선택" : "Image Selection"}
-          </h2>
-          <p className="text-sm text-neutral-500">
-            {language === "ko"
-              ? "영상에 사용할 이미지를 3~10장 선택하세요"
-              : "Select 3-10 images for your video"}
-          </p>
-        </div>
-
-        {/* Next Step Button - Prominent position */}
-        {selectedImages.length >= 3 && onNext && (
-          <Button
-            onClick={onNext}
-            className="bg-neutral-900 text-white hover:bg-neutral-800"
-          >
-            {language === "ko" ? "음악 선택" : "Select Music"}
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        )}
+      <div>
+        <h2 className="text-xl font-semibold text-neutral-900 mb-1">
+          {language === "ko" ? "이미지 선택" : "Image Selection"}
+        </h2>
+        <p className="text-sm text-neutral-500">
+          {language === "ko"
+            ? "영상에 사용할 이미지를 3~10장 선택하세요"
+            : "Select 3-10 images for your video"}
+        </p>
       </div>
 
       {/* Selection Status */}
@@ -229,129 +326,68 @@ export function FastCutImageStep({
         </div>
       </div>
 
-      {/* Source Mode Tabs */}
-      <Tabs
-        value={imageSourceMode}
-        onValueChange={(v) => setImageSourceMode(v as ImageSourceMode)}
-      >
-        <TabsList className="grid w-full grid-cols-2 bg-neutral-100">
-          <TabsTrigger
-            value="search_only"
-            className="data-[state=active]:bg-white"
-          >
-            <Globe className="h-4 w-4 mr-2" />
-            {language === "ko" ? "웹 검색" : "Web Search"}
-            {imageCandidates.length > 0 && (
-              <span className="ml-1 text-[10px] text-neutral-500">({imageCandidates.length})</span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger
-            value="mixed"
-            className="data-[state=active]:bg-white"
-          >
-            <Sparkles className="h-4 w-4 mr-2" />
-            {language === "ko" ? "혼합" : "Mixed"}
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Web Search */}
-        <TabsContent value="search_only" className="mt-4 space-y-4">
-          {/* Search Keywords Selection */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium text-neutral-700 flex items-center gap-2">
-              <Search className="h-4 w-4" />
-              {language === "ko" ? "검색할 키워드 선택" : "Select Keywords to Search"}
-              <TooltipIcon tooltipKey="fastCut.tooltips.images.searchButton" />
-            </Label>
-            <div className="flex flex-wrap gap-2 p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
-              {editableKeywords.map((keyword) => (
-                <Badge
-                  key={keyword}
-                  variant={selectedSearchKeywords.has(keyword) ? "default" : "outline"}
-                  className={cn(
-                    "cursor-pointer transition-all px-3 py-1",
-                    selectedSearchKeywords.has(keyword)
-                      ? "bg-neutral-900 text-white hover:bg-neutral-800"
-                      : "border-neutral-300 text-neutral-600 hover:border-neutral-400"
-                  )}
-                  onClick={() => toggleKeywordSelection(keyword)}
-                >
-                  {keyword}
-                </Badge>
-              ))}
-            </div>
-            <Button
-              onClick={onSearchImages}
-              disabled={searchingImages || selectedSearchKeywords.size === 0}
-              className="w-full"
-              variant="outline"
-            >
-              {searchingImages ? (
-                <>
-                  <Search className="h-4 w-4 mr-2 animate-spin" />
-                  {language === "ko" ? "검색 중..." : "Searching..."}
-                </>
-              ) : (
-                <>
-                  <Search className="h-4 w-4 mr-2" />
-                  {language === "ko" ? "이미지 검색" : "Search Images"}
-                </>
-              )}
-            </Button>
-          </div>
-
-          {/* Search Results */}
-          {imageCandidates.length > 0 ? (
-            <ScrollArea className="h-[480px] pr-4">
-              {renderImageGrid(imageCandidates, true)}
-            </ScrollArea>
-          ) : !searchingImages ? (
-            <div className="flex flex-col items-center justify-center h-48 text-neutral-400">
-              <Globe className="h-12 w-12 mb-2 text-neutral-300" />
-              <p>
-                {language === "ko"
-                  ? "키워드를 선택하고 검색하세요"
-                  : "Select keywords and search"}
-              </p>
-            </div>
-          ) : null}
-        </TabsContent>
-
-        {/* Mixed Mode */}
-        <TabsContent value="mixed" className="mt-4 space-y-6">
-          {/* Web Search Section */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-neutral-700 flex items-center gap-2">
-                <Globe className="h-4 w-4" />
-                {language === "ko" ? "웹 검색 결과" : "Web Search Results"}
-              </h3>
-              <Button
-                onClick={onSearchImages}
-                disabled={searchingImages || selectedSearchKeywords.size === 0}
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
+      {/* Web Search */}
+      <div className="space-y-4">
+        {/* Search Keywords Selection */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium text-neutral-700 flex items-center gap-2">
+            <Search className="h-4 w-4" />
+            {language === "ko" ? "검색할 키워드 선택" : "Select Keywords to Search"}
+            <TooltipIcon tooltipKey="fastCut.tooltips.images.searchButton" />
+          </Label>
+          <div className="flex flex-wrap gap-2 p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
+            {editableKeywords.map((keyword) => (
+              <Badge
+                key={keyword}
+                variant={selectedSearchKeywords.has(keyword) ? "default" : "outline"}
+                className={cn(
+                  "cursor-pointer transition-all px-3 py-1",
+                  selectedSearchKeywords.has(keyword)
+                    ? "bg-neutral-900 text-white hover:bg-neutral-800"
+                    : "border-neutral-300 text-neutral-600 hover:border-neutral-400"
+                )}
+                onClick={() => toggleKeywordSelection(keyword)}
               >
-                <Search className="h-3 w-3 mr-1" />
-                {language === "ko" ? "검색" : "Search"}
-              </Button>
-            </div>
-
-            {imageCandidates.length > 0 ? (
-              <ScrollArea className="h-[480px] pr-4">
-                {renderImageGrid(imageCandidates, true)}
-              </ScrollArea>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-32 text-neutral-400 bg-neutral-50 rounded-lg">
-                <p className="text-sm">
-                  {language === "ko" ? "검색 결과가 없습니다" : "No search results"}
-                </p>
-              </div>
-            )}
+                {keyword}
+              </Badge>
+            ))}
           </div>
-        </TabsContent>
-      </Tabs>
+          <Button
+            onClick={onSearchImages}
+            disabled={searchingImages || selectedSearchKeywords.size === 0}
+            className="w-full"
+            variant="outline"
+          >
+            {searchingImages ? (
+              <>
+                <Search className="h-4 w-4 mr-2 animate-spin" />
+                {language === "ko" ? "검색 중..." : "Searching..."}
+              </>
+            ) : (
+              <>
+                <Search className="h-4 w-4 mr-2" />
+                {language === "ko" ? "이미지 검색" : "Search Images"}
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Search Results */}
+        {imageCandidates.length > 0 ? (
+          <ScrollArea className="h-[480px] pr-4">
+            {renderImageGrid(imageCandidates, true)}
+          </ScrollArea>
+        ) : !searchingImages ? (
+          <div className="flex flex-col items-center justify-center h-48 text-neutral-400">
+            <Globe className="h-12 w-12 mb-2 text-neutral-300" />
+            <p>
+              {language === "ko"
+                ? "키워드를 선택하고 검색하세요"
+                : "Select keywords and search"}
+            </p>
+          </div>
+        ) : null}
+      </div>
 
       {/* Selected Images Preview - Always visible */}
       <div className="space-y-2 border-t border-neutral-200 pt-4">
@@ -362,31 +398,35 @@ export function FastCutImageStep({
           </span>
           <span className="text-xs text-neutral-400">
             {selectedImages.length}/10 {language === "ko" ? "선택됨" : "selected"}
+            {selectedImages.length > 1 && (
+              <span className="ml-2 text-neutral-500">
+                ({language === "ko" ? "드래그하여 순서 변경" : "Drag to reorder"})
+              </span>
+            )}
           </span>
         </Label>
         {selectedImages.length > 0 ? (
-          <div className="flex gap-2 overflow-x-auto pb-2 p-2 bg-neutral-50 rounded-lg border border-neutral-200">
-            {selectedImages.map((image, idx) => (
-              <div key={image.id} className="relative flex-shrink-0 w-16">
-                <div className="aspect-[3/4] rounded-lg overflow-hidden border border-neutral-200">
-                  <img
-                    src={image.thumbnailUrl || image.sourceUrl}
-                    alt=""
-                    className="w-full h-full object-cover"
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={selectedImages.map((img) => img.id)}
+              strategy={horizontalListSortingStrategy}
+            >
+              <div className="flex gap-3 overflow-x-auto p-3 bg-neutral-50 rounded-lg border border-neutral-200">
+                {selectedImages.map((image, idx) => (
+                  <SortableImageItem
+                    key={image.id}
+                    image={image}
+                    index={idx}
+                    onRemove={() => onToggleSelection(image)}
                   />
-                </div>
-                <div className="absolute -top-1 -left-1 w-5 h-5 bg-neutral-900 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                  {idx + 1}
-                </div>
-                <button
-                  onClick={() => onToggleSelection(image)}
-                  className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
-                >
-                  <X className="h-3 w-3" />
-                </button>
+                ))}
               </div>
-            ))}
-          </div>
+            </SortableContext>
+          </DndContext>
         ) : (
           <div className="p-4 bg-neutral-50 rounded-lg border border-dashed border-neutral-300 text-center">
             <p className="text-sm text-neutral-400">

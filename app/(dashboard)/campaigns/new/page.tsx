@@ -12,15 +12,17 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, FolderPlus, Calendar, Users } from "lucide-react";
+import { ChevronLeft, FolderPlus, Calendar, Users, Plus } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { InfoButton } from "@/components/ui/info-button";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ArtistModal } from "@/components/features/artist/ArtistModal";
 
 export default function NewCampaignPage() {
   const router = useRouter();
   const { language } = useI18n();
   const [error, setError] = useState("");
+  const [artistModalOpen, setArtistModalOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -31,7 +33,7 @@ export default function NewCampaignPage() {
   });
 
   // Use TanStack Query for data fetching with caching
-  const { data: artists = [] } = useArtists();
+  const { data: artists = [], refetch: refetchArtists } = useArtists();
   const createCampaignMutation = useCreateCampaign();
 
   const loading = createCampaignMutation.isPending;
@@ -58,6 +60,7 @@ export default function NewCampaignPage() {
     creating: language === "ko" ? "생성 중..." : "Creating...",
     cancel: language === "ko" ? "취소" : "Cancel",
     solo: language === "ko" ? "솔로" : "Solo",
+    addNewArtist: language === "ko" ? "신규 아티스트 추가" : "Add New Artist",
     // Info button tooltips
     campaignNameInfo: language === "ko"
       ? "캠페인을 쉽게 구분할 수 있는 이름을 입력하세요. 예: 앨범명, 시즌, 프로모션 종류 등"
@@ -182,12 +185,29 @@ export default function NewCampaignPage() {
                   </Label>
                   <Select
                     value={formData.artist_id}
-                    onValueChange={(value) => setFormData({ ...formData, artist_id: value })}
+                    onValueChange={(value) => {
+                      if (value === "__add_new_artist__") {
+                        setArtistModalOpen(true);
+                      } else {
+                        setFormData({ ...formData, artist_id: value });
+                      }
+                    }}
                   >
                     <SelectTrigger className="h-12">
                       <SelectValue placeholder={t.selectArtist} />
                     </SelectTrigger>
                     <SelectContent>
+                      {/* Add New Artist Button */}
+                      <SelectItem
+                        value="__add_new_artist__"
+                        className="text-primary font-medium"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Plus className="h-4 w-4" />
+                          {t.addNewArtist}
+                        </span>
+                      </SelectItem>
+                      <div className="h-px bg-border my-1" />
                       {Object.entries(groupedArtists).map(([group, groupArtists]) => (
                         <SelectGroup key={group}>
                           <SelectLabel>{group}</SelectLabel>
@@ -283,6 +303,24 @@ export default function NewCampaignPage() {
             </div>
           </div>
         </form>
+
+        {/* Add New Artist Modal */}
+        <ArtistModal
+          open={artistModalOpen}
+          onOpenChange={setArtistModalOpen}
+          onSuccess={async () => {
+            // Refetch artists to get the newly created one
+            const result = await refetchArtists();
+            if (result.data && result.data.length > 0) {
+              // Auto-select the most recently created artist (last in the list after refetch)
+              // Since the API returns sorted data, we find the newest by created_at
+              const newestArtist = result.data.reduce((newest, current) =>
+                new Date(current.created_at) > new Date(newest.created_at) ? current : newest
+              );
+              setFormData((prev) => ({ ...prev, artist_id: newestArtist.id }));
+            }
+          }}
+        />
       </div>
     </TooltipProvider>
   );

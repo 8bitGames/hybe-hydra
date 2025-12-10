@@ -1,5 +1,13 @@
 {
   "mcpServers": {
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "sequential-thinking": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp",
@@ -12,19 +20,6 @@
       "description": "Vercel deployment and hosting management - OAuth authentication",
       "enabled": true
     },
-    "pinecone": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@pinecone-database/mcp"
-      ],
-      "env": {
-        "PINECONE_API_KEY": "${PINECONE_API_KEY}"
-      },
-      "description": "Pinecone vector database operations - 9 tools for index mgmt, search, docs",
-      "enabled": true
-    },
     "shadcn": {
       "type": "stdio",
       "command": "npx",
@@ -32,22 +27,6 @@
         "shadcn@latest",
         "mcp"
       ],
-      "enabled": true
-    },
-    "portone-mcp-server": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@portone/mcp-server@latest"
-      ],
-      "description": "PortOne payment integration server",
-      "enabled": true
-    },
-    "Sentry": {
-      "type": "http",
-      "url": "https://mcp.sentry.dev/mcp",
-      "description": "Sentry error monitoring and performance tracking",
       "enabled": true
     }
   }

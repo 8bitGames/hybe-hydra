@@ -152,6 +152,10 @@ class RendererAdapter:
         transitions: List[TransitionSpec],
         temp_dir: str,
         job_id: str = "render",
+        # Post-processing filters (applied in FFmpeg xfade step for speed)
+        color_grade: Optional[str] = None,
+        vignette_strength: Optional[float] = None,
+        film_grain_intensity: Optional[float] = None,
     ) -> CompositeVideoClip:
         """
         Apply transitions to MoviePy clips.
@@ -164,6 +168,9 @@ class RendererAdapter:
             transitions: List of TransitionSpec for each transition
             temp_dir: Temporary directory for intermediate files
             job_id: Job ID for logging
+            color_grade: Color grade to apply in FFmpeg (vibrant, cinematic, etc.)
+            vignette_strength: Vignette strength 0.0-1.0 (applied in FFmpeg)
+            film_grain_intensity: Film grain intensity 0.0-0.2 (applied in FFmpeg)
 
         Returns:
             CompositeVideoClip with transitions applied
@@ -199,8 +206,15 @@ class RendererAdapter:
         # If all transitions can use xfade, or GL failed, process as xfade batch
         # Map GL transitions to xfade equivalents
         print(f"[ADAPTER][{job_id}] Using xfade batch renderer for {len(transitions)} transitions")
+        if color_grade or vignette_strength or film_grain_intensity:
+            print(f"[ADAPTER][{job_id}] FFmpeg post-processing: color_grade={color_grade}, vignette={vignette_strength}, grain={film_grain_intensity}")
         logger.info(f"[{job_id}] Using xfade batch renderer for {len(transitions)} transitions")
-        result = self._apply_xfade_batch(clips, transitions, temp_dir, job_id)
+        result = self._apply_xfade_batch(
+            clips, transitions, temp_dir, job_id,
+            color_grade=color_grade,
+            vignette_strength=vignette_strength,
+            film_grain_intensity=film_grain_intensity
+        )
         if result is not None:
             print(f"[ADAPTER][{job_id}] xfade batch SUCCESS!")
             return result
@@ -251,16 +265,26 @@ class RendererAdapter:
             segment_videos = []
 
             for i in range(len(clips)):
-                # Export the full clip segment as video
+                # Export the full clip segment as video with GPU acceleration
                 clip_path = os.path.join(temp_dir, f"{job_id}_segment_{i}.mp4")
-                clips[i].write_videofile(
-                    clip_path,
-                    fps=30,
-                    codec="libx264",
-                    preset="ultrafast",
-                    audio=False,
-                    logger=None
-                )
+                try:
+                    clips[i].write_videofile(
+                        clip_path,
+                        fps=30,
+                        codec="h264_nvenc",
+                        preset="p4",
+                        audio=False,
+                        logger=None
+                    )
+                except Exception:
+                    clips[i].write_videofile(
+                        clip_path,
+                        fps=30,
+                        codec="libx264",
+                        preset="ultrafast",
+                        audio=False,
+                        logger=None
+                    )
                 segment_videos.append(clip_path)
 
                 # Render transition if not last clip
@@ -331,11 +355,16 @@ class RendererAdapter:
         transitions: List[TransitionSpec],
         temp_dir: str,
         job_id: str,
+        color_grade: Optional[str] = None,
+        vignette_strength: Optional[float] = None,
+        film_grain_intensity: Optional[float] = None,
     ) -> Optional[CompositeVideoClip]:
         """
         Apply transitions using FFmpeg xfade in batch.
 
         This is more efficient than processing transitions individually.
+        Post-processing filters (color_grade, vignette, grain) are applied
+        in the same FFmpeg command for maximum speed.
         """
         try:
             # Export clips as video files
@@ -368,15 +397,27 @@ class RendererAdapter:
                         print(f"[ADAPTER][{job_id}] Resizing clip {i} from {current_w}x{current_h} to {target_w}x{target_h}")
                         export_clip = clip.resized((target_w, target_h))
 
-                    # Write clip to file (without audio for now)
-                    export_clip.write_videofile(
-                        clip_path,
-                        fps=30,
-                        codec="libx264",
-                        preset="ultrafast",
-                        audio=False,
-                        logger="bar"  # Show progress bar for debugging
-                    )
+                    # Write clip to file with GPU acceleration
+                    # Try NVENC first, fall back to libx264 if not available
+                    try:
+                        export_clip.write_videofile(
+                            clip_path,
+                            fps=30,
+                            codec="h264_nvenc",
+                            preset="p4",  # Fast NVENC preset
+                            audio=False,
+                            logger=None  # Disable progress bar for speed
+                        )
+                    except Exception:
+                        # Fall back to CPU encoding
+                        export_clip.write_videofile(
+                            clip_path,
+                            fps=30,
+                            codec="libx264",
+                            preset="ultrafast",
+                            audio=False,
+                            logger=None
+                        )
                 except Exception as write_err:
                     print(f"[ADAPTER][{job_id}] ERROR writing clip {i}: {write_err}")
                     import traceback
@@ -438,7 +479,7 @@ class RendererAdapter:
             print(f"[ADAPTER][{job_id}] xfade effects to apply: {xfade_names}")
             logger.info(f"[{job_id}] xfade effects to apply: {xfade_names}")
 
-            # Render with xfade
+            # Render with xfade + post-processing filters
             output_path = os.path.join(temp_dir, f"{job_id}_xfade_output.mp4")
             avg_duration = sum(t.duration for t in transitions) / len(transitions)
 
@@ -447,7 +488,11 @@ class RendererAdapter:
                 output_path=output_path,
                 transitions=xfade_names,
                 transition_duration=avg_duration,
-                use_gpu=self.prefer_gpu
+                use_gpu=self.prefer_gpu,
+                # Post-processing applied in FFmpeg (fast) instead of MoviePy (slow)
+                color_grade=color_grade,
+                vignette_strength=vignette_strength,
+                film_grain_intensity=film_grain_intensity,
             )
 
             if success and os.path.exists(output_path):

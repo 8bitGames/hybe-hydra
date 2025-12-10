@@ -15,43 +15,91 @@ FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # =============================================================================
-# STEP 1: Install Jellyfin FFmpeg FIRST (before anything else)
+# STEP 1: Install build dependencies and compile NVIDIA-compatible FFmpeg
 # =============================================================================
-# Critical: FFmpeg must be installed before any Python packages that might
-# try to bundle or link against a different ffmpeg version
+# We compile FFmpeg from source with NVENC support using the NVIDIA Video Codec SDK
+# This ensures compatibility with the CUDA version in the container
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
     ca-certificates \
+    git \
+    build-essential \
+    pkg-config \
+    yasm \
+    nasm \
+    cmake \
+    # FFmpeg dependencies
+    libx264-dev \
+    libx265-dev \
+    libvpx-dev \
+    libfdk-aac-dev \
+    libmp3lame-dev \
+    libopus-dev \
+    libvorbis-dev \
+    libass-dev \
+    libfreetype6-dev \
+    libfontconfig1-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Add Jellyfin repository
-RUN wget -O - https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /usr/share/keyrings/jellyfin.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/ubuntu jammy main" > /etc/apt/sources.list.d/jellyfin.list
+# Install nv-codec-headers (NVIDIA Video Codec SDK headers for FFmpeg)
+# This must match the CUDA/driver version
+RUN git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git /tmp/nv-codec-headers \
+    && cd /tmp/nv-codec-headers \
+    && git checkout n12.1.14.0 \
+    && make install \
+    && rm -rf /tmp/nv-codec-headers
 
-# Install jellyfin-ffmpeg6 (has h264_nvenc, hevc_nvenc baked in)
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends jellyfin-ffmpeg6 \
-    && rm -rf /var/lib/apt/lists/*
+# Set CUDA PATH for nvcc compiler (required for FFmpeg NVENC build)
+ENV PATH=/usr/local/cuda/bin:${PATH}
 
-# Create symlinks so ffmpeg/ffprobe are in PATH
-RUN ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
-    && ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe
+# Compile FFmpeg with NVENC support (runtime-only, no CUDA compile needed)
+# Note: --enable-nvenc/nvdec only need nv-codec-headers at build time
+# The actual encoding uses libnvidia-encode.so at runtime on GPU instances
+RUN git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg \
+    && cd /tmp/ffmpeg \
+    && ./configure \
+        --prefix=/usr/local \
+        --enable-gpl \
+        --enable-nonfree \
+        --enable-nvenc \
+        --enable-nvdec \
+        --enable-libx264 \
+        --enable-libx265 \
+        --enable-libvpx \
+        --enable-libfdk-aac \
+        --enable-libmp3lame \
+        --enable-libopus \
+        --enable-libvorbis \
+        --enable-libass \
+        --enable-libfreetype \
+        --enable-libfontconfig \
+        --enable-openssl \
+    && make -j$(nproc) \
+    && make install \
+    && ldconfig \
+    && rm -rf /tmp/ffmpeg
 
-# Set FFmpeg environment variables IMMEDIATELY after installation
-ENV IMAGEIO_FFMPEG_EXE=/usr/lib/jellyfin-ffmpeg/ffmpeg
-ENV FFMPEG_BINARY=/usr/lib/jellyfin-ffmpeg/ffmpeg
-# Include OSMesa library path for GL Transitions headless rendering
-ENV LD_LIBRARY_PATH=/usr/lib/jellyfin-ffmpeg/lib:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
-ENV PATH=/usr/lib/jellyfin-ffmpeg:/usr/local/bin:/usr/bin:/bin
+# Set FFmpeg environment variables
+ENV IMAGEIO_FFMPEG_EXE=/usr/local/bin/ffmpeg
+ENV FFMPEG_BINARY=/usr/local/bin/ffmpeg
+# Include NVIDIA runtime library paths for NVENC support on AWS ECS
+# - /usr/local/nvidia/lib64: NVIDIA container runtime mounts driver libs here
+ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu
+ENV PATH=/usr/local/nvidia/bin:/usr/local/bin:/usr/bin:/bin
+# Force NVIDIA driver to be used for NVENC - critical for AWS ECS
+ENV NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
+ENV NVIDIA_VISIBLE_DEVICES=all
 
-# Verify FFmpeg is correctly installed
-RUN echo "=== Jellyfin FFmpeg Verification ===" \
+# Verify FFmpeg is correctly installed with NVENC
+RUN echo "=== FFmpeg NVENC Verification ===" \
     && which ffmpeg \
-    && ffmpeg -version | head -3 \
+    && ffmpeg -version | head -5 \
     && echo "=== Checking for NVENC encoders ===" \
-    && ffmpeg -encoders 2>&1 | grep -i nvenc || echo "(NVENC will be available at runtime with GPU)"
+    && ffmpeg -encoders 2>&1 | grep -i nvenc \
+    && echo "=== NVENC encoders found ==="
 
 # =============================================================================
 # STEP 2: Install Python 3.11
@@ -172,6 +220,12 @@ RUN echo "=== Verifying PyOpenGL + OSMesa ===" \
 RUN pip3 install --no-cache-dir \
     google-generativeai==0.8.3
 
+# GCP Workload Identity Federation (WIF) for Vertex AI
+RUN pip3 install --no-cache-dir \
+    google-auth>=2.36.0 \
+    google-auth-httplib2>=0.2.0 \
+    requests>=2.31.0
+
 # =============================================================================
 # STEP 5: Verify all installations work together
 # =============================================================================
@@ -189,6 +243,7 @@ RUN echo "=== Final Verification ===" \
     && python3 -c "import boto3; print('boto3: OK')" \
     && python3 -c "import fastapi; print('fastapi: OK')" \
     && python3 -c "from OpenGL import GL; from OpenGL.osmesa import OSMesaCreateContext, OSMESA_RGBA; print('GL Transitions (OSMesa): OK')" \
+    && python3 -c "import google.auth; print(f'google-auth: {google.auth.__version__} (GCP WIF ready)')" \
     && echo "=== All verifications passed ==="
 
 # =============================================================================
@@ -210,6 +265,17 @@ RUN mkdir -p /tmp/compose
 # Modal uses add_local_dir() instead, so this is optional
 COPY app/ /root/app/
 
+# Copy AWS Batch worker scripts
+COPY aws-batch/batch_worker.py /root/batch_worker.py
+COPY aws-batch/ai_worker.py /root/ai_worker.py
+
+# Copy GCP WIF credential config (for Vertex AI authentication)
+# This file is used by google-auth to exchange AWS credentials for GCP tokens
+COPY clientLibraryConfig-hyb-hydra-dev.json /root/clientLibraryConfig.json
+ENV GOOGLE_APPLICATION_CREDENTIALS=/root/clientLibraryConfig.json
+
 EXPOSE 8000
 
+# Default command (for local testing / FastAPI mode)
+# AWS Batch overrides this with the batch_worker.py entry point
 CMD ["python3", "-c", "print('Hydra Compose Engine ready. Run: uvicorn app.main:app --host 0.0.0.0 --port 8000')"]

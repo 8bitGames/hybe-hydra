@@ -8,7 +8,7 @@ from typing import Optional
 from dataclasses import dataclass, field
 
 # RapidAPI Configuration - ScrapTik
-RAPIDAPI_KEY = "2b748a1b3cmshe05f9ca2282e082p17573ejsn2ad2e7d431ad"
+RAPIDAPI_KEY = "8414587fdamsh11c982341d0e73fp17038bjsnb1e12cc563da"
 RAPIDAPI_HOST = "scraptik.p.rapidapi.com"
 BASE_URL = f"https://{RAPIDAPI_HOST}"
 

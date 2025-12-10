@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
+import { useProcessingSessionStore } from "@/lib/stores/processing-session-store";
 import { useShallow } from "zustand/react/shallow";
 import { useAssets } from "@/lib/queries";
 import { useToast } from "@/components/ui/toast";
@@ -66,7 +67,6 @@ import { FastCutEffectStep } from "./FastCutEffectStep";
 // ============================================================================
 
 type FastCutStep = 1 | 2 | 3 | 4;
-type ImageSourceMode = "search_only" | "mixed";
 
 interface InlineFastCutFlowProps {
   campaignId: string;
@@ -177,6 +177,43 @@ function FastCutContextPanel() {
                 </Badge>
               )}
             </div>
+
+            {/* Fast Cut Data - Script Outline Preview */}
+            {selectedIdea.fastCutData?.scriptOutline && selectedIdea.fastCutData.scriptOutline.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-neutral-200">
+                <h4 className="text-[10px] font-semibold text-neutral-500 mb-1.5 uppercase tracking-wide flex items-center gap-1">
+                  <FileText className="h-3 w-3" />
+                  {language === "ko" ? "스크립트 미리보기" : "Script Outline"}
+                </h4>
+                <ul className="text-xs text-neutral-600 space-y-0.5">
+                  {selectedIdea.fastCutData.scriptOutline.slice(0, 4).map((line, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      <span className="text-neutral-400 shrink-0">{i + 1}.</span>
+                      <span className="line-clamp-1">{line}</span>
+                    </li>
+                  ))}
+                  {selectedIdea.fastCutData.scriptOutline.length > 4 && (
+                    <li className="text-neutral-400 italic">
+                      +{selectedIdea.fastCutData.scriptOutline.length - 4} more...
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {/* Fast Cut Data - Suggested Vibe & BPM */}
+            {selectedIdea.fastCutData?.suggestedVibe && (
+              <div className="mt-2">
+                <Badge variant="secondary" className="text-[10px] bg-neutral-100 text-neutral-600">
+                  {language === "ko" ? "분위기:" : "Vibe:"} {selectedIdea.fastCutData.suggestedVibe}
+                  {selectedIdea.fastCutData.suggestedBpmRange && (
+                    <span className="ml-1.5 border-l border-neutral-300 pl-1.5">
+                      {selectedIdea.fastCutData.suggestedBpmRange.min}-{selectedIdea.fastCutData.suggestedBpmRange.max} BPM
+                    </span>
+                  )}
+                </Badge>
+              </div>
+            )}
           </div>
         )}
 
@@ -374,7 +411,10 @@ function StepNavigation({
         const Icon = step.icon;
         const isActive = step.step === currentStep;
         const isComplete = isStepComplete(step.step);
-        const isAccessible = step.step <= currentStep || isComplete;
+        // Step 4 (processing) can be accessed directly if all prerequisites (1, 2, 3) are complete
+        const canAccessStep4Directly = step.step === 4 &&
+          isStepComplete(1) && isStepComplete(2) && isStepComplete(3);
+        const isAccessible = step.step <= currentStep || isComplete || canAccessStep4Directly;
         // Map render step key to effects for tooltip
         const tooltipStepKey = step.key === "render" ? "effects" : step.key;
 
@@ -454,12 +494,23 @@ export function InlineFastCutFlow({
   const [generatingScript, setGeneratingScript] = useState(false);
   const [scriptData, setScriptData] = useState<ScriptGenerationResponse | null>(null);
 
+  // Fast Cut Data - pre-generated keywords and vibe from Analyze stage
+  const fastCutData = analyze.selectedIdea?.fastCutData;
+
+  // Use fastCutData.searchKeywords if available, otherwise fall back to discover.keywords
+  const initialKeywords = useMemo(() => {
+    if (fastCutData?.searchKeywords && fastCutData.searchKeywords.length > 0) {
+      return fastCutData.searchKeywords;
+    }
+    return discover.keywords;
+  }, [fastCutData?.searchKeywords, discover.keywords]);
+
   // Keyword state
   const [editableKeywords, setEditableKeywords] = useState<string[]>([
-    ...discover.keywords,
+    ...initialKeywords,
   ]);
   const [selectedSearchKeywords, setSelectedSearchKeywords] = useState<Set<string>>(
-    new Set(discover.keywords)
+    new Set(initialKeywords)
   );
 
   // Step 2: Images state
@@ -467,7 +518,6 @@ export function InlineFastCutFlow({
   const [imageCandidates, setImageCandidates] = useState<ImageCandidate[]>([]);
   const [selectedImages, setSelectedImages] = useState<ImageCandidate[]>([]);
   const [generationId, setGenerationId] = useState<string | null>(null);
-  const [imageSourceMode, setImageSourceMode] = useState<ImageSourceMode>("search_only");
 
   // Step 3: Music state
   const [matchingMusic, setMatchingMusic] = useState(false);
@@ -479,7 +529,8 @@ export function InlineFastCutFlow({
   const [musicSkipped, setMusicSkipped] = useState(false);
 
   // Step 4: Render state
-  const [effectPreset, setEffectPreset] = useState("zoom_beat");
+  const [styleSetId, setStyleSetId] = useState<string>("viral_tiktok");
+  const [styleSets, setStyleSets] = useState<import("@/lib/fast-cut-api").StyleSetSummary[]>([]);
   const [rendering, setRendering] = useState(false);
 
   // TikTok SEO state
@@ -498,6 +549,27 @@ export function InlineFastCutFlow({
   useEffect(() => {
     setCreateType("fast-cut");
   }, [setCreateType]);
+
+  // Fetch style sets on mount
+  useEffect(() => {
+    const fetchStyleSets = async () => {
+      try {
+        const result = await fastCutApi.getStyleSets();
+        setStyleSets(result.styleSets);
+      } catch (err) {
+        console.error("Failed to fetch style sets:", err);
+      }
+    };
+    fetchStyleSets();
+  }, []);
+
+  // Sync keywords when fastCutData becomes available (e.g., user selects a Fast Cut idea)
+  useEffect(() => {
+    if (fastCutData?.searchKeywords && fastCutData.searchKeywords.length > 0) {
+      setEditableKeywords([...fastCutData.searchKeywords]);
+      setSelectedSearchKeywords(new Set(fastCutData.searchKeywords));
+    }
+  }, [fastCutData?.searchKeywords]);
 
   // ========================================
   // Step 1: Script Generation
@@ -527,7 +599,7 @@ export function InlineFastCutFlow({
     try {
       const result = await fastCutApi.generateScript({
         campaignId,
-        artistName: analyze.campaignName || "Artist",
+        artistName: analyze.artistStageName || analyze.artistName || "Artist",
         trendKeywords: editableKeywords,
         userPrompt: prompt.trim(),
         targetDuration: 0,
@@ -538,6 +610,16 @@ export function InlineFastCutFlow({
       if (result.tiktokSEO) {
         setTiktokSEO(result.tiktokSEO);
       }
+
+      // Auto-select style set based on prompt (async, don't block flow)
+      fastCutApi.selectStyleSet(prompt.trim(), { useAI: true, campaignId })
+        .then((selection) => {
+          setStyleSetId(selection.selected.id);
+          console.log("[FastCut] Auto-selected style set:", selection.selected.nameKo, "- Reason:", selection.selection.reasoning);
+        })
+        .catch((err) => {
+          console.warn("[FastCut] Style set auto-selection failed, using default:", err);
+        });
 
       // Merge AI keywords with user keywords
       const userKeywords = [...editableKeywords];
@@ -628,6 +710,10 @@ export function InlineFastCutFlow({
       if (prev.length >= 10) return prev;
       return [...prev, image];
     });
+  };
+
+  const reorderImages = (newImages: ImageCandidate[]) => {
+    setSelectedImages(newImages);
   };
 
   // ========================================
@@ -743,21 +829,73 @@ export function InlineFastCutFlow({
         }));
 
       // Start render - audioAssetId is optional when music is skipped
+      console.log("[FastCut] 🚀 Starting render API call...");
       const renderResult = await fastCutApi.startRender({
         generationId,
         campaignId,
         audioAssetId: selectedAudio?.id || "", // Empty string when skipped, API handles this
         images: proxiedImages,
         script: { lines: scriptData.script.lines },
-        effectPreset,
+        // Use style set instead of individual effectPreset
+        styleSetId,
         aspectRatio,
         targetDuration: 0,
-        vibe: scriptData.vibe,
         audioStartTime: musicSkipped ? 0 : audioStartTime,
         prompt,
         searchKeywords: editableKeywords,
         tiktokSEO: tiktokSEO || undefined,
       });
+      console.log("[FastCut] 📦 Render API response received");
+
+      // Initialize processing session before navigating
+      console.log("[FastCut] ✅ Render API call succeeded, now initializing session...");
+      console.log("[FastCut] renderResult:", JSON.stringify(renderResult));
+
+      try {
+        const selectedStyleSet = styleSets.find(s => s.id === styleSetId);
+        console.log("[FastCut] selectedStyleSet:", selectedStyleSet?.name);
+        console.log("[FastCut] generationId:", renderResult.generationId);
+
+        const sessionData = {
+          campaignId,
+          campaignName,
+          generationId: renderResult.generationId,
+          content: {
+            script: scriptData.script.lines.map(l => l.text).join("\n"),
+            images: selectedImages.map((img) => ({
+              id: img.id,
+              url: imageUrlMap.get(img.id) || img.sourceUrl,
+              thumbnailUrl: img.thumbnailUrl,
+            })),
+            musicTrack: selectedAudio ? {
+              id: selectedAudio.id,
+              name: selectedAudio.filename,
+              duration: selectedAudio.duration,
+              url: selectedAudio.s3Url,
+            } : undefined,
+            effectPreset: selectedStyleSet ? {
+              id: selectedStyleSet.id,
+              name: selectedStyleSet.name,
+              description: selectedStyleSet.description,
+            } : undefined,
+          },
+        };
+
+        console.log("[FastCut] sessionData prepared:", JSON.stringify(sessionData, null, 2));
+
+        useProcessingSessionStore.getState().initSession(sessionData);
+        console.log("[FastCut] initSession called");
+
+        // Verify session was created
+        const createdSession = useProcessingSessionStore.getState().session;
+        console.log("[FastCut] Session created:", createdSession?.id, "State:", createdSession?.state);
+
+        // Double-check localStorage
+        const storedData = localStorage.getItem("hydra-processing-session");
+        console.log("[FastCut] localStorage after init:", storedData ? "EXISTS" : "MISSING");
+      } catch (sessionError) {
+        console.error("[FastCut] ❌ Session initialization error:", sessionError);
+      }
 
       toast.success(
         language === "ko" ? "생성 시작" : "Generation started",
@@ -767,6 +905,8 @@ export function InlineFastCutFlow({
       // Navigate to processing page
       router.push("/processing");
     } catch (err) {
+      console.error("[FastCut] ❌ handleStartRender error:", err);
+      console.error("[FastCut] Error stack:", err instanceof Error ? err.stack : "No stack");
       setError(err instanceof Error ? err.message : "Render failed");
       setRendering(false);
     }
@@ -833,11 +973,11 @@ export function InlineFastCutFlow({
       },
       effects: {
         complete: false, // Never complete - final step
-        label: language === "ko" ? "효과" : "Effects",
-        detail: effectPreset.replace("_", " ")
+        label: language === "ko" ? "스타일" : "Style",
+        detail: styleSets.find(s => s.id === styleSetId)?.nameKo || styleSetId.replace("_", " ")
       }
     };
-  }, [scriptData, selectedImages.length, selectedAudio, musicSkipped, effectPreset, language]);
+  }, [scriptData, selectedImages.length, selectedAudio, musicSkipped, styleSetId, styleSets, language]);
 
   // ========================================
   // Navigation
@@ -910,6 +1050,9 @@ export function InlineFastCutFlow({
           <div className="p-6">
             {currentStep === 1 && (
               <FastCutScriptStep
+                campaignId={campaignId}
+                campaignName={campaignName}
+                campaignReadOnly={true}
                 prompt={prompt}
                 setPrompt={setPrompt}
                 aspectRatio={aspectRatio}
@@ -930,8 +1073,6 @@ export function InlineFastCutFlow({
 
             {currentStep === 2 && (
               <FastCutImageStep
-                imageSourceMode={imageSourceMode}
-                setImageSourceMode={setImageSourceMode}
                 imageCandidates={imageCandidates}
                 selectedImages={selectedImages}
                 searchingImages={searchingImages}
@@ -939,6 +1080,7 @@ export function InlineFastCutFlow({
                 selectedSearchKeywords={selectedSearchKeywords}
                 setSelectedSearchKeywords={setSelectedSearchKeywords}
                 onToggleSelection={toggleImageSelection}
+                onReorderImages={reorderImages}
                 onSearchImages={() => handleSearchImages()}
                 onNext={handleNext}
               />
@@ -966,12 +1108,14 @@ export function InlineFastCutFlow({
             {currentStep === 4 && (
               <FastCutEffectStep
                 scriptData={scriptData}
+                setScriptData={setScriptData}
                 selectedImages={selectedImages}
                 selectedAudio={selectedAudio}
                 musicSkipped={musicSkipped}
                 aspectRatio={aspectRatio}
-                effectPreset={effectPreset}
-                setEffectPreset={setEffectPreset}
+                styleSetId={styleSetId}
+                setStyleSetId={setStyleSetId}
+                styleSets={styleSets}
                 tiktokSEO={tiktokSEO}
                 setTiktokSEO={setTiktokSEO}
                 rendering={rendering}

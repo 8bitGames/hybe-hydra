@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
       maxResultsPerQuery: Math.ceil(maxImages / keywords.length) + 2,
       totalMaxResults: maxImages * 2, // Get more to filter
       safeSearch: safeSearch as "off" | "medium" | "high",
-      imageSize: "large",  // Filter for large images at API level
+      imageSize: "huge",  // Filter for huge images (1024x768+) at API level
       gl,  // Region filter based on user's language
       hl,  // Language filter based on user's language
     });

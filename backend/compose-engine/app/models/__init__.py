@@ -16,8 +16,20 @@ from .responses import (
     AudioAnalysis,
     ImageSearchResult
 )
+from .ai_job import (
+    AIJobType,
+    AIJobRequest,
+    AIJobResponse,
+    AIJobStatus,
+    AIJobCallback,
+    AIOutputSettings,
+    VideoGenerationSettings,
+    ImageGenerationSettings,
+    ImageToVideoSettings,
+)
 
 __all__ = [
+    # Render job models
     "RenderRequest",
     "RenderResponse",
     "ImageData",
@@ -26,8 +38,19 @@ __all__ = [
     "ScriptLine",
     "RenderSettings",
     "OutputSettings",
+    # Response models
     "JobStatus",
     "JobStatusResponse",
     "AudioAnalysis",
-    "ImageSearchResult"
+    "ImageSearchResult",
+    # AI job models
+    "AIJobType",
+    "AIJobRequest",
+    "AIJobResponse",
+    "AIJobStatus",
+    "AIJobCallback",
+    "AIOutputSettings",
+    "VideoGenerationSettings",
+    "ImageGenerationSettings",
+    "ImageToVideoSettings",
 ]

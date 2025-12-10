@@ -2,9 +2,13 @@
 
 import librosa
 import numpy as np
+import logging
 from typing import Tuple, List, Optional
 
 from ..models.responses import AudioAnalysis
+
+
+logger = logging.getLogger(__name__)
 
 
 class AudioAnalyzer:
@@ -17,15 +21,23 @@ class AudioAnalyzer:
         """
         Analyze an audio file for BPM, beats, and energy.
         """
+        logger.info(f"[AudioAnalyzer] Starting audio analysis: {audio_path}")
+
         # Load audio
+        logger.info(f"[AudioAnalyzer] Loading audio file...")
         y, sr = librosa.load(audio_path, sr=self.sample_rate)
+        logger.info(f"[AudioAnalyzer] Audio loaded: {len(y)} samples at {sr}Hz")
         duration = librosa.get_duration(y=y, sr=sr)
+        logger.info(f"[AudioAnalyzer] Duration: {duration:.2f}s")
 
         # Detect tempo and beats
+        logger.info(f"[AudioAnalyzer] Detecting tempo and beats...")
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
         beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+        logger.info(f"[AudioAnalyzer] Detected tempo: {tempo}, beats: {len(beat_times)}")
 
         # Calculate energy curve (RMS)
+        logger.info(f"[AudioAnalyzer] Calculating energy curve...")
         hop_length = 512
         rms = librosa.feature.rms(y=y, hop_length=hop_length)[0]
 
@@ -52,6 +64,8 @@ class AudioAnalyzer:
             suggested_vibe = "Minimal"
         else:
             suggested_vibe = "Emotional"
+
+        logger.info(f"[AudioAnalyzer] Analysis complete: BPM={int(round(tempo_val))}, duration={duration:.2f}s, vibe={suggested_vibe}")
 
         return AudioAnalysis(
             bpm=int(round(tempo_val)),

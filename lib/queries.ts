@@ -69,6 +69,7 @@ export const queryKeys = {
   trendingVideos: (hashtags?: string[]) => ["trends", "trending", hashtags] as const,
   liveTrending: () => ["trends", "live"] as const,
   keywordAnalysis: (keywords: string[]) => ["trends", "keyword-analysis", keywords] as const,
+  singleKeywordAnalysis: (keyword: string) => ["trends", "keyword-analysis", "single", keyword] as const,
   keywordHistory: (params?: { limit?: number; offset?: number }) => ["trends", "keyword-history", params] as const,
 
   // Merchandise
@@ -1056,6 +1057,37 @@ export function useKeywordAnalysis(params: {
       return response.data!;
     },
     enabled: params.enabled !== false && params.keywords.length > 0,
+    staleTime: 30 * 60 * 1000, // 30 minutes
+    gcTime: 60 * 60 * 1000, // 1 hour
+  });
+}
+
+// Single Keyword Analysis Hook - fetches analysis for a single keyword with caching
+export function useSingleKeywordAnalysis(params: {
+  keyword: string;
+  limit?: number;
+  enabled?: boolean;
+  forceRefresh?: boolean;
+}) {
+  return useQuery({
+    queryKey: queryKeys.singleKeywordAnalysis(params.keyword),
+    queryFn: async (): Promise<KeywordAnalysis | null> => {
+      const searchParams = new URLSearchParams();
+      searchParams.set("keywords", params.keyword);
+      if (params.limit) searchParams.set("limit", params.limit.toString());
+      if (params.forceRefresh) searchParams.set("refresh", "true");
+
+      const response = await api.get<KeywordAnalysisResponse>(
+        `/api/v1/trends/keyword-analysis?${searchParams.toString()}`
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data?.analyses?.[0] || null;
+    },
+    enabled: params.enabled !== false && !!params.keyword,
     staleTime: 30 * 60 * 1000, // 30 minutes
     gcTime: 60 * 60 * 1000, // 1 hour
   });

@@ -67,6 +67,8 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
+import { useSessionStore } from "@/lib/stores/session-store";
+import { useAuthStore } from "@/lib/auth-store";
 
 // ============================================================================
 // Types
@@ -74,11 +76,13 @@ import { useWorkflowStore } from "@/lib/stores/workflow-store";
 
 const TRACKED_KEYWORDS_STORAGE_KEY = "hybe-trend-tracked-keywords";
 const SEARCH_HISTORY_STORAGE_KEY = "hybe-trend-search-history";
+const SELECTED_KEYWORD_STORAGE_KEY = "hybe-trend-selected-keyword";
+const ANALYSIS_DATA_STORAGE_KEY = "hybe-trend-analysis-data";
 
 interface TrackedKeyword {
   id: string;
   keyword: string;
-  type: "keyword" | "hashtag";
+  type: "keyword" | "hashtag" | "user";
   addedAt: string;
   lastAnalyzedAt: string;
   currentMetrics: {
@@ -91,6 +95,16 @@ interface TrackedKeyword {
     changePercent: number;
   };
   topHashtags: string[];
+  // User-specific fields (only populated for type: "user")
+  userInfo?: {
+    uniqueId: string;
+    nickname: string;
+    avatarUrl?: string;
+    verified: boolean;
+    followers: number;
+    following: number;
+    likes: number;
+  };
 }
 
 // Enhanced Viral Video interface (supports 50 videos per keyword)
@@ -187,7 +201,6 @@ interface APIAnalyzedVideo {
   likeToViewRatio: number;
   hashtags: string[];
   videoUrl: string;
-  thumbnailUrl?: string | null;
   rank: number;
 }
 
@@ -300,6 +313,46 @@ async function fetchContentSummary(): Promise<ContentSummary> {
       last7d: 0,
     };
   }
+}
+
+// User search API response type
+interface UserSearchResult {
+  success: boolean;
+  users: Array<{
+    id: string;
+    uniqueId: string;
+    nickname: string;
+    avatarUrl?: string;
+    verified: boolean;
+    followers: number;
+    following: number;
+    likes: number;
+    videos: number;
+  }>;
+  error?: string;
+}
+
+async function fetchUserSearch(username: string): Promise<UserSearchResult> {
+  const token = getAccessToken();
+  const params = new URLSearchParams({
+    type: "user",
+    q: username.replace(/^@/, ""),
+  });
+
+  const response = await fetch(`/api/v1/tiktok/search?${params.toString()}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to search users: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return {
+    success: data.success,
+    users: data.users || [],
+    error: data.error,
+  };
 }
 
 // ============================================================================
@@ -543,6 +596,43 @@ function addToSearchHistory(keyword: string, videosFound: number, avgEngagement:
   saveSearchHistory([newItem, ...filtered]);
 }
 
+function loadSelectedKeywordId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(SELECTED_KEYWORD_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveSelectedKeywordId(keywordId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(SELECTED_KEYWORD_STORAGE_KEY, keywordId);
+  } catch {
+    console.error("Failed to save selected keyword to localStorage");
+  }
+}
+
+function loadAnalysisData(): Record<string, KeywordAnalysisData> {
+  if (typeof window === "undefined") return {};
+  try {
+    const stored = localStorage.getItem(ANALYSIS_DATA_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAnalysisData(data: Record<string, KeywordAnalysisData>): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(ANALYSIS_DATA_STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    console.error("Failed to save analysis data to localStorage");
+  }
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -631,14 +721,41 @@ function MetricCard({
 function KeywordCard({
   keyword,
   isSelected,
+  isLoading,
   onClick,
   onDelete,
 }: {
   keyword: TrackedKeyword;
   isSelected: boolean;
+  isLoading?: boolean;
   onClick: () => void;
   onDelete: (e: React.MouseEvent) => void;
 }) {
+  const isUser = keyword.type === "user";
+
+  // Show skeleton state when loading
+  if (isLoading) {
+    return (
+      <div
+        className={cn(
+          "flex-shrink-0 w-[160px] min-h-[88px] p-3 rounded-lg border transition-all text-left relative",
+          isSelected
+            ? "border-primary bg-primary/5 ring-1 ring-primary"
+            : "border-border bg-background"
+        )}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <Skeleton className="h-4 w-20 flex-1" />
+          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+        </div>
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -657,23 +774,59 @@ function KeywordCard({
       >
         <X className="h-3 w-3" />
       </button>
-      <div className="flex items-center gap-2 mb-2 pr-5">
-        <span className="text-sm font-semibold truncate flex-1 min-w-0">
-          {keyword.type === "hashtag" ? "#" : ""}
-          {keyword.keyword}
-        </span>
-        <TrendIndicator direction={keyword.trend.direction} changePercent={keyword.trend.changePercent} />
-      </div>
-      <div className="space-y-1">
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Eye className="h-3 w-3 flex-shrink-0" />
-          <span>{formatCount(keyword.currentMetrics.avgViews)} avg</span>
-        </div>
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Zap className="h-3 w-3 flex-shrink-0" />
-          <span>{formatPercent(keyword.currentMetrics.avgEngagement)}</span>
-        </div>
-      </div>
+
+      {isUser && keyword.userInfo ? (
+        <>
+          {/* User Card Layout */}
+          <div className="flex items-center gap-2 mb-2 pr-5">
+            {keyword.userInfo.avatarUrl ? (
+              <img
+                src={keyword.userInfo.avatarUrl}
+                alt={keyword.userInfo.nickname}
+                className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+              />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                <Users className="h-3 w-3 text-muted-foreground" />
+              </div>
+            )}
+            <span className="text-sm font-semibold truncate flex-1 min-w-0">
+              @{keyword.keyword}
+            </span>
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Users className="h-3 w-3 flex-shrink-0" />
+              <span>{formatCount(keyword.userInfo.followers)} followers</span>
+            </div>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Heart className="h-3 w-3 flex-shrink-0" />
+              <span>{formatCount(keyword.userInfo.likes)} likes</span>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Keyword/Hashtag Card Layout */}
+          <div className="flex items-center gap-2 mb-2 pr-5">
+            <span className="text-sm font-semibold truncate flex-1 min-w-0">
+              {keyword.type === "hashtag" ? "#" : ""}
+              {keyword.keyword}
+            </span>
+            <TrendIndicator direction={keyword.trend.direction} changePercent={keyword.trend.changePercent} />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Eye className="h-3 w-3 flex-shrink-0" />
+              <span>{formatCount(keyword.currentMetrics.avgViews)} avg</span>
+            </div>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Zap className="h-3 w-3 flex-shrink-0" />
+              <span>{formatPercent(keyword.currentMetrics.avgEngagement)}</span>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -723,11 +876,13 @@ function VideoTableRow({
   rank,
   isKorean,
   onCreateFromVideo,
+  keyword,
 }: {
   video: ViralVideo;
   rank: number;
   isKorean: boolean;
   onCreateFromVideo: (videoId: string) => void;
+  keyword: string;
 }) {
   const handleCopyHashtags = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -863,6 +1018,7 @@ function ViralVideoSection({
     remaining: isKorean ? "개 남음" : "remaining",
     viewAll: isKorean ? "전체 보기" : "View All",
     rank: isKorean ? "순위" : "Rank",
+    preview: isKorean ? "미리보기" : "Preview",
     creator: isKorean ? "크리에이터" : "Creator",
     description: isKorean ? "설명" : "Description",
     views: isKorean ? "조회수" : "Views",
@@ -914,11 +1070,12 @@ function ViralVideoSection({
             <TableBody>
               {tableVideos.map((video, i) => (
                 <VideoTableRow
-                  key={video.id}
+                  key={`${keyword}-${video.id}`}
                   video={video}
                   rank={i + 1}
                   isKorean={isKorean}
                   onCreateFromVideo={onCreateFromVideo}
+                  keyword={keyword}
                 />
               ))}
             </TableBody>
@@ -980,11 +1137,12 @@ function ViralVideoSection({
                 <TableBody>
                   {sortedVideos.map((video, i) => (
                     <VideoTableRow
-                      key={video.id}
+                      key={`${keyword}-${video.id}`}
                       video={video}
                       rank={i + 1}
                       isKorean={isKorean}
                       onCreateFromVideo={onCreateFromVideo}
+                      keyword={keyword}
                     />
                   ))}
                 </TableBody>
@@ -1081,38 +1239,98 @@ function KeywordCardSkeleton() {
 function AnalysisSkeleton() {
   return (
     <div className="space-y-6">
-      {/* Metrics Skeleton */}
+      {/* Metrics + Hashtags Row */}
       <div className="grid grid-cols-2 gap-6">
+        {/* Metrics */}
         <div>
-          <Skeleton className="h-4 w-24 mb-3" />
+          <Skeleton className="h-3 w-20 mb-3" />
           <div className="grid grid-cols-2 gap-3">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="p-3 bg-muted/50 rounded-lg">
-                <Skeleton className="h-3 w-16 mb-1" />
-                <Skeleton className="h-6 w-20" />
+                <Skeleton className="h-2.5 w-14 mb-2" />
+                <Skeleton className="h-6 w-16" />
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Top Hashtags */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-6 w-16 rounded" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[...Array(8)].map((_, i) => (
+              <Skeleton key={i} className="h-6 w-20 rounded-full" />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* AI Suggestions + Top Creators Row */}
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <Skeleton className="h-3 w-24 mb-3" />
+          <div className="space-y-2">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <Skeleton className="h-3 w-3 mt-0.5 rounded-full flex-shrink-0" />
+                <Skeleton className="h-3 w-full" />
               </div>
             ))}
           </div>
         </div>
         <div>
-          <Skeleton className="h-4 w-24 mb-3" />
+          <Skeleton className="h-3 w-20 mb-3" />
           <div className="flex flex-wrap gap-2">
             {[...Array(5)].map((_, i) => (
-              <Skeleton key={i} className="h-6 w-16" />
+              <Skeleton key={i} className="h-6 w-24 rounded-full" />
             ))}
           </div>
         </div>
       </div>
-      {/* Table Skeleton */}
-      <div className="border rounded-lg p-4">
-        <div className="space-y-3">
+
+      {/* Viral Videos Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-4 w-4 rounded" />
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-5 w-8 rounded" />
+        </div>
+        <Skeleton className="h-8 w-36 rounded" />
+      </div>
+
+      {/* Video Table Skeleton */}
+      <div className="border rounded-lg overflow-hidden">
+        {/* Table Header */}
+        <div className="flex items-center gap-4 px-4 py-3 bg-muted/30 border-b">
+          <Skeleton className="h-3 w-8" />
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-3 w-24 flex-1" />
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-3 w-10" />
+          <Skeleton className="h-3 w-6" />
+        </div>
+        {/* Table Rows */}
+        <div className="divide-y divide-border">
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="flex items-center gap-4">
-              <Skeleton className="h-4 w-8" />
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-32 flex-1" />
-              <Skeleton className="h-4 w-16" />
+            <div key={i} className="flex items-center gap-4 px-4 py-3">
+              <Skeleton className="h-4 w-6" />
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-3 w-10" />
+              </div>
+              <Skeleton className="h-3 w-40 flex-1" />
               <Skeleton className="h-4 w-12" />
+              <Skeleton className="h-4 w-10" />
+              <div className="flex gap-1">
+                <Skeleton className="h-5 w-12 rounded" />
+                <Skeleton className="h-5 w-12 rounded" />
+              </div>
+              <Skeleton className="h-4 w-8" />
+              <Skeleton className="h-6 w-6 rounded" />
             </div>
           ))}
         </div>
@@ -1130,7 +1348,11 @@ export default function TrendDashboardPage() {
   const router = useRouter();
   const isKorean = language === "ko";
 
-  // Workflow store actions
+  // Session store for creating new sessions
+  const createSession = useSessionStore((state) => state.createSession);
+  const user = useAuthStore((state) => state.user);
+
+  // Workflow store actions (kept for compatibility during transition)
   const {
     setStartFromTrends,
     setStartFromVideo,
@@ -1144,11 +1366,13 @@ export default function TrendDashboardPage() {
   const [selectedKeywordId, setSelectedKeywordId] = useState<string>("");
   const [addKeywordDialogOpen, setAddKeywordDialogOpen] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
+  const [searchType, setSearchType] = useState<"keyword" | "hashtag" | "user">("user");
 
   // Loading & Error States
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isAnalysisLoading, setIsAnalysisLoading] = useState(false);
   const [isAddingKeyword, setIsAddingKeyword] = useState(false);
+  const [analyzingKeywords, setAnalyzingKeywords] = useState<Set<string>>(new Set()); // Track keywords being analyzed in background
   const [error, setError] = useState<string | null>(null);
 
   // Data States
@@ -1182,17 +1406,35 @@ export default function TrendDashboardPage() {
   useEffect(() => {
     const loadInitialData = async () => {
       try {
-        // Load from localStorage
+        // Load from localStorage - immediate restore of previous state
         const storedKeywords = loadTrackedKeywords();
         const storedHistory = loadSearchHistory();
+        const storedSelectedKeywordId = loadSelectedKeywordId();
+        const storedAnalysisData = loadAnalysisData();
+
+        // Clear corrupted cached data for "country" keyword - force fresh fetch
+        if (storedAnalysisData["country"]) {
+          delete storedAnalysisData["country"];
+          saveAnalysisData(storedAnalysisData);
+        }
 
         setTrackedKeywords(storedKeywords);
         setSearchHistory(storedHistory);
 
-        if (storedKeywords.length > 0) {
-          setSelectedKeywordId(storedKeywords[0].id);
+        // Restore analysis data immediately (so user sees data on refresh)
+        if (Object.keys(storedAnalysisData).length > 0) {
+          setKeywordAnalysisData(storedAnalysisData);
+        }
 
-          // Fetch analysis for all tracked keywords
+        if (storedKeywords.length > 0) {
+          // Restore selected keyword from localStorage, or use first keyword
+          const keywordIdToSelect = storedSelectedKeywordId &&
+            storedKeywords.some(k => k.id === storedSelectedKeywordId)
+            ? storedSelectedKeywordId
+            : storedKeywords[0].id;
+          setSelectedKeywordId(keywordIdToSelect);
+
+          // Fetch fresh analysis for all tracked keywords in background
           const keywords = storedKeywords.map(k => k.keyword);
           try {
             const apiResults = await fetchKeywordAnalysis(keywords, 50);
@@ -1203,6 +1445,7 @@ export default function TrendDashboardPage() {
             });
 
             setKeywordAnalysisData(analysisMap);
+            saveAnalysisData(analysisMap); // Persist fresh data
 
             // Update tracked keywords with fresh data
             const updatedKeywords = storedKeywords.map(kw => {
@@ -1216,7 +1459,7 @@ export default function TrendDashboardPage() {
             saveTrackedKeywords(updatedKeywords);
           } catch (apiError) {
             console.error("Failed to fetch initial analysis:", apiError);
-            // Keep using stored keywords even if API fails
+            // Keep using stored keywords and analysis data even if API fails
           }
         }
 
@@ -1234,11 +1477,28 @@ export default function TrendDashboardPage() {
     loadInitialData();
   }, [isKorean]);
 
+  // Save selected keyword to localStorage when it changes
+  useEffect(() => {
+    if (selectedKeywordId) {
+      saveSelectedKeywordId(selectedKeywordId);
+    }
+  }, [selectedKeywordId]);
+
+  // Save analysis data to localStorage when it changes
+  useEffect(() => {
+    if (Object.keys(keywordAnalysisData).length > 0) {
+      saveAnalysisData(keywordAnalysisData);
+    }
+  }, [keywordAnalysisData]);
+
   // Fetch analysis when selected keyword changes
-  const fetchAnalysisForKeyword = useCallback(async (keyword: string) => {
+  const fetchAnalysisForKeyword = useCallback(async (keyword: string, keywordId?: string) => {
     if (keywordAnalysisData[keyword]) return; // Already have data
 
-    setIsAnalysisLoading(true);
+    // Use per-keyword loading state
+    if (keywordId) {
+      setAnalyzingKeywords(prev => new Set(prev).add(keywordId));
+    }
     setError(null);
 
     try {
@@ -1254,13 +1514,20 @@ export default function TrendDashboardPage() {
       console.error("Failed to fetch analysis:", err);
       setError(isKorean ? "분석 데이터를 불러오는 중 오류가 발생했습니다." : "Failed to load analysis data.");
     } finally {
-      setIsAnalysisLoading(false);
+      // Remove from per-keyword loading state
+      if (keywordId) {
+        setAnalyzingKeywords(prev => {
+          const next = new Set(prev);
+          next.delete(keywordId);
+          return next;
+        });
+      }
     }
   }, [keywordAnalysisData, isKorean]);
 
   useEffect(() => {
     if (selectedKeyword && !keywordAnalysisData[selectedKeyword.keyword]) {
-      fetchAnalysisForKeyword(selectedKeyword.keyword);
+      fetchAnalysisForKeyword(selectedKeyword.keyword, selectedKeyword.id);
     }
   }, [selectedKeyword, keywordAnalysisData, fetchAnalysisForKeyword]);
 
@@ -1302,7 +1569,14 @@ export default function TrendDashboardPage() {
 
   // Refresh single keyword
   const handleRefreshKeyword = useCallback(async (keyword: string) => {
-    setIsAnalysisLoading(true);
+    // Find the keyword ID for per-keyword loading state
+    const keywordData = trackedKeywords.find(kw => kw.keyword === keyword);
+    const keywordId = keywordData?.id;
+
+    // Use per-keyword loading state
+    if (keywordId) {
+      setAnalyzingKeywords(prev => new Set(prev).add(keywordId));
+    }
     setError(null);
 
     try {
@@ -1332,9 +1606,16 @@ export default function TrendDashboardPage() {
       console.error("Failed to refresh keyword:", err);
       setError(isKorean ? "키워드 새로고침 중 오류가 발생했습니다." : "Failed to refresh keyword.");
     } finally {
-      setIsAnalysisLoading(false);
+      // Remove from per-keyword loading state
+      if (keywordId) {
+        setAnalyzingKeywords(prev => {
+          const next = new Set(prev);
+          next.delete(keywordId);
+          return next;
+        });
+      }
     }
-  }, [isKorean]);
+  }, [trackedKeywords, isKorean]);
 
   // Translations
   const t = {
@@ -1376,14 +1657,21 @@ export default function TrendDashboardPage() {
     noKeywords: language === "ko" ? "등록된 키워드가 없습니다" : "No tracked keywords",
     addFirst: language === "ko" ? "첫 번째 키워드를 추가하세요" : "Add your first keyword",
     enterKeyword: language === "ko" ? "키워드 또는 해시태그" : "Keyword or hashtag",
+    enterUsername: language === "ko" ? "사용자 이름 (예: @username)" : "Username (e.g., @username)",
     add: language === "ko" ? "추가" : "Add",
     cancel: language === "ko" ? "취소" : "Cancel",
+    searchType: language === "ko" ? "검색 유형" : "Search Type",
+    typeKeyword: language === "ko" ? "키워드" : "Keyword",
+    typeHashtag: language === "ko" ? "해시태그" : "Hashtag",
+    typeUser: language === "ko" ? "사용자" : "User",
   };
 
   // Handlers
   const handleAddKeyword = async () => {
     if (!newKeyword.trim()) return;
-    const keyword = newKeyword.trim().toLowerCase().replace(/^#/, "");
+    const keyword = searchType === "user"
+      ? newKeyword.trim().replace(/^@/, "")
+      : newKeyword.trim().toLowerCase().replace(/^#/, "");
 
     // Check if already tracked
     if (trackedKeywords.some(k => k.keyword.toLowerCase() === keyword.toLowerCase())) {
@@ -1391,49 +1679,144 @@ export default function TrendDashboardPage() {
       return;
     }
 
-    setIsAddingKeyword(true);
+    // Create placeholder keyword immediately
+    const newTrackedId = `kw-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const placeholderKeyword: TrackedKeyword = {
+      id: newTrackedId,
+      keyword: keyword,
+      type: searchType,
+      addedAt: new Date().toISOString(),
+      lastAnalyzedAt: new Date().toISOString(),
+      currentMetrics: {
+        avgViews: 0,
+        avgEngagement: 0,
+        totalVideos: 0,
+      },
+      trend: {
+        direction: "stable",
+        changePercent: 0,
+      },
+      topHashtags: [],
+    };
+
+    // Add to tracked keywords immediately
+    setTrackedKeywords(prev => {
+      const updated = [...prev, placeholderKeyword];
+      saveTrackedKeywords(updated);
+      return updated;
+    });
+
+    // Select the new keyword
+    setSelectedKeywordId(newTrackedId);
+
+    // Close modal immediately
+    setNewKeyword("");
+    setSearchType("keyword");
+    setAddKeywordDialogOpen(false);
     setError(null);
 
-    try {
-      // Fetch analysis for the new keyword
-      const apiResults = await fetchKeywordAnalysis([keyword], 50);
+    // Mark as analyzing in background
+    setAnalyzingKeywords(prev => new Set(prev).add(newTrackedId));
 
-      if (apiResults.length === 0) {
-        setError(isKorean ? "해당 키워드에 대한 데이터를 찾을 수 없습니다." : "No data found for this keyword.");
-        return;
+    // Run analysis in background
+    (async () => {
+      try {
+        if (searchType === "user") {
+          // User search flow
+          const userResult = await fetchUserSearch(keyword);
+
+          if (!userResult.success || userResult.users.length === 0) {
+            // Remove placeholder on error
+            setTrackedKeywords(prev => {
+              const updated = prev.filter(k => k.id !== newTrackedId);
+              saveTrackedKeywords(updated);
+              return updated;
+            });
+            setError(isKorean ? "해당 사용자를 찾을 수 없습니다." : "User not found.");
+            return;
+          }
+
+          const user = userResult.users[0];
+          const updatedKeyword: TrackedKeyword = {
+            ...placeholderKeyword,
+            keyword: user.uniqueId,
+            currentMetrics: {
+              avgViews: 0,
+              avgEngagement: 0,
+              totalVideos: user.videos,
+            },
+            userInfo: {
+              uniqueId: user.uniqueId,
+              nickname: user.nickname,
+              avatarUrl: user.avatarUrl,
+              verified: user.verified,
+              followers: user.followers,
+              following: user.following,
+              likes: user.likes,
+            },
+          };
+
+          // Update with real data
+          setTrackedKeywords(prev => {
+            const updated = prev.map(k => k.id === newTrackedId ? updatedKeyword : k);
+            saveTrackedKeywords(updated);
+            return updated;
+          });
+        } else {
+          // Keyword/Hashtag search flow
+          const apiResults = await fetchKeywordAnalysis([keyword], 50);
+
+          if (apiResults.length === 0) {
+            // Remove placeholder on error
+            setTrackedKeywords(prev => {
+              const updated = prev.filter(k => k.id !== newTrackedId);
+              saveTrackedKeywords(updated);
+              return updated;
+            });
+            setError(isKorean ? "해당 키워드에 대한 데이터를 찾을 수 없습니다." : "No data found for this keyword.");
+            return;
+          }
+
+          const apiData = apiResults[0];
+          const newTracked = transformAPIToTrackedKeyword(apiData);
+          newTracked.id = newTrackedId; // Keep the same ID
+          newTracked.type = searchType;
+          const analysis = transformAPIToKeywordAnalysis(apiData);
+
+          // Update with real data
+          setTrackedKeywords(prev => {
+            const updated = prev.map(k => k.id === newTrackedId ? newTracked : k);
+            saveTrackedKeywords(updated);
+            return updated;
+          });
+
+          setKeywordAnalysisData(prev => ({
+            ...prev,
+            [keyword]: analysis,
+          }));
+
+          // Add to search history
+          addToSearchHistory(keyword, apiData.totalVideos, apiData.aggregateStats.avgEngagementRate);
+          setSearchHistory(loadSearchHistory());
+        }
+      } catch (err) {
+        console.error("Failed to analyze keyword:", err);
+        // Remove placeholder on error
+        setTrackedKeywords(prev => {
+          const updated = prev.filter(k => k.id !== newTrackedId);
+          saveTrackedKeywords(updated);
+          return updated;
+        });
+        setError(isKorean ? "키워드 분석 중 오류가 발생했습니다." : "Failed to analyze keyword.");
+      } finally {
+        // Remove from analyzing set
+        setAnalyzingKeywords(prev => {
+          const next = new Set(prev);
+          next.delete(newTrackedId);
+          return next;
+        });
       }
-
-      const apiData = apiResults[0];
-      const newTracked = transformAPIToTrackedKeyword(apiData);
-      const analysis = transformAPIToKeywordAnalysis(apiData);
-
-      // Update states
-      setTrackedKeywords(prev => {
-        const updated = [...prev, newTracked];
-        saveTrackedKeywords(updated);
-        return updated;
-      });
-
-      setKeywordAnalysisData(prev => ({
-        ...prev,
-        [keyword]: analysis,
-      }));
-
-      // Add to search history
-      addToSearchHistory(keyword, apiData.totalVideos, apiData.aggregateStats.avgEngagementRate);
-      setSearchHistory(loadSearchHistory());
-
-      // Select the new keyword
-      setSelectedKeywordId(newTracked.id);
-
-      setNewKeyword("");
-      setAddKeywordDialogOpen(false);
-    } catch (err) {
-      console.error("Failed to add keyword:", err);
-      setError(isKorean ? "키워드 추가 중 오류가 발생했습니다." : "Failed to add keyword.");
-    } finally {
-      setIsAddingKeyword(false);
-    }
+    })();
   };
 
   const handleRemoveKeyword = (id: string) => {
@@ -1487,7 +1870,7 @@ export default function TrendDashboardPage() {
       <div className="border-b bg-background/95 backdrop-blur sticky top-0 z-10">
         <div className="px-[7%] py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-lg bg-black flex items-center justify-center">
               <BarChart3 className="h-5 w-5 text-white" />
             </div>
             <div>
@@ -1502,9 +1885,9 @@ export default function TrendDashboardPage() {
                 variant="outline"
                 size="sm"
                 onClick={handleRefresh}
-                disabled={isAnalysisLoading}
+                disabled={isAnalysisLoading || analyzingKeywords.size > 0}
               >
-                <RefreshCw className={cn("h-4 w-4 mr-1.5", isAnalysisLoading && "animate-spin")} />
+                <RefreshCw className={cn("h-4 w-4 mr-1.5", (isAnalysisLoading || analyzingKeywords.size > 0) && "animate-spin")} />
                 {isKorean ? "새로고침" : "Refresh"}
               </Button>
             )}
@@ -1521,8 +1904,37 @@ export default function TrendDashboardPage() {
                   <DialogTitle>{t.addKeyword}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 pt-4">
+                  {/* Search Type Selector */}
+                  <div className="flex gap-1 p-1 bg-muted rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => setSearchType("user")}
+                      className={cn(
+                        "flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                        searchType === "user"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Users className="h-3 w-3 inline mr-1" />
+                      {t.typeUser}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSearchType("hashtag")}
+                      className={cn(
+                        "flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                        searchType === "hashtag"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Hash className="h-3 w-3 inline mr-1" />
+                      {t.typeHashtag}
+                    </button>
+                  </div>
                   <Input
-                    placeholder={t.enterKeyword}
+                    placeholder={searchType === "user" ? t.enterUsername : t.enterKeyword}
                     value={newKeyword}
                     onChange={(e) => setNewKeyword(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && !isAddingKeyword && handleAddKeyword()}
@@ -1630,6 +2042,7 @@ export default function TrendDashboardPage() {
                       key={kw.id}
                       keyword={kw}
                       isSelected={kw.id === selectedKeywordId}
+                      isLoading={analyzingKeywords.has(kw.id)}
                       onClick={() => setSelectedKeywordId(kw.id)}
                       onDelete={(e) => {
                         e.stopPropagation();
@@ -1646,12 +2059,13 @@ export default function TrendDashboardPage() {
         </Card>
 
         {/* Row 3: Trend Overview (Selected Keyword Detail) */}
-        {selectedKeyword && isAnalysisLoading && !keywordAnalysis && (
+        {selectedKeyword && analyzingKeywords.has(selectedKeyword.id) && !keywordAnalysis && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Target className="h-4 w-4 text-muted-foreground" />
                 {t.trendOverview}: #{selectedKeyword.keyword}
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-2" />
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1674,9 +2088,9 @@ export default function TrendDashboardPage() {
                     size="sm"
                     className="h-7 text-xs text-muted-foreground"
                     onClick={() => handleRefreshKeyword(selectedKeyword.keyword)}
-                    disabled={isAnalysisLoading}
+                    disabled={analyzingKeywords.has(selectedKeyword.id)}
                   >
-                    <RefreshCw className={cn("h-3 w-3 mr-1", isAnalysisLoading && "animate-spin")} />
+                    <RefreshCw className={cn("h-3 w-3 mr-1", analyzingKeywords.has(selectedKeyword.id) && "animate-spin")} />
                     {isKorean ? "새로고침" : "Refresh"}
                   </Button>
                   <Button
@@ -1773,6 +2187,7 @@ export default function TrendDashboardPage() {
 
               {/* Viral Videos Section */}
               <ViralVideoSection
+                key={`viral-videos-${selectedKeyword.keyword}`}
                 keyword={selectedKeyword.keyword}
                 videos={keywordAnalysis.viralVideos}
                 trendData={{
@@ -1782,10 +2197,15 @@ export default function TrendDashboardPage() {
                   videoCount: keywordAnalysis.viralVideos.length,
                 }}
                 isKorean={isKorean}
-                onCreateFromTrend={() => {
-                  // Clear previous data and set trend data
-                  clearStartData();
-                  setStartFromTrends({
+                onCreateFromTrend={async () => {
+                  // Create a new session with trend data
+                  if (!user?.id) {
+                    console.error("[TrendDashboard] Cannot create session - no user");
+                    return;
+                  }
+
+                  const trendSource = {
+                    type: "trends" as const,
                     keywords: [selectedKeyword.keyword],
                     analysis: {
                       totalVideos: keywordAnalysis.aggregateStats.totalVideos,
@@ -1809,44 +2229,70 @@ export default function TrendDashboardPage() {
                         viralScore: v.viralScore,
                       })),
                     },
-                  });
-                  // Set AI insights from trend analysis
-                  if (keywordAnalysis.aiInsights) {
-                    setStartAiInsights({
-                      summary: keywordAnalysis.aiInsights.summary,
-                      contentStrategy: keywordAnalysis.aiInsights.contentStrategy,
-                      hashtagStrategy: keywordAnalysis.aiInsights.hashtagStrategy,
-                      videoIdeas: keywordAnalysis.aiInsights.videoIdeas,
+                  };
+
+                  try {
+                    await createSession({
+                      entrySource: "trends",
+                      userId: user.id,
+                      initialStartData: {
+                        source: trendSource,
+                        selectedHashtags: keywordAnalysis.topHashtags.map(h => h.tag),
+                        aiInsights: keywordAnalysis.aiInsights ? {
+                          summary: keywordAnalysis.aiInsights.summary,
+                          contentStrategy: keywordAnalysis.aiInsights.contentStrategy,
+                          hashtagStrategy: keywordAnalysis.aiInsights.hashtagStrategy,
+                          videoIdeas: keywordAnalysis.aiInsights.videoIdeas,
+                        } : null,
+                      },
                     });
+                    router.push("/start");
+                  } catch (error) {
+                    console.error("[TrendDashboard] Failed to create session from trend:", error);
                   }
-                  setCurrentStage("start");
-                  router.push("/start");
                 }}
-                onCreateFromVideo={(videoId: string) => {
+                onCreateFromVideo={async (videoId: string) => {
                   // Navigate to Start page with video context
                   const video = keywordAnalysis.viralVideos.find(v => v.id === videoId);
-                  if (video) {
-                    clearStartData();
-                    setStartFromVideo({
-                      videoId: video.id,
-                      videoUrl: video.videoUrl,
-                      thumbnailUrl: null,
-                      basicStats: {
-                        playCount: video.views,
-                        likeCount: 0,
-                        commentCount: 0,
-                        shareCount: 0,
-                        engagementRate: video.engagement,
+                  if (!video) return;
+
+                  if (!user?.id) {
+                    console.error("[TrendDashboard] Cannot create session - no user");
+                    return;
+                  }
+
+                  const videoSource = {
+                    type: "video" as const,
+                    videoId: video.id,
+                    videoUrl: video.videoUrl,
+                    thumbnailUrl: null,
+                    basicStats: {
+                      playCount: video.views,
+                      likeCount: 0,
+                      commentCount: 0,
+                      shareCount: 0,
+                      engagementRate: video.engagement,
+                    },
+                    author: {
+                      id: video.author,
+                      name: video.author,
+                    },
+                    description: video.description,
+                    hashtags: video.hashtags,
+                  };
+
+                  try {
+                    await createSession({
+                      entrySource: "video",
+                      userId: user.id,
+                      initialStartData: {
+                        source: videoSource,
+                        selectedHashtags: video.hashtags,
                       },
-                      author: {
-                        id: video.author,
-                        name: video.author,
-                      },
-                      description: video.description,
-                      hashtags: video.hashtags,
                     });
-                    setCurrentStage("start");
                     router.push("/start");
+                  } catch (error) {
+                    console.error("[TrendDashboard] Failed to create session from video:", error);
                   }
                 }}
               />

@@ -4,12 +4,13 @@ import os
 import platform
 
 # CRITICAL: Set FFmpeg path BEFORE importing moviepy/imageio
-# This tells imageio_ffmpeg to use jellyfin-ffmpeg with NVENC support
+# This tells imageio_ffmpeg to use our compiled FFmpeg with NVENC support
 if platform.system() != "Darwin":  # Not macOS
-    JELLYFIN_FFMPEG = "/usr/lib/jellyfin-ffmpeg/ffmpeg"
-    if os.path.exists(JELLYFIN_FFMPEG):
-        os.environ["IMAGEIO_FFMPEG_EXE"] = JELLYFIN_FFMPEG
-        print(f"[FFmpeg] Using jellyfin-ffmpeg: {JELLYFIN_FFMPEG}")
+    NVENC_FFMPEG = "/usr/local/bin/ffmpeg"
+    if os.path.exists(NVENC_FFMPEG):
+        os.environ["IMAGEIO_FFMPEG_EXE"] = NVENC_FFMPEG
+        os.environ["FFMPEG_BINARY"] = NVENC_FFMPEG
+        print(f"[FFmpeg] Using NVENC FFmpeg: {NVENC_FFMPEG}")
 
 import asyncio
 import logging
@@ -118,12 +119,15 @@ class VideoRenderer:
             await self._update_progress(progress_callback, job_id, 15, "Analyzing audio" if audio_path else "Calculating timings")
 
             audio_url = request.audio.url if request.audio else None
+            logger.info(f"[{job_id}] STEP 2: Starting audio analysis...")
             audio_analysis = await self._get_audio_analysis(audio_path, audio_url)
             beat_times = audio_analysis.beat_times
+            logger.info(f"[{job_id}] STEP 2 COMPLETE: BPM={audio_analysis.bpm}, beats={len(beat_times)}")
 
             # ============================================================
             # STEP 3: CALCULATE TIMINGS (600ms per image, looping)
             # ============================================================
+            logger.info(f"[{job_id}] STEP 3: Calculating timings...")
             await self._update_progress(progress_callback, job_id, 20, "Calculating timings")
 
             preset = get_preset(request.settings.vibe.value)
@@ -158,10 +162,12 @@ class VideoRenderer:
                 cut_times.append((start_time, end_time))
 
             logger.info(f"[{job_id}] Using 600ms per image: {num_total_clips} clips for {target_duration:.1f}s video")
+            logger.info(f"[{job_id}] STEP 3 COMPLETE: calculated {len(cut_times)} cut times")
 
             # ============================================================
             # STEP 4: PARALLEL IMAGE PROCESSING
             # ============================================================
+            logger.info(f"[{job_id}] STEP 4: Processing images in parallel...")
             await self._update_progress(progress_callback, job_id, 25, "Processing images")
 
             processed_paths = await self._process_images_parallel(
@@ -176,20 +182,24 @@ class VideoRenderer:
             for i in range(num_total_clips):
                 looped_image_paths.append(processed_paths[i % len(processed_paths)])
             logger.info(f"[{job_id}] Looped {len(processed_paths)} images into {len(looped_image_paths)} clips")
+            logger.info(f"[{job_id}] STEP 4 COMPLETE")
 
             # ============================================================
             # STEP 5: CREATE CLIPS (can be parallelized for large batches)
             # ============================================================
+            logger.info(f"[{job_id}] STEP 5: Creating video clips...")
             await self._update_progress(progress_callback, job_id, 35, "Creating video clips")
 
             clips = await self._create_clips_parallel(
                 looped_image_paths, cut_times, preset,
                 request.settings.aspect_ratio.value, beat_times, job_id
             )
+            logger.info(f"[{job_id}] STEP 5 COMPLETE: created {len(clips)} clips")
 
             # ============================================================
             # STEP 6: GET AI EFFECTS (for transitions and text animations)
             # ============================================================
+            logger.info(f"[{job_id}] STEP 6: Getting AI effects...")
             ai_effects = None
             if request.settings.use_ai_effects:
                 ai_effects = await self._get_ai_effects(
@@ -199,20 +209,91 @@ class VideoRenderer:
                     job_id=job_id
                 )
                 logger.info(f"[{job_id}] AI effects - transitions: {len(ai_effects.transitions)}, text_animations: {len(ai_effects.text_animations)}")
+            logger.info(f"[{job_id}] STEP 6 COMPLETE")
 
             # ============================================================
-            # STEP 7: CONCATENATE CLIPS (no transitions)
+            # STEP 7: APPLY TRANSITIONS AND CONCATENATE
             # ============================================================
-            await self._update_progress(progress_callback, job_id, 55, "Concatenating clips")
+            logger.info(f"[{job_id}] STEP 7: Applying transitions...")
+            await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
 
-            # NO TRANSITIONS: Simply concatenate clips directly
-            # Transitions disabled per user request
-            logger.info(f"[{job_id}] Concatenating {len(clips)} clips (transitions disabled)")
-            video = concatenate_videoclips(clips, method="compose")
+            # Apply transitions based on style
+            # ALWAYS use xfade renderer for reliability - MoviePy transitions can hang
+            try:
+                if ai_effects and ai_effects.transitions:
+                    logger.info(f"[{job_id}] Applying {len(ai_effects.transitions)} AI transitions via xfade")
+                    video = await self._apply_ai_transitions_with_effects(
+                        clips, ai_effects, preset, job_dir, job_id
+                    )
+                else:
+                    # Use preset-based transitions via xfade renderer (not MoviePy)
+                    logger.info(f"[{job_id}] Applying preset transitions via xfade: {preset.transition_type}")
+                    video = await self._apply_preset_transitions_via_xfade(
+                        clips, preset, job_dir, job_id
+                    )
+            except Exception as e:
+                logger.warning(f"[{job_id}] Transition failed, using simple concatenate: {e}")
+                video = concatenate_videoclips(clips, method="compose")
+            logger.info(f"[{job_id}] STEP 7 COMPLETE: video duration={video.duration:.2f}s")
+
+            # Check if we have an xfade output file that we can use directly
+            # This skips MoviePy post-processing which can hang
+            xfade_output = self.temp.get_path(job_id, f"{job_id}_xfade_output.mp4")
+            import os
+            if os.path.exists(xfade_output) and not (request.script and request.script.lines):
+                # FAST PATH: Use xfade output directly (skip text/color/effects)
+                # Only do this when there's no text to overlay
+                logger.info(f"[{job_id}] FAST PATH: Using xfade output directly (no text overlays)")
+
+                # Add audio using FFmpeg directly instead of MoviePy
+                output_path = self.temp.get_path(job_id, "output.mp4")
+                if audio_path and request.audio:
+                    logger.info(f"[{job_id}] Adding audio via FFmpeg...")
+                    await self._update_progress(progress_callback, job_id, 85, "Adding audio")
+                    import subprocess
+                    # Mix audio with video using FFmpeg
+                    ffmpeg_cmd = [
+                        "ffmpeg", "-y",
+                        "-i", xfade_output,
+                        "-i", audio_path,
+                        "-c:v", "copy",  # Copy video stream (no re-encode!)
+                        "-c:a", "aac",
+                        "-b:a", "192k",
+                        "-shortest",
+                        output_path
+                    ]
+                    logger.info(f"[{job_id}] FFmpeg audio mix: {' '.join(ffmpeg_cmd)}")
+                    result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+                    if result.returncode != 0:
+                        logger.error(f"[{job_id}] FFmpeg audio mix failed: {result.stderr}")
+                        # Fallback: just copy video without audio
+                        import shutil
+                        shutil.copy(xfade_output, output_path)
+                else:
+                    # No audio - just copy xfade output
+                    import shutil
+                    shutil.copy(xfade_output, output_path)
+
+                logger.info(f"[{job_id}] FAST PATH complete: {output_path}")
+                await self._update_progress(progress_callback, job_id, 95, "Uploading")
+
+                # Upload and cleanup
+                # Note: S3Client uses bucket from settings (Secrets Manager: hydra-assets-seoul)
+                s3_url = await self.s3.upload_file(
+                    output_path,
+                    request.output.s3_key,
+                    content_type="video/mp4"
+                )
+                logger.info(f"[{job_id}] Upload complete: {s3_url}")
+                self._cleanup_clips(video, clips, [])
+                await self._update_progress(progress_callback, job_id, 100, "Completed")
+
+                return s3_url
 
             # ============================================================
             # STEP 8: ADD TEXT OVERLAYS (with AI-selected animations)
             # ============================================================
+            logger.info(f"[{job_id}] STEP 8: Adding text overlays...")
             await self._update_progress(progress_callback, job_id, 65, "Adding text overlays")
 
             video_duration = video.duration
@@ -230,6 +311,7 @@ class VideoRenderer:
             # ============================================================
             # STEP 9: ADD AUDIO WITH TIKTOK HOOK (if audio provided)
             # ============================================================
+            logger.info(f"[{job_id}] STEP 9: Adding audio...")
             audio_clips_to_close = []
             if audio_path and request.audio:
                 await self._update_progress(progress_callback, job_id, 75, "Adding audio")
@@ -238,33 +320,79 @@ class VideoRenderer:
                 )
             else:
                 logger.info(f"[{job_id}] Skipping audio - generating silent video")
+            logger.info(f"[{job_id}] STEP 9 COMPLETE")
 
             # ============================================================
-            # STEP 10: COLOR GRADING (DISABLED)
+            # STEP 10: COLOR GRADING
             # ============================================================
-            await self._update_progress(progress_callback, job_id, 78, "Skipping color grading")
-            # Color grading disabled per user request
-            logger.info(f"[{job_id}] Color grading disabled")
+            logger.info(f"[{job_id}] STEP 10: Applying color grading...")
+            await self._update_progress(progress_callback, job_id, 78, "Applying color grading")
+            color_grade = preset.color_grade
+            if color_grade and color_grade != "natural":
+                try:
+                    logger.info(f"[{job_id}] Applying color grade: {color_grade}")
+                    video = filters.apply_color_grade(video, color_grade)
+                except Exception as e:
+                    logger.warning(f"[{job_id}] Color grading failed: {e}")
+            logger.info(f"[{job_id}] STEP 10 COMPLETE")
 
             # ============================================================
-            # STEP 11: OVERLAY EFFECTS (DISABLED)
+            # STEP 11: OVERLAY EFFECTS
             # ============================================================
-            # All overlay effects disabled per user request
-            logger.info(f"[{job_id}] Overlay effects disabled")
+            logger.info(f"[{job_id}] STEP 11: Applying overlay effects...")
+            await self._update_progress(progress_callback, job_id, 80, "Applying overlay effects")
+
+            # Apply preset-based effects (film_grain, vignette, etc.)
+            if preset.effects:
+                for effect_name in preset.effects:
+                    try:
+                        if effect_name == "film_grain":
+                            video = filters.apply_film_grain(video, intensity=0.03)
+                            logger.info(f"[{job_id}] Applied film grain effect")
+                        elif effect_name == "vignette":
+                            video = filters.apply_vignette(video, strength=0.25)
+                            logger.info(f"[{job_id}] Applied vignette effect")
+                        elif effect_name == "glow":
+                            video = filters.apply_bloom(video, threshold=0.7, intensity=0.3)
+                            logger.info(f"[{job_id}] Applied glow/bloom effect")
+                        elif effect_name == "slight_desaturate":
+                            # Already handled by cinematic color grade
+                            pass
+                        # Note: shake_on_beat and flash_transition are handled in motion/transitions
+                    except Exception as e:
+                        logger.warning(f"[{job_id}] Overlay effect {effect_name} failed: {e}")
+
+            # Apply AI-selected overlay effects if available
+            if ai_effects and ai_effects.filters:
+                try:
+                    logger.info(f"[{job_id}] Applying {len(ai_effects.filters)} AI overlay effects")
+                    video = filters.apply_overlay_effects_dynamic(
+                        video,
+                        ai_effects.filters,
+                        moods=getattr(ai_effects, 'moods', None),
+                        intensity="medium",
+                        bpm=audio_analysis.bpm if audio_analysis else None
+                    )
+                except Exception as e:
+                    logger.warning(f"[{job_id}] AI overlay effects failed: {e}")
+            logger.info(f"[{job_id}] STEP 11 COMPLETE")
 
             # ============================================================
             # STEP 12: GPU RENDER WITH OPTIMIZED NVENC
             # ============================================================
+            logger.info(f"[{job_id}] STEP 12: Rendering video with NVENC...")
             await self._update_progress(progress_callback, job_id, 85, "Rendering video")
 
             output_path = self.temp.get_path(job_id, "output.mp4")
             temp_audiofile = self.temp.get_path(job_id, f"temp_audio_{job_id}.mp4")
 
             await self._render_with_nvenc(video, output_path, temp_audiofile, job_id)
+            logger.info(f"[{job_id}] STEP 12 COMPLETE")
 
             # ============================================================
             # STEP 13: CLEANUP AND UPLOAD
             # ============================================================
+            logger.info(f"[{job_id}] STEP 13: Cleanup and upload...")
             self._cleanup_clips(video, clips, audio_clips_to_close)
 
             await self._update_progress(progress_callback, job_id, 95, "Uploading")
@@ -340,12 +468,26 @@ class VideoRenderer:
                 logger.info(f"Using cached audio analysis for {cache_key[:8]}...")
                 return _audio_cache[cache_key]
 
-        # Analyze audio (CPU-bound, run in thread pool)
+        # Analyze audio (CPU-bound, run in thread pool) with timeout
         loop = asyncio.get_event_loop()
-        analysis = await loop.run_in_executor(
-            get_cpu_executor(),
-            lambda: self.audio_analyzer.analyze(audio_path)
-        )
+        AUDIO_ANALYSIS_TIMEOUT = 60  # 60 seconds timeout
+
+        try:
+            logger.info(f"Starting audio analysis with {AUDIO_ANALYSIS_TIMEOUT}s timeout...")
+            analysis = await asyncio.wait_for(
+                loop.run_in_executor(
+                    get_cpu_executor(),
+                    lambda: self.audio_analyzer.analyze(audio_path)
+                ),
+                timeout=AUDIO_ANALYSIS_TIMEOUT
+            )
+            logger.info(f"Audio analysis completed successfully")
+        except asyncio.TimeoutError:
+            logger.warning(f"Audio analysis timed out after {AUDIO_ANALYSIS_TIMEOUT}s, using default analysis")
+            return self._create_default_audio_analysis()
+        except Exception as e:
+            logger.warning(f"Audio analysis failed: {e}, using default analysis")
+            return self._create_default_audio_analysis()
 
         # Cache the result
         async with _audio_cache_lock:
@@ -372,12 +514,15 @@ class VideoRenderer:
 
         logger.info(f"Created default audio analysis: BPM={DEFAULT_BPM}, beats={len(beat_times)}")
 
+        # Generate energy curve as (time, energy) pairs
+        energy_curve = [(i * 0.5, 0.5) for i in range(int(DEFAULT_DURATION * 2))]  # Neutral energy
+
         return AudioAnalysis(
             bpm=DEFAULT_BPM,
             beat_times=beat_times,
             duration=DEFAULT_DURATION,
-            energy_profile=[0.5] * 10,  # Neutral energy
-            segments=[]
+            energy_curve=energy_curve,
+            suggested_vibe="Exciting"  # Default vibe for social media content
         )
 
     async def _process_images_parallel(
@@ -448,8 +593,14 @@ class VideoRenderer:
             duration = end - start
             clip = ImageClip(img_path).with_duration(duration)
 
-            # NO EFFECTS: Simple static image clips
-            # Ken Burns motion disabled per user request
+            # Apply Ken Burns motion effect based on style
+            motion_style = get_motion_style(clip_index, total_clips, preset.motion_style)
+            if motion_style != "static":
+                try:
+                    clip = motion.apply_ken_burns(clip, motion_style)
+                except Exception as e:
+                    logger.warning(f"Motion effect failed: {e}")
+
             return clip.with_start(start)
 
         total_clips = len(processed_paths)
@@ -583,61 +734,104 @@ class VideoRenderer:
         job_id: str
     ) -> None:
         """Render video with optimized settings - NVENC if available, else CPU."""
+        import time
         is_mac = platform.system() == "Darwin"
         loop = asyncio.get_event_loop()
 
         # Check if NVENC is actually available (some cloud GPUs don't expose it)
         use_nvenc = not is_mac and self._check_nvenc_available()
 
+        # Log video properties for debugging
+        video_duration = getattr(video, 'duration', 'unknown')
+        video_size = getattr(video, 'size', 'unknown')
+        video_fps = getattr(video, 'fps', 30)
+        logger.info(f"[{job_id}] Video properties: duration={video_duration}s, size={video_size}, fps={video_fps}")
+        logger.info(f"[{job_id}] Output path: {output_path}")
+
+        start_time = time.time()
+
+        # Set timeout for encoding (5 minutes max for any video)
+        ENCODING_TIMEOUT = 300  # 5 minutes
+
         if use_nvenc:
             # GPU encoding with optimized NVENC parameters for TikTok
-            # - preset p4 (balanced speed/quality)
-            # - cq 23 (constant quality, good for social media)
-            # - b:v 8M (target bitrate for TikTok HD)
-            logger.info(f"[{job_id}] Using NVENC GPU encoding")
-            await loop.run_in_executor(
-                None,
-                lambda: video.write_videofile(
-                    output_path,
-                    fps=30,
-                    codec="h264_nvenc",
-                    audio_codec="aac",
-                    audio_bitrate="192k",
-                    temp_audiofile=temp_audiofile,
-                    ffmpeg_params=[
-                        "-preset", "p4",       # Fast encoding (p1=fastest, p7=slowest)
-                        "-tune", "hq",         # High quality tuning
-                        "-rc", "vbr",          # Variable bitrate
-                        "-cq", "23",           # Constant quality (18-28, lower=better)
-                        "-b:v", "8M",          # Target bitrate
-                        "-maxrate", "12M",     # Max bitrate spike
-                        "-bufsize", "16M",     # Buffer size
-                        "-profile:v", "high",  # H.264 High profile (auto level)
-                    ],
-                    logger=None
+            logger.info(f"[{job_id}] Starting NVENC GPU encoding (preset=p1, fastest, timeout={ENCODING_TIMEOUT}s)...")
+            try:
+                await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: video.write_videofile(
+                            output_path,
+                            fps=30,
+                            codec="h264_nvenc",
+                            audio_codec="aac",
+                            audio_bitrate="192k",
+                            temp_audiofile=temp_audiofile,
+                            ffmpeg_params=[
+                                "-preset", "p1",
+                                "-tune", "ll",
+                                "-rc", "vbr",
+                                "-cq", "23",
+                                "-b:v", "8M",
+                                "-maxrate", "12M",
+                                "-bufsize", "16M",
+                                "-profile:v", "high",
+                            ],
+                            logger="bar"
+                        )
+                    ),
+                    timeout=ENCODING_TIMEOUT
                 )
-            )
-            logger.info(f"[{job_id}] Rendered with GPU (NVENC h264_nvenc, preset=p4)")
+            except asyncio.TimeoutError:
+                logger.error(f"[{job_id}] NVENC encoding timed out after {ENCODING_TIMEOUT}s, falling back to CPU")
+                # Try CPU encoding as fallback
+                await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: video.write_videofile(
+                            output_path,
+                            fps=30,
+                            codec="libx264",
+                            audio_codec="aac",
+                            audio_bitrate="192k",
+                            threads=8,
+                            preset="ultrafast",
+                            ffmpeg_params=["-crf", "28"],
+                            temp_audiofile=temp_audiofile,
+                            logger="bar"
+                        )
+                    ),
+                    timeout=ENCODING_TIMEOUT
+                )
+            elapsed = time.time() - start_time
+            logger.info(f"[{job_id}] NVENC encoding completed in {elapsed:.2f}s")
         else:
             # CPU encoding with optimized libx264 (fast preset, 8 threads)
-            # Still benefits from GPU for cupy image processing and color grading
-            logger.info(f"[{job_id}] Using CPU encoding (libx264) - NVENC not available")
-            await loop.run_in_executor(
-                None,
-                lambda: video.write_videofile(
-                    output_path,
-                    fps=30,
-                    codec="libx264",
-                    audio_codec="aac",
-                    audio_bitrate="192k",
-                    threads=8,
-                    preset="fast",
-                    ffmpeg_params=["-crf", "23"],
-                    temp_audiofile=temp_audiofile,
-                    logger=None
+            logger.info(f"[{job_id}] Starting CPU encoding (libx264, preset=fast, threads=8, timeout={ENCODING_TIMEOUT}s)...")
+            try:
+                await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: video.write_videofile(
+                            output_path,
+                            fps=30,
+                            codec="libx264",
+                            audio_codec="aac",
+                            audio_bitrate="192k",
+                            threads=8,
+                            preset="fast",
+                            ffmpeg_params=["-crf", "23"],
+                            temp_audiofile=temp_audiofile,
+                            logger="bar"
+                        )
+                    ),
+                    timeout=ENCODING_TIMEOUT
                 )
-            )
-            logger.info(f"[{job_id}] Rendered with CPU (libx264, preset=fast, threads=8)")
+            except asyncio.TimeoutError:
+                logger.error(f"[{job_id}] CPU encoding timed out after {ENCODING_TIMEOUT}s")
+                raise RuntimeError(f"Video encoding timed out after {ENCODING_TIMEOUT}s")
+            elapsed = time.time() - start_time
+            logger.info(f"[{job_id}] CPU encoding completed in {elapsed:.2f}s")
 
     def _cleanup_clips(
         self,
@@ -811,6 +1005,64 @@ class VideoRenderer:
             logger.error(f"[{job_id}] AI transition error: {e}, using preset fallback")
             transition_func = transitions.get_transition(preset.transition_type)
             return transition_func(clips, duration=preset.transition_duration)
+
+    async def _apply_preset_transitions_via_xfade(
+        self,
+        clips: List[ImageClip],
+        preset,
+        job_dir: str,
+        job_id: str
+    ) -> CompositeVideoClip:
+        """
+        Apply preset-based transitions using xfade renderer instead of MoviePy.
+
+        This ensures reliable encoding by using FFmpeg xfade filter chain
+        instead of MoviePy's composite clips which can hang during write_videofile.
+        """
+        # Map preset transition types to xfade-compatible effects
+        PRESET_TO_XFADE = {
+            "crossfade": "dissolve",
+            "zoom_beat": "circleopen",
+            "glitch_wave": "pixelize",
+            "slide": "slideleft",
+            "bounce": "smoothup",
+            "minimal": "fade",
+            "pulse_flow": "circlecrop",
+            "swirl": "smoothright",
+            "fade": "fade",
+            "dissolve": "dissolve",
+        }
+
+        # Get xfade effect for this preset
+        xfade_effect = PRESET_TO_XFADE.get(preset.transition_type, "dissolve")
+        logger.info(f"[{job_id}] Mapping preset '{preset.transition_type}' to xfade '{xfade_effect}'")
+
+        # Build transition specs for each clip transition
+        num_transitions = len(clips) - 1
+        transition_specs = [
+            TransitionSpec(
+                effect_id=xfade_effect,
+                duration=preset.transition_duration
+            )
+            for _ in range(num_transitions)
+        ]
+
+        logger.info(f"[{job_id}] Applying {num_transitions} preset transitions via xfade: {xfade_effect}")
+
+        # Use renderer adapter (xfade)
+        video = self.renderer_adapter.apply_transitions_to_clips(
+            clips=clips,
+            transitions=transition_specs,
+            temp_dir=job_dir,
+            job_id=job_id
+        )
+
+        if video is not None:
+            return video
+
+        # Fallback to simple concatenate if xfade fails
+        logger.warning(f"[{job_id}] xfade failed, using simple concatenate")
+        return concatenate_videoclips(clips, method="compose")
 
     async def _get_ai_effects(
         self,

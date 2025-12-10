@@ -77,14 +77,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: { createdAt: "desc" },
     });
 
-    // Get all generated preview images for this campaign
-    // Also include user's preview images that are not linked to any campaign
+    // Get all generated preview images for this campaign only
+    // Images are now properly linked to campaigns when generated from /create page
     const previewImages = await prisma.generatedPreviewImage.findMany({
       where: {
-        OR: [
-          { campaignId },  // Images linked to this campaign
-          { campaignId: null, userId: user.id },  // User's images not linked to any campaign
-        ],
+        campaignId,  // Only images specifically linked to this campaign
       },
       orderBy: { createdAt: "desc" },
     });

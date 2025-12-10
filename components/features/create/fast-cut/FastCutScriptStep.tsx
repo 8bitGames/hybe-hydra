@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { HelpCircle } from "lucide-react";
 import {
@@ -28,11 +33,21 @@ import {
   Hash,
   FileText,
   Search,
+  FolderOpen,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import { ScriptGenerationResponse, TikTokSEO, ASPECT_RATIOS } from "@/lib/fast-cut-api";
 import { KeywordInputPopover } from "@/components/ui/keyword-input-popover";
+import { CampaignSelector } from "@/components/features/create/CampaignSelector";
 
 interface FastCutScriptStepProps {
+  // Campaign selection
+  campaignId: string | null;
+  campaignName: string;
+  onCampaignChange?: (campaignId: string) => void;
+  campaignReadOnly?: boolean;
+  // Script generation
   prompt: string;
   setPrompt: (prompt: string) => void;
   aspectRatio: string;
@@ -51,6 +66,10 @@ interface FastCutScriptStepProps {
 }
 
 export function FastCutScriptStep({
+  campaignId,
+  campaignName,
+  onCampaignChange,
+  campaignReadOnly = false,
   prompt,
   setPrompt,
   aspectRatio,
@@ -68,6 +87,7 @@ export function FastCutScriptStep({
   onKeywordPopoverOpenChange,
 }: FastCutScriptStepProps) {
   const { language, translate } = useI18n();
+  const [campaignSelectorOpen, setCampaignSelectorOpen] = useState(!campaignId && !campaignReadOnly);
 
   // Helper for tooltip icon
   const TooltipIcon = ({ tooltipKey }: { tooltipKey: string }) => (
@@ -140,6 +160,80 @@ export function FastCutScriptStep({
             : "AI generates a script with TikTok Hook Strategy applied"}
         </p>
       </div>
+
+      {/* Campaign Selector */}
+      {campaignReadOnly ? (
+        // Read-only campaign display
+        <div className="border border-neutral-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-primary/10">
+              <FolderOpen className="h-5 w-5 text-primary" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-medium text-neutral-700">
+                {language === "ko" ? "캠페인" : "Campaign"}
+              </p>
+              <p className="text-sm text-neutral-900 font-semibold flex items-center gap-1">
+                {campaignName || campaignId}
+                <Check className="h-3.5 w-3.5 text-primary" />
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        // Editable campaign selector
+        <Collapsible
+          open={campaignSelectorOpen}
+          onOpenChange={setCampaignSelectorOpen}
+          className="border border-neutral-200 rounded-lg"
+        >
+          <CollapsibleTrigger asChild>
+            <button className="w-full p-4 flex items-center justify-between hover:bg-neutral-50 transition-colors rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center",
+                  campaignId ? "bg-primary/10" : "bg-neutral-100"
+                )}>
+                  <FolderOpen className={cn(
+                    "h-5 w-5",
+                    campaignId ? "text-primary" : "text-neutral-500"
+                  )} />
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-medium text-neutral-700">
+                    {language === "ko" ? "캠페인" : "Campaign"}
+                  </p>
+                  {campaignId ? (
+                    <p className="text-sm text-neutral-900 font-semibold flex items-center gap-1">
+                      {campaignName || campaignId}
+                      <Check className="h-3.5 w-3.5 text-primary" />
+                    </p>
+                  ) : (
+                    <p className="text-sm text-neutral-500">
+                      {language === "ko" ? "캠페인을 선택하세요" : "Select a campaign"}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <ChevronDown className={cn(
+                "h-5 w-5 text-neutral-400 transition-transform",
+                campaignSelectorOpen && "rotate-180"
+              )} />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="px-4 pb-4 pt-0">
+              <CampaignSelector
+                value={campaignId || ""}
+                onChange={(id) => {
+                  onCampaignChange?.(id);
+                  setCampaignSelectorOpen(false);
+                }}
+              />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
 
       {/* Prompt Input */}
       <div className="space-y-2">

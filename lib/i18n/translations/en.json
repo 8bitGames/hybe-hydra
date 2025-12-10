@@ -716,6 +716,7 @@
       },
       "effects": {
         "preset": "Select the effect style for your video. Refer to AI recommendation",
+        "styleSet": "Choose the overall style for your video. Each style includes optimized effects, color grading, and text animations",
         "generateVideo": "Generate final video with selected settings",
         "seo": {
           "description": "Description for TikTok posting. Include keywords naturally",

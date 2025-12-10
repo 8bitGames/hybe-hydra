@@ -96,6 +96,91 @@ export function getProxiedImageUrl(url: string | null | undefined): string | nul
   return url;
 }
 
+/**
+ * Download file from URL (handles cross-origin like S3)
+ * Fetches the file as blob and triggers browser download
+ */
+export async function downloadFile(url: string, filename?: string): Promise<void> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename || getFilenameFromUrl(url) || 'download';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Cleanup blob URL after a short delay
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+  } catch (error) {
+    console.error('Download failed:', error);
+    // Fallback: open in new tab
+    window.open(url, '_blank');
+  }
+}
+
+/**
+ * Extract filename from URL
+ */
+function getFilenameFromUrl(url: string): string | null {
+  try {
+    const pathname = new URL(url).pathname;
+    const filename = pathname.split('/').pop();
+    return filename || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Format a date as relative time (e.g., "2 hours ago", "3 days ago")
+ */
+export function formatRelativeTime(date: Date | string | number): string {
+  const now = new Date();
+  const target = new Date(date);
+  const diffMs = now.getTime() - target.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  const diffWeeks = Math.floor(diffDays / 7);
+  const diffMonths = Math.floor(diffDays / 30);
+
+  if (diffSeconds < 60) {
+    return "just now";
+  } else if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  } else if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  } else if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  } else if (diffWeeks < 4) {
+    return `${diffWeeks}w ago`;
+  } else if (diffMonths < 12) {
+    return `${diffMonths}mo ago`;
+  } else {
+    return target.toLocaleDateString();
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -11,6 +11,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { createCreativeDirectorAgent } from "@/lib/agents/creators/creative-director";
+import { createFastCutIdeaAgent } from "@/lib/agents/creators/fast-cut-idea-agent";
+import { createVideoRecreationIdeaAgent } from "@/lib/agents/creators/video-recreation-idea-agent";
 import { AgentContext, ContentStrategy } from "@/lib/agents/types";
 
 // ============================================================================
@@ -40,6 +42,31 @@ interface TrendInsights {
   bestPostingTimes?: string[];
 }
 
+// Video analysis data from StartFromVideo
+interface VideoAnalysisData {
+  hookAnalysis?: string;
+  styleAnalysis?: string;
+  structureAnalysis?: string;
+  suggestedApproach?: string;
+  isComposeVideo?: boolean;
+  imageCount?: number;
+  conceptDetails?: {
+    visualStyle?: string;
+    colorPalette?: string[];
+    lighting?: string;
+    cameraMovement?: string[];
+    transitions?: string[];
+    effects?: string[];
+    mood?: string;
+    pace?: string;
+    mainSubject?: string;
+    actions?: string[];
+    setting?: string;
+    props?: string[];
+    clothingStyle?: string;
+  };
+}
+
 interface GenerateIdeasRequest {
   user_idea: string;
   keywords: string[];
@@ -59,6 +86,19 @@ interface GenerateIdeasRequest {
   // Artist/Brand context
   artistName?: string;
   language?: "ko" | "en";
+  // Content type - selected by user at Start stage (ai_video or fast-cut)
+  contentType?: "ai_video" | "fast-cut";
+  // Video analysis data (when started from video)
+  video_analysis?: VideoAnalysisData | null;
+  video_description?: string | null;
+  video_hashtags?: string[] | null;
+}
+
+interface FastCutData {
+  searchKeywords: string[];
+  suggestedVibe: string;
+  suggestedBpmRange: { min: number; max: number };
+  scriptOutline: string[];
 }
 
 interface ContentIdea {
@@ -68,12 +108,17 @@ interface ContentIdea {
   hook: string;
   description: string;
   estimatedEngagement: "high" | "medium" | "low";
+  // AI Video용 (VEO cinematic prompt)
   optimizedPrompt: string;
+  // Fast Cut용 데이터
+  fastCutData?: FastCutData;
   suggestedMusic?: {
     bpm: number;
     genre: string;
   };
   scriptOutline?: string[];
+  // 영상 재현 아이디어 여부 (영상 기반 시작 시)
+  isRecreationIdea?: boolean;
 }
 
 interface GenerateIdeasResponse {
@@ -108,6 +153,10 @@ export async function POST(request: NextRequest) {
       performance_metrics,
       artistName = "Brand",
       language = "ko",
+      contentType = "ai_video",
+      video_analysis,
+      video_description,
+      video_hashtags,
     } = body;
 
     // Build strategy from trend data
@@ -118,15 +167,13 @@ export async function POST(request: NextRequest) {
       trend_insights,
     });
 
-    // Create agent and context
-    const creativeDirector = createCreativeDirectorAgent();
-
+    // Common agent context
     const agentContext: AgentContext = {
       workflow: {
         artistName,
         platform: "tiktok",
         language,
-        genre: genre || undefined,  // Music genre for viral content generation
+        genre: genre || undefined,
         sessionId: `analyze-ideas-${Date.now()}`,
       },
       discover: {
@@ -136,9 +183,81 @@ export async function POST(request: NextRequest) {
       },
     };
 
+    // ========================================================================
+    // Branch: Fast Cut vs AI Video based on user-selected contentType
+    // ========================================================================
+
+    if (contentType === "fast-cut") {
+      // Use FastCutIdeaAgent for slideshow-type content
+      const fastCutAgent = createFastCutIdeaAgent();
+
+      const fastCutInput = {
+        userIdea: user_idea || undefined,
+        campaignDescription: campaign_description || undefined,
+        artistName,
+        genre: genre || undefined,
+        trendKeywords: keywords,
+        language: language as "ko" | "en",
+      };
+
+      // Fast Cut doesn't support streaming yet
+      const agentResult = await fastCutAgent.execute(fastCutInput, agentContext);
+
+      if (!agentResult.success || !agentResult.data) {
+        console.error("FastCutIdeaAgent execution failed:", agentResult.error);
+        return NextResponse.json(
+          {
+            success: false,
+            error: agentResult.error || "Failed to generate Fast Cut ideas",
+          },
+          { status: 500 }
+        );
+      }
+
+      const output = agentResult.data;
+
+      // Transform Fast Cut agent output
+      const ideas: ContentIdea[] = output.ideas.map((idea) => ({
+        id: uuidv4(),
+        type: "fast-cut" as const,
+        title: idea.title,
+        hook: idea.hook,
+        description: idea.description,
+        estimatedEngagement: idea.estimatedEngagement,
+        // Empty VEO prompt for Fast Cut ideas
+        optimizedPrompt: "",
+        // Fast Cut specific data
+        fastCutData: {
+          searchKeywords: idea.searchKeywords,
+          suggestedVibe: idea.suggestedVibe,
+          suggestedBpmRange: idea.suggestedBpmRange,
+          scriptOutline: idea.scriptOutline,
+        },
+        suggestedMusic: {
+          bpm: Math.round((idea.suggestedBpmRange.min + idea.suggestedBpmRange.max) / 2),
+          genre: idea.suggestedVibe.toLowerCase(),
+        },
+        scriptOutline: idea.scriptOutline,
+      }));
+
+      return NextResponse.json({
+        success: true,
+        ideas,
+        optimized_hashtags: output.optimizedHashtags,
+        content_strategy: output.contentStrategy,
+      } as GenerateIdeasResponse);
+    }
+
+    // ========================================================================
+    // Default: AI Video (VEO) using CreativeDirectorAgent
+    // Branch: Video-based (2+2 ideas) vs Non-video (3 ideas)
+    // ========================================================================
+
+    const creativeDirector = createCreativeDirectorAgent();
+
     const agentInput = {
       userIdea: user_idea || undefined,
-      campaignDescription: campaign_description || undefined,  // Central context for all prompts
+      campaignDescription: campaign_description || undefined,
       strategy: strategy,
       audience: target_audience.length > 0 ? target_audience.join(", ") : undefined,
       goals: content_goals.length > 0 ? content_goals : undefined,
@@ -149,12 +268,12 @@ export async function POST(request: NextRequest) {
       } : undefined,
     };
 
-    // Handle streaming response
-    if (isStreaming) {
+    // Handle streaming response (only for non-video based)
+    if (isStreaming && !video_analysis) {
       return handleStreamingResponse(creativeDirector, agentInput, agentContext);
     }
 
-    // Execute agent (non-streaming)
+    // Execute CreativeDirector agent (non-streaming)
     const agentResult = await creativeDirector.execute(agentInput, agentContext);
 
     // Check if agent execution was successful
@@ -171,7 +290,71 @@ export async function POST(request: NextRequest) {
 
     const output = agentResult.data;
 
-    // Transform agent output to API response format
+    // ========================================================================
+    // Branch: Video-based start → 2 trend ideas + 2 recreation ideas
+    // ========================================================================
+    if (video_analysis) {
+      // Take first 2 trend-based ideas from CreativeDirector
+      const trendIdeas: ContentIdea[] = output.ideas.slice(0, 2).map((idea) => ({
+        id: uuidv4(),
+        type: "ai_video" as const,
+        title: idea.title,
+        hook: idea.hook,
+        description: idea.description,
+        estimatedEngagement: idea.estimatedEngagement,
+        optimizedPrompt: idea.optimizedPrompt,
+        suggestedMusic: idea.suggestedMusic,
+        scriptOutline: idea.scriptOutline,
+        isRecreationIdea: false,
+      }));
+
+      // Generate 2 recreation ideas using VideoRecreationIdeaAgent
+      const recreationAgent = createVideoRecreationIdeaAgent();
+      const recreationResult = await recreationAgent.execute(
+        {
+          videoAnalysis: video_analysis,
+          videoDescription: video_description || undefined,
+          videoHashtags: video_hashtags || undefined,
+          campaignDescription: campaign_description || undefined,
+          artistName,
+          language: language as "ko" | "en",
+        },
+        agentContext
+      );
+
+      let recreationIdeas: ContentIdea[] = [];
+      if (recreationResult.success && recreationResult.data) {
+        recreationIdeas = recreationResult.data.ideas.map((idea) => ({
+          id: uuidv4(),
+          type: "ai_video" as const,
+          title: idea.title,
+          hook: idea.hook,
+          description: idea.description,
+          estimatedEngagement: idea.estimatedEngagement,
+          optimizedPrompt: idea.optimizedPrompt,
+          suggestedMusic: idea.suggestedMusic,
+          scriptOutline: idea.scriptOutline,
+          isRecreationIdea: true,
+        }));
+      } else {
+        console.error("Recreation agent failed:", recreationResult.error);
+        // Continue with just trend ideas if recreation fails
+      }
+
+      // Combine: 2 trend ideas + 2 recreation ideas = 4 total
+      const allIdeas = [...trendIdeas, ...recreationIdeas];
+
+      return NextResponse.json({
+        success: true,
+        ideas: allIdeas,
+        optimized_hashtags: output.optimizedHashtags,
+        content_strategy: output.contentStrategy,
+      } as GenerateIdeasResponse);
+    }
+
+    // ========================================================================
+    // Non-video based: 3 trend-based ideas only
+    // ========================================================================
     const ideas: ContentIdea[] = output.ideas.map((idea) => ({
       id: uuidv4(),
       type: "ai_video" as const,
@@ -182,6 +365,7 @@ export async function POST(request: NextRequest) {
       optimizedPrompt: idea.optimizedPrompt,
       suggestedMusic: idea.suggestedMusic,
       scriptOutline: idea.scriptOutline,
+      isRecreationIdea: false,
     }));
 
     return NextResponse.json({

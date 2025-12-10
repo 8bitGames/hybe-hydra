@@ -252,49 +252,113 @@ export const assetsApi = {
   getStats: (campaignId: string) =>
     api.get<AssetStats>(`/api/v1/campaigns/${campaignId}/assets/stats`),
 
+  /**
+   * Upload asset using direct S3 upload (presigned URL)
+   * This bypasses Vercel's 4.5MB body limit for large files
+   */
   upload: async (
     campaignId: string,
     file: File,
     options?: {
       assetType?: "goods";  // Override type - only "goods" for now
       merchandiseType?: "album" | "photocard" | "lightstick" | "apparel" | "accessory" | "other";
+      onProgress?: (progress: number) => void;
     }
   ) => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    if (options?.assetType) {
-      formData.append("asset_type", options.assetType);
-    }
-    if (options?.merchandiseType) {
-      formData.append("merchandise_type", options.merchandiseType);
-    }
-
     const token = api.getAccessToken();
 
-    const response = await fetch(
-      `/api/v1/campaigns/${campaignId}/assets`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
+    try {
+      // Step 1: Get presigned URL from server
+      const presignResponse = await fetch(
+        `/api/v1/campaigns/${campaignId}/assets/presign`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            filename: file.name,
+            content_type: file.type,
+            file_size: file.size,
+            asset_type: options?.assetType,
+            merchandise_type: options?.merchandiseType,
+          }),
+        }
+      );
+
+      if (!presignResponse.ok) {
+        const errorData = await presignResponse.json();
+        return {
+          error: {
+            code: presignResponse.status.toString(),
+            message: errorData.detail || "Failed to get upload URL",
+          },
+        };
       }
-    );
 
-    const data = await response.json();
+      const presignData = await presignResponse.json();
 
-    if (!response.ok) {
+      // Step 2: Upload directly to S3 using presigned URL
+      const uploadResponse = await fetch(presignData.upload_url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type,
+        },
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        return {
+          error: {
+            code: uploadResponse.status.toString(),
+            message: "Failed to upload file to storage",
+          },
+        };
+      }
+
+      // Step 3: Confirm upload and create asset record
+      const confirmResponse = await fetch(
+        `/api/v1/campaigns/${campaignId}/assets/confirm`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            s3_key: presignData.s3_key,
+            s3_url: presignData.s3_url,
+            filename: file.name,
+            file_size: file.size,
+            content_type: file.type,
+            asset_type: presignData.asset_type,
+            merchandise_type: presignData.merchandise_type,
+          }),
+        }
+      );
+
+      const confirmData = await confirmResponse.json();
+
+      if (!confirmResponse.ok) {
+        return {
+          error: {
+            code: confirmResponse.status.toString(),
+            message: confirmData.detail || "Failed to confirm upload",
+          },
+        };
+      }
+
+      return { data: confirmData };
+    } catch (error) {
+      console.error("Upload error:", error);
       return {
         error: {
-          code: response.status.toString(),
-          message: data.detail || "Upload failed",
+          code: "UPLOAD_ERROR",
+          message: error instanceof Error ? error.message : "Upload failed",
         },
       };
     }
-
-    return { data };
   },
 
   delete: (id: string) => api.delete(`/api/v1/assets/${id}`),

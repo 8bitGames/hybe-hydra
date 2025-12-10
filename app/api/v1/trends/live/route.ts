@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { TrendPlatform } from "@prisma/client";
-import { getTrendingVideos } from "@/lib/tiktok-rapidapi";
+import { getTrendingVideos } from "@/lib/tiktok-mcp";
 
 const CACHE_DURATION_HOURS = 24;
 const TRENDING_SEARCH_QUERY = "trending"; // Identifier for cached trending videos
@@ -46,9 +46,9 @@ export async function GET(request: NextRequest) {
     if (needsRefresh) {
       try {
         console.log(`[TRENDS-LIVE] Fetching fresh trending data, limit: ${limit}`);
-        const result = await getTrendingVideos("US", limit);
+        const result = await getTrendingVideos({ country: "US", limit });
 
-        if (result.success && result.videos.length > 0) {
+        if (result.success && result.data.length > 0) {
           // Delete old trending videos (cleanup)
           await prisma.trendVideo.deleteMany({
             where: {
@@ -57,8 +57,8 @@ export async function GET(request: NextRequest) {
             },
           });
 
-          // Insert fresh videos
-          const videoData = result.videos.map((video) => ({
+          // Insert fresh videos (no thumbnails - removed preview feature)
+          const videoData = result.data.map((video) => ({
             platform: "TIKTOK" as TrendPlatform,
             videoId: video.id,
             searchQuery: TRENDING_SEARCH_QUERY,
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
             shareCount: video.stats.shareCount ? BigInt(video.stats.shareCount) : null,
             hashtags: video.hashtags || [],
             videoUrl: video.videoUrl,
-            thumbnailUrl: video.thumbnailUrl || null,
+            thumbnailUrl: null,
           }));
 
           await prisma.trendVideo.createMany({
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
       ? Math.floor((Date.now() - collectedAt.collectedAt.getTime()) / (1000 * 60 * 60))
       : 0;
 
-    // Convert BigInt to number for JSON serialization
+    // Convert BigInt to number for JSON serialization (no thumbnails - removed preview feature)
     const serializedVideos = videos.map((v) => ({
       id: v.id,
       platform: v.platform,
@@ -127,7 +127,6 @@ export async function GET(request: NextRequest) {
       shareCount: v.shareCount ? Number(v.shareCount) : null,
       hashtags: v.hashtags,
       videoUrl: v.videoUrl,
-      thumbnailUrl: v.thumbnailUrl,
       collectedAt: v.collectedAt.toISOString(),
     }));
 

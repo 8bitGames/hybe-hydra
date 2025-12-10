@@ -5,8 +5,9 @@
  *
  * Pipeline:
  * 1. Script Generator - Creates TikTok scripts with grounding search
- * 2. Effect Analyzer - Extracts mood/genre/effects from prompts
- * 3. Conductor - Plans full video composition
+ * 2. Image Keyword Generator - Generates Google Image Search optimized keywords
+ * 3. Effect Analyzer - Extracts mood/genre/effects from prompts
+ * 4. Conductor - Plans full video composition
  */
 
 // ============================================================================
@@ -22,6 +23,20 @@ export {
   type FastCutScriptGeneratorInput,
   type FastCutScriptGeneratorOutput,
 } from './script-generator';
+
+// ============================================================================
+// Image Keyword Generator
+// ============================================================================
+
+export {
+  ImageKeywordGeneratorAgent,
+  createImageKeywordGeneratorAgent,
+  ImageKeywordGeneratorConfig,
+  ImageKeywordGeneratorInputSchema,
+  ImageKeywordGeneratorOutputSchema,
+  type ImageKeywordGeneratorInput,
+  type ImageKeywordGeneratorOutput,
+} from './image-keyword-generator';
 
 // ============================================================================
 // Effect Analyzer
@@ -59,6 +74,7 @@ export {
 
 export const FastCutAgentFactories = {
   scriptGenerator: () => import('./script-generator').then(m => m.createFastCutScriptGeneratorAgent()),
+  imageKeywordGenerator: () => import('./image-keyword-generator').then(m => m.createImageKeywordGeneratorAgent()),
   effectAnalyzer: () => import('./effect-analyzer').then(m => m.createFastCutEffectAnalyzerAgent()),
   conductor: () => import('./conductor').then(m => m.createFastCutConductorAgent()),
 };
@@ -69,6 +85,7 @@ export const FastCutAgentFactories = {
 
 export const FastCutAgentIds = {
   SCRIPT_GENERATOR: 'fast-cut-script-generator',
+  IMAGE_KEYWORD_GENERATOR: 'fast-cut-image-keyword-generator',
   EFFECT_ANALYZER: 'fast-cut-effect-analyzer',
   CONDUCTOR: 'fast-cut-conductor',
 } as const;
@@ -79,6 +96,7 @@ export const FastCutAgentIds = {
 
 export const FastCutAgentModels = {
   'fast-cut-script-generator': 'gemini-2.5-flash',
+  'fast-cut-image-keyword-generator': 'gemini-2.5-flash',
   'fast-cut-effect-analyzer': 'gemini-2.5-flash',
   'fast-cut-conductor': 'gemini-2.5-flash',
 } as const;

@@ -118,7 +118,11 @@ TRANSITIONS = {
     "bounce": apply_bounce_transition,
     "slide": apply_slide_transition,
     "cut": apply_cut_transition,
-    "minimal": apply_cut_transition  # minimal = simple cuts, no fancy transitions
+    "minimal": apply_cut_transition,  # minimal = simple cuts, no fancy transitions
+    # New transition types (fallback to similar base transitions, overridden by GL transitions when available)
+    "swirl": apply_crossfade,         # GL gl_swirl handles this
+    "glitch_wave": apply_zoom_transition,  # GL gl_glitchMemories or similar handles this
+    "pulse_flow": apply_crossfade,    # Smooth flowing transitions
 }
 
 

@@ -3,15 +3,15 @@
   "crons": [
     {
       "path": "/api/cron/trends",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/cron/publish",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/cron/analytics",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 12 * * *"
     },
     {
       "path": "/api/cron/cleanup-cache",

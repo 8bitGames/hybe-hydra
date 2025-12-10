@@ -86,7 +86,7 @@ async function savePreviewImageToDatabase(
         productImageUrl: params.input.product_image_url,
         handPose: params.input.hand_pose,
         userId: params.s3Config.userId,
-        campaignId: params.s3Config.type === "campaign" ? params.s3Config.id : null,
+        campaignId: params.s3Config.type === "campaign" ? params.s3Config.id : (params.s3Config.campaignId || null),
       },
     });
     console.log(`[Preview Image] Saved to database with ID: ${record.id}`);
@@ -101,6 +101,7 @@ export interface S3PathConfig {
   type: "user" | "campaign";
   id: string; // userId or campaignId
   userId: string; // Always required for database storage
+  campaignId?: string; // Optional: when type is "user" but we still want to link to a campaign
 }
 
 // ============================================================================

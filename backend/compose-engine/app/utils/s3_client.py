@@ -58,20 +58,29 @@ class S3Client:
 
         # Debug: Log settings
         print(f"[S3Client] Initializing with bucket={self.bucket}, region={self.region}")
-        print(f"[S3Client] Access key (first 4 chars): {settings.aws_access_key_id[:4] if settings.aws_access_key_id else 'EMPTY'}")
+        print(f"[S3Client] Access key (first 4 chars): {settings.aws_access_key_id[:4] if settings.aws_access_key_id else 'EMPTY (using IAM role)'}")
 
-        # Create S3 client with connection pooling
-        self.client = boto3.client(
-            "s3",
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-            region_name=settings.aws_region,
-            config=Config(
+        # Build kwargs - only include credentials if explicitly set
+        # This allows IAM role to be used on AWS Batch/EC2
+        client_kwargs = {
+            "region_name": settings.aws_region,
+            "config": Config(
                 signature_version="s3v4",
                 max_pool_connections=20,  # Connection pooling
                 retries={"max_attempts": 3, "mode": "adaptive"}
             )
-        )
+        }
+
+        # Only add explicit credentials if they're actually set (non-empty)
+        if settings.aws_access_key_id and settings.aws_secret_access_key:
+            client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
+            client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
+            print("[S3Client] Using explicit AWS credentials")
+        else:
+            print("[S3Client] Using default credential chain (IAM role/environment)")
+
+        # Create S3 client with connection pooling
+        self.client = boto3.client("s3", **client_kwargs)
 
         # Shared HTTP client for external URLs
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -129,17 +138,33 @@ class S3Client:
                     print(f"[S3Client] WARNING: S3 file appears to be HTML (error page?): {key}")
                 elif not is_valid_image(data):
                     print(f"[S3Client] WARNING: S3 file may not be a valid image: {key} (size={file_size})")
-        elif f".s3.{self.region}.amazonaws.com" in url or f".s3.amazonaws.com" in url:
-            # Alternative S3 URL format - fallback to HTTP download since key extraction is complex
-            print(f"[S3Client] Alternative S3 URL format - using HTTP download")
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            }
-            client = await self._get_http_client()
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            async with aiofiles.open(local_path, "wb") as f:
-                await f.write(response.content)
+        elif ".s3." in url and ".amazonaws.com" in url:
+            # S3 URL from any bucket - parse and use SDK download for IAM role access
+            # URL format: https://BUCKET.s3.REGION.amazonaws.com/KEY
+            import re
+            match = re.match(r'https://([^.]+)\.s3\.([^.]+)\.amazonaws\.com/(.+)', url)
+            if match:
+                other_bucket = match.group(1)
+                other_region = match.group(2)
+                other_key = match.group(3)
+                print(f"[S3Client] Cross-bucket S3 download: bucket={other_bucket}, region={other_region}, key={other_key[:50]}...")
+                # Use S3 SDK with the other bucket (relies on IAM role permissions)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    get_s3_executor(),
+                    lambda b=other_bucket, k=other_key: self.client.download_file(b, k, local_path)
+                )
+                file_size = os.path.getsize(local_path) if os.path.exists(local_path) else 0
+                print(f"[S3Client] Downloaded {file_size} bytes from {other_bucket}")
+            else:
+                # Fallback to HTTP for unparseable S3 URLs
+                print(f"[S3Client] S3 URL pattern not matched, falling back to HTTP download")
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                client = await self._get_http_client()
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                async with aiofiles.open(local_path, "wb") as f:
+                    await f.write(response.content)
         else:
             # External URL - download via HTTP with browser-like headers
             headers = {
@@ -149,16 +174,46 @@ class S3Client:
                 "Referer": url.split('/')[0] + '//' + url.split('/')[2] + '/',
             }
             client = await self._get_http_client()
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
 
-            # Validate it's an actual image, not an HTML error page
+            # Retry logic for transient errors (503, 502, 429, connection errors)
+            max_retries = 3
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    response = await client.get(url, headers=headers)
+                    response.raise_for_status()
+                    break  # Success
+                except httpx.HTTPStatusError as e:
+                    last_error = e
+                    if e.response.status_code in (502, 503, 429):
+                        # Transient error - retry with exponential backoff
+                        wait_time = (attempt + 1) * 2  # 2s, 4s, 6s
+                        print(f"[S3Client] Retry {attempt + 1}/{max_retries} after {e.response.status_code} error, waiting {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise  # Non-transient error - don't retry
+                except (httpx.ConnectError, httpx.ReadTimeout) as e:
+                    last_error = e
+                    wait_time = (attempt + 1) * 2
+                    print(f"[S3Client] Retry {attempt + 1}/{max_retries} after connection error, waiting {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+            else:
+                # All retries exhausted
+                raise last_error or ValueError(f"Failed to download after {max_retries} retries")
+
+            # Validate content - only check image validity for image files
             content = response.content
+            content_type = response.headers.get('content-type', 'unknown')
+
             if is_html_response(content):
-                raise ValueError(f"Image URL returned HTML (likely hotlink protected): {url[:60]}...")
-            if not is_valid_image(content):
-                # Try to detect what we got
-                content_type = response.headers.get('content-type', 'unknown')
+                raise ValueError(f"URL returned HTML (likely hotlink protected): {url[:60]}...")
+
+            # Only validate as image if content-type indicates an image
+            is_image_content = content_type.startswith('image/') or local_path.lower().endswith(
+                ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg')
+            )
+            if is_image_content and not is_valid_image(content):
                 size = len(content)
                 raise ValueError(f"Invalid image from {url[:60]}... (type={content_type}, size={size})")
 

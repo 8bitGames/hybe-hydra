@@ -84,8 +84,13 @@ export interface StartFromIdea {
 
 export type StartSource = StartFromTrends | StartFromVideo | StartFromIdea | null;
 
+// Content creation type - selected by user at Start stage
+export type ContentType = "ai_video" | "fast-cut";
+
 export interface StartData {
   source: StartSource;
+  // Content type selection (user chooses based on AI recommendation)
+  contentType: ContentType;
   // Common fields populated after entry
   selectedHashtags: string[];
   savedInspiration: TrendVideo[];
@@ -155,6 +160,13 @@ export interface DiscoverData {
 }
 
 // Analyze Stage Types
+export interface FastCutData {
+  searchKeywords: string[];
+  suggestedVibe: string;
+  suggestedBpmRange: { min: number; max: number };
+  scriptOutline: string[];
+}
+
 export interface ContentIdea {
   id: string;
   type: "ai_video" | "fast-cut";
@@ -162,12 +174,17 @@ export interface ContentIdea {
   hook: string;
   description: string;
   estimatedEngagement: "high" | "medium" | "low";
+  // AI Video용 (VEO cinematic prompt)
   optimizedPrompt: string;
+  // Fast Cut용 데이터
+  fastCutData?: FastCutData;
   suggestedMusic?: {
     bpm: number;
     genre: string;
   };
   scriptOutline?: string[];
+  // 영상 재현 아이디어 여부 (영상 기반 시작 시)
+  isRecreationIdea?: boolean;
 }
 
 export interface AnalyzeData {
@@ -175,6 +192,8 @@ export interface AnalyzeData {
   campaignName: string | null;
   campaignDescription: string | null;  // Campaign concept/goal - central context for all prompts
   campaignGenre: string | null;  // Music genre for content generation (e.g., pop, hiphop, ballad)
+  artistName: string | null;  // Artist name from campaign
+  artistStageName: string | null;  // Artist stage name (e.g., "BTS", "BLACKPINK")
   userIdea: string;
   isRecreationMode: boolean;  // When true, ignore trend data and focus on recreating the video concept
   targetAudience: string[];
@@ -361,6 +380,7 @@ interface WorkflowState {
 
   // Actions - Start (new workflow entry point)
   setStartSource: (source: StartSource) => void;
+  setStartContentType: (contentType: ContentType) => void;
   setStartFromTrends: (data: Omit<StartFromTrends, "type">) => void;
   setStartFromVideo: (data: Omit<StartFromVideo, "type">) => void;
   setStartFromIdea: (data: Omit<StartFromIdea, "type">) => void;
@@ -388,7 +408,7 @@ interface WorkflowState {
   clearDiscoverAnalysis: () => void;
 
   // Actions - Analyze
-  setAnalyzeCampaign: (id: string | null, name: string | null, description?: string | null, genre?: string | null) => void;
+  setAnalyzeCampaign: (id: string | null, name: string | null, description?: string | null, genre?: string | null, artistName?: string | null, artistStageName?: string | null) => void;
   setAnalyzeUserIdea: (idea: string) => void;
   setAnalyzeRecreationMode: (mode: boolean) => void;
   setAnalyzeTargetAudience: (audience: string[]) => void;
@@ -454,6 +474,7 @@ interface WorkflowState {
 
 const initialStartData: StartData = {
   source: null,
+  contentType: "ai_video", // Default to AI Video, user can change based on recommendation
   selectedHashtags: [],
   savedInspiration: [],
   performanceMetrics: null,
@@ -474,6 +495,8 @@ const initialAnalyzeData: AnalyzeData = {
   campaignName: null,
   campaignDescription: null,
   campaignGenre: null,
+  artistName: null,
+  artistStageName: null,
   userIdea: "",
   isRecreationMode: false,
   targetAudience: [],
@@ -559,6 +582,10 @@ export const useWorkflowStore = create<WorkflowState>()(
           set((state) => ({
             start: { ...state.start, source },
           })),
+        setStartContentType: (contentType) =>
+          set((state) => ({
+            start: { ...state.start, contentType },
+          })),
 
         setStartFromTrends: (data) =>
           set((state) => ({
@@ -600,9 +627,12 @@ export const useWorkflowStore = create<WorkflowState>()(
         updateVideoAiAnalysis: (analysis) =>
           set((state) => {
             if (state.start.source?.type !== "video") return state;
+            // Auto-select fast-cut when slideshow is detected (user can still change)
+            const autoSelectContentType = analysis?.isComposeVideo ? "fast-cut" : state.start.contentType;
             return {
               start: {
                 ...state.start,
+                contentType: autoSelectContentType,
                 source: {
                   ...state.start.source,
                   aiAnalysis: analysis,
@@ -755,9 +785,17 @@ export const useWorkflowStore = create<WorkflowState>()(
           })),
 
         // Analyze Actions
-        setAnalyzeCampaign: (id, name, description, genre) =>
+        setAnalyzeCampaign: (id, name, description, genre, artistName, artistStageName) =>
           set((state) => ({
-            analyze: { ...state.analyze, campaignId: id, campaignName: name, campaignDescription: description ?? null, campaignGenre: genre ?? null },
+            analyze: {
+              ...state.analyze,
+              campaignId: id,
+              campaignName: name,
+              campaignDescription: description ?? null,
+              campaignGenre: genre ?? null,
+              artistName: artistName ?? null,
+              artistStageName: artistStageName ?? null,
+            },
           })),
 
         setAnalyzeUserIdea: (idea) =>
@@ -1046,14 +1084,18 @@ export const useWorkflowStore = create<WorkflowState>()(
           // Transfer from new Start stage
           const startSource = state.start.source;
           let userIdea = "";
+          let optimizedPrompt = "";
           let hashtags = state.start.selectedHashtags;
           let keywords: string[] = [];
 
           if (startSource?.type === "idea") {
             userIdea = startSource.idea;
+            optimizedPrompt = startSource.idea; // Use idea as optimizedPrompt
           } else if (startSource?.type === "video") {
             userIdea = startSource.description || "";
             hashtags = startSource.hashtags || hashtags;
+            // Transfer AI analysis suggestedApproach as optimizedPrompt for fast-cut
+            optimizedPrompt = startSource.aiAnalysis?.suggestedApproach || startSource.description || "";
           } else if (startSource?.type === "trends") {
             hashtags = startSource.selectedHashtags || hashtags;
             keywords = startSource.keywords || [];
@@ -1067,6 +1109,7 @@ export const useWorkflowStore = create<WorkflowState>()(
             analyze: {
               ...state.analyze,
               userIdea: userIdea || state.analyze.userIdea,
+              optimizedPrompt: optimizedPrompt || state.analyze.optimizedPrompt,
               hashtags: hashtags.length > 0 ? hashtags : state.analyze.hashtags,
               // Transfer performance metrics to target audience hints
               targetAudience: state.start.aiInsights?.targetAudience || state.analyze.targetAudience,

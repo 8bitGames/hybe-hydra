@@ -344,6 +344,7 @@ export interface PreviewImageRequest {
   product_image_url?: string;  // URL of the product image to include in generated scene
   composition_mode?: "direct" | "two_step";  // "two_step" generates scene first, then composites product
   hand_pose?: string;  // Description of how hands should hold the product (for two_step mode)
+  campaign_id?: string;  // Optional: link this image to a specific campaign
 }
 
 export interface PreviewImageResponse {

@@ -1,5 +1,10 @@
 # Claude Rules
 
+  ## Response Style
+  - ALWAYS think through problems step-by-step before providing answers
+  - Break down complex tasks into smaller, manageable steps
+  - Explain your reasoning process clearly at each stage
+
   ## General Restrictions
   - Do NOT run `npm run dev` or `npm run build` without explicit user permission
   - Do NOT create README or markdown files unless explicitly told to

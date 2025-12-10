@@ -57,6 +57,7 @@ import { ScriptTimeline } from "@/components/features/script-timeline";
 import { AudioStructurePreview } from "@/components/features/audio-structure-preview";
 import { TrendRecommendationsCard } from "@/components/features/trend-analysis";
 import { TikTokSEOPreview } from "@/components/features/tiktok-seo-preview";
+import { downloadFile } from "@/lib/utils";
 
 // Wizard Steps
 type WizardStep = 1 | 2 | 3 | 4;
@@ -1315,11 +1316,12 @@ export default function ComposePage() {
                           {language === "ko" ? "영상 보기" : "Watch Video"}
                         </a>
                       </Button>
-                      <Button variant="outline" asChild>
-                        <a href={outputUrl} download>
-                          <Download className="w-4 h-4 mr-2" />
-                          {language === "ko" ? "다운로드" : "Download"}
-                        </a>
+                      <Button
+                        variant="outline"
+                        onClick={() => downloadFile(outputUrl!, `fast-cut-${Date.now()}.mp4`)}
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        {language === "ko" ? "다운로드" : "Download"}
                       </Button>
                     </div>
                   </div>

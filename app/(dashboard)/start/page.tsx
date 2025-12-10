@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
 import {
   TrendingUp,
   Lightbulb,
@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore, useWorkflowHydrated } from "@/lib/stores/workflow-store";
+import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 import { InfoButton } from "@/components/ui/info-button";
 import { cn } from "@/lib/utils";
 
@@ -81,8 +82,13 @@ function detectTikTokUrl(input: string): { isTikTok: boolean; url: string | null
 
 export default function StartPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { translate, language } = useI18n();
   const hydrated = useWorkflowHydrated();
+
+  // Session sync for persisted state management
+  const sessionId = searchParams.get("session");
+  const { activeSession, syncNow } = useSessionWorkflowSync("start");
 
   const [ideaInput, setIdeaInput] = useState("");
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
@@ -94,6 +100,7 @@ export default function StartPage() {
     setStartFromVideo,
     setStartFromTrends,
     setStartAiInsights,
+    setStartContentType,
     setCurrentStage,
     clearStartData,
     transferToAnalyze,
@@ -578,11 +585,19 @@ export default function StartPage() {
     clearStartData();
   };
 
-  // Proceed to analyze with current data
+  // Proceed to next step based on content type
   const handleProceedToAnalyze = () => {
     transferToAnalyze();
-    setCurrentStage("analyze");
-    router.push("/analyze");
+
+    // Route based on content type
+    if (start.contentType === "fast-cut") {
+      // Fast Cut has its own step indicator, just navigate
+      router.push("/fast-cut/script");
+    } else {
+      // Default: AI Video flow
+      setCurrentStage("analyze");
+      router.push("/analyze");
+    }
   };
 
   // Format relative time
@@ -629,15 +644,12 @@ export default function StartPage() {
   // If we have a source from trend dashboard, show the preview
   if (startSource) {
     return (
-      <div className="flex flex-col bg-background min-h-full">
+      <div className="flex flex-col bg-background flex-1 min-h-0">
         {/* Workflow Header */}
-        <WorkflowHeader
-          onNext={handleProceedToAnalyze}
-          canProceed={true}
-        />
+        <WorkflowHeader />
 
         {/* Content Area */}
-        <div>
+        <div className="flex-1 overflow-auto min-h-0">
           <div className="container max-w-4xl mx-auto py-8 px-4">
             {/* Trend Data Preview */}
             {startSource.type === "trends" && (
@@ -1001,34 +1013,124 @@ export default function StartPage() {
                   </Card>
                 )}
 
-                {/* Compose Video Recommendation - if detected */}
-                {startSource.aiAnalysis?.isComposeVideo && (
-                  <Card className="border-2 border-neutral-300 bg-neutral-50">
-                    <CardContent className="py-4">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 rounded-lg bg-neutral-200">
-                          <Layers className="h-5 w-5 text-neutral-700" />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-medium text-sm">
-                              {translate("startPage.analysis.composeRecommended")}
-                            </p>
-                            <Badge variant="secondary" className="text-xs">
-                              {translate("startPage.analysis.slideshow")}
-                            </Badge>
+                {/* Content Type Selection - shown after AI analysis completes */}
+                {startSource.aiAnalysis && !isAnalyzingVideo && (
+                  <Card className="border-2 border-neutral-300 bg-white">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-sm font-medium">
+                          {language === "ko" ? "콘텐츠 타입 선택" : "Select Content Type"}
+                        </CardTitle>
+                        <InfoButton
+                          content={language === "ko"
+                            ? "AI Video는 AI가 이미지와 영상을 생성합니다. Fast Cut은 기존 이미지를 조합해 빠르게 편집 영상을 만듭니다."
+                            : "AI Video generates images and videos with AI. Fast Cut quickly creates edited videos by combining existing images."}
+                          side="right"
+                        />
+                        {startSource.aiAnalysis.isComposeVideo && (
+                          <Badge variant="secondary" className="text-xs bg-neutral-100">
+                            {language === "ko" ? "슬라이드쇼 감지됨" : "Slideshow Detected"}
+                          </Badge>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* AI Video Option */}
+                        <button
+                          onClick={() => setStartContentType("ai_video")}
+                          className={cn(
+                            "relative p-4 rounded-lg border-2 text-left transition-all",
+                            start.contentType === "ai_video"
+                              ? "border-neutral-900 bg-neutral-50"
+                              : "border-neutral-200 hover:border-neutral-300 bg-white"
+                          )}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={cn(
+                              "p-2 rounded-lg",
+                              start.contentType === "ai_video" ? "bg-neutral-900" : "bg-neutral-100"
+                            )}>
+                              <Video className={cn(
+                                "h-5 w-5",
+                                start.contentType === "ai_video" ? "text-white" : "text-neutral-600"
+                              )} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm">AI Video</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {language === "ko"
+                                  ? "AI가 이미지/영상 생성"
+                                  : "AI generates visuals"}
+                              </p>
+                            </div>
                           </div>
-                          <p className="text-sm text-muted-foreground mb-2">
-                            {translate("startPage.analysis.composeDescription").replace("{count}", String(startSource.aiAnalysis.imageCount || "multiple"))}
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">
-                              {translate("startPage.analysis.imagesDetected").replace("{count}", String(startSource.aiAnalysis.imageCount || 0))}
+                          {start.contentType === "ai_video" && (
+                            <div className="absolute top-2 right-2 w-5 h-5 bg-neutral-900 rounded-full flex items-center justify-center">
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          )}
+                        </button>
+
+                        {/* Fast Cut Option */}
+                        <button
+                          onClick={() => setStartContentType("fast-cut")}
+                          className={cn(
+                            "relative p-4 rounded-lg border-2 text-left transition-all",
+                            start.contentType === "fast-cut"
+                              ? "border-neutral-900 bg-neutral-50"
+                              : "border-neutral-200 hover:border-neutral-300 bg-white"
+                          )}
+                        >
+                          {startSource.aiAnalysis.isComposeVideo && (
+                            <Badge className="absolute -top-2 -right-2 text-[10px] bg-neutral-700">
+                              {language === "ko" ? "추천" : "Recommended"}
+                            </Badge>
+                          )}
+                          <div className="flex items-start gap-3">
+                            <div className={cn(
+                              "p-2 rounded-lg",
+                              start.contentType === "fast-cut" ? "bg-neutral-900" : "bg-neutral-100"
+                            )}>
+                              <Layers className={cn(
+                                "h-5 w-5",
+                                start.contentType === "fast-cut" ? "text-white" : "text-neutral-600"
+                              )} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm">Fast Cut</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {language === "ko"
+                                  ? "이미지 조합 빠른 편집"
+                                  : "Quick image-based editing"}
+                              </p>
+                            </div>
+                          </div>
+                          {start.contentType === "fast-cut" && (
+                            <div className="absolute top-2 right-2 w-5 h-5 bg-neutral-900 rounded-full flex items-center justify-center">
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Info about detected slideshow */}
+                      {startSource.aiAnalysis.isComposeVideo && startSource.aiAnalysis.imageCount && (
+                        <div className="mt-3 p-2 rounded bg-neutral-50 border border-neutral-200">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <ImageIcon className="h-3.5 w-3.5" />
+                            <span>
+                              {language === "ko"
+                                ? `${startSource.aiAnalysis.imageCount}개 이미지가 감지되어 Fast Cut이 추천됩니다`
+                                : `${startSource.aiAnalysis.imageCount} images detected, Fast Cut recommended`}
                             </span>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </CardContent>
                   </Card>
                 )}
@@ -1294,21 +1396,31 @@ export default function StartPage() {
 
           </div>
         </div>
+
+        {/* Workflow Footer */}
+        <WorkflowFooter
+          onNext={handleProceedToAnalyze}
+          canProceed={!isAnalyzingVideo}
+          actionButton={{
+            label: language === "ko" ? "다음 단계" : "Next Step",
+            onClick: handleProceedToAnalyze,
+            disabled: isAnalyzingVideo,
+            loading: isAnalyzingVideo,
+            icon: <ArrowRight className="h-4 w-4" />,
+          }}
+        />
       </div>
     );
   }
 
   // Default: Entry selection view
   return (
-    <div className="flex flex-col bg-background min-h-full">
+    <div className="flex flex-col bg-background flex-1 min-h-0">
       {/* Workflow Header */}
-      <WorkflowHeader
-        onNext={handleProceed}
-        canProceed={canProceedToAnalyze}
-      />
+      <WorkflowHeader />
 
       {/* Content Area */}
-      <div>
+      <div className="flex-1 overflow-auto min-h-0">
         <div className="container max-w-4xl mx-auto py-8 px-4">
           {/* Direct Idea Input */}
           <Card className="mb-8 border border-neutral-200">
@@ -1529,6 +1641,19 @@ export default function StartPage() {
           )}
         </div>
       </div>
+
+      {/* Workflow Footer */}
+      <WorkflowFooter
+        onNext={handleProceed}
+        canProceed={canProceedToAnalyze}
+        actionButton={{
+          label: language === "ko" ? "시작하기" : "Get Started",
+          onClick: handleProceed,
+          disabled: !canProceedToAnalyze || isAnalyzingVideo || isAnalyzingIdea,
+          loading: isAnalyzingVideo || isAnalyzingIdea,
+          icon: <ArrowRight className="h-4 w-4" />,
+        }}
+      />
     </div>
   );
 }

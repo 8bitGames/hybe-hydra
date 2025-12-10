@@ -28,3 +28,25 @@ export {
   type ScriptWriterInput,
   type ScriptWriterOutput,
 } from './script-writer';
+
+// Fast Cut Idea - Slideshow content ideation
+export {
+  FastCutIdeaAgent,
+  createFastCutIdeaAgent,
+  FastCutIdeaConfig,
+  FastCutIdeaInputSchema,
+  FastCutIdeaOutputSchema,
+  type FastCutIdeaInput,
+  type FastCutIdeaOutput,
+} from './fast-cut-idea-agent';
+
+// Video Recreation Idea - Recreate original video style
+export {
+  VideoRecreationIdeaAgent,
+  createVideoRecreationIdeaAgent,
+  VideoRecreationIdeaConfig,
+  VideoRecreationIdeaInputSchema,
+  VideoRecreationIdeaOutputSchema,
+  type VideoRecreationIdeaInput,
+  type VideoRecreationIdeaOutput,
+} from './video-recreation-idea-agent';

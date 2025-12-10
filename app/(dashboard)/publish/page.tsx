@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useWorkflowStore, ProcessingVideo, useWorkflowHydrated } from "@/lib/stores/workflow-store";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
+import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 import { useI18n } from "@/lib/i18n";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/api";
@@ -96,6 +97,7 @@ export default function PublishPage() {
   const { language } = useI18n();
   const toast = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const isKorean = language === "ko";
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -105,6 +107,10 @@ export default function PublishPage() {
   // Sync workflow stage
   useWorkflowSync("publish");
   const { goToProcessing, resetWorkflow } = useWorkflowNavigation();
+
+  // Session sync for persisted state management
+  const sessionId = searchParams.get("session");
+  const { activeSession, syncNow } = useSessionWorkflowSync("publish");
 
   // Workflow store
   const discover = useWorkflowStore((state) => state.discover);
@@ -503,6 +509,13 @@ export default function PublishPage() {
     router.push("/start");
   }, [resetWorkflow, router]);
 
+  // Handle success dialog close (when user closes dialog without selecting an option)
+  const handleSuccessDialogClose = useCallback(() => {
+    setShowSuccessDialog(false);
+    resetWorkflow();
+    router.push("/start");
+  }, [resetWorkflow, router]);
+
   // Convert currentVideo to VideoGeneration format for VariationModal
   const seedGeneration: VideoGeneration | null = currentVideo ? {
     id: currentVideo.generationId || currentVideo.id,
@@ -591,13 +604,6 @@ export default function PublishPage() {
       {/* Header */}
       <WorkflowHeader
         onBack={goToProcessing}
-        actionButton={{
-          label: isPublishing ? (isKorean ? "예약 중..." : "Scheduling...") : (isKorean ? "발행하기" : "Publish"),
-          onClick: handlePublish,
-          disabled: !selectedAccountId || isPublishing,
-          loading: isPublishing,
-          icon: <Send className="h-4 w-4" />,
-        }}
         subtitle={isKorean
           ? `${approvedVideos.length}개 영상${selectedAccount ? ` · @${selectedAccount.account_name}` : ""}`
           : `${approvedVideos.length} videos${selectedAccount ? ` · @${selectedAccount.account_name}` : ""}`}
@@ -996,6 +1002,56 @@ export default function PublishPage() {
         </div>
       </div>
 
+      {/* Fixed Bottom Footer */}
+      <div className="border-t border-neutral-200 bg-white shrink-0">
+        <div className="flex items-center justify-between px-[7%] py-4">
+          {/* Left: Back Button */}
+          <Button
+            variant="outline"
+            onClick={goToProcessing}
+            className="h-10 px-4 border-neutral-300 text-neutral-700 hover:bg-neutral-100"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            {isKorean ? "프로세싱" : "Processing"}
+          </Button>
+
+          {/* Center: Summary */}
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <Video className="h-4 w-4 text-neutral-500" />
+              <span className="text-neutral-600">
+                {approvedVideos.length} {isKorean ? "개 영상" : "videos"}
+              </span>
+            </div>
+            {selectedAccount && (
+              <>
+                <div className="h-4 w-px bg-neutral-200" />
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full bg-black flex items-center justify-center">
+                    <TikTokIcon className="w-3 h-3 text-white" />
+                  </div>
+                  <span className="text-neutral-600">@{selectedAccount.account_name}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Right: Publish Button */}
+          <Button
+            onClick={handlePublish}
+            disabled={!selectedAccountId || isPublishing}
+            className="h-10 px-6 bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {isPublishing ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4 mr-2" />
+            )}
+            {isPublishing ? (isKorean ? "예약 중..." : "Scheduling...") : (isKorean ? "발행하기" : "Publish")}
+          </Button>
+        </div>
+      </div>
+
       {/* Variation Modal */}
       <VariationModal
         isOpen={variationModalOpen}
@@ -1010,7 +1066,7 @@ export default function PublishPage() {
       {/* Publish Success Dialog */}
       <PublishSuccessDialog
         isOpen={showSuccessDialog}
-        onClose={() => setShowSuccessDialog(false)}
+        onClose={handleSuccessDialogClose}
         publishedCount={publishedVideos.length}
         videos={publishedVideos}
         publishContext={{

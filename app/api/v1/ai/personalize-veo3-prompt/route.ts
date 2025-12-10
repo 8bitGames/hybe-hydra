@@ -21,7 +21,7 @@ import { sanitizeCelebrityNames } from "@/lib/celebrity-sanitizer";
 
 // S3 Client
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION || "ap-southeast-2",
+  region: (process.env.AWS_REGION || "ap-southeast-2").trim(),
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",

@@ -1,12 +1,15 @@
 /**
  * Fast Cut Script Generation API
  * ==============================
- * Uses FastCutScriptGeneratorAgent for TikTok script creation
+ * 2-Stage Pipeline:
+ * 1. FastCutScriptGeneratorAgent - Script + Vibe generation
+ * 2. ImageKeywordGeneratorAgent - Vibe-based optimized keywords
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { createFastCutScriptGeneratorAgent } from '@/lib/agents/fast-cut';
+import { createImageKeywordGeneratorAgent } from '@/lib/agents/fast-cut/image-keyword-generator';
 import { generateTikTokSEO, TikTokSEO } from '@/lib/tiktok-seo';
 import { AgentContext } from '@/lib/agents/types';
 
@@ -36,6 +39,13 @@ interface ScriptGenerationRequest {
   language?: "ko" | "en";
 }
 
+interface KeywordCategories {
+  subject: string[];
+  scene: string[];
+  moodVisual: string[];
+  style: string[];
+}
+
 interface ScriptGenerationResponse {
   script: {
     lines: ScriptLine[];
@@ -45,12 +55,21 @@ interface ScriptGenerationResponse {
   vibeReason: string;
   suggestedBpmRange: { min: number; max: number };
   searchKeywords: string[];
+  keywordCategories?: KeywordCategories;
   effectRecommendation: string;
   groundingInfo?: {
     sources: Array<{ title: string; url: string }>;
     summary?: string;
   };
   tiktokSEO?: TikTokSEO;
+}
+
+// Valid vibe types
+const VALID_VIBES = ['Exciting', 'Emotional', 'Pop', 'Minimal'] as const;
+type VibeType = typeof VALID_VIBES[number];
+
+function isValidVibe(vibe: string): vibe is VibeType {
+  return VALID_VIBES.includes(vibe as VibeType);
 }
 
 export async function POST(request: NextRequest) {
@@ -86,9 +105,12 @@ export async function POST(request: NextRequest) {
       }).join('\n');
     }
 
-    // Create agent and context
-    const scriptAgent = createFastCutScriptGeneratorAgent();
+    // ================================================================
+    // STAGE 1: Script Generation (Script + Vibe)
+    // ================================================================
+    console.log('[FastCut Pipeline] Stage 1: Script generation starting...');
 
+    const scriptAgent = createFastCutScriptGeneratorAgent();
     const agentContext: AgentContext = {
       workflow: {
         artistName,
@@ -104,8 +126,8 @@ export async function POST(request: NextRequest) {
       trendContextStr ? `Current Trending Topics:\n${trendContextStr}` : '',
     ].filter(Boolean).join('\n\n');
 
-    // Execute agent
-    const agentResult = await scriptAgent.execute(
+    // Execute script agent
+    const scriptResult = await scriptAgent.execute(
       {
         artistName,
         artistContext: additionalContext || undefined,
@@ -119,54 +141,98 @@ export async function POST(request: NextRequest) {
       agentContext
     );
 
-    // Check if agent execution was successful
-    if (!agentResult.success || !agentResult.data) {
-      console.error('Agent execution failed:', agentResult.error);
+    // Check if script generation was successful
+    if (!scriptResult.success || !scriptResult.data) {
+      console.error('[FastCut Pipeline] Stage 1 failed:', scriptResult.error);
       return NextResponse.json(
-        { detail: agentResult.error || 'Failed to generate script' },
+        { detail: scriptResult.error || 'Failed to generate script' },
         { status: 500 }
       );
     }
 
-    const output = agentResult.data;
+    const scriptOutput = scriptResult.data;
+    console.log('[FastCut Pipeline] Stage 1 complete. Vibe:', scriptOutput.vibe);
 
-    // Transform agent output to API response format
+    // ================================================================
+    // STAGE 2: Image Keyword Generation (Vibe-based)
+    // ================================================================
+    console.log('[FastCut Pipeline] Stage 2: Keyword generation starting...');
+
+    const keywordAgent = createImageKeywordGeneratorAgent();
+    const scriptLines = scriptOutput.script.lines.map(line => line.text);
+
+    // Validate and normalize vibe
+    const normalizedVibe = isValidVibe(scriptOutput.vibe)
+      ? scriptOutput.vibe
+      : 'Pop';
+
+    const keywordResult = await keywordAgent.execute(
+      {
+        vibe: normalizedVibe,
+        userPrompt,
+        artistName,
+        scriptLines,
+        language,
+      },
+      agentContext
+    );
+
+    // Process keyword results
+    let searchKeywords: string[] = [];
+    let keywordCategories: KeywordCategories | undefined;
+
+    if (keywordResult.success && keywordResult.data) {
+      searchKeywords = keywordResult.data.searchKeywords;
+      keywordCategories = keywordResult.data.keywordCategories;
+      console.log('[FastCut Pipeline] Stage 2 complete. Keywords:', searchKeywords.length);
+    } else {
+      console.warn('[FastCut Pipeline] Stage 2 failed, using fallback keywords:', keywordResult.error);
+      // Fallback to basic keywords
+      searchKeywords = [
+        'concert stage lights 4K',
+        'performance crowd cheering HD',
+        'music video aesthetic cinematic',
+        'stage spotlight professional photo',
+      ];
+    }
+
+    // Add user-provided trend keywords (highest priority)
+    if (trendKeywords && trendKeywords.length > 0) {
+      searchKeywords = [
+        ...trendKeywords,
+        ...searchKeywords.filter(kw =>
+          !trendKeywords.some(tk => tk.toLowerCase() === kw.toLowerCase())
+        ),
+      ];
+    }
+
+    // ================================================================
+    // Build Response
+    // ================================================================
     const parsedResponse: ScriptGenerationResponse = {
       script: {
-        lines: output.script.lines.map(line => ({
+        lines: scriptOutput.script.lines.map(line => ({
           text: line.text,
           timing: line.timing,
           duration: line.duration,
         })),
-        totalDuration: output.script.totalDuration || output.script.lines.reduce(
+        totalDuration: scriptOutput.script.totalDuration || scriptOutput.script.lines.reduce(
           (acc, line) => Math.max(acc, line.timing + line.duration),
           targetDuration
         ),
       },
-      vibe: output.vibe,
-      vibeReason: output.vibeReason || `${output.vibe} mood for ${artistName} content`,
-      suggestedBpmRange: output.suggestedBpmRange,
-      searchKeywords: output.searchKeywords,
-      effectRecommendation: output.effectRecommendation || 'zoom_beat',
-      groundingInfo: output.groundingInfo,
+      vibe: scriptOutput.vibe,
+      vibeReason: scriptOutput.vibeReason || `${scriptOutput.vibe} mood for this content`,
+      suggestedBpmRange: scriptOutput.suggestedBpmRange,
+      searchKeywords,
+      keywordCategories,
+      effectRecommendation: scriptOutput.effectRecommendation || 'zoom_beat',
+      groundingInfo: scriptOutput.groundingInfo,
     };
 
     // Ensure totalDuration is valid
     if (!parsedResponse.script.totalDuration || parsedResponse.script.totalDuration <= 0) {
       parsedResponse.script.totalDuration = targetDuration;
-    }
-
-    // Ensure enough search keywords
-    if (parsedResponse.searchKeywords.length < 4) {
-      const defaultKeywords = [
-        `${artistName} HD photo`,
-        `${artistName} 4K`,
-        `${artistName} 2024`,
-        `${artistName} official photo`,
-      ];
-      parsedResponse.searchKeywords = [
-        ...new Set([...parsedResponse.searchKeywords, ...defaultKeywords])
-      ];
     }
 
     // Generate TikTok SEO metadata
@@ -180,6 +246,7 @@ export async function POST(request: NextRequest) {
       language
     );
 
+    console.log('[FastCut Pipeline] Complete. Total keywords:', parsedResponse.searchKeywords.length);
     return NextResponse.json(parsedResponse);
   } catch (error) {
     console.error('Script generation error:', error);

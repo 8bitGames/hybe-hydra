@@ -100,6 +100,7 @@ export async function searchImages(
     if (imageSize) params.set("imgSize", imageSize);
     if (gl) params.set("gl", gl);  // Geolocation filter
     if (hl) params.set("hl", hl);  // Language filter
+    if (options.rights) params.set("rights", options.rights);  // License/rights filter
 
     try {
       const url = `https://www.googleapis.com/customsearch/v1?${params.toString()}`;
@@ -156,6 +157,7 @@ export async function searchImagesMultiQuery(
     imageSize?: "huge" | "icon" | "large" | "medium" | "small" | "xlarge" | "xxlarge";
     gl?: string;  // Geolocation
     hl?: string;  // Language
+    rights?: string;  // License filter (e.g., "cc_publicdomain,cc_attribute")
   } = {}
 ): Promise<ImageSearchResult[]> {
   const {
@@ -165,6 +167,7 @@ export async function searchImagesMultiQuery(
     imageSize,
     gl,
     hl,
+    rights,
   } = options;
 
   const allResults: ImageSearchResult[] = [];
@@ -179,6 +182,7 @@ export async function searchImagesMultiQuery(
       imageSize,
       gl,
       hl,
+      rights,
     });
 
     for (const result of results) {

@@ -3,7 +3,7 @@
  * Fast, reliable API-based scraping without browser automation.
  */
 
-const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || "2b748a1b3cmshe05f9ca2282e082p17573ejsn2ad2e7d431ad";
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || "8414587fdamsh11c982341d0e73fp17038bjsnb1e12cc563da";
 const RAPIDAPI_HOST = "scraptik.p.rapidapi.com";
 const BASE_URL = `https://${RAPIDAPI_HOST}`;
 
@@ -235,7 +235,7 @@ export async function getHashtagVideos(hashtag: string, limit: number = 30): Pro
       },
       videos: searchResult.videos.map(v => ({
         ...v,
-        hashtags: [...new Set([cleanHashtag, ...v.hashtags])],
+        hashtags: Array.from(new Set([cleanHashtag, ...v.hashtags])),
       })),
     };
   }

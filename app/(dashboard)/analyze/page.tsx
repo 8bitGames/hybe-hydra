@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useWorkflowStore, ContentIdea, StartFromVideo } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
+import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 import { useCampaigns } from "@/lib/queries";
 import { useI18n } from "@/lib/i18n";
 import { useToast } from "@/components/ui/toast";
@@ -14,11 +15,12 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
+import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
 import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
 import { cn, getProxiedImageUrl } from "@/lib/utils";
 import {
   ArrowLeft,
+  ArrowRight,
   Sparkles,
   Check,
   FolderOpen,
@@ -30,14 +32,16 @@ import {
   Plus,
   X,
   BookmarkCheck,
-  Copy,
-  ChevronDown,
-  ChevronUp,
-  Wand2,
+  ChevronsUpDown,
 } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { InfoButton } from "@/components/ui/info-button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { generateRecreationPrompt, hasRecreationData } from "@/lib/video-recreation-prompt";
+// Video recreation prompt generation now handled by VideoRecreationIdeaAgent
 
 // ============================================================================
 // Types
@@ -66,6 +70,31 @@ interface TrendInsights {
   bestPostingTimes?: string[];
 }
 
+// Video analysis data from StartFromVideo
+interface VideoAnalysisData {
+  hookAnalysis?: string;
+  styleAnalysis?: string;
+  structureAnalysis?: string;
+  suggestedApproach?: string;
+  isComposeVideo?: boolean;
+  imageCount?: number;
+  conceptDetails?: {
+    visualStyle?: string;
+    colorPalette?: string[];
+    lighting?: string;
+    cameraMovement?: string[];
+    transitions?: string[];
+    effects?: string[];
+    mood?: string;
+    pace?: string;
+    mainSubject?: string;
+    actions?: string[];
+    setting?: string;
+    props?: string[];
+    clothingStyle?: string;
+  };
+}
+
 interface GenerateIdeasRequest {
   user_idea: string;
   keywords: string[];
@@ -83,6 +112,12 @@ interface GenerateIdeasRequest {
     viralBenchmark: number;
   } | null;
   language?: "ko" | "en";
+  // Content type - selected by user at Start stage
+  contentType?: "ai_video" | "fast-cut";
+  // Video analysis data (when started from video)
+  video_analysis?: VideoAnalysisData | null;
+  video_description?: string | null;
+  video_hashtags?: string[] | null;
 }
 
 interface GenerateIdeasResponse {
@@ -99,19 +134,12 @@ interface GenerateIdeasResponse {
 function ContextReceptionPanel() {
   const { language } = useI18n();
   const { goToStart } = useWorkflowNavigation();
-  const { success: toastSuccess, error: toastError } = useToast();
 
-  // State for recreation prompt
-  const [showRecreationPrompt, setShowRecreationPrompt] = useState(false);
-  const [recreationPrompt, setRecreationPrompt] = useState<string | null>(null);
-
-  // Get both discover state and start source, plus setAnalyzeUserIdea for applying recreation prompt
-  const { discover, startSource, setAnalyzeUserIdea, setAnalyzeRecreationMode, resetWorkflow } = useWorkflowStore(
+  // Get discover state and start source
+  const { discover, startSource, resetWorkflow } = useWorkflowStore(
     useShallow((state) => ({
       discover: state.discover,
       startSource: state.start.source,
-      setAnalyzeUserIdea: state.setAnalyzeUserIdea,
-      setAnalyzeRecreationMode: state.setAnalyzeRecreationMode,
       resetWorkflow: state.resetWorkflow,
     }))
   );
@@ -121,60 +149,6 @@ function ContextReceptionPanel() {
   // Type guard for video source
   const isVideoSource = startSource?.type === "video";
   const videoSource: StartFromVideo | null = isVideoSource ? (startSource as StartFromVideo) : null;
-
-  // Check if recreation prompt can be generated
-  const canGenerateRecreation = isVideoSource && videoSource && hasRecreationData(videoSource);
-
-  // Generate recreation prompt
-  const handleGenerateRecreation = useCallback(() => {
-    if (!videoSource) return;
-
-    const result = generateRecreationPrompt(videoSource, {
-      language: language as "ko" | "en",
-      includeHashtags: true,
-      emphasisLevel: "exact",
-    });
-
-    setRecreationPrompt(result.fullPrompt);
-    setShowRecreationPrompt(true);
-  }, [videoSource, language]);
-
-  // Copy prompt to clipboard
-  const handleCopyPrompt = useCallback(async () => {
-    if (!recreationPrompt) return;
-
-    try {
-      await navigator.clipboard.writeText(recreationPrompt);
-      toastSuccess(
-        language === "ko" ? "복사됨" : "Copied",
-        language === "ko" ? "프롬프트가 클립보드에 복사되었습니다" : "Prompt copied to clipboard"
-      );
-    } catch {
-      toastError(
-        language === "ko" ? "복사 실패" : "Copy failed",
-        language === "ko" ? "클립보드 복사에 실패했습니다" : "Failed to copy to clipboard"
-      );
-    }
-  }, [recreationPrompt, language, toastSuccess, toastError]);
-
-  // Apply recreation prompt to user idea input (uses fullPrompt for complete recreation)
-  const handleApplyPrompt = useCallback(() => {
-    if (!videoSource) return;
-
-    const result = generateRecreationPrompt(videoSource, {
-      language: language as "ko" | "en",
-      includeHashtags: true,
-      emphasisLevel: "exact",
-    });
-
-    // Set the FULL prompt for complete video recreation (ignores trend data when generating)
-    setAnalyzeUserIdea(result.fullPrompt);
-    setAnalyzeRecreationMode(true);  // Enable recreation mode to ignore trend data
-    toastSuccess(
-      language === "ko" ? "적용됨" : "Applied",
-      language === "ko" ? "재현 프롬프트가 아이디어에 적용되었습니다 (트렌드 데이터 무시)" : "Recreation prompt applied (trend data will be ignored)"
-    );
-  }, [videoSource, language, setAnalyzeUserIdea, setAnalyzeRecreationMode, toastSuccess]);
 
   // Clear all workflow data and go back to start
   const handleClearAndRestart = useCallback(() => {
@@ -231,10 +205,10 @@ function ContextReceptionPanel() {
   }
 
   return (
-    <div className="border border-neutral-200 rounded-lg p-4 bg-neutral-50">
+    <div className="border border-neutral-200 rounded-lg p-4 bg-neutral-50 w-full max-w-full overflow-hidden">
       {/* Header with data usage purpose */}
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-semibold text-neutral-700 flex items-center gap-2">
+      <div className="flex items-center justify-between mb-2 min-w-0">
+        <h3 className="text-sm font-semibold text-neutral-700 flex items-center gap-2 min-w-0 truncate">
           <BookmarkCheck className="h-4 w-4 text-neutral-900" />
           {language === "ko" ? "AI 생성에 활용될 데이터" : "Data for AI Generation"}
         </h3>
@@ -256,7 +230,7 @@ function ContextReceptionPanel() {
           : "The following data will be reflected in custom content idea generation"}
       </p>
 
-      <div className="space-y-3">
+      <div className="space-y-3 overflow-hidden">
         {/* Source Type Indicator */}
         {isVideoSource && (
           <div className="flex items-center gap-2 text-xs text-neutral-500">
@@ -356,7 +330,7 @@ function ContextReceptionPanel() {
 
             {/* Hook Analysis */}
             {videoSource.aiAnalysis.hookAnalysis && (
-              <div>
+              <div className="overflow-hidden">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "훅 분석" : "Hook Analysis"}
@@ -368,7 +342,7 @@ function ContextReceptionPanel() {
                   size="sm"
                 />
               </div>
-                <p className="text-xs text-neutral-600 line-clamp-2">
+                <p className="text-xs text-neutral-600 line-clamp-3 break-words">
                   {videoSource.aiAnalysis.hookAnalysis}
                 </p>
               </div>
@@ -376,7 +350,7 @@ function ContextReceptionPanel() {
 
             {/* Style Analysis */}
             {videoSource.aiAnalysis.styleAnalysis && (
-              <div>
+              <div className="overflow-hidden">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "스타일 분석" : "Style Analysis"}
@@ -388,7 +362,7 @@ function ContextReceptionPanel() {
                   size="sm"
                 />
               </div>
-                <p className="text-xs text-neutral-600 line-clamp-2">
+                <p className="text-xs text-neutral-600 line-clamp-3 break-words">
                   {videoSource.aiAnalysis.styleAnalysis}
                 </p>
               </div>
@@ -396,7 +370,7 @@ function ContextReceptionPanel() {
 
             {/* Concept Details */}
             {videoSource.aiAnalysis.conceptDetails && (
-              <div>
+              <div className="overflow-hidden">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "컨셉 요소" : "Concept Elements"}
@@ -410,17 +384,17 @@ function ContextReceptionPanel() {
               </div>
                 <div className="flex flex-wrap gap-1">
                   {videoSource.aiAnalysis.conceptDetails.visualStyle && (
-                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600">
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-full truncate">
                       {videoSource.aiAnalysis.conceptDetails.visualStyle}
                     </Badge>
                   )}
                   {videoSource.aiAnalysis.conceptDetails.mood && (
-                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600">
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-full truncate">
                       {videoSource.aiAnalysis.conceptDetails.mood}
                     </Badge>
                   )}
                   {videoSource.aiAnalysis.conceptDetails.pace && (
-                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600">
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-full truncate">
                       {videoSource.aiAnalysis.conceptDetails.pace}
                     </Badge>
                   )}
@@ -430,7 +404,7 @@ function ContextReceptionPanel() {
 
             {/* Suggested Approach */}
             {videoSource.aiAnalysis.suggestedApproach && (
-              <div>
+              <div className="overflow-hidden">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "추천 접근법" : "Suggested Approach"}
@@ -442,82 +416,13 @@ function ContextReceptionPanel() {
                   size="sm"
                 />
               </div>
-                <p className="text-xs text-neutral-600 line-clamp-2">
+                <p className="text-xs text-neutral-600 line-clamp-3 break-words">
                   {videoSource.aiAnalysis.suggestedApproach}
                 </p>
               </div>
             )}
 
-            {/* Video Recreation Prompt Generator */}
-            {canGenerateRecreation && (
-              <div className="pt-2 border-t border-neutral-200">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      if (showRecreationPrompt) {
-                        setShowRecreationPrompt(false);
-                      } else {
-                        handleGenerateRecreation();
-                      }
-                    }}
-                    className="flex-1 flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-neutral-100 hover:bg-neutral-200 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Wand2 className="h-4 w-4 text-neutral-600" />
-                      <span className="text-xs font-medium text-neutral-700">
-                        {language === "ko" ? "영상 재현 프롬프트" : "Recreation Prompt"}
-                      </span>
-                    </div>
-                    {showRecreationPrompt ? (
-                      <ChevronUp className="h-4 w-4 text-neutral-500" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 text-neutral-500" />
-                    )}
-                  </button>
-                  <InfoButton
-                    content={language === "ko"
-                      ? "분석된 영상의 시각적 스타일, 분위기, 카메라 움직임 등을 기반으로 거의 동일한 스타일의 영상을 만들 수 있는 프롬프트를 생성합니다. '적용' 버튼으로 바로 아이디어에 반영할 수 있습니다."
-                      : "Generates a prompt based on the analyzed video's visual style, mood, camera movement, etc. to create content with nearly identical style. Use the 'Apply' button to directly add it to your idea."}
-                    size="sm"
-                  />
-                </div>
-
-                {/* Recreation Prompt Display */}
-                {showRecreationPrompt && recreationPrompt && (
-                  <div className="mt-2 space-y-2">
-                    <div className="relative">
-                      <pre className="text-xs text-neutral-600 whitespace-pre-wrap bg-white border border-neutral-200 rounded-lg p-3 max-h-[200px] overflow-y-auto pr-20">
-                        {recreationPrompt}
-                      </pre>
-                      <div className="absolute top-2 right-2 flex items-center gap-1">
-                        <button
-                          onClick={handleCopyPrompt}
-                          className="p-1.5 rounded bg-neutral-100 hover:bg-neutral-200 transition-colors"
-                          title={language === "ko" ? "복사" : "Copy"}
-                        >
-                          <Copy className="h-3.5 w-3.5 text-neutral-600" />
-                        </button>
-                      </div>
-                    </div>
-                    {/* Apply Button */}
-                    <button
-                      onClick={handleApplyPrompt}
-                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white transition-colors"
-                    >
-                      <Sparkles className="h-4 w-4" />
-                      <span className="text-xs font-medium">
-                        {language === "ko" ? "아이디어에 적용하기" : "Apply to Idea"}
-                      </span>
-                    </button>
-                    <p className="text-[10px] text-neutral-400">
-                      {language === "ko"
-                        ? "적용 시 아래 '나의 아이디어' 입력란에 재현 프롬프트가 자동으로 입력됩니다."
-                        : "When applied, the recreation prompt will be automatically entered in the 'My Idea' input below."}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Video Recreation Prompt Generator - Hidden: Now auto-generates recreation ideas via VideoRecreationIdeaAgent */}
           </div>
         )}
 
@@ -568,7 +473,7 @@ function ContextReceptionPanel() {
                 <p className="text-[10px] text-neutral-400 mb-1">
                   {language === "ko" ? "타겟 오디언스" : "Target Audience"}
                 </p>
-                <p className="text-xs text-neutral-600 line-clamp-2">
+                <p className="text-xs text-neutral-600 line-clamp-3">
                   {aiInsights.audienceInsights}
                 </p>
               </div>
@@ -587,10 +492,13 @@ function ContextReceptionPanel() {
 function CampaignSelector() {
   const { language } = useI18n();
   const router = useRouter();
+  const [isOpen, setIsOpen] = useState(false);
 
-  const { campaignId, setAnalyzeCampaign } = useWorkflowStore(
+  const { campaignId, campaignName, artistDisplayName, setAnalyzeCampaign } = useWorkflowStore(
     useShallow((state) => ({
       campaignId: state.analyze.campaignId,
+      campaignName: state.analyze.campaignName,
+      artistDisplayName: state.analyze.artistStageName || state.analyze.artistName,
       setAnalyzeCampaign: state.setAnalyzeCampaign,
     }))
   );
@@ -601,12 +509,31 @@ function CampaignSelector() {
   // Auto-select first campaign
   useEffect(() => {
     if (campaigns.length > 0 && !campaignId) {
-      setAnalyzeCampaign(campaigns[0].id, campaigns[0].name, campaigns[0].description, campaigns[0].genre);
+      setAnalyzeCampaign(
+        campaigns[0].id,
+        campaigns[0].name,
+        campaigns[0].description,
+        campaigns[0].genre,
+        campaigns[0].artist_name,
+        campaigns[0].artist_stage_name
+      );
     }
   }, [campaigns, campaignId, setAnalyzeCampaign]);
 
+  const handleSelectCampaign = (campaign: typeof campaigns[0]) => {
+    setAnalyzeCampaign(
+      campaign.id,
+      campaign.name,
+      campaign.description,
+      campaign.genre,
+      campaign.artist_name,
+      campaign.artist_stage_name
+    );
+    setIsOpen(false);
+  };
+
   if (isLoading) {
-    return <div className="h-24 bg-neutral-100 rounded-lg animate-pulse" />;
+    return <div className="h-12 bg-neutral-100 rounded-lg animate-pulse" />;
   }
 
   if (campaigns.length === 0) {
@@ -630,53 +557,96 @@ function CampaignSelector() {
   }
 
   return (
-    <div className="space-y-2 max-h-[200px] overflow-y-auto">
-      {campaigns.slice(0, 6).map((campaign) => {
-        const isSelected = campaignId === campaign.id;
-        return (
-          <button
-            key={campaign.id}
-            onClick={() => setAnalyzeCampaign(campaign.id, campaign.name, campaign.description, campaign.genre)}
-            className={cn(
-              "w-full flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all",
-              isSelected
-                ? "border-neutral-900 bg-neutral-100"
-                : "border-neutral-200 hover:border-neutral-300"
-            )}
-          >
-            <div
-              className={cn(
-                "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
-                isSelected ? "bg-neutral-200" : "bg-neutral-100"
-              )}
-            >
-              {campaign.cover_image_url ? (
-                <img
-                  src={campaign.cover_image_url}
-                  alt=""
-                  className="w-full h-full object-cover rounded-lg"
-                />
-              ) : (
-                <FolderOpen
-                  className={cn("h-4 w-4", isSelected ? "text-neutral-900" : "text-neutral-500")}
-                />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate text-neutral-800">{campaign.name}</p>
-              <p className="text-xs text-neutral-500 truncate">
-                {campaign.artist_stage_name || campaign.artist_name}
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <button
+          className={cn(
+            "w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all",
+            campaignId
+              ? "border-neutral-300 bg-white hover:border-neutral-400"
+              : "border-neutral-200 bg-neutral-50 hover:border-neutral-300"
+          )}
+        >
+          <div className="w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0">
+            <FolderOpen className="h-4 w-4 text-neutral-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            {campaignId ? (
+              <>
+                <p className="text-sm font-medium truncate text-neutral-800">{campaignName}</p>
+                <p className="text-xs text-neutral-500 truncate">{artistDisplayName}</p>
+              </>
+            ) : (
+              <p className="text-sm text-neutral-500">
+                {language === "ko" ? "캠페인을 선택하세요" : "Select a campaign"}
               </p>
-            </div>
-            {isSelected && (
-              <div className="w-5 h-5 rounded-full bg-neutral-900 flex items-center justify-center shrink-0">
-                <Check className="h-3 w-3 text-white" />
-              </div>
             )}
+          </div>
+          <ChevronsUpDown className="h-4 w-4 text-neutral-400 shrink-0" />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2">
+        <div className="space-y-1.5 max-h-[200px] overflow-y-auto border border-neutral-200 rounded-lg p-2 bg-white">
+          {campaigns.slice(0, 10).map((campaign) => {
+            const isSelected = campaignId === campaign.id;
+            return (
+              <button
+                key={campaign.id}
+                onClick={() => handleSelectCampaign(campaign)}
+                className={cn(
+                  "w-full flex items-center gap-3 p-2.5 rounded-lg text-left transition-all",
+                  isSelected
+                    ? "bg-neutral-100"
+                    : "hover:bg-neutral-50"
+                )}
+              >
+                <div
+                  className={cn(
+                    "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                    isSelected ? "bg-neutral-200" : "bg-neutral-100"
+                  )}
+                >
+                  {campaign.cover_image_url ? (
+                    <img
+                      src={campaign.cover_image_url}
+                      alt=""
+                      className="w-full h-full object-cover rounded-lg"
+                    />
+                  ) : (
+                    <FolderOpen
+                      className={cn("h-3.5 w-3.5", isSelected ? "text-neutral-900" : "text-neutral-500")}
+                    />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-neutral-800">{campaign.name}</p>
+                  <p className="text-xs text-neutral-500 truncate">
+                    {campaign.artist_stage_name || campaign.artist_name}
+                  </p>
+                </div>
+                {isSelected && (
+                  <div className="w-5 h-5 rounded-full bg-neutral-900 flex items-center justify-center shrink-0">
+                    <Check className="h-3 w-3 text-white" />
+                  </div>
+                )}
+              </button>
+            );
+          })}
+          {/* Create new campaign button */}
+          <button
+            onClick={() => router.push("/campaigns/new")}
+            className="w-full flex items-center gap-3 p-2.5 rounded-lg text-left transition-all hover:bg-neutral-50 border border-dashed border-neutral-300 mt-2"
+          >
+            <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0">
+              <Plus className="h-3.5 w-3.5 text-neutral-500" />
+            </div>
+            <p className="text-sm text-neutral-600">
+              {language === "ko" ? "새 캠페인 만들기" : "Create New Campaign"}
+            </p>
           </button>
-        );
-      })}
-    </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -736,6 +706,27 @@ function IdeaCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <h4 className="text-sm font-semibold text-neutral-800 truncate">{idea.title}</h4>
+            {/* Recreation Badge - shows when idea is video recreation */}
+            {idea.isRecreationIdea && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] shrink-0 cursor-help border-purple-500 text-purple-600 bg-purple-50"
+                  >
+                    <Video className="h-2.5 w-2.5 mr-0.5" />
+                    {language === "ko" ? "재현" : "Recreate"}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[200px]">
+                  <p className="text-xs">
+                    {language === "ko"
+                      ? "원본 영상의 스타일을 재현하는 아이디어입니다. 비슷한 분위기와 비주얼로 새로운 콘텐츠를 만들 수 있어요."
+                      : "This idea recreates the original video's style. Create new content with similar mood and visuals."}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Badge
@@ -855,16 +846,22 @@ export default function AnalyzePage() {
   const { language } = useI18n();
   const toast = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Sync workflow stage
   useWorkflowSync("analyze");
   const { goToStart, proceedToCreate, canProceedToCreate } = useWorkflowNavigation();
 
+  // Session sync for persisted state management
+  const sessionId = searchParams.get("session");
+  const { activeSession, syncNow } = useSessionWorkflowSync("analyze");
+
   // Workflow store
   const discover = useWorkflowStore((state) => state.discover);
   const analyze = useWorkflowStore((state) => state.analyze);
+  const startSource = useWorkflowStore((state) => state.start.source);
+  const startContentType = useWorkflowStore((state) => state.start.contentType);
   const setAnalyzeUserIdea = useWorkflowStore((state) => state.setAnalyzeUserIdea);
-  const setAnalyzeRecreationMode = useWorkflowStore((state) => state.setAnalyzeRecreationMode);
   const setAnalyzeAiIdeas = useWorkflowStore((state) => state.setAnalyzeAiIdeas);
   const removeAnalyzeIdea = useWorkflowStore((state) => state.removeAnalyzeIdea);
   const selectAnalyzeIdea = useWorkflowStore((state) => state.selectAnalyzeIdea);
@@ -936,6 +933,10 @@ export default function AnalyzePage() {
         } : undefined;
       }
 
+      // Check if started from video
+      const isVideoSource = startSource?.type === "video";
+      const videoSource = isVideoSource ? startSource as StartFromVideo : null;
+
       const request: GenerateIdeasRequest = {
         user_idea: analyze.userIdea,
         // In recreation mode, don't send keywords/hashtags to avoid diluting the exact concept
@@ -950,6 +951,12 @@ export default function AnalyzePage() {
         trend_insights: trendInsights,
         performance_metrics: isRecreationMode ? null : discover.performanceMetrics,
         language: language,
+        // Content type - user-selected at Start stage
+        contentType: startContentType,
+        // Video analysis data for recreation ideas (when started from video)
+        video_analysis: videoSource?.aiAnalysis || null,
+        video_description: videoSource?.description || null,
+        video_hashtags: videoSource?.hashtags || null,
       };
 
       const response = await api.post<GenerateIdeasResponse, GenerateIdeasRequest>(
@@ -1037,11 +1044,11 @@ export default function AnalyzePage() {
       />
 
       {/* Main Content - Two Column */}
-      <div className="flex-1 flex overflow-hidden px-[7%]">
+      <div className="flex-1 flex overflow-hidden px-[5%]">
         {/* Left Column - Input */}
-        <div className="w-1/2 border-r border-neutral-200 flex flex-col">
+        <div className="w-[55%] min-w-0 border-r border-neutral-200 flex flex-col overflow-hidden">
           <ScrollArea className="flex-1">
-            <div className="p-4 space-y-4">
+            <div className="p-4 space-y-4 w-full">
               {/* Context from Discover */}
               <ContextReceptionPanel />
 
@@ -1067,37 +1074,19 @@ export default function AnalyzePage() {
                   <Label className="text-xs font-medium text-neutral-700">
                     {t.yourIdea}
                   </Label>
-                  {analyze.isRecreationMode && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-neutral-900 text-white">
-                      {language === "ko" ? "재현 모드" : "Recreation Mode"}
-                    </Badge>
-                  )}
                   <InfoButton
-                    content={analyze.isRecreationMode
-                      ? (language === "ko"
-                        ? "재현 모드: 선택한 영상의 컨셉과 스타일을 정확히 재현합니다. 트렌드 데이터는 무시됩니다. 수정하면 일반 모드로 전환됩니다."
-                        : "Recreation Mode: Exactly recreates the selected video's concept and style. Trend data will be ignored. Editing will switch to normal mode.")
-                      : (language === "ko"
-                        ? "만들고 싶은 영상에 대한 아이디어를 자유롭게 입력하세요. AI가 트렌드 데이터와 함께 분석하여 최적화된 콘텐츠 아이디어를 제안합니다. 구체적일수록 더 좋은 결과를 얻을 수 있어요."
-                        : "Freely describe your video idea. AI will analyze it with trend data to suggest optimized content ideas. The more specific, the better results you'll get.")}
+                    content={language === "ko"
+                      ? "만들고 싶은 영상에 대한 아이디어를 자유롭게 입력하세요. AI가 트렌드 데이터와 함께 분석하여 최적화된 콘텐츠 아이디어를 제안합니다. 구체적일수록 더 좋은 결과를 얻을 수 있어요."
+                      : "Freely describe your video idea. AI will analyze it with trend data to suggest optimized content ideas. The more specific, the better results you'll get."}
                     side="bottom"
                   />
                 </div>
                 <textarea
                   value={analyze.userIdea}
-                  onChange={(e) => {
-                    setAnalyzeUserIdea(e.target.value);
-                    // Reset recreation mode when user manually edits
-                    if (analyze.isRecreationMode) {
-                      setAnalyzeRecreationMode(false);
-                    }
-                  }}
+                  onChange={(e) => setAnalyzeUserIdea(e.target.value)}
                   placeholder={t.ideaPlaceholder}
                   rows={4}
-                  className={cn(
-                    "w-full px-3 py-2.5 bg-white border rounded-lg text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/20 resize-none",
-                    analyze.isRecreationMode ? "border-neutral-400" : "border-neutral-200"
-                  )}
+                  className="w-full px-3 py-2.5 bg-white border border-neutral-200 rounded-lg text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/20 resize-none"
                 />
               </div>
 
@@ -1124,17 +1113,35 @@ export default function AnalyzePage() {
         </div>
 
         {/* Right Column - AI Ideas */}
-        <div className="w-1/2 flex flex-col bg-neutral-50">
+        <div className="w-[45%] min-w-0 flex flex-col bg-neutral-50">
           <div className="p-4 border-b border-neutral-200 shrink-0">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold text-neutral-700 flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-neutral-900" />
                 {t.aiIdeas}
               </h2>
+              {/* Content Type Badge - shows user-selected type from Start stage */}
+              <Badge variant="outline" className="text-xs bg-neutral-100 text-neutral-600 border-neutral-300">
+                {startContentType === "fast-cut" ? (
+                  <>
+                    <ImageIcon className="h-3 w-3 mr-1" />
+                    {language === "ko" ? "Fast Cut" : "Fast Cut"}
+                  </>
+                ) : (
+                  <>
+                    <Video className="h-3 w-3 mr-1" />
+                    {language === "ko" ? "AI Video" : "AI Video"}
+                  </>
+                )}
+              </Badge>
               <InfoButton
                 content={language === "ko"
-                  ? "AI가 입력한 정보와 트렌드 데이터를 분석하여 생성한 콘텐츠 아이디어입니다. 원하는 아이디어를 선택하면 다음 단계에서 사용됩니다. 각 아이디어에는 최적화된 프롬프트가 포함되어 있어요."
-                  : "Content ideas generated by AI analyzing your inputs and trend data. Select your preferred idea to use in the next step. Each idea includes an optimized prompt."}
+                  ? startContentType === "fast-cut"
+                    ? "Fast Cut 모드로 아이디어가 생성됩니다. 이미지 + 음악을 조합한 빠른 편집 영상에 최적화된 아이디어입니다."
+                    : "AI가 입력한 정보와 트렌드 데이터를 분석하여 생성한 콘텐츠 아이디어입니다. 원하는 아이디어를 선택하면 다음 단계에서 사용됩니다. 각 아이디어에는 최적화된 프롬프트가 포함되어 있어요."
+                  : startContentType === "fast-cut"
+                    ? "Ideas will be generated in Fast Cut mode. Optimized for quick-edit videos combining images + music."
+                    : "Content ideas generated by AI analyzing your inputs and trend data. Select your preferred idea to use in the next step. Each idea includes an optimized prompt."}
                 side="bottom"
               />
             </div>
@@ -1273,6 +1280,18 @@ export default function AnalyzePage() {
         </div>
       </div>
 
+      {/* Footer with navigation */}
+      <WorkflowFooter
+        onBack={goToStart}
+        onNext={handleProceedToCreate}
+        canProceed={canProceedToCreate}
+        actionButton={{
+          label: t.proceed,
+          onClick: handleProceedToCreate,
+          disabled: !canProceedToCreate,
+          icon: <ArrowRight className="h-4 w-4" />,
+        }}
+      />
     </div>
     </TooltipProvider>
   );

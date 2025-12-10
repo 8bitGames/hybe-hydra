@@ -1,0 +1,35 @@
+{
+  "computeEnvironmentName": "hydra-compose-spot-gpu",
+  "type": "MANAGED",
+  "state": "ENABLED",
+  "computeResources": {
+    "type": "SPOT",
+    "allocationStrategy": "SPOT_CAPACITY_OPTIMIZED",
+    "minvCpus": 0,
+    "maxvCpus": 32,
+    "desiredvCpus": 0,
+    "instanceTypes": [
+      "g4dn.xlarge",
+      "g4dn.2xlarge"
+    ],
+    "subnets": [
+      "${PRIVATE_SUBNET_ID}"
+    ],
+    "securityGroupIds": [
+      "${SECURITY_GROUP_ID}"
+    ],
+    "instanceRole": "arn:aws:iam::${AWS_ACCOUNT_ID}:instance-profile/ecsInstanceRole",
+    "spotIamFleetRole": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/aws-ec2-spot-fleet-tagging-role",
+    "bidPercentage": 100,
+    "tags": {
+      "Project": "hydra",
+      "Service": "compose-engine"
+    },
+    "ec2Configuration": [
+      {
+        "imageType": "ECS_AL2_NVIDIA"
+      }
+    ]
+  },
+  "serviceRole": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/aws-service-role/batch.amazonaws.com/AWSServiceRoleForBatch"
+}

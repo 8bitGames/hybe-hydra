@@ -4,11 +4,10 @@ import { getUserFromHeader } from "@/lib/auth";
 import { TrendPlatform, Prisma } from "@prisma/client";
 import {
   searchTikTok,
-  getHashtagVideos,
+  searchByHashtag,
   getTrendingVideos,
   TikTokVideo,
-} from "@/lib/tiktok-rapidapi";
-import { batchCacheImagesToS3 } from "@/lib/storage";
+} from "@/lib/tiktok-mcp";
 
 // POST /api/v1/trends/collect - Trigger trend collection (admin only)
 export async function POST(request: NextRequest) {
@@ -61,20 +60,18 @@ export async function POST(request: NextRequest) {
       viewCount?: number;
       videoCount?: number;
       description?: string;
-      thumbnailUrl?: string;
     }> = [];
 
     // Collect trending videos if requested
     if (includeExplore) {
-      const trendingResult = await getTrendingVideos(region, 20);
+      const trendingResult = await getTrendingVideos({ country: region, limit: 20 });
       if (trendingResult.success) {
-        trendingResult.videos.forEach((video, index) => {
+        trendingResult.data.forEach((video, index) => {
           collectedTrends.push({
             rank: index + 1,
             keyword: video.description.slice(0, 100) || `trending_${index + 1}`,
             viewCount: video.stats.playCount,
             description: video.description,
-            thumbnailUrl: video.thumbnailUrl,
           });
         });
       }
@@ -90,7 +87,6 @@ export async function POST(request: NextRequest) {
             keyword,
             viewCount: video.stats.playCount,
             description: video.description,
-            thumbnailUrl: video.thumbnailUrl,
           });
         });
       }
@@ -98,12 +94,12 @@ export async function POST(request: NextRequest) {
 
     // Collect hashtag trends
     for (const hashtag of hashtags) {
-      const result = await getHashtagVideos(hashtag, 10);
+      const result = await searchByHashtag(hashtag, 10);
       if (result.success && result.info) {
         collectedTrends.push({
           rank: collectedTrends.length + 1,
-          keyword: `#${result.hashtag}`,
-          hashtag: result.hashtag,
+          keyword: `#${result.info.title}`,
+          hashtag: result.info.title,
           viewCount: result.info.viewCount,
           videoCount: result.info.videoCount,
           description: result.info.description,
@@ -119,44 +115,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Cache thumbnail images to S3 (TikTok CDN URLs expire quickly)
-    const thumbnailUrls = collectedTrends
-      .map((t) => t.thumbnailUrl)
-      .filter((url): url is string => !!url && url.startsWith("http"));
-
-    let cachedUrlMap = new Map<string, string>();
-    if (thumbnailUrls.length > 0) {
-      console.log(`[TRENDS-COLLECT] Caching ${thumbnailUrls.length} thumbnail images to S3...`);
-      try {
-        cachedUrlMap = await batchCacheImagesToS3(thumbnailUrls, "cache/trends");
-        console.log(`[TRENDS-COLLECT] Cached ${cachedUrlMap.size} images to S3`);
-      } catch (cacheError) {
-        console.warn("[TRENDS-COLLECT] Image caching failed (non-fatal):", cacheError);
-        // Continue without caching - proxy will handle expired URLs
-      }
-    }
-
-    // Save to database with cached S3 URLs where available
-    const trendData = collectedTrends.map((trend) => {
-      // Use cached S3 URL if available, otherwise keep original (proxy will handle it)
-      const cachedThumbnailUrl = trend.thumbnailUrl
-        ? cachedUrlMap.get(trend.thumbnailUrl) || trend.thumbnailUrl
-        : null;
-
-      return {
-        platform: platform as TrendPlatform,
-        keyword: trend.keyword,
-        rank: trend.rank,
-        region,
-        viewCount: trend.viewCount ? BigInt(Math.floor(trend.viewCount)) : null,
-        videoCount: trend.videoCount || null,
-        description: trend.description || null,
-        hashtags: trend.hashtag ? [trend.hashtag] : [],
-        metadata: Prisma.JsonNull,
-        trendUrl: null,
-        thumbnailUrl: cachedThumbnailUrl,
-      };
-    });
+    // Save to database (no thumbnails - removed preview feature)
+    const trendData = collectedTrends.map((trend) => ({
+      platform: platform as TrendPlatform,
+      keyword: trend.keyword,
+      rank: trend.rank,
+      region,
+      viewCount: trend.viewCount ? BigInt(Math.floor(trend.viewCount)) : null,
+      videoCount: trend.videoCount || null,
+      description: trend.description || null,
+      hashtags: trend.hashtag ? [trend.hashtag] : [],
+      metadata: Prisma.JsonNull,
+      trendUrl: null,
+      thumbnailUrl: null,
+    }));
 
     const created = await prisma.trendSnapshot.createMany({
       data: trendData,
@@ -171,7 +143,6 @@ export async function POST(request: NextRequest) {
       method: "rapidapi",
       collected_count: collectedTrends.length,
       saved_count: created.count,
-      cached_images: cachedUrlMap.size,
       trends: collectedTrends.slice(0, 10).map((t) => ({
         rank: t.rank,
         keyword: t.keyword,
@@ -223,11 +194,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === "hashtag" && hashtag) {
-      const result = await getHashtagVideos(hashtag, limit);
+      const result = await searchByHashtag(hashtag, limit);
 
       return NextResponse.json({
         success: result.success,
-        hashtag: result.hashtag,
+        hashtag: result.info?.title || hashtag,
         info: result.info,
         videos: result.videos,
         error: result.error,

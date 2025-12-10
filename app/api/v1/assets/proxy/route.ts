@@ -5,7 +5,7 @@ import { Readable } from "stream";
 // Initialize S3 client
 function getS3Client(): S3Client {
   return new S3Client({
-    region: process.env.AWS_REGION || "ap-southeast-2",
+    region: (process.env.AWS_REGION || "ap-southeast-2").trim(),
     credentials: {
       accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,

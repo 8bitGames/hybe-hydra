@@ -2,7 +2,7 @@
 
 import { useI18n } from "@/lib/i18n";
 import { useAssets } from "@/lib/queries";
-import { useMemo } from "react";
+import { useMemo, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -23,12 +23,14 @@ import {
   Gauge,
   Sparkles,
   Zap,
-  ChevronRight,
   SkipForward,
   Volume2,
   VolumeX,
   HelpCircle,
+  Upload,
+  Loader2,
 } from "lucide-react";
+import { useAuthStore } from "@/lib/auth-store";
 import {
   ScriptGenerationResponse,
   AudioMatch,
@@ -69,6 +71,115 @@ export function FastCutMusicStep({
   onNext,
 }: FastCutMusicStepProps) {
   const { language, translate } = useI18n();
+
+  // Upload state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Handle file upload
+  const handleFileUpload = useCallback(async (file: File) => {
+    // Get the latest token from store (not from hook to avoid stale closure)
+    const accessToken = useAuthStore.getState().accessToken;
+
+    // Check authentication first
+    if (!accessToken) {
+      setUploadError(language === 'ko'
+        ? '로그인이 필요합니다. 페이지를 새로고침 해주세요.'
+        : 'Please log in. Try refreshing the page.');
+      return;
+    }
+
+    if (!campaignId) {
+      setUploadError(language === 'ko'
+        ? '캠페인이 선택되지 않았습니다.'
+        : 'No campaign selected.');
+      return;
+    }
+
+    // Validate file type
+    const validTypes = ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/ogg'];
+    if (!validTypes.includes(file.type)) {
+      setUploadError(language === 'ko'
+        ? '지원하는 형식: MP3, WAV, FLAC, OGG'
+        : 'Supported formats: MP3, WAV, FLAC, OGG');
+      return;
+    }
+
+    // Validate file size (500MB max)
+    if (file.size > 500 * 1024 * 1024) {
+      setUploadError(language === 'ko'
+        ? '파일 크기는 500MB 이하여야 합니다'
+        : 'File must be less than 500MB');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`/api/v1/campaigns/${campaignId}/assets`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || 'Upload failed');
+      }
+
+      const data = await response.json();
+
+      // Convert to AudioMatch format and select it
+      const uploadedAudio: AudioMatch = {
+        id: data.id,
+        filename: file.name,
+        s3Url: data.s3_url,
+        bpm: data.metadata?.bpm || null,
+        vibe: null,
+        genre: null,
+        duration: data.metadata?.duration || 60,
+        energy: 0.5,
+        matchScore: 100, // User uploaded = perfect match
+      };
+
+      onSelectAudio(uploadedAudio);
+    } catch (err) {
+      console.error('Upload error:', err);
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }, [campaignId, language, onSelectAudio]);
+
+  // Handle file input change
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  }, [handleFileUpload]);
+
+  // Handle drag and drop
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  }, [handleFileUpload]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+  }, []);
 
   // Helper for tooltip icon
   const TooltipIcon = ({ tooltipKey }: { tooltipKey: string }) => (
@@ -120,39 +231,34 @@ export function FastCutMusicStep({
           </p>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2">
-          {/* Skip Music Button */}
-          {!musicSkipped && !selectedAudio && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  onClick={onSkipMusic}
-                  className="border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-                >
-                  <SkipForward className="h-4 w-4 mr-1" />
-                  {language === "ko" ? "건너뛰기" : "Skip"}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-[240px]">
-                <p className="text-xs">{translate("fastCut.tooltips.music.skipMusic")}</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-
-          {/* Next Step Button - Prominent position */}
-          {(selectedAudio || musicSkipped) && onNext && (
-            <Button
-              onClick={onNext}
-              className="bg-neutral-900 text-white hover:bg-neutral-800"
-            >
-              {language === "ko" ? "효과 & 생성" : "Effects & Generate"}
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          )}
-        </div>
+        {/* Skip Music Button */}
+        {!musicSkipped && !selectedAudio && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                onClick={onSkipMusic}
+                className="border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+              >
+                <SkipForward className="h-4 w-4 mr-1" />
+                {language === "ko" ? "건너뛰기" : "Skip"}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[240px]">
+              <p className="text-xs">{translate("fastCut.tooltips.music.skipMusic")}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/mpeg,audio/wav,audio/flac,audio/ogg,.mp3,.wav,.flac,.ogg"
+        onChange={handleFileChange}
+        className="hidden"
+      />
 
       {/* Script Info Summary */}
       {scriptData && (
@@ -175,6 +281,46 @@ export function FastCutMusicStep({
               {scriptData.script.totalDuration}s
             </Badge>
           </div>
+        </div>
+      )}
+
+      {/* Upload Section - Always visible when not skipped */}
+      {!musicSkipped && (
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          className={cn(
+            "border-2 border-dashed rounded-lg p-4 transition-colors",
+            uploading ? "border-neutral-400 bg-neutral-100" : "border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50",
+            "cursor-pointer"
+          )}
+          onClick={() => !uploading && fileInputRef.current?.click()}
+        >
+          <div className="flex items-center justify-center gap-3">
+            {uploading ? (
+              <>
+                <Loader2 className="h-5 w-5 text-neutral-500 animate-spin" />
+                <span className="text-sm text-neutral-600">
+                  {language === "ko" ? "업로드 중..." : "Uploading..."}
+                </span>
+              </>
+            ) : (
+              <>
+                <Upload className="h-5 w-5 text-neutral-500" />
+                <span className="text-sm text-neutral-600">
+                  {language === "ko"
+                    ? "음원 파일을 드래그하거나 클릭하여 업로드"
+                    : "Drag and drop or click to upload audio"}
+                </span>
+                <span className="text-xs text-neutral-400">
+                  (MP3, WAV, FLAC, OGG)
+                </span>
+              </>
+            )}
+          </div>
+          {uploadError && (
+            <p className="text-xs text-red-500 text-center mt-2">{uploadError}</p>
+          )}
         </div>
       )}
 

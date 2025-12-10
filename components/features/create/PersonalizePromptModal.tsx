@@ -140,7 +140,7 @@ function PromptReviewStep({
   const { language } = useI18n();
 
   return (
-    <div className="grid grid-cols-2 gap-6 h-full">
+    <div className="grid grid-cols-2 gap-6 min-h-[550px]">
       {/* Left: Video Prompt (Input) */}
       <div className="flex flex-col">
         <div className="flex items-center gap-2 mb-3">
@@ -152,7 +152,7 @@ function PromptReviewStep({
           </h4>
           <span className="text-xs text-neutral-400 ml-auto px-2 py-0.5 bg-neutral-100 rounded">Input</span>
         </div>
-        <div className="flex-1 p-4 bg-neutral-50 border border-neutral-200 rounded-lg overflow-y-auto min-h-[400px] max-h-[50vh]">
+        <div className="flex-1 p-4 bg-neutral-50 border border-neutral-200 rounded-lg overflow-y-auto min-h-[500px] max-h-[70vh]">
           {videoPrompt ? (
             <p className="text-sm text-neutral-700 whitespace-pre-wrap leading-relaxed">
               {videoPrompt}
@@ -179,7 +179,7 @@ function PromptReviewStep({
           </h4>
           <span className="text-xs text-blue-600 ml-auto px-2 py-0.5 bg-blue-100 rounded">AI Generated</span>
         </div>
-        <div className="flex-1 p-4 bg-blue-50 border border-blue-200 rounded-lg overflow-y-auto min-h-[400px] max-h-[50vh]">
+        <div className="flex-1 p-4 bg-blue-50 border border-blue-200 rounded-lg overflow-y-auto min-h-[500px] max-h-[70vh]">
           {isGeneratingImagePrompt ? (
             <div className="flex items-center justify-center gap-3 h-full">
               <Spinner className="h-5 w-5 text-blue-600" />
@@ -574,7 +574,7 @@ export function PersonalizePromptModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!max-w-5xl w-[95vw] flex flex-col overflow-hidden p-0">
+      <DialogContent className="!max-w-5xl w-[95vw] h-[85vh] max-h-[85vh] flex flex-col overflow-hidden p-0">
         {/* Header - compact */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-neutral-100">
           <DialogHeader className="flex-row items-center gap-3">
@@ -606,7 +606,7 @@ export function PersonalizePromptModal({
         )}
 
         {/* Content */}
-        <div className="overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-6 py-4 min-h-[600px]">
           {currentStep === 1 ? (
             <PromptReviewStep
               videoPrompt={videoPrompt}

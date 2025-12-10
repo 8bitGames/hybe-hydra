@@ -32,6 +32,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { MainNavigation } from "@/components/layout/main-navigation";
+import { GlobalJobTracker } from "@/components/shared/GlobalJobTracker";
 
 function DashboardContent({
   children,
@@ -46,9 +47,9 @@ function DashboardContent({
   const { language } = useI18n();
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-28">
+      <header className="shrink-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 h-14">
         <div className="flex h-full items-center px-4">
           {/* Mobile Menu */}
           <Sheet>
@@ -78,6 +79,11 @@ function DashboardContent({
 
           {/* Right Side */}
           <div className="flex items-center gap-2">
+            {/* Global Job Tracker - Processing Shortcut */}
+            <GlobalJobTracker />
+
+            <Separator orientation="vertical" className="h-6" />
+
             <LanguageSwitcher />
 
             <Separator orientation="vertical" className="h-6 mx-2" />
@@ -123,7 +129,7 @@ function DashboardContent({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 flex flex-col min-h-0 overflow-y-auto">
         {children}
       </main>
     </div>
