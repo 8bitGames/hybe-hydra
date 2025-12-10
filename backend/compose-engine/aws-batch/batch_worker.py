@@ -73,11 +73,15 @@ def send_callback(callback_url: str, job_id: str, status: str, output_url: str =
         return
 
     try:
+        # Get callback secret from environment (loaded from AWS Secrets Manager)
+        callback_secret = os.environ.get("CALLBACK_SECRET", "")
+
         payload = {
             "job_id": job_id,
             "status": status,
             "output_url": output_url,
             "error": error,
+            "secret": callback_secret,
         }
         print(f"[{job_id}] Sending callback to {callback_url}")
 
