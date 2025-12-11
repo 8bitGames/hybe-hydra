@@ -84,17 +84,30 @@ export const AccountMetricsOutputSchema = z.object({
     contentMixRecommendation: z.string().optional().default(''),
     hashtagStrategy: z.string().optional().default(''),
     musicStrategy: z.string().optional().default(''),
-  }).optional().default({}),
+  }).optional().default({
+    topPerformingContent: '',
+    contentMixRecommendation: '',
+    hashtagStrategy: '',
+    musicStrategy: '',
+  }),
   postingStrategy: z.object({
     optimalFrequency: z.string().optional().default(''),
     bestTimes: z.string().optional().default(''),
     consistencyScore: z.number().min(0).max(100).optional().default(50),
-  }).optional().default({}),
+  }).optional().default({
+    optimalFrequency: '',
+    bestTimes: '',
+    consistencyScore: 50,
+  }),
   growthPotential: z.object({
     score: z.enum(['high', 'medium', 'low']).optional().default('medium'),
     reasoning: z.string().optional().default(''),
     projectedGrowth: z.string().optional().default(''),
-  }).optional().default({}),
+  }).optional().default({
+    score: 'medium',
+    reasoning: '',
+    projectedGrowth: '',
+  }),
   recommendations: z.array(z.object({
     priority: z.enum(['high', 'medium', 'low']).optional().default('medium'),
     action: z.string().optional().default(''),
@@ -104,11 +117,17 @@ export const AccountMetricsOutputSchema = z.object({
     vsIndustry: z.object({
       engagement: z.number().optional().default(0),
       interpretation: z.string().optional().default(''),
-    }).optional().default({}),
+    }).optional().default({
+      engagement: 0,
+      interpretation: '',
+    }),
     vsTier: z.object({
       engagement: z.number().optional().default(0),
       interpretation: z.string().optional().default(''),
-    }).optional().default({}),
+    }).optional().default({
+      engagement: 0,
+      interpretation: '',
+    }),
   }).optional(),
 }).passthrough();
 
