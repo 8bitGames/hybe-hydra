@@ -585,11 +585,6 @@ export default function PublishPage() {
   };
 
   // Success dialog handlers
-  const handleCreateVariationsFromSuccess = useCallback(() => {
-    setShowSuccessDialog(false);
-    setVariationModalOpen(true);
-  }, []);
-
   const handleViewSchedule = useCallback(() => {
     setShowSuccessDialog(false);
     resetWorkflow();
@@ -598,6 +593,9 @@ export default function PublishPage() {
 
   const handleStartNew = useCallback(() => {
     setShowSuccessDialog(false);
+    // Clear all session states for fresh start
+    useProcessingSessionStore.getState().clearSession();
+    useSessionStore.getState().clearActiveSession();
     resetWorkflow();
     router.push("/start");
   }, [resetWorkflow, router]);
@@ -1168,7 +1166,6 @@ export default function PublishPage() {
           caption: publish.caption,
           hashtags: publish.hashtags,
         }}
-        onCreateVariations={handleCreateVariationsFromSuccess}
         onViewSchedule={handleViewSchedule}
         onStartNew={handleStartNew}
       />

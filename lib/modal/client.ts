@@ -51,7 +51,7 @@ export function getComposeEngineMode(): 'modal' | 'batch' | 'local' {
 // Callback URL for Modal to notify us when render completes
 // Uses the same endpoint as AWS Batch for consistency
 function getCallbackUrl(): string {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://hydra-sand-theta.vercel.app';
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://hydra.ai.kr';
   return `${baseUrl}/api/v1/fast-cut/callback`;
 }
 

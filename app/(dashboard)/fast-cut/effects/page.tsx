@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
 import { useSessionStore } from "@/lib/stores/session-store";
@@ -19,14 +19,34 @@ export default function FastCutEffectsPage() {
   const { language } = useI18n();
   const toast = useToast();
 
+  // Get session ID from URL
+  const searchParams = useSearchParams();
+  const sessionIdFromUrl = searchParams.get("session");
+
   // Session store for persisting Fast Cut data
-  const { setStageData, proceedToStage, activeSession } = useSessionStore(
+  const { setStageData, proceedToStage, activeSession, loadSession } = useSessionStore(
     useShallow((state) => ({
       setStageData: state.setStageData,
       proceedToStage: state.proceedToStage,
       activeSession: state.activeSession,
+      loadSession: state.loadSession,
     }))
   );
+
+  // Load session from URL param if not already loaded
+  useEffect(() => {
+    const loadSessionFromUrl = async () => {
+      if (!activeSession && sessionIdFromUrl) {
+        try {
+          console.log("[FastCut Effects] Loading session from URL:", sessionIdFromUrl);
+          await loadSession(sessionIdFromUrl);
+        } catch (error) {
+          console.error("[FastCut Effects] Failed to load session from URL:", error);
+        }
+      }
+    };
+    loadSessionFromUrl();
+  }, [activeSession, sessionIdFromUrl, loadSession]);
 
   const {
     scriptData,
@@ -153,6 +173,8 @@ export default function FastCutEffectsPage() {
           } : undefined,
         },
         contentType: "fast-cut", // Fast Cut workflow
+        // Use activeSession?.id OR sessionIdFromUrl as fallback (loadSession is async)
+        databaseSessionId: activeSession?.id || sessionIdFromUrl || undefined,
       });
 
       // Update with render ID so polling can work
@@ -166,12 +188,28 @@ export default function FastCutEffectsPage() {
       console.log("[FastCut Effects] Session initialized, navigating to /processing");
 
       // Save effects stage data and proceed to render stage
-      if (activeSession) {
+      // Ensure we have a session loaded before updating stage
+      if (!activeSession && sessionIdFromUrl) {
+        try {
+          console.log("[FastCut Effects] Loading session before proceeding:", sessionIdFromUrl);
+          await loadSession(sessionIdFromUrl);
+        } catch (error) {
+          console.error("[FastCut Effects] Failed to load session:", error);
+        }
+      }
+
+      // Get the latest activeSession from the store (after loadSession completes)
+      const currentSession = useSessionStore.getState().activeSession;
+
+      if (currentSession) {
         setStageData("effects", {
           styleSetId,
           styleSets,
         });
         await proceedToStage("render");
+        console.log("[FastCut Effects] Stage updated to render for session:", currentSession.id);
+      } else {
+        console.warn("[FastCut Effects] No session available, stage not updated");
       }
 
       // Navigate to processing page
@@ -184,7 +222,8 @@ export default function FastCutEffectsPage() {
   };
 
   const handleBack = () => {
-    router.push("/fast-cut/music");
+    const sessionParam = activeSession?.id || sessionIdFromUrl ? `?session=${activeSession?.id || sessionIdFromUrl}` : "";
+    router.push(`/fast-cut/music${sessionParam}`);
   };
 
   // Check prerequisites

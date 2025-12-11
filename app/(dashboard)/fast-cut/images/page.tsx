@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
 import { useSessionStore } from "@/lib/stores/session-store";
@@ -18,14 +18,34 @@ export default function FastCutImagesPage() {
   const { language } = useI18n();
   const toast = useToast();
 
+  // Get session ID from URL
+  const searchParams = useSearchParams();
+  const sessionIdFromUrl = searchParams.get("session");
+
   // Session store for persisting Fast Cut data
-  const { setStageData, proceedToStage, activeSession } = useSessionStore(
+  const { setStageData, proceedToStage, activeSession, loadSession } = useSessionStore(
     useShallow((state) => ({
       setStageData: state.setStageData,
       proceedToStage: state.proceedToStage,
       activeSession: state.activeSession,
+      loadSession: state.loadSession,
     }))
   );
+
+  // Load session from URL param if not already loaded
+  useEffect(() => {
+    const loadSessionFromUrl = async () => {
+      if (!activeSession && sessionIdFromUrl) {
+        try {
+          console.log("[FastCut Images] Loading session from URL:", sessionIdFromUrl);
+          await loadSession(sessionIdFromUrl);
+        } catch (error) {
+          console.error("[FastCut Images] Failed to load session from URL:", error);
+        }
+      }
+    };
+    loadSessionFromUrl();
+  }, [activeSession, sessionIdFromUrl, loadSession]);
 
   const {
     imageCandidates,
@@ -35,6 +55,7 @@ export default function FastCutImagesPage() {
     searchingImages,
     setSearchingImages,
     editableKeywords,
+    setEditableKeywords,
     selectedSearchKeywords,
     setSelectedSearchKeywords,
     generationId,
@@ -102,10 +123,31 @@ export default function FastCutImagesPage() {
     setSelectedImages(newImages);
   };
 
+  const handleAddKeyword = (keyword: string) => {
+    // Add to editableKeywords and auto-select it
+    setEditableKeywords([...editableKeywords, keyword]);
+    setSelectedSearchKeywords(new Set([...selectedSearchKeywords, keyword]));
+  };
+
   const canProceed = selectedImages.length >= 3;
 
   const handleNext = async () => {
-    if (canProceed && activeSession) {
+    if (!canProceed) return;
+
+    // Ensure we have a session loaded before proceeding
+    if (!activeSession && sessionIdFromUrl) {
+      try {
+        console.log("[FastCut Images] Loading session before proceeding:", sessionIdFromUrl);
+        await loadSession(sessionIdFromUrl);
+      } catch (error) {
+        console.error("[FastCut Images] Failed to load session:", error);
+      }
+    }
+
+    // Get the latest activeSession from the store (after loadSession completes)
+    const currentSession = useSessionStore.getState().activeSession;
+
+    if (currentSession) {
       // Save images stage data
       setStageData("images", {
         imageCandidates,
@@ -115,15 +157,17 @@ export default function FastCutImagesPage() {
 
       // Proceed to music stage (saves to DB)
       await proceedToStage("music");
-      router.push("/fast-cut/music");
-    } else if (canProceed) {
-      // No active session, just navigate
-      router.push("/fast-cut/music");
+      router.push(`/fast-cut/music?session=${currentSession.id}`);
+    } else {
+      // No session available, just navigate with URL param if available
+      const sessionParam = sessionIdFromUrl ? `?session=${sessionIdFromUrl}` : "";
+      router.push(`/fast-cut/music${sessionParam}`);
     }
   };
 
   const handleBack = () => {
-    router.push("/fast-cut/script");
+    const sessionParam = activeSession?.id || sessionIdFromUrl ? `?session=${activeSession?.id || sessionIdFromUrl}` : "";
+    router.push(`/fast-cut/script${sessionParam}`);
   };
 
   // Show nothing while hydrating or if prerequisites not met
@@ -148,6 +192,7 @@ export default function FastCutImagesPage() {
               onToggleSelection={toggleImageSelection}
               onReorderImages={reorderImages}
               onSearchImages={handleSearchImages}
+              onAddKeyword={handleAddKeyword}
               onNext={handleNext}
             />
           </div>

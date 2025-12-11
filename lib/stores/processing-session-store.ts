@@ -80,6 +80,10 @@ export interface ProcessingSession {
   state: ProcessingSessionState;
   createdAt: string;
 
+  // Database session ID (links to creation_sessions table)
+  // This is the UUID from useSessionStore, different from local `id`
+  databaseSessionId?: string;
+
   // Content type for workflow stage display
   contentType: ContentType;
 
@@ -219,6 +223,7 @@ interface ProcessingSessionStoreState {
     content: SessionContent;
     generationId?: string;
     contentType?: ContentType;
+    databaseSessionId?: string; // UUID from useSessionStore (creation_sessions table)
   }) => void;
   clearSession: () => void;
 
@@ -298,6 +303,7 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
               id: sessionId,
               state: "GENERATING",
               createdAt: new Date().toISOString(),
+              databaseSessionId: data.databaseSessionId, // Link to database session
               contentType: data.contentType || "ai_video",
               campaignId: data.campaignId,
               campaignName: data.campaignName,

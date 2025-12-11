@@ -73,11 +73,11 @@ export async function POST(request: NextRequest) {
     // Update output URL based on job type
     if (output_url) {
       if (job_type === 'video_generation' || job_type === 'image_to_video') {
-        // For video generation, update the video URL
-        updateData.videoUrl = output_url;
+        // For video generation, update the output URL (Prisma field: outputUrl -> DB column: output_url)
+        updateData.outputUrl = output_url;
       } else if (job_type === 'image_generation') {
         // For image generation, store in metadata (or create separate field)
-        updateData.previewImageUrl = output_url;
+        updateData.outputUrl = output_url;
       }
     }
 
@@ -109,28 +109,43 @@ export async function POST(request: NextRequest) {
 
     // Update the database
     try {
-      await prisma.videoGeneration.update({
+      const updated = await prisma.videoGeneration.update({
         where: { id: job_id },
         data: updateData,
       });
 
-      console.log(`[AI Callback] Updated job ${job_id}: status=${prismaStatus}, progress=${progress}%`);
+      console.log(`[AI Callback] Updated job ${job_id}: status=${prismaStatus}, progress=${progress}%, outputUrl=${updated.outputUrl?.slice(0, 50) || 'none'}`);
+
+      return NextResponse.json({
+        success: true,
+        job_id,
+        job_type,
+        status,
+        updated: true,
+      });
     } catch (dbError) {
-      // Job might not exist in videoGeneration table
-      // Try to check if it's in a different table or log for debugging
-      console.warn(`[AI Callback] Job ${job_id} not found in videoGeneration table, may be a standalone AI job`);
+      // Log the actual error for debugging
+      console.error(`[AI Callback] DB Update Error for job ${job_id}:`, dbError);
 
-      // For standalone AI jobs, we could store in a separate table
-      // For now, just log the completion
-      console.log(`[AI Callback] Standalone AI job completed: ${job_id}, type=${job_type}, output=${output_url}`);
+      // Check if it's a "record not found" error
+      const errorMessage = dbError instanceof Error ? dbError.message : String(dbError);
+      if (errorMessage.includes('Record to update not found') || errorMessage.includes('not found')) {
+        console.warn(`[AI Callback] Job ${job_id} not found in videoGeneration table`);
+        return NextResponse.json({
+          success: false,
+          job_id,
+          error: 'Job not found in database',
+        }, { status: 404 });
+      }
+
+      // For other DB errors, return 500
+      return NextResponse.json({
+        success: false,
+        job_id,
+        error: 'Database update failed',
+        details: errorMessage,
+      }, { status: 500 });
     }
-
-    return NextResponse.json({
-      success: true,
-      job_id,
-      job_type,
-      status,
-    });
 
   } catch (err) {
     console.error('[AI Callback] Error processing callback:', err);

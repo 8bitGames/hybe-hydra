@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
 import { useSessionStore } from "@/lib/stores/session-store";
@@ -36,14 +36,34 @@ export default function FastCutMusicPage() {
     }))
   );
 
+  // Get session ID from URL
+  const searchParams = useSearchParams();
+  const sessionIdFromUrl = searchParams.get("session");
+
   // Session store for persisting Fast Cut data
-  const { setStageData, proceedToStage, activeSession } = useSessionStore(
+  const { setStageData, proceedToStage, activeSession, loadSession } = useSessionStore(
     useShallow((state) => ({
       setStageData: state.setStageData,
       proceedToStage: state.proceedToStage,
       activeSession: state.activeSession,
+      loadSession: state.loadSession,
     }))
   );
+
+  // Load session from URL param if not already loaded
+  useEffect(() => {
+    const loadSessionFromUrl = async () => {
+      if (!activeSession && sessionIdFromUrl) {
+        try {
+          console.log("[FastCut Music] Loading session from URL:", sessionIdFromUrl);
+          await loadSession(sessionIdFromUrl);
+        } catch (error) {
+          console.error("[FastCut Music] Failed to load session from URL:", error);
+        }
+      }
+    };
+    loadSessionFromUrl();
+  }, [activeSession, sessionIdFromUrl, loadSession]);
 
   const {
     scriptData,
@@ -164,7 +184,22 @@ export default function FastCutMusicPage() {
       setShowSkipConfirm(true);
       return;
     }
-    if (canProceed && activeSession) {
+    if (!canProceed) return;
+
+    // Ensure we have a session loaded before proceeding
+    if (!activeSession && sessionIdFromUrl) {
+      try {
+        console.log("[FastCut Music] Loading session before proceeding:", sessionIdFromUrl);
+        await loadSession(sessionIdFromUrl);
+      } catch (error) {
+        console.error("[FastCut Music] Failed to load session:", error);
+      }
+    }
+
+    // Get the latest activeSession from the store (after loadSession completes)
+    const currentSession = useSessionStore.getState().activeSession;
+
+    if (currentSession) {
       // Save music stage data
       setStageData("music", {
         audioMatches,
@@ -176,10 +211,11 @@ export default function FastCutMusicPage() {
 
       // Proceed to effects stage (saves to DB)
       await proceedToStage("effects");
-      router.push("/fast-cut/effects");
-    } else if (canProceed) {
-      // No active session, just navigate
-      router.push("/fast-cut/effects");
+      router.push(`/fast-cut/effects?session=${currentSession.id}`);
+    } else {
+      // No session available, just navigate with URL param if available
+      const sessionParam = sessionIdFromUrl ? `?session=${sessionIdFromUrl}` : "";
+      router.push(`/fast-cut/effects${sessionParam}`);
     }
   };
 
@@ -187,7 +223,20 @@ export default function FastCutMusicPage() {
     setShowSkipConfirm(false);
     handleSkipMusic();
 
-    if (activeSession) {
+    // Ensure we have a session loaded before proceeding
+    if (!activeSession && sessionIdFromUrl) {
+      try {
+        console.log("[FastCut Music] Loading session before skip:", sessionIdFromUrl);
+        await loadSession(sessionIdFromUrl);
+      } catch (error) {
+        console.error("[FastCut Music] Failed to load session:", error);
+      }
+    }
+
+    // Get the latest activeSession from the store (after loadSession completes)
+    const currentSession = useSessionStore.getState().activeSession;
+
+    if (currentSession) {
       // Save music stage data with skipped = true
       setStageData("music", {
         audioMatches,
@@ -199,12 +248,16 @@ export default function FastCutMusicPage() {
 
       // Proceed to effects stage (saves to DB)
       await proceedToStage("effects");
+      router.push(`/fast-cut/effects?session=${currentSession.id}`);
+    } else {
+      const sessionParam = sessionIdFromUrl ? `?session=${sessionIdFromUrl}` : "";
+      router.push(`/fast-cut/effects${sessionParam}`);
     }
-    router.push("/fast-cut/effects");
   };
 
   const handleBack = () => {
-    router.push("/fast-cut/images");
+    const sessionParam = activeSession?.id || sessionIdFromUrl ? `?session=${activeSession?.id || sessionIdFromUrl}` : "";
+    router.push(`/fast-cut/images${sessionParam}`);
   };
 
   // Show nothing while hydrating or if prerequisites not met

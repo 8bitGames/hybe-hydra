@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Sparkles, CalendarCheck, PlusCircle } from "lucide-react";
+import { Check, CalendarCheck, PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,7 +23,6 @@ interface PublishSuccessDialogProps {
   publishedCount: number;
   videos: ProcessingVideo[];
   publishContext: PublishContextInfo;
-  onCreateVariations: () => void;
   onViewSchedule: () => void;
   onStartNew: () => void;
 }
@@ -34,7 +33,6 @@ export function PublishSuccessDialog({
   publishedCount,
   videos,
   publishContext,
-  onCreateVariations,
   onViewSchedule,
   onStartNew,
 }: PublishSuccessDialogProps) {
@@ -77,38 +75,19 @@ export function PublishSuccessDialog({
             </div>
           )}
 
-          {/* Main CTA: Create Variations */}
-          <Button
-            onClick={onCreateVariations}
-            className="w-full mb-4 h-14 bg-black hover:bg-neutral-800"
-          >
-            <div className="flex items-center gap-3">
-              <Sparkles className="w-5 h-5" />
-              <div className="text-left">
-                <div className="font-medium">
-                  {t.publish.variation.createMoreVariations}
-                </div>
-                <div className="text-xs text-neutral-300">
-                  {t.publish.variation.aiGeneratesNewStyles}
-                </div>
-              </div>
-            </div>
-          </Button>
-
-          {/* Secondary Actions */}
-          <div className="flex gap-2">
+          {/* Primary Actions */}
+          <div className="flex gap-3">
             <Button
-              variant="outline"
               onClick={onViewSchedule}
-              className="flex-1"
+              className="flex-1 h-12 bg-black hover:bg-neutral-800"
             >
               <CalendarCheck className="w-4 h-4 mr-2" />
               {t.publish.variation.viewSchedule}
             </Button>
             <Button
-              variant="ghost"
+              variant="outline"
               onClick={onStartNew}
-              className="flex-1"
+              className="flex-1 h-12 border-neutral-300 hover:bg-neutral-100"
             >
               <PlusCircle className="w-4 h-4 mr-2" />
               {t.publish.variation.newProject}

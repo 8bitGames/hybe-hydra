@@ -1696,6 +1696,7 @@ export default function CreatePage() {
           },
           generationId: response.data?.id,
           contentType: "ai_video", // AI Video workflow
+          databaseSessionId: activeSession?.id, // Link to database session for stage updates
         });
 
         toast.success(
@@ -1714,7 +1715,7 @@ export default function CreatePage() {
         setIsGenerating(false);
       }
     },
-    [selectedCampaignId, selectedCampaignName, audioAsset, imageAssets, analyze, router, language, toast, fileToBase64, initProcessingSession]
+    [selectedCampaignId, selectedCampaignName, audioAsset, imageAssets, analyze, router, language, toast, fileToBase64, initProcessingSession, activeSession]
   );
 
   // Translations

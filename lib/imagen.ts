@@ -68,12 +68,12 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; m
 }
 
 /**
- * Generate an image using Vertex AI Gemini 3 Pro Image (preferred) or Google Gemini API (fallback)
+ * Generate an image using Vertex AI Gemini 3 Pro Image or Google AI Studio
  * This image will be used as the starting point for I2V video generation
  *
- * Priority:
- * 1. Vertex AI Gemini 3 Pro Image - Production quality, better results
- * 2. Google AI Gemini - Fallback when Vertex AI is not configured
+ * Provider selection via AI_IMAGE_PROVIDER env variable:
+ * - "google_ai": Force use Google AI Studio (gemini-3-pro-image-preview)
+ * - "vertex" (default): Use Vertex AI if available, fallback to Google AI
  *
  * When a reference image (product image) is provided, the model will incorporate
  * that actual product into the generated scene.
@@ -86,7 +86,16 @@ export async function generateImage(
     return generateMockImage(params);
   }
 
-  // Check if Vertex AI is available (preferred for production)
+  // Check AI_IMAGE_PROVIDER env variable
+  const provider = process.env.AI_IMAGE_PROVIDER || "vertex";
+
+  // If explicitly set to google_ai, use Google AI Studio directly
+  if (provider === "google_ai") {
+    console.log("[IMAGE-GEN] Using Google AI Studio (forced by AI_IMAGE_PROVIDER=google_ai)");
+    return generateImageWithGemini(params);
+  }
+
+  // Default behavior: Use Vertex AI if available, fallback to Google AI
   if (isVertexAIAvailable()) {
     console.log("[IMAGE-GEN] Using Vertex AI Gemini 3 Pro Image (production mode)");
     return generateImageWithVertexAI(params);
@@ -375,6 +384,10 @@ export interface TwoStepCompositionResult {
  *
  * This approach ensures the product image is preserved exactly while
  * creating a realistic scene around it.
+ *
+ * Note: This function always uses Google AI Studio as Vertex AI
+ * does not support multi-image composition workflows.
+ * AI_IMAGE_PROVIDER setting is logged but composition always uses Google AI.
  */
 export async function generateTwoStepComposition(
   params: TwoStepCompositionParams
@@ -388,6 +401,10 @@ export async function generateTwoStepComposition(
       mimeType: "image/png",
     };
   }
+
+  // Log provider setting (two-step composition always uses Google AI)
+  const provider = process.env.AI_IMAGE_PROVIDER || "vertex";
+  console.log(`[GEMINI-IMAGE] Two-step composition using Google AI Studio (AI_IMAGE_PROVIDER=${provider}, but composition requires Google AI)`);
 
   try {
     const ai = getClient();

@@ -600,7 +600,9 @@ export default function StartPage() {
     // Route based on content type
     if (start.contentType === "fast-cut") {
       // Fast Cut has its own step indicator, just navigate
-      router.push("/fast-cut/script");
+      // Pass session ID in URL so it can be loaded after page refresh
+      const sessionParam = activeSession?.id ? `?session=${activeSession.id}` : "";
+      router.push(`/fast-cut/script${sessionParam}`);
     } else {
       // Default: AI Video flow
       setCurrentStage("analyze");

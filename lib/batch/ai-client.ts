@@ -41,7 +41,7 @@ function getBatchClient(): BatchClient {
 
 // Callback URL for AWS Batch to notify us when AI generation completes
 function getAICallbackUrl(): string {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://hydra-sand-theta.vercel.app';
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://hydra.ai.kr';
   return `${baseUrl}/api/v1/ai/callback`;
 }
 

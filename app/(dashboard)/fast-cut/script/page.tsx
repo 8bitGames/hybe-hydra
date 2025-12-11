@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
@@ -35,16 +35,36 @@ export default function FastCutScriptPage() {
     }))
   );
 
+  // Get session ID from URL
+  const searchParams = useSearchParams();
+  const sessionIdFromUrl = searchParams.get("session");
+
   // Session store for persisting Fast Cut data
-  const { setStageData, updateMetadata, proceedToStage, activeSession, setSessionCampaignId } = useSessionStore(
+  const { setStageData, updateMetadata, proceedToStage, activeSession, setSessionCampaignId, loadSession } = useSessionStore(
     useShallow((state) => ({
       setStageData: state.setStageData,
       updateMetadata: state.updateMetadata,
       proceedToStage: state.proceedToStage,
       activeSession: state.activeSession,
       setSessionCampaignId: state.setSessionCampaignId,
+      loadSession: state.loadSession,
     }))
   );
+
+  // Load session from URL param if not already loaded
+  useEffect(() => {
+    const loadSessionFromUrl = async () => {
+      if (!activeSession && sessionIdFromUrl) {
+        try {
+          console.log("[FastCut Script] Loading session from URL:", sessionIdFromUrl);
+          await loadSession(sessionIdFromUrl);
+        } catch (error) {
+          console.error("[FastCut Script] Failed to load session from URL:", error);
+        }
+      }
+    };
+    loadSessionFromUrl();
+  }, [activeSession, sessionIdFromUrl, loadSession]);
 
   const {
     prompt,
@@ -198,7 +218,22 @@ export default function FastCutScriptPage() {
   const canProceed = scriptData !== null;
 
   const handleNext = async () => {
-    if (canProceed && activeSession) {
+    if (!canProceed) return;
+
+    // Ensure we have a session loaded before proceeding
+    if (!activeSession && sessionIdFromUrl) {
+      try {
+        console.log("[FastCut Script] Loading session before proceeding:", sessionIdFromUrl);
+        await loadSession(sessionIdFromUrl);
+      } catch (error) {
+        console.error("[FastCut Script] Failed to load session:", error);
+      }
+    }
+
+    // Get the latest activeSession from the store (after loadSession completes)
+    const currentSession = useSessionStore.getState().activeSession;
+
+    if (currentSession) {
       // Mark this as a Fast Cut session and always update title for proper restoration
       updateMetadata({ contentType: "fast-cut", title: campaignName || "Fast Cut" });
 
@@ -215,15 +250,17 @@ export default function FastCutScriptPage() {
 
       // Proceed to images stage (saves to DB)
       await proceedToStage("images");
-      router.push("/fast-cut/images");
-    } else if (canProceed) {
-      // No active session, just navigate
-      router.push("/fast-cut/images");
+      router.push(`/fast-cut/images?session=${currentSession.id}`);
+    } else {
+      // No session available, just navigate with URL param if available
+      const sessionParam = sessionIdFromUrl ? `?session=${sessionIdFromUrl}` : "";
+      router.push(`/fast-cut/images${sessionParam}`);
     }
   };
 
   const handleBack = () => {
-    router.push("/start");
+    const sessionParam = activeSession?.id || sessionIdFromUrl ? `?session=${activeSession?.id || sessionIdFromUrl}` : "";
+    router.push(`/start${sessionParam}`);
   };
 
   return (

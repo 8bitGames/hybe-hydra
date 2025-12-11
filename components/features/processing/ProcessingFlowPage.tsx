@@ -259,19 +259,21 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     // Direct publish without variations
     // Update session stage to "publish" before navigating
     try {
-      // If activeSession is not loaded but we have a session ID, load it first
-      if (!activeSession && session?.id) {
-        console.log("[ProcessingFlowPage] Loading session before publish:", session.id);
-        await loadSession(session.id);
+      // If activeSession is not loaded but we have a database session ID, load it first
+      const dbSessionId = session?.databaseSessionId;
+      if (!activeSession && dbSessionId) {
+        console.log("[ProcessingFlowPage] Loading session before publish:", dbSessionId);
+        await loadSession(dbSessionId);
       }
       // Now proceed to publish stage (will work since session is loaded)
       await proceedToStage("publish");
     } catch (error) {
       console.error("[ProcessingFlowPage] Failed to update session stage:", error);
     }
-    // Navigate to publish page with the session data
-    router.push(`/publish?sessionId=${session?.id}`);
-  }, [router, session?.id, activeSession, proceedToStage, loadSession]);
+    // Navigate to publish page with the database session ID
+    const dbSessionId = session?.databaseSessionId;
+    router.push(`/publish?sessionId=${dbSessionId || session?.id}`);
+  }, [router, session?.id, session?.databaseSessionId, activeSession, proceedToStage, loadSession]);
 
   const handleBackToReady = useCallback(() => {
     setState("READY");
@@ -358,19 +360,21 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
   const handlePublish = useCallback(async () => {
     // Update session stage to "publish" before navigating
     try {
-      // If activeSession is not loaded but we have a session ID, load it first
-      if (!activeSession && session?.id) {
-        console.log("[ProcessingFlowPage] Loading session before publish:", session.id);
-        await loadSession(session.id);
+      // If activeSession is not loaded but we have a database session ID, load it first
+      const dbSessionId = session?.databaseSessionId;
+      if (!activeSession && dbSessionId) {
+        console.log("[ProcessingFlowPage] Loading session before publish:", dbSessionId);
+        await loadSession(dbSessionId);
       }
       // Now proceed to publish stage (will work since session is loaded)
       await proceedToStage("publish");
     } catch (error) {
       console.error("[ProcessingFlowPage] Failed to update session stage:", error);
     }
-    // Navigate to publish page with approved videos
-    router.push(`/publish?sessionId=${session?.id}`);
-  }, [router, session?.id, activeSession, proceedToStage, loadSession]);
+    // Navigate to publish page with the database session ID
+    const dbSessionId = session?.databaseSessionId;
+    router.push(`/publish?sessionId=${dbSessionId || session?.id}`);
+  }, [router, session?.id, session?.databaseSessionId, activeSession, proceedToStage, loadSession]);
 
   // Debug logging
   console.log("[ProcessingFlowPage] isHydrated:", isHydrated, "isInitializing:", isInitializing, "session:", session?.id, "state:", session?.state);

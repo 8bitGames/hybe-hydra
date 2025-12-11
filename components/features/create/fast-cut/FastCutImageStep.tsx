@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +19,9 @@ import {
   Globe,
   AlertCircle,
   HelpCircle,
+  Plus,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { ImageCandidate } from "@/lib/fast-cut-api";
 import {
   DndContext,
@@ -48,6 +51,7 @@ interface FastCutImageStepProps {
   onToggleSelection: (image: ImageCandidate) => void;
   onReorderImages: (newImages: ImageCandidate[]) => void;
   onSearchImages: () => void;
+  onAddKeyword?: (keyword: string) => void;
   onNext?: () => void;
 }
 
@@ -128,9 +132,11 @@ export function FastCutImageStep({
   onToggleSelection,
   onReorderImages,
   onSearchImages,
+  onAddKeyword,
   onNext,
 }: FastCutImageStepProps) {
   const { language, translate } = useI18n();
+  const [newKeyword, setNewKeyword] = useState("");
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -175,6 +181,21 @@ export function FastCutImageStep({
       newSet.add(keyword);
     }
     setSelectedSearchKeywords(newSet);
+  };
+
+  const handleAddKeyword = () => {
+    const trimmed = newKeyword.trim();
+    if (trimmed && !editableKeywords.includes(trimmed) && onAddKeyword) {
+      onAddKeyword(trimmed);
+      setNewKeyword("");
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAddKeyword();
+    }
   };
 
   // Get quality badge color
@@ -352,6 +373,28 @@ export function FastCutImageStep({
               </Badge>
             ))}
           </div>
+          {/* Add Custom Keyword */}
+          {onAddKeyword && (
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                placeholder={language === "ko" ? "새 키워드 입력..." : "Enter new keyword..."}
+                value={newKeyword}
+                onChange={(e) => setNewKeyword(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleAddKeyword}
+                disabled={!newKeyword.trim() || editableKeywords.includes(newKeyword.trim())}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
           <Button
             onClick={onSearchImages}
             disabled={searchingImages || selectedSearchKeywords.size === 0}
