@@ -49,9 +49,9 @@ from .utils.ffprobe import get_duration, get_video_info
 
 logger = logging.getLogger(__name__)
 
-# Audio fade durations (matching VideoRenderer)
-AUDIO_FADE_IN = 1.0
-AUDIO_FADE_OUT = 2.0
+# Audio fade durations
+AUDIO_FADE_IN = 0.75
+AUDIO_FADE_OUT = 0.75
 
 # TikTok Hook Strategy
 HOOK_DURATION = 2.0
@@ -150,7 +150,7 @@ class FFmpegRenderer:
             logger.info(f"[{job_id}] [STEP 2/11] BPM: {audio_analysis.bpm}, Beats: {len(beat_times)}, Duration: {audio_analysis.duration:.1f}s")
 
             # =================================================================
-            # STEP 3: CALCULATE TIMINGS
+            # STEP 3: CALCULATE TIMINGS (SMART BEAT-SYNC)
             # =================================================================
             await self._update_progress(progress_callback, job_id, 20, "Calculating timings")
             logger.info(f"[{job_id}] [STEP 3/11] Calculating timings...")
@@ -162,18 +162,67 @@ class FFmpegRenderer:
             )
             logger.info(f"[{job_id}] [STEP 3/11] Target duration: {target_duration:.1f}s")
 
-            # BPM-based image duration
-            MIN_DURATION, MAX_DURATION, DEFAULT_DURATION = 0.4, 0.8, 0.6
-            if audio_analysis.bpm and audio_analysis.bpm > 0:
-                beat_duration = 60.0 / audio_analysis.bpm
-                image_duration = max(MIN_DURATION, min(MAX_DURATION, beat_duration))
-                logger.info(f"[{job_id}] [STEP 3/11] Beat duration: {beat_duration*1000:.0f}ms -> clamped to {image_duration*1000:.0f}ms")
-            else:
-                image_duration = DEFAULT_DURATION
-                logger.info(f"[{job_id}] [STEP 3/11] No BPM, using default: {image_duration*1000:.0f}ms per image")
+            # Smart beat-sync: calculate optimal clip durations
+            clip_durations = []
+            num_clips = 0
 
-            num_clips = max(1, int(target_duration / image_duration))
-            logger.info(f"[{job_id}] [STEP 3/11] Will create {num_clips} clips @ {image_duration*1000:.0f}ms each")
+            logger.info(f"[{job_id}] [STEP 3/11] ========================================")
+            logger.info(f"[{job_id}] [STEP 3/11] SMART BEAT-SYNC CALCULATION")
+            logger.info(f"[{job_id}] [STEP 3/11] ========================================")
+            logger.info(f"[{job_id}] [STEP 3/11] Input parameters:")
+            logger.info(f"[{job_id}] [STEP 3/11]   BPM: {audio_analysis.bpm if audio_analysis.bpm else 'N/A'}")
+            logger.info(f"[{job_id}] [STEP 3/11]   Beat times available: {len(beat_times)}")
+            logger.info(f"[{job_id}] [STEP 3/11]   Target duration: {target_duration:.1f}s")
+            logger.info(f"[{job_id}] [STEP 3/11]   Images available: {len(image_paths)}")
+
+            if audio_analysis.bpm and audio_analysis.bpm > 0 and len(beat_times) > 0:
+                # Use smart beat-sync algorithm
+                logger.info(f"[{job_id}] [STEP 3/11] Using SMART BEAT-SYNC algorithm...")
+                logger.info(f"[{job_id}] [STEP 3/11] Beat interval: {60.0/audio_analysis.bpm:.3f}s")
+
+                from .smart_beat_sync import SmartBeatSync
+
+                sync = SmartBeatSync(
+                    bpm=audio_analysis.bpm,
+                    beat_times=beat_times,
+                    target_duration=target_duration,
+                    num_images=len(image_paths),
+                    min_slide_duration=1.0,  # Configurable: 1-1.5s range
+                    max_slide_duration=1.5,
+                )
+
+                sync_info = sync.get_sync_info()
+                clip_durations = sync_info['durations']
+                num_clips = sync_info['num_clips']
+
+                logger.info(f"[{job_id}] [STEP 3/11] ----------------------------------------")
+                logger.info(f"[{job_id}] [STEP 3/11] SMART SYNC RESULT:")
+                logger.info(f"[{job_id}] [STEP 3/11]   ✓ BPM: {sync_info['bpm']:.1f}")
+                logger.info(f"[{job_id}] [STEP 3/11]   ✓ Beat interval: {sync_info['beat_interval']:.3f}s")
+                logger.info(f"[{job_id}] [STEP 3/11]   ✓ Beats per image: {sync_info['beats_per_image']}")
+                logger.info(f"[{job_id}] [STEP 3/11]   ✓ Avg duration per image: {sync_info['avg_duration']:.3f}s")
+                logger.info(f"[{job_id}] [STEP 3/11]   ✓ Num clips: {num_clips}")
+                logger.info(f"[{job_id}] [STEP 3/11]   ✓ Total video duration: {sync_info['total_duration']:.3f}s")
+                logger.info(f"[{job_id}] [STEP 3/11]   ✓ Duration range: {min(clip_durations):.3f}s - {max(clip_durations):.3f}s")
+                logger.info(f"[{job_id}] [STEP 3/11] ----------------------------------------")
+
+                # Log individual clip durations for debugging
+                logger.info(f"[{job_id}] [STEP 3/11] Individual clip durations:")
+                for i, dur in enumerate(clip_durations[:5]):
+                    logger.info(f"[{job_id}] [STEP 3/11]   Clip {i+1}: {dur:.3f}s")
+                if len(clip_durations) > 5:
+                    logger.info(f"[{job_id}] [STEP 3/11]   ... ({len(clip_durations)-5} more clips)")
+            else:
+                # Fallback: uniform duration
+                logger.info(f"[{job_id}] [STEP 3/11] ⚠️  No beat analysis available")
+                logger.info(f"[{job_id}] [STEP 3/11] Using FALLBACK uniform duration")
+                DEFAULT_DURATION = 0.6
+                image_duration = DEFAULT_DURATION
+                num_clips = max(1, int(target_duration / image_duration))
+                clip_durations = [image_duration] * num_clips
+                logger.info(f"[{job_id}] [STEP 3/11] Fallback: {num_clips} clips @ {image_duration*1000:.0f}ms each")
+
+            logger.info(f"[{job_id}] [STEP 3/11] ========================================")
 
             # =================================================================
             # STEP 4: PROCESS IMAGES
@@ -205,21 +254,38 @@ class FFmpegRenderer:
             motion_styles = get_diverse_motion_styles(num_clips, "alternate")
             logger.info(f"[{job_id}] [STEP 5/11] Motion styles: {motion_styles[:5]}{'...' if len(motion_styles) > 5 else ''}")
 
-            # Build clip specifications
+            # Build clip specifications with variable durations
             clip_specs = []
+            cumulative_time = 0.0
             for i in range(num_clips):
-                start_time = i * image_duration
+                clip_duration = clip_durations[i]
                 spec = ImageClipSpec(
                     image_path=looped_paths[i],
-                    duration=image_duration,
+                    duration=clip_duration,
                     motion_style=motion_styles[i],
-                    start_time=start_time,
+                    start_time=cumulative_time,
                 )
                 clip_specs.append(spec)
+                cumulative_time += clip_duration
+                if i < 3 or i >= num_clips - 3:  # Log first/last 3
+                    logger.info(f"[{job_id}] [STEP 5/11] Clip {i+1}: {clip_duration:.3f}s")
 
-            # Create clips using FFmpeg in parallel
+            # Create clips using FFmpeg in parallel with GPU
             use_gpu = is_nvenc_available()
-            logger.info(f"[{job_id}] [STEP 5/11] Creating clips with GPU={use_gpu}, max_workers=4")
+            logger.info(f"[{job_id}] [STEP 5/11] ========================================")
+            logger.info(f"[{job_id}] [STEP 5/11] GPU ENCODING CONFIGURATION")
+            logger.info(f"[{job_id}] [STEP 5/11] ========================================")
+            logger.info(f"[{job_id}] [STEP 5/11] GPU available: {use_gpu}")
+            if use_gpu:
+                logger.info(f"[{job_id}] [STEP 5/11] ✓ Using NVIDIA NVENC H.264 hardware encoder")
+                logger.info(f"[{job_id}] [STEP 5/11] ✓ Encoder: h264_nvenc")
+                logger.info(f"[{job_id}] [STEP 5/11] ✓ Preset: p4 (balanced quality/speed)")
+            else:
+                logger.info(f"[{job_id}] [STEP 5/11] ⚠️  GPU not available, using CPU encoding")
+                logger.info(f"[{job_id}] [STEP 5/11] Encoder: libx264 (software)")
+            logger.info(f"[{job_id}] [STEP 5/11] Parallel workers: 4")
+            logger.info(f"[{job_id}] [STEP 5/11] ========================================")
+            logger.info(f"[{job_id}] [STEP 5/11] Creating clips...")
             clip_paths = await create_clips_parallel(
                 specs=clip_specs,
                 output_dir=job_dir,
@@ -437,11 +503,21 @@ class FFmpegRenderer:
 
             # Final summary
             total_time = time.time() - render_start
-            logger.info(f"[{job_id}] ========== FFMPEG PIPELINE COMPLETE ==========")
-            logger.info(f"[{job_id}] Total render time: {total_time:.1f}s")
-            logger.info(f"[{job_id}] Output size: {final_size:.1f}MB")
-            logger.info(f"[{job_id}] Clips created: {len(clip_paths)}")
-            logger.info(f"[{job_id}] GPU encoding: {is_nvenc_available()}")
+            logger.info(f"[{job_id}] ============================================================")
+            logger.info(f"[{job_id}] ✅ FFMPEG PIPELINE COMPLETE")
+            logger.info(f"[{job_id}] ============================================================")
+            logger.info(f"[{job_id}] 📊 RENDER SUMMARY:")
+            logger.info(f"[{job_id}]   ⏱️  Total time: {total_time:.1f}s ({total_time/60:.1f}min)")
+            logger.info(f"[{job_id}]   📁 Output size: {final_size:.1f}MB")
+            logger.info(f"[{job_id}]   🎬 Clips created: {len(clip_paths)}")
+            logger.info(f"[{job_id}]   🖥️  GPU encoding: {'✓ NVENC' if is_nvenc_available() else '✗ CPU only'}")
+            logger.info(f"[{job_id}]   🎵 BPM: {audio_analysis.bpm if audio_analysis and audio_analysis.bpm else 'N/A'}")
+            logger.info(f"[{job_id}]   🎯 Smart beat-sync: {'✓ Used' if (audio_analysis and audio_analysis.bpm and len(beat_times) > 0) else '✗ Fallback'}")
+            logger.info(f"[{job_id}]   📐 Aspect ratio: {request.settings.aspect_ratio.value}")
+            logger.info(f"[{job_id}]   🎨 Preset: {preset.name}")
+            logger.info(f"[{job_id}]   📝 Script lines: {len(request.script.lines) if request.script and request.script.lines else 0}")
+            logger.info(f"[{job_id}]   🔗 S3 URL: {s3_url}")
+            logger.info(f"[{job_id}] ============================================================")
 
             return s3_url
 
@@ -704,32 +780,8 @@ class FFmpegRenderer:
                 logger.warning(f"[{job_id}] Could not get duration for {path}: {e}")
                 clips.append(ClipSegment(path=path, duration=0.6, start_time=0.0))
 
-        # Build transitions list (one fewer than clips)
-        transitions = [transition_type] * (len(clips) - 1)
-
-        logger.info(f"[{job_id}] Applying xfade transitions: {len(clips)} clips, {len(transitions)} transitions")
-
-        try:
-            success = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: xfade.render_sequence(
-                    clips=clips,
-                    output_path=output_path,
-                    transitions=transitions,
-                    transition_duration=0.3,
-                    use_gpu=is_nvenc_available(),
-                )
-            )
-
-            if success and os.path.exists(output_path):
-                return output_path
-            else:
-                logger.warning(f"[{job_id}] xfade render_sequence returned False or output missing")
-        except Exception as e:
-            logger.error(f"[{job_id}] xfade render_sequence exception: {e}")
-
-        # Fallback: simple concatenation
-        logger.warning(f"[{job_id}] xfade failed, using simple concat")
+        # Use direct cuts (no transitions) - simple concatenation
+        logger.info(f"[{job_id}] Using direct cuts (no transitions): {len(clips)} clips")
         concat_output = os.path.join(job_dir, f"{job_id}_concat.mp4")
         from .ffmpeg_pipeline import concatenate_clips_simple
         await concatenate_clips_simple(clip_paths, concat_output, job_id)

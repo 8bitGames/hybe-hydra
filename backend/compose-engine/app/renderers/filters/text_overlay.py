@@ -16,8 +16,11 @@ FONTS_DIR = os.path.join(
 )
 COOPER_BLACK = os.path.join(FONTS_DIR, "COOPBL.TTF")
 
-# Fallback fonts if Cooper Black not available
+# Noto Sans font paths (preferred) with fallbacks
 FALLBACK_FONTS = [
+    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/System/Library/Fonts/NotoSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/System/Library/Fonts/Helvetica.ttc",
     "Arial",
@@ -95,14 +98,12 @@ def escape_ffmpeg_text(text: str) -> str:
 
 
 def get_font_path() -> str:
-    """Get available font path.
+    """Get available font path - prioritizes Noto Sans.
 
     Returns:
         Path to font file, or font name for system fonts
     """
-    if os.path.exists(COOPER_BLACK):
-        return COOPER_BLACK
-
+    # Prioritize Noto Sans fonts, skip Cooper Black
     for fallback in FALLBACK_FONTS:
         if os.path.exists(fallback):
             return fallback
@@ -180,18 +181,14 @@ def build_drawtext_filter(
     # Get font
     font_path = get_font_path()
 
-    # Position: bottom 18% (TikTok safe zone)
-    # y = h - (h * 0.18) - text_height, but we use expression
-    # Since text height varies, use percentage-based positioning
-    # y = h * 0.82 - text height
-    # For single line: y = h * 0.75 roughly
-    # For multi-line, adjust accordingly
+    # Position: centered vertically
     num_lines = len(lines)
     line_height = font_size * 1.5
 
-    # Calculate y position: bottom 18% margin, accounting for text height
-    # text_area_height = num_lines * line_height
-    y_expr = f"h*0.82-{int(num_lines * line_height)}"
+    # Calculate y position: center of screen, accounting for text height
+    # Center formula: (h - text_h) / 2
+    text_height = int(num_lines * line_height)
+    y_expr = f"(h-{text_height})/2"
 
     # Build alpha expression for fade in/out
     # Alpha goes from 0 to 1 during fade_in, stays at 1, then 1 to 0 during fade_out
