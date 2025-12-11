@@ -257,37 +257,39 @@ async function processAnalysis(
       aiResult.classification?.classifications.map(c => [c.videoId, c]) || []
     );
 
-    const videoClassifications = result.videos.map((video) => {
-      const aiClassification = classificationMap.get(video.id);
-      return {
-        analysisId,
-        tiktokVideoId: video.id,
-        videoUrl: video.videoUrl || `https://www.tiktok.com/video/${video.id}`,
-        thumbnailUrl: video.thumbnailUrl,
-        description: video.description,
-        playCount: BigInt(video.stats.playCount),
-        likeCount: video.stats.likeCount,
-        commentCount: video.stats.commentCount,
-        shareCount: video.stats.shareCount,
-        engagementRate: video.engagementRate,
-        aiCategories: aiClassification
-          ? [aiClassification.primaryCategory, ...aiClassification.secondaryCategories]
-          : [],
-        aiConfidence: aiClassification?.confidence || 0,
-        reasoning: aiClassification?.reasoning,
-        customTags: [],
-        musicTitle: video.musicTitle,
-        musicId: video.musicId,
-        isOwnMusic: video.isOwnMusic,
-        publishedAt: video.createTime ? new Date(video.createTime * 1000) : null,
-        duration: video.duration,
-        // Store additional AI data in contentAnalysis JSON field
-        contentAnalysis: aiClassification ? {
-          contentType: aiClassification.contentType,
-          engagementPotential: aiClassification.engagementPotential,
-        } : Prisma.JsonNull,
-      };
-    });
+    const videoClassifications = result.videos
+      .filter(video => video.id) // Filter out videos without ID
+      .map((video) => {
+        const aiClassification = classificationMap.get(video.id);
+        return {
+          analysisId,
+          tiktokVideoId: video.id,
+          videoUrl: video.videoUrl || `https://www.tiktok.com/video/${video.id}`,
+          thumbnailUrl: video.thumbnailUrl || null,
+          description: video.description || null,
+          playCount: BigInt(video.stats?.playCount || 0),
+          likeCount: video.stats?.likeCount || 0,
+          commentCount: video.stats?.commentCount || 0,
+          shareCount: video.stats?.shareCount || 0,
+          engagementRate: video.engagementRate || 0,
+          aiCategories: aiClassification
+            ? [aiClassification.primaryCategory, ...aiClassification.secondaryCategories].filter(Boolean)
+            : [],
+          aiConfidence: aiClassification?.confidence || 0,
+          reasoning: aiClassification?.reasoning || null,
+          customTags: [],
+          musicTitle: video.musicTitle || null,
+          musicId: video.musicId || null,
+          isOwnMusic: video.isOwnMusic || false,
+          publishedAt: video.createTime ? new Date(video.createTime * 1000) : null,
+          duration: video.duration || null,
+          // Store additional AI data in contentAnalysis JSON field
+          contentAnalysis: aiClassification ? {
+            contentType: aiClassification.contentType,
+            engagementPotential: aiClassification.engagementPotential,
+          } : Prisma.JsonNull,
+        };
+      });
 
     await prisma.videoClassification.createMany({
       data: videoClassifications,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
+import { getPresignedUrlFromS3Url } from '@/lib/storage';
 
 export async function GET(request: NextRequest) {
   try {
@@ -81,31 +82,37 @@ export async function GET(request: NextRequest) {
 
     const pages = Math.ceil(total / pageSize) || 1;
 
-    const items = generations.map((gen) => ({
-      id: gen.id,
-      campaign_id: gen.campaignId,
-      campaign_name: gen.campaign?.name || "Quick Create",
-      artist_name: gen.campaign?.artist?.stageName || gen.campaign?.artist?.name || "Unknown Artist",
-      prompt: gen.prompt,
-      duration_seconds: gen.durationSeconds,
-      aspect_ratio: gen.aspectRatio,
-      status: gen.status.toLowerCase(),
-      composed_output_url: gen.composedOutputUrl,
-      output_url: gen.outputUrl,
-      audio_asset: gen.audioAsset
-        ? {
-            id: gen.audioAsset.id,
-            filename: gen.audioAsset.filename,
-            original_filename: gen.audioAsset.originalFilename,
-            s3_url: gen.audioAsset.s3Url,
-          }
-        : null,
-      creator: {
-        id: gen.creator.id,
-        name: gen.creator.name,
-      },
-      created_at: gen.createdAt.toISOString(),
-      updated_at: gen.updatedAt.toISOString(),
+    // Generate presigned URLs for all videos in parallel
+    const items = await Promise.all(generations.map(async (gen) => {
+      const videoUrl = gen.composedOutputUrl || gen.outputUrl;
+      const presignedUrl = videoUrl ? await getPresignedUrlFromS3Url(videoUrl) : null;
+
+      return {
+        id: gen.id,
+        campaign_id: gen.campaignId,
+        campaign_name: gen.campaign?.name || "Quick Create",
+        artist_name: gen.campaign?.artist?.stageName || gen.campaign?.artist?.name || "Unknown Artist",
+        prompt: gen.prompt,
+        duration_seconds: gen.durationSeconds,
+        aspect_ratio: gen.aspectRatio,
+        status: gen.status.toLowerCase(),
+        composed_output_url: presignedUrl,
+        output_url: presignedUrl,
+        audio_asset: gen.audioAsset
+          ? {
+              id: gen.audioAsset.id,
+              filename: gen.audioAsset.filename,
+              original_filename: gen.audioAsset.originalFilename,
+              s3_url: gen.audioAsset.s3Url,
+            }
+          : null,
+        creator: {
+          id: gen.creator.id,
+          name: gen.creator.name,
+        },
+        created_at: gen.createdAt.toISOString(),
+        updated_at: gen.updatedAt.toISOString(),
+      };
     }));
 
     return NextResponse.json({

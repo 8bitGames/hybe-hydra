@@ -171,6 +171,63 @@ export async function getPresignedUrl(key: string, expiresIn = 3600): Promise<st
 }
 
 /**
+ * Generate a presigned URL from a direct S3 URL.
+ * Parses the S3 URL to extract bucket and key, then generates a presigned URL.
+ * Works with any S3 bucket that the AWS credentials have access to.
+ *
+ * @param s3Url - Full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/key)
+ * @param expiresIn - Expiration time in seconds (default: 24 hours)
+ * @returns Presigned URL or original URL if not a valid S3 URL
+ */
+export async function getPresignedUrlFromS3Url(
+  s3Url: string,
+  expiresIn = 86400
+): Promise<string> {
+  // Parse S3 URL: https://BUCKET.s3.REGION.amazonaws.com/KEY
+  const match = s3Url.match(/https:\/\/([^.]+)\.s3\.([^.]+)\.amazonaws\.com\/(.+)/);
+
+  if (!match) {
+    // Not a valid S3 URL, return as-is
+    console.warn('[getPresignedUrlFromS3Url] Not a valid S3 URL format:', s3Url.substring(0, 50));
+    return s3Url;
+  }
+
+  const [, bucket, region, key] = match;
+
+  // Create a new S3 client for this specific bucket/region
+  const accessKey = process.env.AWS_ACCESS_KEY_ID;
+  const secretKey = process.env.AWS_SECRET_ACCESS_KEY;
+
+  if (!accessKey || !secretKey) {
+    console.warn('[getPresignedUrlFromS3Url] AWS credentials not available, returning original URL');
+    return s3Url;
+  }
+
+  const s3Client = new S3Client({
+    region,
+    credentials: {
+      accessKeyId: accessKey,
+      secretAccessKey: secretKey,
+    },
+  });
+
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key,
+  });
+
+  const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn });
+
+  console.log('[getPresignedUrlFromS3Url] Generated presigned URL:', {
+    bucket,
+    key: key.substring(0, 50),
+    expiresIn,
+  });
+
+  return presignedUrl;
+}
+
+/**
  * Download file from S3 and return as Buffer
  */
 export async function downloadFromS3(key: string): Promise<Buffer> {

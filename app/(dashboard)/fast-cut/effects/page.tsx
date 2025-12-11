@@ -134,11 +134,13 @@ export default function FastCutEffectsPage() {
         campaignName: "Fast Cut Video",
         content: {
           script: scriptData.script.lines.map(l => l.text).join("\n"),
-          images: selectedImages.map((img) => ({
-            id: img.id,
-            url: img.sourceUrl,
-            thumbnailUrl: img.sourceUrl,
-          })),
+          images: selectedImages
+            .filter((img) => imageUrlMap.has(img.id))
+            .map((img) => ({
+              id: img.id,
+              url: imageUrlMap.get(img.id)!,
+              thumbnailUrl: imageUrlMap.get(img.id)!,
+            })),
           musicTrack: selectedAudio ? {
             id: selectedAudio.id,
             name: selectedAudio.filename || "Selected Track",

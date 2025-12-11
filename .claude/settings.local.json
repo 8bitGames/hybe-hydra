@@ -208,7 +208,8 @@
       "Bash(\"C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe\" batch describe-job-definitions --job-definition-name hydra-ai-gpu-worker --region ap-southeast-2 --query \"jobDefinitions[*].{revision:revision,status:status,command:containerProperties.command[2]}\" --output table)",
       "Bash(aws batch register-job-definition:*)",
       "Bash(\"C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe\" batch deregister-job-definition --job-definition hydra-ai-gpu-worker:1 --region ap-southeast-2)",
-      "Bash(\"C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe\" batch describe-job-definitions --job-definition-name hydra-ai-gpu-worker --region ap-southeast-2 --status ACTIVE --query \"jobDefinitions[*].{name:jobDefinitionName,revision:revision,command:containerProperties.command[2]}\" --output table)"
+      "Bash(\"C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe\" batch describe-job-definitions --job-definition-name hydra-ai-gpu-worker --region ap-southeast-2 --status ACTIVE --query \"jobDefinitions[*].{name:jobDefinitionName,revision:revision,command:containerProperties.command[2]}\" --output table)",
+      "Bash(docker images:*)"
     ],
     "deny": [],
     "ask": []

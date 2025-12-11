@@ -518,6 +518,218 @@ def check_aws_identity():
         return None
 
 
+def test_wif_sts_only():
+    """
+    Test 1: WIF STS token exchange ONLY (no impersonation).
+    This tests if the WIF pool/provider is correctly configured.
+    """
+    logger.info("=== Test 1: WIF STS Token Exchange (No Impersonation) ===")
+
+    # Use the config without impersonation URL
+    wif_only_config = "/root/clientLibraryConfig-wif-only.json"
+
+    if not os.path.exists(wif_only_config):
+        logger.warning(f"WIF-only config not found: {wif_only_config}")
+        logger.info("Creating WIF-only config...")
+
+        # Read current config and remove impersonation URL
+        current_config = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "/root/clientLibraryConfig.json")
+        try:
+            with open(current_config, 'r') as f:
+                config = json.load(f)
+
+            # Remove impersonation URL
+            if 'service_account_impersonation_url' in config:
+                del config['service_account_impersonation_url']
+
+            with open(wif_only_config, 'w') as f:
+                json.dump(config, f, indent=2)
+
+            logger.info("Created WIF-only config")
+        except Exception as e:
+            logger.error(f"Failed to create WIF-only config: {e}")
+            return False
+
+    # Temporarily use WIF-only config
+    original_cred = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = wif_only_config
+
+    try:
+        import google.auth
+        from google.auth.transport.requests import Request
+
+        credentials, project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+
+        logger.info(f"Credential type: {type(credentials).__name__}")
+        logger.info(f"Detected project: {project}")
+
+        # Try to refresh token
+        request = Request()
+        credentials.refresh(request)
+
+        if credentials.token:
+            logger.info(f"✅ WIF STS Token acquired: {credentials.token[:30]}...")
+            logger.info("✅ Test 1 PASSED: WIF STS token exchange works!")
+            return True
+        else:
+            logger.error("❌ No token returned")
+            return False
+
+    except Exception as e:
+        logger.error(f"❌ Test 1 FAILED: {e}")
+        return False
+    finally:
+        # Restore original config
+        if original_cred:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = original_cred
+
+
+def test_wif_with_impersonation():
+    """
+    Test 2: WIF with built-in impersonation (current config).
+    Tests if WIF can impersonate sa-wif-hyb-hydra-dev@hyb-mgmt-prod.
+    """
+    logger.info("=== Test 2: WIF + Auto Impersonation (hyb-mgmt-prod SA) ===")
+
+    try:
+        import google.auth
+        from google.auth.transport.requests import Request
+
+        credentials, project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+
+        logger.info(f"Credential type: {type(credentials).__name__}")
+
+        # Try to refresh token (this triggers impersonation)
+        request = Request()
+        credentials.refresh(request)
+
+        if credentials.token:
+            logger.info(f"✅ Impersonated Token acquired: {credentials.token[:30]}...")
+            logger.info("✅ Test 2 PASSED: WIF + hyb-mgmt-prod impersonation works!")
+            return True
+        else:
+            logger.error("❌ No token returned")
+            return False
+
+    except Exception as e:
+        logger.error(f"❌ Test 2 FAILED: {e}")
+        # Parse error for more details
+        error_str = str(e)
+        if "iam.serviceAccounts.getAccessToken" in error_str:
+            logger.error("→ Root cause: WIF principal lacks 'Service Account Token Creator' role")
+            logger.error("→ Check: sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com permissions")
+        return False
+
+
+def test_manual_impersonation(target_sa: str):
+    """
+    Test 3: Manual impersonation to another SA.
+    After getting WIF token, try to impersonate another SA.
+    """
+    logger.info(f"=== Test 3: Manual Impersonation to {target_sa} ===")
+
+    try:
+        import google.auth
+        from google.auth import impersonated_credentials
+        from google.auth.transport.requests import Request
+
+        # First get source credentials (from WIF with mgmt-prod impersonation)
+        source_credentials, project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+
+        # Refresh source credentials
+        request = Request()
+        source_credentials.refresh(request)
+
+        logger.info(f"Source credential type: {type(source_credentials).__name__}")
+        logger.info(f"Source token acquired: {source_credentials.token[:20]}...")
+
+        # Now try to impersonate target SA
+        logger.info(f"Attempting to impersonate: {target_sa}")
+
+        target_credentials = impersonated_credentials.Credentials(
+            source_credentials=source_credentials,
+            target_principal=target_sa,
+            target_scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            lifetime=3600,
+        )
+
+        target_credentials.refresh(request)
+
+        if target_credentials.token:
+            logger.info(f"✅ Target Token acquired: {target_credentials.token[:30]}...")
+            logger.info(f"✅ Test 3 PASSED: Can impersonate {target_sa}!")
+            return True
+        else:
+            logger.error("❌ No token returned")
+            return False
+
+    except Exception as e:
+        logger.error(f"❌ Test 3 FAILED: {e}")
+        return False
+
+
+def run_wif_diagnostics():
+    """Run comprehensive WIF diagnostics."""
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("    WIF COMPREHENSIVE DIAGNOSTIC TEST")
+    logger.info("=" * 60)
+    logger.info("")
+
+    results = {}
+
+    # Test 1: WIF STS only
+    results['wif_sts'] = test_wif_sts_only()
+    logger.info("")
+
+    # Test 2: WIF + auto impersonation
+    results['wif_impersonation'] = test_wif_with_impersonation()
+    logger.info("")
+
+    # Test 3: Manual impersonation (only if Test 2 passes)
+    if results['wif_impersonation']:
+        target_sa = "sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com"
+        results['manual_impersonation'] = test_manual_impersonation(target_sa)
+    else:
+        logger.info("=== Test 3: Skipped (Test 2 failed) ===")
+        results['manual_impersonation'] = None
+
+    # Summary
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("    DIAGNOSTIC SUMMARY")
+    logger.info("=" * 60)
+    logger.info(f"Test 1 (WIF STS Token):        {'✅ PASS' if results['wif_sts'] else '❌ FAIL'}")
+    logger.info(f"Test 2 (WIF + mgmt-prod SA):   {'✅ PASS' if results['wif_impersonation'] else '❌ FAIL'}")
+    if results['manual_impersonation'] is not None:
+        logger.info(f"Test 3 (→ hyb-hydra-dev SA):   {'✅ PASS' if results['manual_impersonation'] else '❌ FAIL'}")
+    else:
+        logger.info(f"Test 3 (→ hyb-hydra-dev SA):   ⏭️ SKIPPED")
+    logger.info("=" * 60)
+
+    # Recommendations
+    logger.info("")
+    if not results['wif_sts']:
+        logger.info("🔧 RECOMMENDATION: WIF Pool/Provider configuration issue")
+        logger.info("   - Check WIF Pool audience matches config")
+        logger.info("   - Check WIF Provider attribute mapping")
+        logger.info("   - Verify AWS Role ARN in attribute conditions")
+    elif not results['wif_impersonation']:
+        logger.info("🔧 RECOMMENDATION: Missing permission on hyb-mgmt-prod SA")
+        logger.info("   - Add 'Service Account Token Creator' role to WIF principal")
+        logger.info("   - Principal: principal://iam.googleapis.com/projects/1087943557989/...")
+        logger.info("   - Target: sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com")
+    elif results['manual_impersonation'] is False:
+        logger.info("🔧 RECOMMENDATION: Missing permission for 2nd impersonation")
+        logger.info("   - Add 'Service Account Token Creator' role to mgmt-prod SA")
+        logger.info("   - Principal: sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com")
+        logger.info("   - Target: sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com")
+    else:
+        logger.info("✅ All tests passed! WIF authentication is working correctly.")
+
+    return all(v for v in results.values() if v is not None)
+
+
 def test_gcp_auth():
     """Test GCP authentication."""
     logger.info("=== Testing GCP WIF Authentication ===")
@@ -557,8 +769,18 @@ def process_job():
     # Check AWS identity first (for WIF debugging)
     check_aws_identity()
 
+    # Check if this is a diagnostic test
+    job_type = os.environ.get("JOB_TYPE", "")
+    if job_type == "WIF_DIAGNOSTIC":
+        logger.info("Running WIF diagnostic mode...")
+        run_wif_diagnostics()
+        logger.info("Diagnostic complete - exiting")
+        sys.exit(0)
+
     # Test authentication first
     if not test_gcp_auth():
+        logger.error("GCP authentication failed - running diagnostics...")
+        run_wif_diagnostics()
         logger.error("GCP authentication failed - exiting")
         sys.exit(1)
 

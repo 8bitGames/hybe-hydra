@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { getModalRenderStatus } from '@/lib/modal/client';
+import { getPresignedUrlFromS3Url } from '@/lib/storage';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -60,7 +61,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     // If already completed or failed, return from database
     if (generation.status === 'COMPLETED') {
-      const outputUrl = generation.composedOutputUrl || generation.outputUrl;
+      const rawOutputUrl = generation.composedOutputUrl || generation.outputUrl;
+      // Generate presigned URL for S3 access (direct S3 URLs are not publicly accessible)
+      const outputUrl = rawOutputUrl ? await getPresignedUrlFromS3Url(rawOutputUrl) : null;
       console.log(`${LOG_PREFIX} Already COMPLETED - returning cached result (${Date.now() - requestStartTime}ms total)`);
       return NextResponse.json({
         status: 'completed',
@@ -100,11 +103,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (!modalCallId) {
       // No Modal call ID - might be an old job or error
       console.warn(`${LOG_PREFIX} No modalCallId found - returning DB status (${Date.now() - requestStartTime}ms total)`);
+      const rawOutputUrl = generation.composedOutputUrl || generation.outputUrl;
+      const outputUrl = rawOutputUrl ? await getPresignedUrlFromS3Url(rawOutputUrl) : null;
       return NextResponse.json({
         status: generation.status.toLowerCase(),
         progress: generation.progress || 0,
         currentStep: 'Processing',
-        outputUrl: generation.composedOutputUrl || generation.outputUrl,
+        outputUrl,
         error: generation.errorMessage
       });
     }
@@ -186,13 +191,16 @@ export async function GET(request: NextRequest, context: RouteContext) {
             }
           }
 
+          // Generate presigned URL for S3 access
+          const presignedUrl = await getPresignedUrlFromS3Url(outputUrl);
+
           const totalMs = Date.now() - requestStartTime;
           console.log(`${LOG_PREFIX} ✅ Returning COMPLETED (${totalMs}ms total)`);
           return NextResponse.json({
             status: 'completed',
             progress: 100,
             currentStep: 'Completed',
-            outputUrl: outputUrl,
+            outputUrl: presignedUrl,
             error: null
           });
         } else {
@@ -295,11 +303,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
       // Return current database status as fallback
       const totalMs = Date.now() - requestStartTime;
       console.log(`${LOG_PREFIX} Returning fallback DB status (${totalMs}ms total)`);
+      const fallbackRawUrl = generation.composedOutputUrl || generation.outputUrl;
+      const fallbackUrl = fallbackRawUrl ? await getPresignedUrlFromS3Url(fallbackRawUrl) : null;
       return NextResponse.json({
         status: generation.status.toLowerCase(),
         progress: generation.progress || 0,
         currentStep: 'Processing (status check failed)',
-        outputUrl: generation.composedOutputUrl || generation.outputUrl,
+        outputUrl: fallbackUrl,
         error: null
       });
     }

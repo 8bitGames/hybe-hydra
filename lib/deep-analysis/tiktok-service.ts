@@ -59,14 +59,57 @@ function getHeaders() {
 }
 
 // =============================================================================
+// Cache System - Avoid repeated API calls during debugging
+// =============================================================================
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes cache
+const userInfoCache = new Map<string, CacheEntry<DeepAnalysisUser>>();
+const videosCache = new Map<string, CacheEntry<DeepAnalysisVideo[]>>();
+
+function getCachedData<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+
+  // Check if cache is still valid
+  if (Date.now() - entry.timestamp > CACHE_TTL) {
+    cache.delete(key);
+    return null;
+  }
+
+  console.log(`[DEEP-ANALYSIS] Cache hit for: ${key}`);
+  return entry.data;
+}
+
+function setCachedData<T>(cache: Map<string, CacheEntry<T>>, key: string, data: T): void {
+  cache.set(key, { data, timestamp: Date.now() });
+  console.log(`[DEEP-ANALYSIS] Cached data for: ${key}`);
+}
+
+export function clearCache(): void {
+  userInfoCache.clear();
+  videosCache.clear();
+  console.log('[DEEP-ANALYSIS] Cache cleared');
+}
+
+// =============================================================================
 // Core Functions
 // =============================================================================
 
 /**
  * Get user info with secUid for fetching posts
+ * Results are cached for 30 minutes to avoid repeated API calls
  */
 export async function getDeepAnalysisUserInfo(uniqueId: string): Promise<DeepAnalysisUser | null> {
   console.log(`[DEEP-ANALYSIS] Getting user info: ${uniqueId}`);
+
+  // Check cache first
+  const cached = getCachedData(userInfoCache, uniqueId);
+  if (cached) return cached;
 
   try {
     const params = new URLSearchParams({ uniqueId });
@@ -84,7 +127,7 @@ export async function getDeepAnalysisUserInfo(uniqueId: string): Promise<DeepAna
     const user = data.userInfo?.user || data.user || data;
     const stats = data.userInfo?.stats || data.stats || {};
 
-    return {
+    const result: DeepAnalysisUser = {
       id: String(user.id || ''),
       uniqueId: String(user.uniqueId || uniqueId),
       nickname: String(user.nickname || ''),
@@ -98,6 +141,10 @@ export async function getDeepAnalysisUserInfo(uniqueId: string): Promise<DeepAna
       region: String(user.region || ''),
       secUid: String(user.secUid || ''),
     };
+
+    // Cache the result
+    setCachedData(userInfoCache, uniqueId, result);
+    return result;
   } catch (error) {
     console.error(`[DEEP-ANALYSIS] Get user info error:`, error);
     return null;
@@ -107,6 +154,7 @@ export async function getDeepAnalysisUserInfo(uniqueId: string): Promise<DeepAna
 /**
  * Fetch all videos for an account (up to targetCount)
  * Uses pagination to fetch 50-100 videos
+ * Results are cached for 30 minutes to avoid repeated API calls
  */
 export async function fetchAccountVideos(
   secUid: string,
@@ -114,6 +162,14 @@ export async function fetchAccountVideos(
   onProgress?: (fetched: number, total: number) => void
 ): Promise<{ videos: DeepAnalysisVideo[]; error?: string }> {
   console.log(`[DEEP-ANALYSIS] Fetching videos for secUid: ${secUid}, target: ${targetCount}`);
+
+  // Check cache first
+  const cacheKey = `${secUid}_${targetCount}`;
+  const cached = getCachedData(videosCache, cacheKey);
+  if (cached) {
+    if (onProgress) onProgress(cached.length, targetCount);
+    return { videos: cached };
+  }
 
   const videos: DeepAnalysisVideo[] = [];
   const seenIds = new Set<string>();
@@ -175,6 +231,12 @@ export async function fetchAccountVideos(
     }
 
     console.log(`[DEEP-ANALYSIS] Fetched ${videos.length} videos`);
+
+    // Cache the results if we got any videos
+    if (videos.length > 0) {
+      setCachedData(videosCache, cacheKey, videos);
+    }
+
     return { videos };
   } catch (error) {
     console.error(`[DEEP-ANALYSIS] Fetch videos error:`, error);

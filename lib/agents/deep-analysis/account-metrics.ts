@@ -65,54 +65,52 @@ export const AccountMetricsInputSchema = z.object({
   language: z.enum(['ko', 'en']).default('ko'),
 });
 
+// Lenient schema - AI may not return all fields consistently
+const StrengthWeaknessSchema = z.object({
+  area: z.string().optional().default(''),
+  description: z.string().optional().default(''),
+  metric: z.string().optional().default(''),
+  vsIndustry: z.string().optional().default(''),
+}).passthrough();
+
 export const AccountMetricsOutputSchema = z.object({
-  summary: z.string(),
-  performanceScore: z.number().min(0).max(100),
-  performanceTier: z.enum(['exceptional', 'above-average', 'average', 'below-average', 'needs-improvement']),
-  strengths: z.array(z.object({
-    area: z.string(),
-    description: z.string(),
-    metric: z.string(),
-    vsIndustry: z.string(),
-  })),
-  weaknesses: z.array(z.object({
-    area: z.string(),
-    description: z.string(),
-    metric: z.string(),
-    vsIndustry: z.string(),
-  })),
+  summary: z.string().optional().default('Analysis not available'),
+  performanceScore: z.number().min(0).max(100).optional().default(50),
+  performanceTier: z.enum(['exceptional', 'above-average', 'average', 'below-average', 'needs-improvement']).optional().default('average'),
+  strengths: z.array(StrengthWeaknessSchema).optional().default([]),
+  weaknesses: z.array(StrengthWeaknessSchema).optional().default([]),
   contentStrategy: z.object({
-    topPerformingContent: z.string(),
-    contentMixRecommendation: z.string(),
-    hashtagStrategy: z.string(),
-    musicStrategy: z.string(),
-  }),
+    topPerformingContent: z.string().optional().default(''),
+    contentMixRecommendation: z.string().optional().default(''),
+    hashtagStrategy: z.string().optional().default(''),
+    musicStrategy: z.string().optional().default(''),
+  }).optional().default({}),
   postingStrategy: z.object({
-    optimalFrequency: z.string(),
-    bestTimes: z.string(),
-    consistencyScore: z.number().min(0).max(100),
-  }),
+    optimalFrequency: z.string().optional().default(''),
+    bestTimes: z.string().optional().default(''),
+    consistencyScore: z.number().min(0).max(100).optional().default(50),
+  }).optional().default({}),
   growthPotential: z.object({
-    score: z.enum(['high', 'medium', 'low']),
-    reasoning: z.string(),
-    projectedGrowth: z.string(),
-  }),
+    score: z.enum(['high', 'medium', 'low']).optional().default('medium'),
+    reasoning: z.string().optional().default(''),
+    projectedGrowth: z.string().optional().default(''),
+  }).optional().default({}),
   recommendations: z.array(z.object({
-    priority: z.enum(['high', 'medium', 'low']),
-    action: z.string(),
-    expectedImpact: z.string(),
-  })),
+    priority: z.enum(['high', 'medium', 'low']).optional().default('medium'),
+    action: z.string().optional().default(''),
+    expectedImpact: z.string().optional().default(''),
+  })).optional().default([]),
   benchmarkComparison: z.object({
     vsIndustry: z.object({
-      engagement: z.number(),
-      interpretation: z.string(),
-    }),
+      engagement: z.number().optional().default(0),
+      interpretation: z.string().optional().default(''),
+    }).optional().default({}),
     vsTier: z.object({
-      engagement: z.number(),
-      interpretation: z.string(),
-    }),
+      engagement: z.number().optional().default(0),
+      interpretation: z.string().optional().default(''),
+    }).optional().default({}),
   }).optional(),
-});
+}).passthrough();
 
 export type AccountMetricsInput = z.infer<typeof AccountMetricsInputSchema>;
 export type AccountMetricsOutput = z.infer<typeof AccountMetricsOutputSchema>;
