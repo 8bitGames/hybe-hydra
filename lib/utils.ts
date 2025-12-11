@@ -202,3 +202,20 @@ export function formatRelativeTime(date: Date | string | number): string {
 
 
 
+
+/**
+ * Format a number with appropriate suffix (K, M, B)
+ */
+export function formatNumber(num: number | bigint): string {
+  const n = typeof num === 'bigint' ? Number(num) : num;
+  if (n >= 1_000_000_000) {
+    return (n / 1_000_000_000).toFixed(1).replace(/\.0$/, '') + 'B';
+  }
+  if (n >= 1_000_000) {
+    return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  }
+  if (n >= 1_000) {
+    return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+  }
+  return n.toString();
+}

@@ -282,9 +282,10 @@ export async function getPublishStatus(
     const result = await response.json();
 
     if (result.error?.code !== "ok") {
+      console.error("[TikTok] getPublishStatus error response:", JSON.stringify(result));
       return {
         success: false,
-        error: result.error?.message || "Failed to get publish status",
+        error: `${result.error?.code || "unknown"}: ${result.error?.message || "Failed to get publish status"}`,
       };
     }
 
@@ -293,7 +294,7 @@ export async function getPublishStatus(
       data: result.data,
     };
   } catch (error) {
-    console.error("TikTok getPublishStatus error:", error);
+    console.error("[TikTok] getPublishStatus exception:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
@@ -330,6 +331,7 @@ export async function waitForPublishComplete(
     switch (status.status) {
       case "PUBLISH_COMPLETE":
         const postId = status.publicaly_available_post_id?.[0];
+        console.log("[TikTok] Publish complete! Post ID:", postId);
         return {
           success: true,
           publishId,
@@ -349,28 +351,38 @@ export async function waitForPublishComplete(
           };
         }
         // For direct post, continue waiting
+        console.log("[TikTok] Received SEND_TO_USER_INBOX status for direct post, waiting...");
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
         break;
 
       case "FAILED":
+        console.error("[TikTok] Publish FAILED!", status.fail_reason);
         return {
           success: false,
           publishId,
-          error: status.fail_reason || "Publish failed",
+          error: status.fail_reason || "Publish failed (no reason provided)",
         };
 
       case "PROCESSING_UPLOAD":
       case "PROCESSING_DOWNLOAD":
         // Still processing, wait and retry
+        console.log(`[TikTok] Still processing (${status.status}), waiting ${intervalMs}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        break;
+
+      default:
+        // Handle unexpected status - log and continue waiting
+        console.warn(`[TikTok] Unexpected status received: "${status.status}", full response:`, JSON.stringify(status));
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
         break;
     }
   }
 
+  console.error(`[TikTok] Publish timed out after ${maxAttempts} attempts (${maxAttempts * intervalMs / 1000}s)`);
   return {
     success: false,
     publishId,
-    error: "Publish timed out",
+    error: `Publish timed out after ${maxAttempts * intervalMs / 1000} seconds`,
   };
 }
 
@@ -379,20 +391,44 @@ export async function waitForPublishComplete(
  */
 async function downloadVideoFromUrl(videoUrl: string): Promise<{ success: boolean; data?: Buffer; size?: number; error?: string }> {
   try {
-    console.log("[TikTok] Downloading video from:", videoUrl);
+    console.log("[TikTok] Downloading video from:", videoUrl.substring(0, 100) + (videoUrl.length > 100 ? "..." : ""));
+
+    if (!videoUrl) {
+      console.error("[TikTok] Video URL is empty or undefined");
+      return {
+        success: false,
+        error: "Video URL is empty or undefined",
+      };
+    }
+
     const response = await fetch(videoUrl);
 
     if (!response.ok) {
+      console.error(`[TikTok] Video download failed: ${response.status} ${response.statusText}`);
+      console.error(`[TikTok] Response headers:`, Object.fromEntries(response.headers.entries()));
       return {
         success: false,
-        error: `Failed to download video: ${response.status} ${response.statusText}`,
+        error: `Failed to download video: ${response.status} ${response.statusText}. URL may be expired or inaccessible.`,
       };
+    }
+
+    const contentType = response.headers.get("content-type");
+    if (contentType && !contentType.includes("video")) {
+      console.warn(`[TikTok] Unexpected content type: ${contentType}`);
     }
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    console.log("[TikTok] Downloaded video size:", buffer.length, "bytes");
+    console.log("[TikTok] Downloaded video successfully:", buffer.length, "bytes");
+
+    if (buffer.length === 0) {
+      console.error("[TikTok] Downloaded video is empty (0 bytes)");
+      return {
+        success: false,
+        error: "Downloaded video is empty (0 bytes)",
+      };
+    }
 
     return {
       success: true,
@@ -400,10 +436,10 @@ async function downloadVideoFromUrl(videoUrl: string): Promise<{ success: boolea
       size: buffer.length,
     };
   } catch (error) {
-    console.error("[TikTok] downloadVideoFromUrl error:", error);
+    console.error("[TikTok] downloadVideoFromUrl exception:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: `Video download failed: ${error instanceof Error ? error.message : "Unknown error"}`,
     };
   }
 }

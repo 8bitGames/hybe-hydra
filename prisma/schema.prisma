@@ -995,6 +995,8 @@ model ComparisonReport {
   // Report Info
   title           String?
   language        String   @default("ko")
+  accountCount    Int      @default(0) @map("account_count")
+  overallSummary  String?  @map("overall_summary") @db.Text
 
   // Accounts in Comparison
   accounts        ComparisonReportAccount[]
@@ -1003,10 +1005,17 @@ model ComparisonReport {
   radarChartData  Json?    @map("radar_chart_data")
   barChartData    Json?    @map("bar_chart_data")
   rankingTable    Json?    @map("ranking_table")
+  rankings        Json?
 
   // Significant Differences
   significantDiffs Json?   @map("significant_diffs")
+  significantDifferences Json? @map("significant_differences")
   benchmarkComparison Json? @map("benchmark_comparison")
+
+  // Strategic Analysis
+  strategicInsights Json?  @map("strategic_insights")
+  accountRecommendations Json? @map("account_recommendations")
+  competitivePositioning Json? @map("competitive_positioning")
 
   // AI Comparative Analysis
   aiComparison    Json?    @map("ai_comparison")

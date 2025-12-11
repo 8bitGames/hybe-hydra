@@ -666,13 +666,41 @@ export const publishToTikTok = inngest.createFunction(
     id: "publish-tiktok",
     name: "Publish to TikTok",
     retries: 3,
+    onFailure: async ({ event, error }) => {
+      // Mark the post as FAILED when all retries are exhausted
+      const { videoId, accountId } = event.data;
+      console.error("[TikTok Publish] Function failed after all retries:", error.message);
+
+      try {
+        const post = await prisma.scheduledPost.findFirst({
+          where: { generationId: videoId, socialAccountId: accountId },
+        });
+
+        if (post && post.status === "PUBLISHING") {
+          await prisma.scheduledPost.update({
+            where: { id: post.id },
+            data: {
+              status: "FAILED",
+              errorMessage: `Publish failed after retries: ${error.message}`,
+              retryCount: { increment: 1 },
+            },
+          });
+          console.log("[TikTok Publish] Post marked as FAILED via onFailure handler");
+        }
+      } catch (dbError) {
+        console.error("[TikTok Publish] Failed to update post status in onFailure:", dbError);
+      }
+    },
   },
   { event: "publish/tiktok" },
   async ({ event, step }) => {
     const { videoId, userId, accountId, caption, hashtags, scheduledAt } = event.data;
+    console.log("[TikTok Publish] Starting publish for videoId:", videoId, "accountId:", accountId);
 
     // Step 1: Get video and account info
     const context = await step.run("get-context", async () => {
+      console.log("[TikTok Publish] Step 1: Getting context...");
+
       const post = await prisma.scheduledPost.findFirst({
         where: { generationId: videoId, socialAccountId: accountId },
         include: {
@@ -682,13 +710,17 @@ export const publishToTikTok = inngest.createFunction(
       });
 
       if (!post) {
-        throw new Error("Scheduled post not found");
+        console.error("[TikTok Publish] Scheduled post not found for videoId:", videoId, "accountId:", accountId);
+        throw new Error(`Scheduled post not found for videoId: ${videoId}`);
       }
 
       const videoUrl = post.generation?.composedOutputUrl || post.generation?.outputUrl;
       if (!videoUrl) {
-        throw new Error("Video URL not found");
+        console.error("[TikTok Publish] Video URL not found. composedOutputUrl:", post.generation?.composedOutputUrl, "outputUrl:", post.generation?.outputUrl);
+        throw new Error("Video URL not found - generation may not have completed successfully");
       }
+
+      console.log("[TikTok Publish] Context loaded. postId:", post.id, "videoUrl:", videoUrl.substring(0, 80) + "...");
 
       return {
         postId: post.id,
@@ -700,6 +732,7 @@ export const publishToTikTok = inngest.createFunction(
 
     // Step 2: Check and refresh token if needed
     const accessToken = await step.run("ensure-token", async () => {
+      console.log("[TikTok Publish] Step 2: Checking token...");
       const account = context.account;
 
       // Check if token needs refresh
@@ -707,11 +740,15 @@ export const publishToTikTok = inngest.createFunction(
       const bufferMs = 5 * 60 * 1000;
       const needsRefresh = !tokenExpiresAt || new Date().getTime() + bufferMs > tokenExpiresAt.getTime();
 
+      console.log("[TikTok Publish] Token expires at:", tokenExpiresAt, "needsRefresh:", needsRefresh);
+
       if (needsRefresh) {
+        console.log("[TikTok Publish] Refreshing access token...");
         const clientKey = process.env.TIKTOK_CLIENT_KEY;
         const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
 
         if (!clientKey || !clientSecret || !account.refreshToken) {
+          console.error("[TikTok Publish] Missing credentials for token refresh. clientKey:", !!clientKey, "clientSecret:", !!clientSecret, "refreshToken:", !!account.refreshToken);
           throw new Error("Token expired and refresh credentials not available");
         }
 
@@ -722,8 +759,11 @@ export const publishToTikTok = inngest.createFunction(
         );
 
         if (!refreshResult.success) {
+          console.error("[TikTok Publish] Token refresh failed:", refreshResult.error);
           throw new Error(`Token refresh failed: ${refreshResult.error}`);
         }
+
+        console.log("[TikTok Publish] Token refreshed successfully, updating database...");
 
         // Update stored tokens
         await prisma.socialAccount.update({
@@ -737,24 +777,30 @@ export const publishToTikTok = inngest.createFunction(
           },
         });
 
+        console.log("[TikTok Publish] Token updated in database");
         return refreshResult.accessToken!;
       }
 
+      console.log("[TikTok Publish] Using existing token (not expired)");
       return account.accessToken!;
     });
 
     // Step 3: Update status to publishing
     await step.run("update-status-publishing", async () => {
+      console.log("[TikTok Publish] Step 3: Marking post as PUBLISHING...");
       await prisma.scheduledPost.update({
         where: { id: context.postId },
         data: { status: "PUBLISHING" },
       });
+      console.log("[TikTok Publish] Post status updated to PUBLISHING");
     });
 
     // Step 4: Publish to TikTok
     // TIKTOK_MODE: "sandbox" = Inbox Upload (draft), "production" = Direct Post
     const publishResult = await step.run("publish-to-tiktok", async () => {
+      console.log("[TikTok Publish] Step 4: Starting TikTok publish...");
       const tiktokMode = process.env.TIKTOK_MODE || "sandbox";
+      console.log("[TikTok Publish] Mode:", tiktokMode, "| Video URL:", context.videoUrl.substring(0, 80) + "...");
 
       if (tiktokMode === "sandbox") {
         // Sandbox mode: Send to user's TikTok inbox as draft

@@ -143,9 +143,33 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Handle download
-  const handleDownload = useCallback(() => {
-    if (originalVideo?.outputUrl) {
+  // Handle download - fetch fresh presigned URL to avoid expiration issues
+  const handleDownload = useCallback(async () => {
+    if (!originalVideo?.outputUrl) return;
+
+    try {
+      // Get a fresh presigned URL from the download API
+      const filename = `video-${session?.id || "output"}.mp4`;
+      const response = await fetch(
+        `/api/v1/assets/download?url=${encodeURIComponent(originalVideo.outputUrl)}&filename=${encodeURIComponent(filename)}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to get download URL");
+      }
+
+      const { downloadUrl } = await response.json();
+
+      // Trigger download with fresh presigned URL
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Download failed:", error);
+      // Fallback to direct URL (may fail if expired)
       const link = document.createElement("a");
       link.href = originalVideo.outputUrl;
       link.download = `video-${session?.id || "output"}.mp4`;
@@ -199,7 +223,7 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
   }
 
   return (
-    <div className={cn("flex flex-col items-center justify-center min-h-[60vh]", className)}>
+    <div className={cn("flex flex-col items-center py-8", className)}>
       {/* Success header */}
       <div className="flex items-center gap-2 mb-6">
         <CheckCircle2 className="w-6 h-6 text-emerald-500" />
@@ -208,7 +232,7 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
         </h2>
       </div>
 
-      {/* Main content */}
+      {/* Main content - Video + Decision Cards */}
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-9 gap-8 px-4">
         {/* Left: Video Player (45%) */}
         <div className="lg:col-span-4">
@@ -418,273 +442,6 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
               </CardContent>
             </Card>
 
-            {/* Inline Variation Panel - Style Selection OR Progress */}
-            {(showVariationPanel || isGeneratingVariations) && (
-              <Card className="border-2 border-neutral-200 bg-white animate-in slide-in-from-top-2 duration-200">
-                <CardContent className="p-6">
-                  {!isGeneratingVariations ? (
-                    /* Style Selection Mode */
-                    <>
-                      {/* Header */}
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-semibold text-neutral-900">
-                          {isKorean ? "생성할 스타일 선택" : "Select Styles to Generate"}
-                          <span className="text-neutral-400 font-normal ml-2">(1-8개)</span>
-                        </h3>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              selectAllStyles();
-                            }}
-                            className="text-xs"
-                          >
-                            {isKorean ? "전체 선택" : "Select All"}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              clearStyleSelection();
-                            }}
-                            className="text-xs"
-                          >
-                            {isKorean ? "선택 해제" : "Clear"}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Style grid */}
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                        {STYLE_SETS.map((style) => {
-                          const Icon: LucideIcon = STYLE_ICONS[style.id] || Zap;
-                          const isSelected = selectedStyles.includes(style.id);
-
-                          return (
-                            <div
-                              key={style.id}
-                              className={cn(
-                                "relative p-4 rounded-xl border-2 cursor-pointer transition-all",
-                                isSelected
-                                  ? "border-neutral-900 bg-neutral-50"
-                                  : "border-neutral-200 hover:border-neutral-300 bg-white"
-                              )}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleStyleSelection(style.id);
-                              }}
-                            >
-                              {/* Checkbox */}
-                              <div className="absolute top-3 right-3">
-                                <Checkbox
-                                  checked={isSelected}
-                                  onCheckedChange={() => toggleStyleSelection(style.id)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="data-[state=checked]:bg-neutral-900 data-[state=checked]:border-neutral-900"
-                                />
-                              </div>
-
-                              {/* Icon */}
-                              <div
-                                className={cn(
-                                  "w-10 h-10 rounded-lg flex items-center justify-center mb-3",
-                                  isSelected ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600"
-                                )}
-                              >
-                                <Icon className="w-5 h-5" />
-                              </div>
-
-                              {/* Text */}
-                              <h4 className="font-medium text-neutral-900 text-sm mb-1">
-                                {isKorean ? style.nameKo : style.name}
-                              </h4>
-                              <p className="text-xs text-neutral-500 line-clamp-2">
-                                {isKorean ? style.descriptionKo : style.description}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Footer info & Start Button */}
-                      <div className="mt-6 pt-4 border-t border-neutral-200 flex items-center justify-between">
-                        <div className="flex items-center gap-4 text-sm">
-                          <span className="text-neutral-600">
-                            {isKorean ? "선택됨:" : "Selected:"}{" "}
-                            <span className="font-medium text-neutral-900">{selectedStyles.length}개</span>
-                          </span>
-                          {estimatedTime && (
-                            <span className="text-neutral-500">
-                              {isKorean ? "예상 시간:" : "Est. time:"} {estimatedTime}
-                            </span>
-                          )}
-                        </div>
-
-                        <Button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStartVariationGeneration();
-                          }}
-                          disabled={!canStart}
-                          className="bg-neutral-900 hover:bg-neutral-800 text-white"
-                        >
-                          {isStartingGeneration ? (
-                            <>
-                              <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                              {isKorean ? "시작 중..." : "Starting..."}
-                            </>
-                          ) : (
-                            <>
-                              <Rocket className="w-4 h-4 mr-1.5" />
-                              {isKorean ? "베리에이션 생성 시작" : "Start Variations"}
-                            </>
-                          )}
-                        </Button>
-                      </div>
-
-                      {/* Tip */}
-                      <div className="mt-4 flex items-center gap-2 text-xs text-neutral-500">
-                        <Lightbulb className="w-4 h-4" />
-                        {isKorean
-                          ? "3-5개 스타일 선택 시 효과적인 A/B 테스트가 가능합니다"
-                          : "Selecting 3-5 styles enables effective A/B testing"}
-                      </div>
-                    </>
-                  ) : (
-                    /* Generation Progress Mode */
-                    <>
-                      {/* Header */}
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-semibold text-neutral-900">
-                          {isKorean ? "생성 진행 상황" : "Generation Progress"}
-                        </h3>
-                        <Badge variant="secondary" className="bg-neutral-100">
-                          {progressStats.completed}/{progressStats.total}{" "}
-                          {isKorean ? "완료" : "completed"}
-                        </Badge>
-                      </div>
-
-                      {/* Progress cards grid */}
-                      <div className="grid grid-cols-3 lg:grid-cols-5 gap-3">
-                        {/* Original - always complete */}
-                        <div className="p-3 rounded-xl border-2 border-emerald-200 bg-emerald-50">
-                          <div className="aspect-[9/16] bg-black rounded-lg mb-2 relative overflow-hidden">
-                            {originalVideo?.thumbnailUrl || originalVideo?.outputUrl ? (
-                              <img
-                                src={originalVideo.thumbnailUrl || originalVideo.outputUrl}
-                                alt="Original"
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <Check className="w-6 h-6 text-emerald-500" />
-                              </div>
-                            )}
-                            <Badge className="absolute top-1.5 left-1.5 bg-amber-500/90 text-white gap-1 text-[9px] px-1.5 py-0.5">
-                              <Star className="w-2 h-2 fill-white" />
-                              {isKorean ? "원본" : "Original"}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-1 text-emerald-600 text-xs font-medium">
-                            <Check className="w-3 h-3" />
-                            {isKorean ? "완료" : "Done"}
-                          </div>
-                        </div>
-
-                        {/* Variation cards */}
-                        {variations.map((variation) => {
-                          const Icon: LucideIcon = STYLE_ICONS[variation.styleId] || Zap;
-                          const isComplete = variation.status === "completed";
-                          const isFailed = variation.status === "failed";
-                          const isInProgress = variation.status === "generating";
-
-                          return (
-                            <div
-                              key={variation.id}
-                              className={cn(
-                                "p-3 rounded-xl border-2 transition-all",
-                                isComplete && "border-emerald-200 bg-emerald-50",
-                                isFailed && "border-red-200 bg-red-50",
-                                !isComplete && !isFailed && "border-neutral-200 bg-white"
-                              )}
-                            >
-                              <div className="aspect-[9/16] bg-neutral-100 rounded-lg mb-2 relative overflow-hidden flex items-center justify-center">
-                                {isComplete && variation.thumbnailUrl ? (
-                                  <img
-                                    src={variation.thumbnailUrl}
-                                    alt={variation.styleName}
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : isComplete ? (
-                                  <Check className="w-6 h-6 text-emerald-500" />
-                                ) : isFailed ? (
-                                  <X className="w-6 h-6 text-red-500" />
-                                ) : (
-                                  <div className="flex flex-col items-center gap-1">
-                                    <Loader2 className="w-5 h-5 text-neutral-400 animate-spin" />
-                                    <span className="text-sm font-bold text-neutral-600">
-                                      {variation.progress}%
-                                    </span>
-                                  </div>
-                                )}
-
-                                {/* Style badge */}
-                                <Badge
-                                  variant="secondary"
-                                  className="absolute top-1.5 left-1.5 bg-neutral-800/80 text-white text-[9px] px-1.5 py-0.5"
-                                >
-                                  {isKorean ? variation.styleNameKo : variation.styleName}
-                                </Badge>
-                              </div>
-
-                              {/* Status */}
-                              {isComplete && (
-                                <div className="flex items-center gap-1 text-emerald-600 text-xs font-medium">
-                                  <Check className="w-3 h-3" />
-                                  {isKorean ? "완료" : "Done"}
-                                </div>
-                              )}
-                              {isFailed && (
-                                <div className="flex items-center gap-1 text-red-600 text-xs font-medium">
-                                  <X className="w-3 h-3" />
-                                  {isKorean ? "실패" : "Failed"}
-                                </div>
-                              )}
-                              {isInProgress && (
-                                <div className="space-y-1">
-                                  <Progress value={variation.progress} className="h-1" />
-                                  <p className="text-[10px] text-neutral-500 truncate">
-                                    {variation.currentStep || (isKorean ? "처리 중..." : "Processing...")}
-                                  </p>
-                                </div>
-                              )}
-                              {variation.status === "pending" && (
-                                <p className="text-xs text-neutral-400">
-                                  {isKorean ? "대기 중" : "Pending"}
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Footer message */}
-                      <div className="mt-4 pt-3 border-t border-neutral-200">
-                        <p className="text-xs text-neutral-500 text-center flex items-center justify-center gap-2">
-                          <Lightbulb className="w-4 h-4" />
-                          {isKorean
-                            ? "완료 시 자동으로 비교 화면으로 이동합니다"
-                            : "You'll be redirected to comparison view when complete"}
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            )}
           </div>
 
           {/* Info - hide when panel is open or generating */}
@@ -697,6 +454,273 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
           )}
         </div>
       </div>
+
+      {/* Full-width Variation Panel below - Style Selection OR Progress */}
+      {(showVariationPanel || isGeneratingVariations) && (
+        <div className="w-full max-w-6xl px-4 mt-8 animate-in slide-in-from-top-2 duration-200">
+          <Card className="border-2 border-neutral-200 bg-white">
+            <CardContent className="p-6">
+              {!isGeneratingVariations ? (
+                /* Style Selection Mode */
+                <>
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-neutral-900">
+                      {isKorean ? "생성할 스타일 선택" : "Select Styles to Generate"}
+                      <span className="text-neutral-400 font-normal ml-2">(1-8개)</span>
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          selectAllStyles();
+                        }}
+                      >
+                        {isKorean ? "전체 선택" : "Select All"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearStyleSelection();
+                        }}
+                      >
+                        {isKorean ? "선택 해제" : "Clear"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Style grid - wider layout */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+                    {STYLE_SETS.map((style) => {
+                      const Icon: LucideIcon = STYLE_ICONS[style.id] || Zap;
+                      const isSelected = selectedStyles.includes(style.id);
+
+                      return (
+                        <div
+                          key={style.id}
+                          className={cn(
+                            "relative p-4 rounded-xl border-2 cursor-pointer transition-all",
+                            isSelected
+                              ? "border-neutral-900 bg-neutral-50"
+                              : "border-neutral-200 hover:border-neutral-300 bg-white"
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleStyleSelection(style.id);
+                          }}
+                        >
+                          {/* Checkbox */}
+                          <div className="absolute top-2 right-2">
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => toggleStyleSelection(style.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="data-[state=checked]:bg-neutral-900 data-[state=checked]:border-neutral-900"
+                            />
+                          </div>
+
+                          {/* Icon */}
+                          <div
+                            className={cn(
+                              "w-10 h-10 rounded-lg flex items-center justify-center mb-3 mx-auto",
+                              isSelected ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600"
+                            )}
+                          >
+                            <Icon className="w-5 h-5" />
+                          </div>
+
+                          {/* Text */}
+                          <h4 className="font-medium text-neutral-900 text-sm text-center mb-1">
+                            {isKorean ? style.nameKo : style.name}
+                          </h4>
+                          <p className="text-xs text-neutral-500 text-center line-clamp-2">
+                            {isKorean ? style.descriptionKo : style.description}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Footer info & Start Button */}
+                  <div className="mt-6 pt-4 border-t border-neutral-200 flex items-center justify-between">
+                    <div className="flex items-center gap-6 text-sm">
+                      <span className="text-neutral-600">
+                        {isKorean ? "선택됨:" : "Selected:"}{" "}
+                        <span className="font-semibold text-neutral-900">{selectedStyles.length}개</span>
+                      </span>
+                      {estimatedTime && (
+                        <span className="text-neutral-500">
+                          {isKorean ? "예상 시간:" : "Est. time:"} {estimatedTime}
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1.5 text-neutral-500">
+                        <Lightbulb className="w-4 h-4" />
+                        {isKorean
+                          ? "3-5개 스타일 선택 시 효과적인 A/B 테스트가 가능합니다"
+                          : "Selecting 3-5 styles enables effective A/B testing"}
+                      </span>
+                    </div>
+
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartVariationGeneration();
+                      }}
+                      disabled={!canStart}
+                      size="lg"
+                      className="bg-neutral-900 hover:bg-neutral-800 text-white"
+                    >
+                      {isStartingGeneration ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          {isKorean ? "시작 중..." : "Starting..."}
+                        </>
+                      ) : (
+                        <>
+                          <Rocket className="w-4 h-4 mr-2" />
+                          {isKorean ? "베리에이션 생성 시작" : "Start Variations"}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                /* Generation Progress Mode - Full Width */
+                <>
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-neutral-900">
+                      {isKorean ? "베리에이션 생성 진행 상황" : "Variation Generation Progress"}
+                    </h3>
+                    <Badge variant="secondary" className="bg-neutral-100 text-base px-3 py-1">
+                      {progressStats.completed}/{progressStats.total}{" "}
+                      {isKorean ? "완료" : "completed"}
+                    </Badge>
+                  </div>
+
+                  {/* Progress cards grid - horizontal layout */}
+                  <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-4">
+                    {/* Original - always complete */}
+                    <div className="p-3 rounded-xl border-2 border-emerald-200 bg-emerald-50">
+                      <div className="aspect-[9/16] bg-black rounded-lg mb-2 relative overflow-hidden">
+                        {originalVideo?.thumbnailUrl || originalVideo?.outputUrl ? (
+                          <img
+                            src={originalVideo.thumbnailUrl || originalVideo.outputUrl}
+                            alt="Original"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Check className="w-8 h-8 text-emerald-500" />
+                          </div>
+                        )}
+                        <Badge className="absolute top-1.5 left-1.5 bg-amber-500/90 text-white gap-1 text-[10px] px-1.5 py-0.5">
+                          <Star className="w-2.5 h-2.5 fill-white" />
+                          {isKorean ? "원본" : "Original"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-center gap-1 text-emerald-600 text-xs font-medium">
+                        <Check className="w-3.5 h-3.5" />
+                        {isKorean ? "완료" : "Done"}
+                      </div>
+                    </div>
+
+                    {/* Variation cards */}
+                    {variations.map((variation) => {
+                      const Icon: LucideIcon = STYLE_ICONS[variation.styleId] || Zap;
+                      const isComplete = variation.status === "completed";
+                      const isFailed = variation.status === "failed";
+                      const isInProgress = variation.status === "generating";
+
+                      return (
+                        <div
+                          key={variation.id}
+                          className={cn(
+                            "p-3 rounded-xl border-2 transition-all",
+                            isComplete && "border-emerald-200 bg-emerald-50",
+                            isFailed && "border-red-200 bg-red-50",
+                            !isComplete && !isFailed && "border-neutral-200 bg-white"
+                          )}
+                        >
+                          <div className="aspect-[9/16] bg-neutral-100 rounded-lg mb-2 relative overflow-hidden flex items-center justify-center">
+                            {isComplete && variation.thumbnailUrl ? (
+                              <img
+                                src={variation.thumbnailUrl}
+                                alt={variation.styleName}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : isComplete ? (
+                              <Check className="w-8 h-8 text-emerald-500" />
+                            ) : isFailed ? (
+                              <X className="w-8 h-8 text-red-500" />
+                            ) : (
+                              <div className="flex flex-col items-center gap-2">
+                                <Loader2 className="w-6 h-6 text-neutral-400 animate-spin" />
+                                <span className="text-lg font-bold text-neutral-600">
+                                  {variation.progress}%
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Style badge */}
+                            <Badge
+                              variant="secondary"
+                              className="absolute top-1.5 left-1.5 bg-neutral-800/80 text-white text-[10px] px-1.5 py-0.5"
+                            >
+                              {isKorean ? variation.styleNameKo : variation.styleName}
+                            </Badge>
+                          </div>
+
+                          {/* Status */}
+                          {isComplete && (
+                            <div className="flex items-center justify-center gap-1 text-emerald-600 text-xs font-medium">
+                              <Check className="w-3.5 h-3.5" />
+                              {isKorean ? "완료" : "Done"}
+                            </div>
+                          )}
+                          {isFailed && (
+                            <div className="flex items-center justify-center gap-1 text-red-600 text-xs font-medium">
+                              <X className="w-3.5 h-3.5" />
+                              {isKorean ? "실패" : "Failed"}
+                            </div>
+                          )}
+                          {isInProgress && (
+                            <div className="space-y-1.5">
+                              <Progress value={variation.progress} className="h-1.5" />
+                              <p className="text-[10px] text-neutral-500 text-center truncate">
+                                {variation.currentStep || (isKorean ? "처리 중..." : "Processing...")}
+                              </p>
+                            </div>
+                          )}
+                          {variation.status === "pending" && (
+                            <p className="text-xs text-neutral-400 text-center">
+                              {isKorean ? "대기 중" : "Pending"}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Footer message */}
+                  <div className="mt-6 pt-4 border-t border-neutral-200">
+                    <p className="text-sm text-neutral-500 text-center flex items-center justify-center gap-2">
+                      <Lightbulb className="w-4 h-4" />
+                      {isKorean
+                        ? "모든 베리에이션이 완료되면 자동으로 비교 화면으로 이동합니다"
+                        : "You'll be automatically redirected to comparison view when all variations are complete"}
+                    </p>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

@@ -154,7 +154,19 @@ export default function AllVideosPage() {
 
   const handleDownload = async (url: string, filename: string) => {
     try {
-      const response = await fetch(url);
+      // Get a fresh presigned URL from the download API to avoid expiration issues
+      const downloadApiResponse = await fetch(
+        `/api/v1/assets/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`
+      );
+
+      if (!downloadApiResponse.ok) {
+        throw new Error("Failed to get download URL");
+      }
+
+      const { downloadUrl } = await downloadApiResponse.json();
+
+      // Fetch the video using the fresh presigned URL
+      const response = await fetch(downloadUrl);
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');

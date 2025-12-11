@@ -484,6 +484,40 @@ async def process_ai_job(params: dict) -> AIJobResponse:
         )
 
 
+def check_aws_identity():
+    """Check AWS IAM identity for WIF debugging."""
+    logger.info("=== Checking AWS Identity for WIF ===")
+
+    try:
+        import boto3
+        sts = boto3.client('sts')
+        identity = sts.get_caller_identity()
+
+        aws_arn = identity.get('Arn', 'unknown')
+        aws_account = identity.get('Account', 'unknown')
+        aws_user_id = identity.get('UserId', 'unknown')
+
+        logger.info(f"AWS Account: {aws_account}")
+        logger.info(f"AWS ARN: {aws_arn}")
+        logger.info(f"AWS UserId: {aws_user_id}")
+
+        # Extract role name from ARN for WIF matching
+        # Format: arn:aws:sts::ACCOUNT:assumed-role/ROLE_NAME/SESSION_NAME
+        if 'assumed-role/' in aws_arn:
+            parts = aws_arn.split('assumed-role/')
+            if len(parts) > 1:
+                role_session = parts[1]
+                role_name = role_session.split('/')[0]
+                logger.info(f"Role Name (for WIF): {role_name}")
+                logger.info(f"Expected WIF attribute: arn:aws:sts::{aws_account}:assumed-role/{role_name}")
+
+        return aws_arn
+
+    except Exception as e:
+        logger.error(f"Failed to get AWS identity: {e}")
+        return None
+
+
 def test_gcp_auth():
     """Test GCP authentication."""
     logger.info("=== Testing GCP WIF Authentication ===")
@@ -519,6 +553,9 @@ def process_job():
 
     # Setup GCP credentials
     setup_gcp_credentials()
+
+    # Check AWS identity first (for WIF debugging)
+    check_aws_identity()
 
     # Test authentication first
     if not test_gcp_auth():
