@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useCallback, useMemo } from "react";
+import React, { useRef, useState, useCallback, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { Card, CardContent } from "@/components/ui/card";
@@ -90,6 +90,45 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
   const [showVariationPanel, setShowVariationPanel] = useState(false);
   const [isStartingGeneration, setIsStartingGeneration] = useState(false);
 
+  // Playable video URL (fresh presigned URL for video player)
+  const [playableVideoUrl, setPlayableVideoUrl] = useState<string | null>(null);
+  const [isLoadingVideoUrl, setIsLoadingVideoUrl] = useState(false);
+
+  // Fetch fresh presigned URL for video playback
+  useEffect(() => {
+    const fetchPlayableUrl = async () => {
+      if (!originalVideo?.outputUrl) return;
+
+      // If already a presigned URL (contains X-Amz-Signature), use it directly
+      if (originalVideo.outputUrl.includes('X-Amz-Signature')) {
+        setPlayableVideoUrl(originalVideo.outputUrl);
+        return;
+      }
+
+      // Otherwise, fetch a fresh presigned URL
+      setIsLoadingVideoUrl(true);
+      try {
+        const response = await fetch(
+          `/api/v1/assets/download?url=${encodeURIComponent(originalVideo.outputUrl)}`
+        );
+        if (response.ok) {
+          const { downloadUrl } = await response.json();
+          setPlayableVideoUrl(downloadUrl);
+        } else {
+          // Fallback to original URL
+          setPlayableVideoUrl(originalVideo.outputUrl);
+        }
+      } catch (error) {
+        console.error("Failed to fetch playable URL:", error);
+        setPlayableVideoUrl(originalVideo.outputUrl);
+      } finally {
+        setIsLoadingVideoUrl(false);
+      }
+    };
+
+    fetchPlayableUrl();
+  }, [originalVideo?.outputUrl]);
+
   // Toggle play/pause
   const togglePlay = useCallback(() => {
     if (!videoRef.current) return;
@@ -143,41 +182,55 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Handle download - fetch fresh presigned URL to avoid expiration issues
-  const handleDownload = useCallback(async () => {
-    if (!originalVideo?.outputUrl) return;
+  // Download state
+  const [isDownloading, setIsDownloading] = useState(false);
 
+  // Handle download - fetch as blob to trigger actual download (not navigation)
+  const handleDownload = useCallback(async () => {
+    if (!originalVideo?.outputUrl || isDownloading) return;
+
+    setIsDownloading(true);
     try {
       // Get a fresh presigned URL from the download API
       const filename = `video-${session?.id || "output"}.mp4`;
-      const response = await fetch(
+      const apiResponse = await fetch(
         `/api/v1/assets/download?url=${encodeURIComponent(originalVideo.outputUrl)}&filename=${encodeURIComponent(filename)}`
       );
 
-      if (!response.ok) {
+      if (!apiResponse.ok) {
         throw new Error("Failed to get download URL");
       }
 
-      const { downloadUrl } = await response.json();
+      const { downloadUrl, filename: responseFilename } = await apiResponse.json();
 
-      // Trigger download with fresh presigned URL
+      // Fetch the video as blob to enable actual download (not navigation)
+      // This is necessary because download attribute doesn't work for cross-origin URLs
+      const videoResponse = await fetch(downloadUrl);
+      if (!videoResponse.ok) {
+        throw new Error("Failed to fetch video");
+      }
+
+      const blob = await videoResponse.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      // Trigger download with blob URL
       const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = filename;
+      link.href = blobUrl;
+      link.download = responseFilename || filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      // Clean up blob URL after a short delay
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
     } catch (error) {
       console.error("Download failed:", error);
-      // Fallback to direct URL (may fail if expired)
-      const link = document.createElement("a");
-      link.href = originalVideo.outputUrl;
-      link.download = `video-${session?.id || "output"}.mp4`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Fallback: open in new tab
+      window.open(originalVideo.outputUrl, "_blank");
+    } finally {
+      setIsDownloading(false);
     }
-  }, [originalVideo?.outputUrl, session?.id]);
+  }, [originalVideo?.outputUrl, session?.id, isDownloading]);
 
   // Toggle variation panel
   const handleToggleVariationPanel = useCallback(() => {
@@ -240,10 +293,14 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
             <CardContent className="p-0">
               {/* Video */}
               <div className="aspect-[9/16] max-h-[65vh] bg-black relative mx-auto">
-                {originalVideo.outputUrl ? (
+                {isLoadingVideoUrl ? (
+                  <div className="w-full h-full flex items-center justify-center text-neutral-400">
+                    <Loader2 className="w-8 h-8 animate-spin" />
+                  </div>
+                ) : playableVideoUrl ? (
                   <video
                     ref={videoRef}
-                    src={originalVideo.outputUrl}
+                    src={playableVideoUrl}
                     className="w-full h-full object-contain cursor-pointer"
                     loop
                     playsInline
@@ -259,7 +316,7 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
                 )}
 
                 {/* Play overlay when paused */}
-                {!isPlaying && originalVideo.outputUrl && (
+                {!isPlaying && playableVideoUrl && (
                   <div
                     className="absolute inset-0 flex items-center justify-center cursor-pointer bg-black/20"
                     onClick={togglePlay}
@@ -325,9 +382,19 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
                     size="sm"
                     className="text-neutral-400 hover:text-white hover:bg-white/10"
                     onClick={handleDownload}
+                    disabled={isDownloading}
                   >
-                    <Download className="w-4 h-4 mr-1.5" />
-                    {isKorean ? "다운로드" : "Download"}
+                    {isDownloading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                        {isKorean ? "다운로드 중..." : "Downloading..."}
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4 mr-1.5" />
+                        {isKorean ? "다운로드" : "Download"}
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>

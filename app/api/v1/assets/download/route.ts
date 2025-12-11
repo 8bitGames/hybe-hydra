@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPresignedUrl } from "@/lib/storage";
+import { getPresignedUrl, getPresignedUrlFromS3Url } from "@/lib/storage";
 
 /**
  * GET /api/v1/assets/download?url=<s3_url>&filename=<optional_filename>
  * Returns a fresh presigned URL for downloading S3 objects
- * The presigned URL includes Content-Disposition header for proper download behavior
+ * Supports both default bucket URLs and cross-bucket S3 URLs
  */
 export async function GET(request: NextRequest) {
   try {
@@ -18,24 +18,38 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Extract the S3 key from the URL
-    const s3Key = extractS3Key(url);
+    let presignedUrl: string;
+    let extractedFilename: string;
 
-    if (!s3Key) {
-      return NextResponse.json(
-        { error: "Invalid S3 URL format" },
-        { status: 400 }
-      );
+    // Check if it's a full S3 URL (from any bucket)
+    const s3UrlMatch = url.match(/https:\/\/([^.]+)\.s3\.([^.]+)\.amazonaws\.com\/(.+)/);
+
+    if (s3UrlMatch) {
+      // Full S3 URL - use cross-bucket presigned URL generation
+      const [, , , key] = s3UrlMatch;
+      presignedUrl = await getPresignedUrlFromS3Url(url, 3600);
+      extractedFilename = extractFilename(key);
+    } else {
+      // Try to extract key for default bucket
+      const s3Key = extractS3Key(url);
+
+      if (!s3Key) {
+        return NextResponse.json(
+          { error: "Invalid S3 URL format" },
+          { status: 400 }
+        );
+      }
+
+      // Generate presigned URL (valid for 1 hour)
+      presignedUrl = await getPresignedUrl(s3Key, 3600);
+      extractedFilename = extractFilename(s3Key);
     }
-
-    // Generate presigned URL (valid for 1 hour)
-    const presignedUrl = await getPresignedUrl(s3Key, 3600);
 
     // Return the download URL
     // Client will use this URL to trigger download
     return NextResponse.json({
       downloadUrl: presignedUrl,
-      filename: filename || extractFilename(s3Key),
+      filename: filename || extractedFilename,
     });
   } catch (error) {
     console.error("Download URL generation error:", error);
