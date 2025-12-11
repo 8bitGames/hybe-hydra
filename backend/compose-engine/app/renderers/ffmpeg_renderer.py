@@ -251,8 +251,10 @@ class FFmpegRenderer:
 
             output_size = self._get_output_size(request.settings.aspect_ratio.value)
             logger.info(f"[{job_id}] [STEP 5/11] Output size: {output_size[0]}x{output_size[1]}")
-            motion_styles = get_diverse_motion_styles(num_clips, "alternate")
-            logger.info(f"[{job_id}] [STEP 5/11] Motion styles: {motion_styles[:5]}{'...' if len(motion_styles) > 5 else ''}")
+            # OVERRIDE: Force all images to be static (no zoom/pan motion)
+            # This ensures beat-synced cuts without distracting motion effects
+            motion_styles = ["static"] * num_clips
+            logger.info(f"[{job_id}] [STEP 5/11] Motion styles: ALL STATIC (no zoom/pan) for {num_clips} clips")
 
             # Build clip specifications with variable durations
             clip_specs = []

@@ -1,0 +1,148 @@
+{
+  "testCases": [
+    {
+      "id": "test-1-slow-bpm-5-images-6s",
+      "description": "Slow BPM (73.8), 5 images, 6 seconds",
+      "music": "music.mp3",
+      "musicBpm": 73.8,
+      "targetDuration": 6,
+      "numImages": 5,
+      "images": [
+        "0C1A6965-scaled.jpg",
+        "Hannah-Lylene-Dallas-Fort-Worth-Photographer-4179.jpg",
+        "country-couple-pictures-gk9xq8y1z17krr3y.jpg",
+        "MG_4780-Edit-683x1024.jpg",
+        "4ff14bd3fc0cb99640f90bf0566bb1da.jpg"
+      ],
+      "script": {
+        "lines": [
+          {"text": "Beautiful moments", "timing": 0, "duration": 3},
+          {"text": "Together forever", "timing": 3, "duration": 3}
+        ]
+      }
+    },
+    {
+      "id": "test-2-medium-bpm-7-images-10s",
+      "description": "Medium BPM (82.0), 7 images, 10 seconds",
+      "music": "aggressive-techno-421104.mp3",
+      "musicBpm": 82.0,
+      "targetDuration": 10,
+      "numImages": 7,
+      "images": [
+        "0C1A6965-scaled.jpg",
+        "Hannah-Lylene-Dallas-Fort-Worth-Photographer-4179.jpg",
+        "country-couple-pictures-gk9xq8y1z17krr3y.jpg",
+        "MG_4780-Edit-683x1024.jpg",
+        "4ff14bd3fc0cb99640f90bf0566bb1da.jpg",
+        "8048e99f2d5753a219b9c5783708b4dd.jpg",
+        "backround+lovers+country+couple+michigan+couple+photographer.webp"
+      ],
+      "script": {
+        "lines": [
+          {"text": "Energy rising", "timing": 0, "duration": 3},
+          {"text": "Feel the beat", "timing": 3, "duration": 3.5},
+          {"text": "Moving forward", "timing": 6.5, "duration": 3.5}
+        ]
+      }
+    },
+    {
+      "id": "test-3-fast-bpm-10-images-13s",
+      "description": "Fast BPM (144.2), 10 images, 13 seconds",
+      "music": "pounding-industrial-techno-instrumental-248320.mp3",
+      "musicBpm": 144.2,
+      "targetDuration": 13,
+      "numImages": 9,
+      "images": [
+        "0C1A6965-scaled.jpg",
+        "Hannah-Lylene-Dallas-Fort-Worth-Photographer-4179.jpg",
+        "country-couple-pictures-gk9xq8y1z17krr3y.jpg",
+        "MG_4780-Edit-683x1024.jpg",
+        "4ff14bd3fc0cb99640f90bf0566bb1da.jpg",
+        "8048e99f2d5753a219b9c5783708b4dd.jpg",
+        "backround+lovers+country+couple+michigan+couple+photographer.webp",
+        "summer+country+engagement+pictures+3.webp",
+        "rs_634x1024-181114165856-634-kane-brown-katelyn-cmas-2018.avif"
+      ],
+      "script": {
+        "lines": [
+          {"text": "High energy", "timing": 0, "duration": 2.5},
+          {"text": "Fast pace", "timing": 2.5, "duration": 3},
+          {"text": "Pure intensity", "timing": 5.5, "duration": 3.5},
+          {"text": "Keep going", "timing": 9, "duration": 4}
+        ]
+      }
+    },
+    {
+      "id": "test-4-fast-bpm-8-images-8s",
+      "description": "Fast BPM (144.2), 8 images, 8 seconds",
+      "music": "pounding-industrial-techno-instrumental-248320.mp3",
+      "musicBpm": 144.2,
+      "targetDuration": 8,
+      "numImages": 8,
+      "images": [
+        "0C1A6965-scaled.jpg",
+        "Hannah-Lylene-Dallas-Fort-Worth-Photographer-4179.jpg",
+        "country-couple-pictures-gk9xq8y1z17krr3y.jpg",
+        "MG_4780-Edit-683x1024.jpg",
+        "4ff14bd3fc0cb99640f90bf0566bb1da.jpg",
+        "8048e99f2d5753a219b9c5783708b4dd.jpg",
+        "backround+lovers+country+couple+michigan+couple+photographer.webp",
+        "summer+country+engagement+pictures+3.webp"
+      ],
+      "script": {
+        "lines": [
+          {"text": "Quick cuts", "timing": 0, "duration": 4},
+          {"text": "Beat sync", "timing": 4, "duration": 4}
+        ]
+      }
+    },
+    {
+      "id": "test-5-slow-bpm-6-images-9s",
+      "description": "Slow BPM (73.8), 6 images, 9 seconds",
+      "music": "music.mp3",
+      "musicBpm": 73.8,
+      "targetDuration": 9,
+      "numImages": 6,
+      "images": [
+        "0C1A6965-scaled.jpg",
+        "Hannah-Lylene-Dallas-Fort-Worth-Photographer-4179.jpg",
+        "country-couple-pictures-gk9xq8y1z17krr3y.jpg",
+        "MG_4780-Edit-683x1024.jpg",
+        "4ff14bd3fc0cb99640f90bf0566bb1da.jpg",
+        "8048e99f2d5753a219b9c5783708b4dd.jpg"
+      ],
+      "script": {
+        "lines": [
+          {"text": "Slow and steady", "timing": 0, "duration": 4.5},
+          {"text": "Perfect rhythm", "timing": 4.5, "duration": 4.5}
+        ]
+      }
+    },
+    {
+      "id": "test-6-medium-bpm-9-images-12s",
+      "description": "Medium BPM (82.0), 9 images, 12 seconds",
+      "music": "aggressive-techno-421104.mp3",
+      "musicBpm": 82.0,
+      "targetDuration": 12,
+      "numImages": 9,
+      "images": [
+        "0C1A6965-scaled.jpg",
+        "Hannah-Lylene-Dallas-Fort-Worth-Photographer-4179.jpg",
+        "country-couple-pictures-gk9xq8y1z17krr3y.jpg",
+        "MG_4780-Edit-683x1024.jpg",
+        "4ff14bd3fc0cb99640f90bf0566bb1da.jpg",
+        "8048e99f2d5753a219b9c5783708b4dd.jpg",
+        "backround+lovers+country+couple+michigan+couple+photographer.webp",
+        "summer+country+engagement+pictures+3.webp",
+        "rs_634x1024-181114165856-634-kane-brown-katelyn-cmas-2018.avif"
+      ],
+      "script": {
+        "lines": [
+          {"text": "Medium tempo", "timing": 0, "duration": 3},
+          {"text": "Balanced pace", "timing": 3, "duration": 4},
+          {"text": "Smooth flow", "timing": 7, "duration": 5}
+        ]
+      }
+    }
+  ]
+}

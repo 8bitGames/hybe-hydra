@@ -1,0 +1,21 @@
+{
+  "images": {
+    "0C1A6965-scaled.jpg": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/images/0C1A6965-scaled.jpg",
+    "Hannah-Lylene-Dallas-Fort-Worth-Photographer-4179.jpg": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/images/Hannah-Lylene-Dallas-Fort-Worth-Photographer-4179.jpg",
+    "country-couple-pictures-gk9xq8y1z17krr3y.jpg": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/images/country-couple-pictures-gk9xq8y1z17krr3y.jpg",
+    "MG_4780-Edit-683x1024.jpg": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/images/MG_4780-Edit-683x1024.jpg",
+    "4ff14bd3fc0cb99640f90bf0566bb1da.jpg": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/images/4ff14bd3fc0cb99640f90bf0566bb1da.jpg",
+    "8048e99f2d5753a219b9c5783708b4dd.jpg": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/images/8048e99f2d5753a219b9c5783708b4dd.jpg",
+    "backround+lovers+country+couple+michigan+couple+photographer.webp": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/images/backround+lovers+country+couple+michigan+couple+photographer.webp",
+    "summer+country+engagement+pictures+3.webp": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/images/summer+country+engagement+pictures+3.webp",
+    "rs_634x1024-181114165856-634-kane-brown-katelyn-cmas-2018.avif": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/images/rs_634x1024-181114165856-634-kane-brown-katelyn-cmas-2018.avif"
+  },
+  "music": {
+    "music.mp3": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/music/music.mp3",
+    "aggressive-techno-421104.mp3": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/music/aggressive-techno-421104.mp3",
+    "pounding-industrial-techno-instrumental-248320.mp3": "https://hydra-assets-hybe.s3.ap-southeast-2.amazonaws.com/test-data/batch-tests/music/pounding-industrial-techno-instrumental-248320.mp3"
+  },
+  "bucket": "hydra-assets-hybe",
+  "prefix": "test-data/batch-tests",
+  "uploadedAt": "2025-12-11T13:08:34.927Z"
+}
