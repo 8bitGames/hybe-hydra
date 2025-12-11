@@ -25,8 +25,6 @@ from ..services.audio_analyzer import AudioAnalyzer
 from ..services.beat_sync import BeatSyncEngine
 from ..services.image_processor import ImageProcessor
 from ..effects import get_registry, EffectSelector, SelectionConfig, SelectedEffects
-from ..effects.renderers import get_renderer
-from ..effects.renderers.adapter import TransitionSpec
 from ..presets import get_preset
 from ..utils.s3_client import S3Client
 from ..utils.temp_files import TempFileManager
@@ -85,8 +83,6 @@ class FFmpegRenderer:
         self.temp = TempFileManager()
         self.effect_selector = EffectSelector()
         self.audio_processor = AudioProcessor()
-        # Keep xfade renderer for transitions (already FFmpeg-native)
-        self.renderer_adapter = get_renderer(prefer_gpu=True)
         logger.info("[FFmpegRenderer] Initialization complete")
 
     async def render(
@@ -323,25 +319,23 @@ class FFmpegRenderer:
                     logger.info(f"[{job_id}] [STEP 6/11] AI effects selection failed, using defaults")
 
             # =================================================================
-            # STEP 7: APPLY TRANSITIONS (using xfade - already FFmpeg)
+            # STEP 7: CONCATENATE CLIPS (direct cuts, no transitions)
             # =================================================================
             step_start = time.time()
-            await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
-            logger.info(f"[{job_id}] [STEP 7/11] Applying xfade transitions to {len(clip_paths)} clips...")
+            await self._update_progress(progress_callback, job_id, 55, "Concatenating clips")
+            logger.info(f"[{job_id}] [STEP 7/11] Concatenating {len(clip_paths)} clips (direct cuts)...")
 
-            video_path = await self._apply_transitions_xfade(
+            video_path = await self._concatenate_clips(
                 clip_paths=clip_paths,
-                ai_effects=ai_effects,
-                preset=preset,
                 job_dir=job_dir,
                 job_id=job_id,
             )
             step_time = time.time() - step_start
             if os.path.exists(video_path):
                 video_size = os.path.getsize(video_path) / (1024 * 1024)
-                logger.info(f"[{job_id}] [STEP 7/11] Transitions complete in {step_time:.1f}s, output: {video_path} ({video_size:.1f}MB)")
+                logger.info(f"[{job_id}] [STEP 7/11] Concatenation complete in {step_time:.1f}s, output: {video_path} ({video_size:.1f}MB)")
             else:
-                logger.error(f"[{job_id}] [STEP 7/11] Transition output missing: {video_path}")
+                logger.error(f"[{job_id}] [STEP 7/11] Concatenation output missing: {video_path}")
 
             # =================================================================
             # STEP 8: COLOR GRADING & OVERLAY EFFECTS (FFmpeg)
@@ -713,79 +707,17 @@ class FFmpegRenderer:
             logger.warning(f"[{job_id}] AI effect selection failed: {e}")
             return None
 
-    async def _apply_transitions_xfade(
+    async def _concatenate_clips(
         self,
         clip_paths: List[str],
-        ai_effects: Optional[AIEffectSelection],
-        preset,
         job_dir: str,
         job_id: str,
     ) -> str:
-        """Apply transitions using xfade renderer."""
-        from ..effects.renderers.xfade_renderer import XfadeRenderer, ClipSegment
-        from .utils.ffprobe import get_duration
-
-        xfade = XfadeRenderer(self.ffmpeg)
-        output_path = os.path.join(job_dir, f"{job_id}_transitions.mp4")
-
-        # Valid FFmpeg xfade transitions
-        VALID_XFADE = {
-            "fade", "fadeblack", "fadewhite", "slideleft", "slideright", "slideup", "slidedown",
-            "circlecrop", "rectcrop", "distance", "wipeleft", "wiperight", "wipeup", "wipedown",
-            "smoothleft", "smoothright", "smoothup", "smoothdown", "circleopen", "circleclose",
-            "vertopen", "vertclose", "horzopen", "horzclose", "dissolve", "pixelize",
-            "diagtl", "diagtr", "diagbl", "diagbr", "hlslice", "hrslice", "vuslice", "vdslice",
-            "hblur", "fadegrays", "wipetl", "wipetr", "wipebl", "wipebr", "squeezeh", "squeezev",
-            "zoomin", "hlwind", "hrwind", "vuwind", "vdwind", "coverleft", "coverright",
-            "coverup", "coverdown", "revealleft", "revealright", "revealup", "revealdown"
-        }
-
-        # Map custom transitions to valid xfade equivalents
-        TRANSITION_MAP = {
-            "zoom_beat": "zoomin",
-            "bounce": "squeezev",
-            "swirl": "circleopen",
-            "glitch_wave": "pixelize",
-            "pulse_flow": "dissolve",
-            "crossfade": "fade",
-            "cut": "fade",  # No direct equivalent, use fade with short duration
-        }
-
-        # Determine transition type
-        if ai_effects and ai_effects.transitions:
-            transition_type = ai_effects.transitions[0]
-            # Strip gl_ or xfade_ prefix if present
-            if transition_type.startswith("gl_"):
-                transition_type = transition_type[3:]
-            elif transition_type.startswith("xfade_"):
-                transition_type = transition_type[6:]
-        else:
-            transition_type = preset.transition_type or "fade"
-
-        # Map to valid xfade transition
-        original_type = transition_type
-        if transition_type in TRANSITION_MAP:
-            transition_type = TRANSITION_MAP[transition_type]
-        elif transition_type not in VALID_XFADE:
-            transition_type = "fade"  # Fallback to fade
-
-        logger.info(f"[{job_id}] Transition type: {original_type} -> {transition_type}")
-
-        # Build ClipSegment objects with durations
-        clips = []
-        for i, path in enumerate(clip_paths):
-            try:
-                duration = await get_duration(path)
-                clips.append(ClipSegment(path=path, duration=duration, start_time=0.0))
-                logger.debug(f"[{job_id}] Clip {i}: {path} ({duration:.2f}s)")
-            except Exception as e:
-                logger.warning(f"[{job_id}] Could not get duration for {path}: {e}")
-                clips.append(ClipSegment(path=path, duration=0.6, start_time=0.0))
-
-        # Use direct cuts (no transitions) - simple concatenation
-        logger.info(f"[{job_id}] Using direct cuts (no transitions): {len(clips)} clips")
-        concat_output = os.path.join(job_dir, f"{job_id}_concat.mp4")
+        """Concatenate clips using simple direct cuts (no transitions)."""
         from .ffmpeg_pipeline import concatenate_clips_simple
+
+        logger.info(f"[{job_id}] Using direct cuts (no transitions): {len(clip_paths)} clips")
+        concat_output = os.path.join(job_dir, f"{job_id}_concat.mp4")
         await concatenate_clips_simple(clip_paths, concat_output, job_id)
         return concat_output
 

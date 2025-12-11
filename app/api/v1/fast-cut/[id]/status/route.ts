@@ -87,22 +87,28 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
     }
 
-    // Get Modal call ID from qualityMetadata
+    // Get call ID from qualityMetadata (supports both Fast Cut and AI I2V)
     const metadata = generation.qualityMetadata as Record<string, unknown> | null;
+    // Fast Cut uses modalCallId, AI I2V uses batch_job_id
     const modalCallId = metadata?.modalCallId as string | undefined;
+    const batchJobId = metadata?.batch_job_id as string | undefined;
+    const callId = modalCallId || batchJobId;
     const renderBackend = metadata?.renderBackend as string | undefined;
     const createdAt = metadata?.createdAt as string | undefined;
+    const jobType = metadata?.job_type as string | undefined;
 
     console.log(`${LOG_PREFIX} Metadata:`, {
       hasModalCallId: !!modalCallId,
-      modalCallIdPreview: modalCallId?.substring(0, 20) + '...',
+      hasBatchJobId: !!batchJobId,
+      callIdPreview: callId?.substring(0, 20) + '...',
       renderBackend: renderBackend || '(not set)',
       createdAt: createdAt || '(not set)',
+      jobType: jobType || '(not set)',
     });
 
-    if (!modalCallId) {
-      // No Modal call ID - might be an old job or error
-      console.warn(`${LOG_PREFIX} No modalCallId found - returning DB status (${Date.now() - requestStartTime}ms total)`);
+    if (!callId) {
+      // No call ID - might be an old job or error
+      console.warn(`${LOG_PREFIX} No callId found (modalCallId or batch_job_id) - returning DB status (${Date.now() - requestStartTime}ms total)`);
       const rawOutputUrl = generation.composedOutputUrl || generation.outputUrl;
       const outputUrl = rawOutputUrl ? await getPresignedUrlFromS3Url(rawOutputUrl) : null;
       return NextResponse.json({
@@ -114,23 +120,23 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
     }
 
-    // Poll Modal for current status
+    // Poll backend for current status (supports Modal, AWS Batch, and Local)
     console.log(`${LOG_PREFIX} Polling backend for status...`);
     const backendPollStart = Date.now();
     try {
-      const modalStatus = await getModalRenderStatus(modalCallId);
+      const backendStatus = await getModalRenderStatus(callId);
       const backendPollMs = Date.now() - backendPollStart;
 
       console.log(`${LOG_PREFIX} Backend response (${backendPollMs}ms):`, {
         generationId,
-        modalCallId: modalCallId.substring(0, 20) + '...',
-        backendStatus: modalStatus.status,
-        hasResult: !!modalStatus.result,
-        hasOutputUrl: !!modalStatus.result?.output_url,
-        hasError: !!modalStatus.error || !!modalStatus.result?.error,
+        callId: callId.substring(0, 20) + '...',
+        backendStatus: backendStatus.status,
+        hasResult: !!backendStatus.result,
+        hasOutputUrl: !!backendStatus.result?.output_url,
+        hasError: !!backendStatus.error || !!backendStatus.result?.error,
       });
 
-      if (modalStatus.status === 'completed') {
+      if (backendStatus.status === 'completed') {
         console.log(`${LOG_PREFIX} Backend reports COMPLETED - checking for output URL...`);
         // For AWS Batch, output_url comes from callback, not from status check
         // Check if we already have the output URL in database (set by callback)
@@ -149,7 +155,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           hasOutputUrl: !!freshGeneration?.outputUrl,
         });
 
-        const outputUrl = modalStatus.result?.output_url ||
+        const outputUrl = backendStatus.result?.output_url ||
                          freshGeneration?.composedOutputUrl ||
                          freshGeneration?.outputUrl;
 
@@ -218,11 +224,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
         }
       }
 
-      if (modalStatus.status === 'failed' || modalStatus.status === 'error') {
-        const errorMsg = modalStatus.result?.error || modalStatus.error || 'Modal render failed';
+      if (backendStatus.status === 'failed' || backendStatus.status === 'error') {
+        const errorMsg = backendStatus.result?.error || backendStatus.error || 'Render failed';
         console.error(`${LOG_PREFIX} ❌ Backend reports FAILED:`, {
           errorMsg: errorMsg.substring(0, 200),
-          backendStatus: modalStatus.status,
+          backendStatus: backendStatus.status,
         });
 
         const updateStart = Date.now();
@@ -282,7 +288,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         backendName,
         elapsedSeconds: Math.round(elapsedSeconds),
         estimatedProgress,
-        backendStatus: modalStatus.status,
+        backendStatus: backendStatus.status,
       });
 
       return NextResponse.json({

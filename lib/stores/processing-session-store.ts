@@ -71,11 +71,17 @@ export interface VariationVideo {
   approval: ApprovalStatus;
 }
 
+// Content type for workflow stages display
+export type ContentType = "ai_video" | "fast-cut";
+
 // Full session data
 export interface ProcessingSession {
   id: string;
   state: ProcessingSessionState;
   createdAt: string;
+
+  // Content type for workflow stage display
+  contentType: ContentType;
 
   // Campaign context
   campaignId: string;
@@ -176,6 +182,7 @@ const createInitialSession = (): ProcessingSession => ({
   id: "",
   state: "GENERATING",
   createdAt: new Date().toISOString(),
+  contentType: "ai_video",
   campaignId: "",
   campaignName: "",
   originalVideo: {
@@ -211,6 +218,7 @@ interface ProcessingSessionStoreState {
     campaignName: string;
     content: SessionContent;
     generationId?: string;
+    contentType?: ContentType;
   }) => void;
   clearSession: () => void;
 
@@ -290,6 +298,7 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
               id: sessionId,
               state: "GENERATING",
               createdAt: new Date().toISOString(),
+              contentType: data.contentType || "ai_video",
               campaignId: data.campaignId,
               campaignName: data.campaignName,
               originalVideo: {
@@ -769,11 +778,17 @@ export const useProcessingSessionHydrated = () => {
 // SELECTORS
 // ============================================
 
+// Stable empty array references to prevent infinite re-renders
+// React 18's useSyncExternalStore requires getSnapshot to return cached values
+const EMPTY_VARIATIONS: VariationVideo[] = [];
+const EMPTY_STYLES: string[] = [];
+
 export const selectSession = (state: ProcessingSessionStoreState) => state.session;
 export const selectSessionState = (state: ProcessingSessionStoreState) => state.session?.state;
 export const selectOriginalVideo = (state: ProcessingSessionStoreState) => state.session?.originalVideo;
-export const selectVariations = (state: ProcessingSessionStoreState) => state.session?.variations || [];
+export const selectVariations = (state: ProcessingSessionStoreState) =>
+  state.session?.variations ?? EMPTY_VARIATIONS;
 export const selectSelectedStyles = (state: ProcessingSessionStoreState) =>
-  state.session?.variationConfig.selectedStyles || [];
+  state.session?.variationConfig.selectedStyles ?? EMPTY_STYLES;
 export const selectIsGeneratingVariations = (state: ProcessingSessionStoreState) =>
-  state.session?.variationConfig.isGenerating || false;
+  state.session?.variationConfig.isGenerating ?? false;

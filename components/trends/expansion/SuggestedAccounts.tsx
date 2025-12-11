@@ -79,7 +79,7 @@ export function SuggestedAccounts({
           {creators.map((creator) => (
             <a
               key={creator.id}
-              href={getTikTokProfileUrl(creator.name)}
+              href={getTikTokProfileUrl(creator.id)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-3 p-2.5 rounded-lg border hover:bg-accent/50 transition-colors block"

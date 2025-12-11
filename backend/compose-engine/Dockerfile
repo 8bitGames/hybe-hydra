@@ -85,6 +85,7 @@ RUN git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git /tmp/ffm
 # Set FFmpeg environment variables
 ENV IMAGEIO_FFMPEG_EXE=/usr/local/bin/ffmpeg
 ENV FFMPEG_BINARY=/usr/local/bin/ffmpeg
+ENV FFPROBE_BINARY=/usr/local/bin/ffprobe
 # Include NVIDIA runtime library paths for NVENC support on AWS ECS
 # - /usr/local/nvidia/lib64: NVIDIA container runtime mounts driver libs here
 ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu

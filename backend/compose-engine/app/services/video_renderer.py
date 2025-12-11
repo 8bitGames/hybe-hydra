@@ -43,8 +43,6 @@ from .beat_sync import BeatSyncEngine, MIN_IMAGE_DURATION
 from .image_processor import ImageProcessor
 from ..effects import transitions, filters, text_overlay, motion
 from ..effects import get_registry, EffectSelector, SelectionConfig, SelectedEffects
-from ..effects.renderers import get_renderer, RendererAdapter
-from ..effects.renderers.adapter import TransitionSpec
 from ..presets import get_preset
 from ..utils.s3_client import S3Client
 from ..utils.temp_files import TempFileManager
@@ -120,7 +118,6 @@ class VideoRenderer:
         self.image_processor = ImageProcessor()
         self.temp = TempFileManager()
         self.effect_selector = EffectSelector()
-        self.renderer_adapter = get_renderer(prefer_gpu=True)
 
     async def render(
         self,
@@ -258,81 +255,12 @@ class VideoRenderer:
             # ============================================================
             # STEP 7: APPLY TRANSITIONS AND CONCATENATE
             # ============================================================
-            logger.info(f"[{job_id}] STEP 7: Applying transitions...")
-            await self._update_progress(progress_callback, job_id, 55, "Applying transitions")
+            logger.info(f"[{job_id}] STEP 7: Concatenating clips (direct cuts, no transitions)...")
+            await self._update_progress(progress_callback, job_id, 55, "Concatenating clips")
 
-            # Apply transitions based on style
-            # ALWAYS use xfade renderer for reliability - MoviePy transitions can hang
-            try:
-                if ai_effects and ai_effects.transitions:
-                    logger.info(f"[{job_id}] Applying {len(ai_effects.transitions)} AI transitions via xfade")
-                    video = await self._apply_ai_transitions_with_effects(
-                        clips, ai_effects, preset, job_dir, job_id
-                    )
-                else:
-                    # Use preset-based transitions via xfade renderer (not MoviePy)
-                    logger.info(f"[{job_id}] Applying preset transitions via xfade: {preset.transition_type}")
-                    video = await self._apply_preset_transitions_via_xfade(
-                        clips, preset, job_dir, job_id
-                    )
-            except Exception as e:
-                logger.warning(f"[{job_id}] Transition failed, using simple concatenate: {e}")
-                video = concatenate_videoclips(clips, method="compose")
+            # Simple concatenation - no xfade transitions (they were causing issues)
+            video = concatenate_videoclips(clips, method="compose")
             logger.info(f"[{job_id}] STEP 7 COMPLETE: video duration={video.duration:.2f}s")
-
-            # Check if we have an xfade output file that we can use directly
-            # This skips MoviePy post-processing which can hang
-            xfade_output = self.temp.get_path(job_id, f"{job_id}_xfade_output.mp4")
-            import os
-            if os.path.exists(xfade_output) and not (request.script and request.script.lines):
-                # FAST PATH: Use xfade output directly (skip text/color/effects)
-                # Only do this when there's no text to overlay
-                logger.info(f"[{job_id}] FAST PATH: Using xfade output directly (no text overlays)")
-
-                # Add audio using FFmpeg directly instead of MoviePy
-                output_path = self.temp.get_path(job_id, "output.mp4")
-                if audio_path and request.audio:
-                    logger.info(f"[{job_id}] Adding audio via FFmpeg...")
-                    await self._update_progress(progress_callback, job_id, 85, "Adding audio")
-                    import subprocess
-                    # Mix audio with video using FFmpeg
-                    ffmpeg_cmd = [
-                        "ffmpeg", "-y",
-                        "-i", xfade_output,
-                        "-i", audio_path,
-                        "-c:v", "copy",  # Copy video stream (no re-encode!)
-                        "-c:a", "aac",
-                        "-b:a", "192k",
-                        "-shortest",
-                        output_path
-                    ]
-                    logger.info(f"[{job_id}] FFmpeg audio mix: {' '.join(ffmpeg_cmd)}")
-                    result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-                    if result.returncode != 0:
-                        logger.error(f"[{job_id}] FFmpeg audio mix failed: {result.stderr}")
-                        # Fallback: just copy video without audio
-                        import shutil
-                        shutil.copy(xfade_output, output_path)
-                else:
-                    # No audio - just copy xfade output
-                    import shutil
-                    shutil.copy(xfade_output, output_path)
-
-                logger.info(f"[{job_id}] FAST PATH complete: {output_path}")
-                await self._update_progress(progress_callback, job_id, 95, "Uploading")
-
-                # Upload and cleanup
-                # Note: S3Client uses bucket from settings (Secrets Manager: hydra-assets-seoul)
-                s3_url = await self.s3.upload_file(
-                    output_path,
-                    request.output.s3_key,
-                    content_type="video/mp4"
-                )
-                logger.info(f"[{job_id}] Upload complete: {s3_url}")
-                self._cleanup_clips(video, clips, [])
-                await self._update_progress(progress_callback, job_id, 100, "Completed")
-
-                return s3_url
 
             # ============================================================
             # STEP 8: ADD TEXT OVERLAYS (with AI-selected animations)
@@ -904,209 +832,6 @@ class VideoRenderer:
                 pass
 
         gc.collect()
-
-    async def _apply_ai_transitions(
-        self,
-        clips: List[ImageClip],
-        settings: RenderSettings,
-        num_images: int,
-        bpm: Optional[float],
-        preset,
-        job_dir: str,
-        job_id: str
-    ) -> CompositeVideoClip:
-        """
-        Apply AI-selected transitions to clips.
-
-        Uses either pre-selected effects from settings.ai_effects
-        or auto-selects based on ai_prompt using the EffectSelector.
-        """
-        try:
-            # Get AI effects (pre-selected or auto-select)
-            ai_effects = await self._get_ai_effects(settings, num_images, bpm, job_id)
-
-            if not ai_effects.transitions:
-                # Fallback to default preset if no AI transitions
-                logger.warning(f"[{job_id}] No AI transitions selected, using preset fallback")
-                effect_preset = settings.effect_preset.value if settings.effect_preset else preset.transition_type
-                transition_func = transitions.get_transition(effect_preset)
-                return transition_func(clips, duration=preset.transition_duration)
-
-            # Build transition specs from AI selections
-            # Ensure each transition uses a different effect for variety
-            transition_specs = []
-            num_transitions_needed = len(clips) - 1
-            available_effects = ai_effects.transitions.copy()
-
-            for i in range(num_transitions_needed):
-                if available_effects:
-                    # Use each effect once before repeating
-                    effect_id = available_effects.pop(0)
-                    # Refill when exhausted (only if we need more than available)
-                    if not available_effects and i < num_transitions_needed - 1:
-                        available_effects = ai_effects.transitions.copy()
-                else:
-                    # Fallback to cycling if something goes wrong
-                    effect_id = ai_effects.transitions[i % len(ai_effects.transitions)]
-
-                transition_specs.append(TransitionSpec(
-                    effect_id=effect_id,
-                    duration=preset.transition_duration
-                ))
-
-            # Log all transitions to verify diversity
-            all_effects = [t.effect_id for t in transition_specs]
-            print(f"[VIDEO_RENDERER][{job_id}] About to apply {len(transition_specs)} AI transitions: {all_effects}")
-            logger.info(f"[{job_id}] Applying {len(transition_specs)} AI transitions: {all_effects}")
-
-            # Use renderer adapter (with xfade fallback)
-            video = self.renderer_adapter.apply_transitions_to_clips(
-                clips=clips,
-                transitions=transition_specs,
-                temp_dir=job_dir,
-                job_id=job_id
-            )
-
-            if video is not None:
-                return video
-
-            # Fallback if adapter fails
-            logger.warning(f"[{job_id}] Renderer adapter failed, using MoviePy fallback")
-            transition_func = transitions.get_transition("crossfade")
-            return transition_func(clips, duration=preset.transition_duration)
-
-        except Exception as e:
-            logger.error(f"[{job_id}] AI transition error: {e}, using preset fallback")
-            effect_preset = settings.effect_preset.value if settings.effect_preset else preset.transition_type
-            transition_func = transitions.get_transition(effect_preset)
-            return transition_func(clips, duration=preset.transition_duration)
-
-    async def _apply_ai_transitions_with_effects(
-        self,
-        clips: List[ImageClip],
-        ai_effects: AIEffectSelection,
-        preset,
-        job_dir: str,
-        job_id: str
-    ) -> CompositeVideoClip:
-        """
-        Apply AI-selected transitions using pre-fetched effects.
-
-        This is a variant of _apply_ai_transitions that takes already-fetched
-        AI effects to allow sharing between transitions and text animations.
-        """
-        try:
-            if not ai_effects.transitions:
-                # Fallback to default preset if no AI transitions
-                logger.warning(f"[{job_id}] No AI transitions selected, using preset fallback")
-                transition_func = transitions.get_transition(preset.transition_type)
-                return transition_func(clips, duration=preset.transition_duration)
-
-            # Build transition specs from AI selections
-            # Ensure each transition uses a different effect for variety
-            transition_specs = []
-            num_transitions_needed = len(clips) - 1
-            available_effects = ai_effects.transitions.copy()
-
-            for i in range(num_transitions_needed):
-                if available_effects:
-                    # Use each effect once before repeating
-                    effect_id = available_effects.pop(0)
-                    # Refill when exhausted (only if we need more than available)
-                    if not available_effects and i < num_transitions_needed - 1:
-                        available_effects = ai_effects.transitions.copy()
-                else:
-                    # Fallback to cycling if something goes wrong
-                    effect_id = ai_effects.transitions[i % len(ai_effects.transitions)]
-
-                transition_specs.append(TransitionSpec(
-                    effect_id=effect_id,
-                    duration=preset.transition_duration
-                ))
-
-            # Log all transitions to verify diversity
-            all_effects = [t.effect_id for t in transition_specs]
-            print(f"[VIDEO_RENDERER][{job_id}] About to apply {len(transition_specs)} AI transitions: {all_effects}")
-            logger.info(f"[{job_id}] Applying {len(transition_specs)} AI transitions: {all_effects}")
-
-            # Use renderer adapter (with xfade fallback)
-            video = self.renderer_adapter.apply_transitions_to_clips(
-                clips=clips,
-                transitions=transition_specs,
-                temp_dir=job_dir,
-                job_id=job_id
-            )
-
-            if video is not None:
-                return video
-
-            # Fallback if adapter fails
-            logger.warning(f"[{job_id}] Renderer adapter failed, using MoviePy fallback")
-            transition_func = transitions.get_transition("crossfade")
-            return transition_func(clips, duration=preset.transition_duration)
-
-        except Exception as e:
-            logger.error(f"[{job_id}] AI transition error: {e}, using preset fallback")
-            transition_func = transitions.get_transition(preset.transition_type)
-            return transition_func(clips, duration=preset.transition_duration)
-
-    async def _apply_preset_transitions_via_xfade(
-        self,
-        clips: List[ImageClip],
-        preset,
-        job_dir: str,
-        job_id: str
-    ) -> CompositeVideoClip:
-        """
-        Apply preset-based transitions using xfade renderer instead of MoviePy.
-
-        This ensures reliable encoding by using FFmpeg xfade filter chain
-        instead of MoviePy's composite clips which can hang during write_videofile.
-        """
-        # Map preset transition types to xfade-compatible effects
-        PRESET_TO_XFADE = {
-            "crossfade": "dissolve",
-            "zoom_beat": "circleopen",
-            "glitch_wave": "pixelize",
-            "slide": "slideleft",
-            "bounce": "smoothup",
-            "minimal": "fade",
-            "pulse_flow": "circlecrop",
-            "swirl": "smoothright",
-            "fade": "fade",
-            "dissolve": "dissolve",
-        }
-
-        # Get xfade effect for this preset
-        xfade_effect = PRESET_TO_XFADE.get(preset.transition_type, "dissolve")
-        logger.info(f"[{job_id}] Mapping preset '{preset.transition_type}' to xfade '{xfade_effect}'")
-
-        # Build transition specs for each clip transition
-        num_transitions = len(clips) - 1
-        transition_specs = [
-            TransitionSpec(
-                effect_id=xfade_effect,
-                duration=preset.transition_duration
-            )
-            for _ in range(num_transitions)
-        ]
-
-        logger.info(f"[{job_id}] Applying {num_transitions} preset transitions via xfade: {xfade_effect}")
-
-        # Use renderer adapter (xfade)
-        video = self.renderer_adapter.apply_transitions_to_clips(
-            clips=clips,
-            transitions=transition_specs,
-            temp_dir=job_dir,
-            job_id=job_id
-        )
-
-        if video is not None:
-            return video
-
-        # Fallback to simple concatenate if xfade fails
-        logger.warning(f"[{job_id}] xfade failed, using simple concatenate")
-        return concatenate_videoclips(clips, method="compose")
 
     async def _get_ai_effects(
         self,

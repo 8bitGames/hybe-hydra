@@ -19,10 +19,10 @@ Deploy:
 Setup:
   1. modal token new
   2. modal secret create aws-s3-secret \
-       AWS_ACCESS_KEY_ID=AKIASBF5YXJFHLVFVGQR \
-       AWS_SECRET_ACCESS_KEY=lFbRhp56oienULhZbYlFodazx4bywaixLvfUikIu \
-       AWS_REGION=ap-southeast-2 \
-       AWS_S3_BUCKET=hydra-assets-hybe
+       AWS_ACCESS_KEY_ID=<your-access-key> \
+       AWS_SECRET_ACCESS_KEY=<your-secret-key> \
+       AWS_REGION=ap-northeast-2 \
+       AWS_S3_BUCKET=hydra-assets-seoul
   3. modal deploy modal_app.py
 
 Endpoints (auto-generated):
@@ -732,7 +732,7 @@ def compose_audio(request_data: dict) -> dict:
                     "s3",
                     aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
                     aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
-                    region_name=os.environ.get("AWS_REGION", "ap-southeast-2"),
+                    region_name=os.environ.get("AWS_REGION", "ap-northeast-2"),
                 )
 
                 s3.upload_file(
@@ -742,7 +742,7 @@ def compose_audio(request_data: dict) -> dict:
                     ExtraArgs={"ContentType": "video/mp4"}
                 )
 
-                output_url = f"https://{output_s3_bucket}.s3.{os.environ.get('AWS_REGION', 'ap-southeast-2')}.amazonaws.com/{output_s3_key}"
+                output_url = f"https://{output_s3_bucket}.s3.{os.environ.get('AWS_REGION', 'ap-northeast-2')}.amazonaws.com/{output_s3_key}"
             else:
                 output_url = None
 

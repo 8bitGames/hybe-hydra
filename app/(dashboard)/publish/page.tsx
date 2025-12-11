@@ -9,6 +9,7 @@ import {
   selectSession,
 } from "@/lib/stores/processing-session-store";
 import { useSessionStore } from "@/lib/stores/session-store";
+import { useShallow } from "zustand/react/shallow";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
 import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 import { useI18n } from "@/lib/i18n";
@@ -127,9 +128,14 @@ export default function PublishPage() {
   const { goToProcessing, resetWorkflow } = useWorkflowNavigation();
 
   // Session sync for persisted state management
-  const sessionId = searchParams.get("session");
+  const sessionIdFromUrl = searchParams.get("sessionId") || searchParams.get("session");
   const { activeSession, syncNow } = useSessionWorkflowSync("publish");
-  const completeSession = useSessionStore((state) => state.completeSession);
+  const { completeSession, loadSession } = useSessionStore(
+    useShallow((state) => ({
+      completeSession: state.completeSession,
+      loadSession: state.loadSession,
+    }))
+  );
 
   // Workflow store
   const discover = useWorkflowStore((state) => state.discover);
@@ -178,6 +184,21 @@ export default function PublishPage() {
   const [publishedVideos, setPublishedVideos] = useState<ProcessingVideo[]>([]);
   const [stylePresets, setStylePresets] = useState<StylePreset[]>([]);
   const [isCreatingVariations, setIsCreatingVariations] = useState(false);
+
+  // Load session from URL param if not already loaded (fixes fast-cut flow)
+  useEffect(() => {
+    const loadSessionFromUrl = async () => {
+      if (!activeSession && sessionIdFromUrl) {
+        try {
+          console.log("[Publish] Loading session from URL:", sessionIdFromUrl);
+          await loadSession(sessionIdFromUrl);
+        } catch (error) {
+          console.error("[Publish] Failed to load session from URL:", error);
+        }
+      }
+    };
+    loadSessionFromUrl();
+  }, [activeSession, sessionIdFromUrl, loadSession]);
 
   // Clean up stale selections on mount
   // This handles the case where localStorage has stale IDs that don't match current videos
@@ -488,6 +509,11 @@ export default function PublishPage() {
 
         // Mark session as completed
         try {
+          // Ensure session is loaded before completing (handles fast-cut flow)
+          if (!activeSession && sessionIdFromUrl) {
+            console.log("[Publish] Loading session before completing:", sessionIdFromUrl);
+            await loadSession(sessionIdFromUrl);
+          }
           await completeSession();
           console.log("[Publish] Session marked as completed");
         } catch (err) {

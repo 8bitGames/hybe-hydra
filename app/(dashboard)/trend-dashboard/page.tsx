@@ -408,9 +408,9 @@ function transformAPIToKeywordAnalysis(apiData: APIKeywordAnalysis): KeywordAnal
     avgEngagement: h.avgEngagement,
   }));
 
-  // Transform top creators
-  const topCreators = apiData.creatorInsights.topCreators.slice(0, 5).map(c => ({
-    id: c.id,
+  // Transform top creators (show up to 10 for recommendations)
+  const topCreators = apiData.creatorInsights.topCreators.slice(0, 10).map((c, index) => ({
+    id: `creator-${index}-${c.name.replace(/\s+/g, '-').toLowerCase()}`,
     name: c.name,
     videoCount: c.videoCount,
     avgEngagement: c.avgEngagement,

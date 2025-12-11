@@ -25,7 +25,8 @@ import asyncio
 import traceback
 import time
 import logging
-from typing import Optional
+import base64
+from typing import Optional, Tuple
 
 import httpx
 import boto3
@@ -215,6 +216,54 @@ async def upload_gcs_to_s3(
     return s3_url
 
 
+async def download_image_as_base64(image_url: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Download an image from URL and convert to base64.
+
+    Args:
+        image_url: HTTP/HTTPS URL of the image
+
+    Returns:
+        Tuple of (base64_data, mime_type) or (None, None) on failure
+    """
+    try:
+        logger.info(f"Downloading reference image: {image_url[:80]}...")
+
+        async with httpx.AsyncClient(timeout=60.0) as http_client:
+            response = await http_client.get(image_url)
+            response.raise_for_status()
+
+            image_data = response.content
+
+            # Determine mime type from content-type header or URL
+            content_type = response.headers.get("content-type", "").split(";")[0].strip()
+
+            if not content_type or content_type == "binary/octet-stream":
+                # Fallback: detect from URL extension
+                url_lower = image_url.lower()
+                if ".png" in url_lower:
+                    content_type = "image/png"
+                elif ".jpg" in url_lower or ".jpeg" in url_lower:
+                    content_type = "image/jpeg"
+                elif ".webp" in url_lower:
+                    content_type = "image/webp"
+                elif ".gif" in url_lower:
+                    content_type = "image/gif"
+                else:
+                    # Default to PNG
+                    content_type = "image/png"
+
+            # Encode to base64
+            base64_data = base64.b64encode(image_data).decode("utf-8")
+
+            logger.info(f"Reference image downloaded: {len(image_data)} bytes, {content_type}")
+            return base64_data, content_type
+
+    except Exception as e:
+        logger.error(f"Failed to download reference image: {e}")
+        return None, None
+
+
 async def process_video_generation(
     request: AIJobRequest,
     client: VertexAIClient,
@@ -238,12 +287,29 @@ async def process_video_generation(
     gcs_uri = f"gs://{gcs_bucket}/{gcs_key}"
 
     # Check if this is an image-to-video request (has reference_image_url)
+    reference_image_base64 = None
+    reference_image_mime_type = None
     reference_image_uri = None
+
     if hasattr(settings, 'reference_image_url') and settings.reference_image_url:
-        # For image-to-video, the reference image URL should be a GCS URI
-        # (caller should upload to GCS first if needed)
-        reference_image_uri = settings.reference_image_url
-        logger.info(f"[{job_id}] Image-to-video mode with reference: {reference_image_uri[:50]}...")
+        ref_url = settings.reference_image_url
+        logger.info(f"[{job_id}] Image-to-video mode with reference: {ref_url[:80]}...")
+
+        # Check if it's already a GCS URI (gs://)
+        if ref_url.startswith("gs://"):
+            reference_image_uri = ref_url
+            logger.info(f"[{job_id}] Using GCS URI directly")
+        else:
+            # It's an HTTP URL (S3 or other) - download and convert to base64
+            reference_image_base64, reference_image_mime_type = await download_image_as_base64(ref_url)
+            if not reference_image_base64:
+                return AIJobResponse(
+                    job_id=job_id,
+                    job_type=request.job_type,
+                    status=AIJobStatus.FAILED,
+                    error=f"Failed to download reference image from: {ref_url[:80]}",
+                )
+            logger.info(f"[{job_id}] Reference image converted to base64 ({reference_image_mime_type})")
 
     # Create config
     config = VideoGenerationConfig(
@@ -255,6 +321,8 @@ async def process_video_generation(
         person_generation=settings.person_generation.value,
         generate_audio=settings.generate_audio,
         reference_image_uri=reference_image_uri,
+        reference_image_base64=reference_image_base64,
+        reference_image_mime_type=reference_image_mime_type,
     )
 
     logger.info(f"[{job_id}] Starting Veo generation: {settings.prompt[:50]}...")

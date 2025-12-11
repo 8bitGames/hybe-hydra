@@ -49,6 +49,8 @@ class VideoGenerationConfig:
     negative_prompt: Optional[str] = None
     seed: Optional[int] = None
     reference_image_uri: Optional[str] = None  # GCS URI for image-to-video
+    reference_image_base64: Optional[str] = None  # Base64 encoded image for image-to-video
+    reference_image_mime_type: Optional[str] = None  # Mime type for base64 image (e.g., "image/png")
     person_generation: str = "allow_adult"  # allow_adult, dont_allow
     generate_audio: bool = True  # Veo 3 supports audio
 
@@ -173,10 +175,18 @@ class VertexAIClient:
             "prompt": config.prompt,
         }]
 
-        if config.reference_image_uri:
+        # Add reference image for image-to-video (base64 takes priority over GCS URI)
+        if config.reference_image_base64 and config.reference_image_mime_type:
+            instances[0]["image"] = {
+                "bytesBase64Encoded": config.reference_image_base64,
+                "mimeType": config.reference_image_mime_type,
+            }
+            logger.info(f"Using base64 reference image ({config.reference_image_mime_type})")
+        elif config.reference_image_uri:
             instances[0]["image"] = {
                 "gcsUri": config.reference_image_uri,
             }
+            logger.info(f"Using GCS URI reference image: {config.reference_image_uri[:50]}...")
 
         parameters = {
             "aspectRatio": config.aspect_ratio.value,

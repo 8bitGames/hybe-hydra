@@ -12,6 +12,8 @@ import { useAuthStore } from "@/lib/auth-store";
 import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
 import { ImagePromptGenerator } from "@/components/features/create/ImagePromptGenerator";
 import { videoApi, previewImageApi } from "@/lib/video-api";
+import { fastCutApi, type AudioAnalysisResponse } from "@/lib/fast-cut-api";
+import { useProcessingSessionStore } from "@/lib/stores/processing-session-store";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +49,8 @@ import {
   ImagePlus,
   ZoomIn,
   Loader2,
+  Wand2,
+  Clock,
 } from "lucide-react";
 import {
   Dialog,
@@ -73,6 +77,12 @@ function formatCount(num: number | null | undefined): string {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
   return num.toLocaleString();
+}
+
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 // ============================================================================
@@ -371,6 +381,10 @@ function AssetUploadSection({
   campaignAssets,
   isLoadingAssets,
   campaignId,
+  audioAnalysis,
+  isAnalyzingAudio,
+  audioStartTime,
+  onAudioStartTimeChange,
 }: {
   audioAsset: UploadedAsset | null;
   imageAssets: UploadedAsset[];
@@ -379,6 +393,10 @@ function AssetUploadSection({
   campaignAssets: CampaignAsset[];
   isLoadingAssets: boolean;
   campaignId: string;
+  audioAnalysis: AudioAnalysisResponse | null;
+  isAnalyzingAudio: boolean;
+  audioStartTime: number;
+  onAudioStartTimeChange: (time: number) => void;
 }) {
   const { language } = useI18n();
   const [showAudioPicker, setShowAudioPicker] = useState(false);
@@ -590,24 +608,112 @@ function AssetUploadSection({
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3 px-1">
           {audioAsset ? (
-            <div className="flex items-center gap-2 p-2 bg-neutral-100 rounded-lg">
-              <Music className="h-4 w-4 text-neutral-500" />
-              <span className="text-sm text-neutral-700 flex-1 truncate">
-                {audioAsset.name}
-              </span>
-              {audioAsset.fromCampaign && (
-                <Badge variant="outline" className="text-[9px] border-neutral-300">
-                  {language === "ko" ? "캠페인" : "Campaign"}
-                </Badge>
+            <div className="space-y-3">
+              {/* Selected Audio File */}
+              <div className="flex items-center gap-2 p-2 bg-neutral-100 rounded-lg">
+                <Music className="h-4 w-4 text-neutral-500" />
+                <span className="text-sm text-neutral-700 flex-1 truncate">
+                  {audioAsset.name}
+                </span>
+                {audioAsset.fromCampaign && (
+                  <Badge variant="outline" className="text-[9px] border-neutral-300">
+                    {language === "ko" ? "캠페인" : "Campaign"}
+                  </Badge>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => onAudioChange(null)}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+
+              {/* Audio Analysis Loading */}
+              {isAnalyzingAudio && (
+                <div className="flex items-center gap-2 p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
+                  <Loader2 className="h-4 w-4 text-neutral-500 animate-spin" />
+                  <span className="text-sm text-neutral-600">
+                    {language === "ko" ? "최적의 시작 위치 분석 중..." : "Analyzing optimal start position..."}
+                  </span>
+                </div>
               )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => onAudioChange(null)}
-              >
-                <X className="h-3 w-3" />
-              </Button>
+
+              {/* Audio Analysis Results */}
+              {audioAnalysis && !isAnalyzingAudio && (
+                <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-lg space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Wand2 className="h-3.5 w-3.5 text-neutral-600" />
+                    <span className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">
+                      {language === "ko" ? "AI 분석 결과" : "AI Analysis"}
+                    </span>
+                    {audioAnalysis.analyzed && (
+                      <Badge variant="secondary" className="text-[9px] bg-green-100 text-green-700">
+                        {language === "ko" ? "분석 완료" : "Analyzed"}
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    {/* BPM */}
+                    <div className="p-2 bg-white rounded border border-neutral-100">
+                      <p className="text-[10px] text-neutral-500 uppercase">BPM</p>
+                      <p className="text-sm font-semibold text-neutral-900">
+                        {audioAnalysis.bpm || "N/A"}
+                      </p>
+                    </div>
+
+                    {/* Duration */}
+                    <div className="p-2 bg-white rounded border border-neutral-100">
+                      <p className="text-[10px] text-neutral-500 uppercase">
+                        {language === "ko" ? "전체 길이" : "Duration"}
+                      </p>
+                      <p className="text-sm font-semibold text-neutral-900">
+                        {formatDuration(audioAnalysis.duration)}
+                      </p>
+                    </div>
+
+                    {/* Optimal Start */}
+                    <div className="p-2 bg-white rounded border border-neutral-100">
+                      <p className="text-[10px] text-neutral-500 uppercase">
+                        {language === "ko" ? "추천 시작" : "Optimal Start"}
+                      </p>
+                      <p className="text-sm font-semibold text-neutral-900">
+                        {formatDuration(audioAnalysis.suggestedStartTime)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Current Start Time & Apply Button */}
+                  <div className="flex items-center justify-between pt-2 border-t border-neutral-100">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-3.5 w-3.5 text-neutral-500" />
+                      <span className="text-xs text-neutral-600">
+                        {language === "ko" ? "현재 시작:" : "Current start:"}{" "}
+                        <span className="font-medium text-neutral-900">{formatDuration(audioStartTime)}</span>
+                      </span>
+                    </div>
+                    {audioStartTime !== audioAnalysis.suggestedStartTime && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs border-neutral-300"
+                        onClick={() => onAudioStartTimeChange(audioAnalysis.suggestedStartTime)}
+                      >
+                        <Wand2 className="h-3 w-3 mr-1" />
+                        {language === "ko" ? "AI 추천 적용" : "Apply AI Suggestion"}
+                      </Button>
+                    )}
+                    {audioStartTime === audioAnalysis.suggestedStartTime && (
+                      <Badge variant="secondary" className="text-[10px] bg-neutral-100 text-neutral-600">
+                        <Check className="h-3 w-3 mr-1" />
+                        {language === "ko" ? "AI 추천 적용됨" : "AI Suggestion Applied"}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
@@ -1328,6 +1434,9 @@ export default function CreatePage() {
     }))
   );
 
+  // Processing session store - for initializing session before navigating to /processing
+  const initProcessingSession = useProcessingSessionStore((state) => state.initSession);
+
   // Campaigns
   const { data: campaignsData } = useCampaigns({ page_size: 50 });
   const campaigns = useMemo(() => campaignsData?.items || [], [campaignsData]);
@@ -1373,12 +1482,58 @@ export default function CreatePage() {
     // Clear selected assets when campaign changes
     setAudioAsset(null);
     setImageAssets([]);
+    // Clear audio analysis
+    setAudioAnalysis(null);
+    setAudioStartTime(0);
   };
 
   // Local state
   const [audioAsset, setAudioAsset] = useState<UploadedAsset | null>(null);
   const [imageAssets, setImageAssets] = useState<UploadedAsset[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Audio analysis state
+  const [audioAnalysis, setAudioAnalysis] = useState<AudioAnalysisResponse | null>(null);
+  const [isAnalyzingAudio, setIsAnalyzingAudio] = useState(false);
+  const [audioStartTime, setAudioStartTime] = useState(0);
+
+  // Analyze audio when selected
+  const analyzeAudio = useCallback(async (assetId: string) => {
+    setIsAnalyzingAudio(true);
+    setAudioAnalysis(null);
+    try {
+      const targetDuration = 8; // Default video duration for Veo3
+      const analysis = await fastCutApi.analyzeAudioBestSegment(assetId, targetDuration);
+      setAudioAnalysis(analysis);
+      // Auto-set to the suggested best segment start time
+      setAudioStartTime(analysis.suggestedStartTime);
+      console.log("[Audio Analysis] Complete:", {
+        bpm: analysis.bpm,
+        duration: analysis.duration,
+        suggestedStartTime: analysis.suggestedStartTime,
+        analyzed: analysis.analyzed,
+      });
+    } catch (err) {
+      console.warn("[Audio Analysis] Failed:", err);
+      // Fallback: use 0 as start time
+      setAudioStartTime(0);
+    } finally {
+      setIsAnalyzingAudio(false);
+    }
+  }, []);
+
+  // Handle audio asset change
+  const handleAudioChange = useCallback((asset: UploadedAsset | null) => {
+    setAudioAsset(asset);
+    if (asset) {
+      // Trigger audio analysis
+      analyzeAudio(asset.id);
+    } else {
+      // Clear analysis when audio is removed
+      setAudioAnalysis(null);
+      setAudioStartTime(0);
+    }
+  }, [analyzeAudio]);
 
   // Helper function to convert File to base64
   const fileToBase64 = useCallback((file: File): Promise<string> => {
@@ -1520,6 +1675,29 @@ export default function CreatePage() {
           throw new Error(response.error.message || "Generation failed");
         }
 
+        // Initialize processing session before navigating
+        // This ensures the /processing page has a valid session to display
+        initProcessingSession({
+          campaignId: selectedCampaignId,
+          campaignName: selectedCampaignName,
+          content: {
+            script: prompt,
+            images: imageAssets.map((asset) => ({
+              id: asset.id,
+              url: asset.url,
+              thumbnailUrl: asset.url,
+            })),
+            musicTrack: audioAsset ? {
+              id: audioAsset.id,
+              name: audioAsset.name,
+              duration: 0,
+              url: audioAsset.url,
+            } : undefined,
+          },
+          generationId: response.data?.id,
+          contentType: "ai_video", // AI Video workflow
+        });
+
         toast.success(
           language === "ko" ? "생성 시작" : "Generation started",
           language === "ko" ? "영상 생성이 시작되었습니다" : "Video generation has started"
@@ -1536,7 +1714,7 @@ export default function CreatePage() {
         setIsGenerating(false);
       }
     },
-    [selectedCampaignId, audioAsset, imageAssets, analyze, router, language, toast, fileToBase64]
+    [selectedCampaignId, selectedCampaignName, audioAsset, imageAssets, analyze, router, language, toast, fileToBase64, initProcessingSession]
   );
 
   // Translations
@@ -1666,11 +1844,15 @@ export default function CreatePage() {
               <AssetUploadSection
                 audioAsset={audioAsset}
                 imageAssets={imageAssets}
-                onAudioChange={setAudioAsset}
+                onAudioChange={handleAudioChange}
                 onImagesChange={setImageAssets}
-                campaignAssets={[]}
-                isLoadingAssets={false}
+                campaignAssets={campaignAssets}
+                isLoadingAssets={isLoadingAssets}
                 campaignId={selectedCampaignId}
+                audioAnalysis={audioAnalysis}
+                isAnalyzingAudio={isAnalyzingAudio}
+                audioStartTime={audioStartTime}
+                onAudioStartTimeChange={setAudioStartTime}
               />
             </div>
           </div>

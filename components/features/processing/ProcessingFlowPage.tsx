@@ -15,6 +15,7 @@ import {
   selectOriginalVideo,
   selectSelectedStyles,
   selectIsGeneratingVariations,
+  selectVariations,
 } from "@/lib/stores/processing-session-store";
 import { useSessionStore } from "@/lib/stores/session-store";
 import { useShallow } from "zustand/react/shallow";
@@ -55,13 +56,14 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
   const setVariationFailed = useProcessingSessionStore((state) => state.setVariationFailed);
   const selectedStyles = useProcessingSessionStore(selectSelectedStyles);
   const isGeneratingVariations = useProcessingSessionStore(selectIsGeneratingVariations);
-  const variations = useProcessingSessionStore((state) => state.session?.variations || []);
+  const variations = useProcessingSessionStore(selectVariations);
 
   // Session store for stage progression (syncs with SessionDashboard)
-  const { proceedToStage, activeSession } = useSessionStore(
+  const { proceedToStage, activeSession, loadSession } = useSessionStore(
     useShallow((state) => ({
       proceedToStage: state.proceedToStage,
       activeSession: state.activeSession,
+      loadSession: state.loadSession,
     }))
   );
 
@@ -256,12 +258,20 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
   const handleGoToPublish = useCallback(async () => {
     // Direct publish without variations
     // Update session stage to "publish" before navigating
-    if (activeSession) {
+    try {
+      // If activeSession is not loaded but we have a session ID, load it first
+      if (!activeSession && session?.id) {
+        console.log("[ProcessingFlowPage] Loading session before publish:", session.id);
+        await loadSession(session.id);
+      }
+      // Now proceed to publish stage (will work since session is loaded)
       await proceedToStage("publish");
+    } catch (error) {
+      console.error("[ProcessingFlowPage] Failed to update session stage:", error);
     }
     // Navigate to publish page with the session data
     router.push(`/publish?sessionId=${session?.id}`);
-  }, [router, session?.id, activeSession, proceedToStage]);
+  }, [router, session?.id, activeSession, proceedToStage, loadSession]);
 
   const handleBackToReady = useCallback(() => {
     setState("READY");
@@ -347,12 +357,20 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
   const handlePublish = useCallback(async () => {
     // Update session stage to "publish" before navigating
-    if (activeSession) {
+    try {
+      // If activeSession is not loaded but we have a session ID, load it first
+      if (!activeSession && session?.id) {
+        console.log("[ProcessingFlowPage] Loading session before publish:", session.id);
+        await loadSession(session.id);
+      }
+      // Now proceed to publish stage (will work since session is loaded)
       await proceedToStage("publish");
+    } catch (error) {
+      console.error("[ProcessingFlowPage] Failed to update session stage:", error);
     }
     // Navigate to publish page with approved videos
     router.push(`/publish?sessionId=${session?.id}`);
-  }, [router, session?.id, activeSession, proceedToStage]);
+  }, [router, session?.id, activeSession, proceedToStage, loadSession]);
 
   // Debug logging
   console.log("[ProcessingFlowPage] isHydrated:", isHydrated, "isInitializing:", isInitializing, "session:", session?.id, "state:", session?.state);
@@ -505,7 +523,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
   return (
     <div className={cn("h-full flex flex-col", className)}>
       {/* Workflow Header */}
-      <WorkflowHeader contentType="fast-cut" subtitle={getSubtitle()} />
+      <WorkflowHeader contentType={session.contentType} subtitle={getSubtitle()} />
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto">

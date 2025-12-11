@@ -24,6 +24,8 @@ interface SearchRecommendation {
   type: 'hashtag' | 'creator'
   reason: string
   engagement: number
+  /** URL-safe ID for creators (uniqueId) - query may contain special chars */
+  urlId?: string
 }
 
 interface SearchRecommendationsProps {
@@ -38,10 +40,12 @@ interface SearchRecommendationsProps {
 
 /**
  * Generate TikTok URL based on query type
+ * @param urlId - For creators, use urlId (uniqueId) instead of query (nickname with special chars)
  */
-function getTikTokUrl(query: string, type: 'hashtag' | 'creator'): string {
+function getTikTokUrl(query: string, type: 'hashtag' | 'creator', urlId?: string): string {
   if (type === 'creator') {
-    const username = query.replace(/^@/, '')
+    // Use urlId if available (uniqueId), otherwise fall back to query
+    const username = (urlId || query).replace(/^@/, '')
     return `https://www.tiktok.com/@${encodeURIComponent(username)}`
   }
   const hashtag = query.replace(/^#/, '')
@@ -65,10 +69,10 @@ function generateRecommendations(
     return !trackedSet.has(normalized)
   })
 
-  // Sort by engagement and take top 3 hashtags
+  // Sort by engagement and take top 7 hashtags
   const topHashtags = [...filteredHashtags]
     .sort((a, b) => b.avgEngagement - a.avgEngagement)
-    .slice(0, 3)
+    .slice(0, 7)
 
   for (const h of topHashtags) {
     recommendations.push({
@@ -79,24 +83,25 @@ function generateRecommendations(
     })
   }
 
-  // Add top 2 creators as recommendations
+  // Add top 3 creators as recommendations
   const topCreators = [...creators]
     .sort((a, b) => b.avgEngagement - a.avgEngagement)
-    .slice(0, 2)
+    .slice(0, 3)
 
   for (const c of topCreators) {
     recommendations.push({
       query: `@${c.name}`,
       type: 'creator',
       reason: `${c.avgEngagement.toFixed(1)}% 참여율, ${c.videoCount}개 영상`,
-      engagement: c.avgEngagement
+      engagement: c.avgEngagement,
+      urlId: c.id  // Use uniqueId for URL (name may have special chars like ☆)
     })
   }
 
-  // Sort all by engagement and return top 5
+  // Sort all by engagement and return top 10
   return recommendations
     .sort((a, b) => b.engagement - a.engagement)
-    .slice(0, 5)
+    .slice(0, 10)
 }
 
 export function SearchRecommendations({
@@ -159,11 +164,11 @@ export function SearchRecommendations({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
+        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
           {recommendations.map((rec, index) => (
             <a
               key={index}
-              href={getTikTokUrl(rec.query, rec.type)}
+              href={getTikTokUrl(rec.query, rec.type, rec.urlId)}
               target="_blank"
               rel="noopener noreferrer"
               className="p-3 rounded-lg border bg-gradient-to-r from-background to-accent/20 hover:to-accent/40 transition-colors block"

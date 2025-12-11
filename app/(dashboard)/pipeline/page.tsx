@@ -244,7 +244,7 @@ export default function GlobalPipelinePage() {
     }
   }, [activeTab, refetchPipelines, refetchSeeds, refetchCompose]);
 
-  const handleAutoCreateVariations = async (video: VideoGeneration) => {
+  const handleAutoCreateVariations = async (video: { id: string }) => {
     setCreatingAutoPipeline(true);
     try {
       const isComposeVideo = video.id.startsWith("compose-");
@@ -273,9 +273,9 @@ export default function GlobalPipelinePage() {
     }
   };
 
-  const handleSelectSeed = (video: VideoGeneration) => {
+  const handleSelectSeed = (video: { id: string; prompt: string; duration_seconds: number; aspect_ratio: string; audio_asset?: { original_filename: string } | null }) => {
     const isComposeVideo = video.id.startsWith("compose-");
-    setSelectedSeedGeneration(video);
+    setSelectedSeedGeneration(video as VideoGeneration);
     setSelectedGenerationType(isComposeVideo ? "fast-cut" : "ai");
 
     if (isComposeVideo) {
@@ -589,7 +589,7 @@ export default function GlobalPipelinePage() {
   });
 
   // Filter compose candidates
-  const filteredComposeCandidates = composeCandidates.filter((video: VideoGeneration & { campaign_name?: string }) => {
+  const filteredComposeCandidates = composeCandidates.filter((video) => {
     if (composeCampaignFilter !== "all" && video.campaign_id !== composeCampaignFilter) {
       return false;
     }
@@ -1330,7 +1330,7 @@ export default function GlobalPipelinePage() {
               </Card>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {filteredComposeCandidates.map((video: VideoGeneration & { campaign_name?: string }) => (
+                {filteredComposeCandidates.map((video) => (
                   <Card
                     key={video.id}
                     className="overflow-hidden hover:shadow-lg transition-all group"

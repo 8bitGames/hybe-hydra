@@ -152,6 +152,7 @@ export default function FastCutEffectsPage() {
             name: styleSetId,
           } : undefined,
         },
+        contentType: "fast-cut", // Fast Cut workflow
       });
 
       // Update with render ID so polling can work
