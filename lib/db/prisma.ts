@@ -19,8 +19,9 @@ function createPrismaClient(): PrismaClient {
   const pool = new Pool({
     connectionString,
     max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 60000,        // 60 seconds idle timeout
+    connectionTimeoutMillis: 30000,   // 30 seconds connection timeout
+    statement_timeout: 60000,         // 60 seconds query timeout
     // SSL configuration for Supabase
     ssl: {
       rejectUnauthorized: false,

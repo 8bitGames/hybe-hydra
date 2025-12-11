@@ -9,6 +9,12 @@ import {
   createDeepAnalysisOrchestrator,
   type AccountData,
 } from '@/lib/agents/deep-analysis';
+import {
+  setInMemoryCache,
+  saveToFileCache,
+  getCachedData,
+  loadFromFileCache,
+} from '@/lib/deep-analysis/analysis-cache';
 
 /**
  * POST /api/deep-analysis/analyze
@@ -27,10 +33,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if analysis already exists and is recent (< 24 hours)
+    // Check if analysis already exists and is recent (< 24 hours) with same language
     const existingAnalysis = await prisma.accountAnalysis.findFirst({
       where: {
         uniqueId,
+        analysisLanguage: language, // Must match requested language
         createdAt: {
           gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
         },
@@ -103,9 +110,72 @@ async function processAnalysis(
       data: { status: 'PROCESSING' },
     });
 
-    // Fetch account data
-    console.log(`[API] Fetching account data for ${uniqueId}...`);
-    const result = await fetchAccountForAnalysis(uniqueId, videoCount);
+    // Check for cached data first (avoids re-fetching on retry)
+    const cachedData = getCachedData(uniqueId);
+    let cachedAccountData = cachedData?.accountData;
+
+    // If not in memory, try file cache
+    if (!cachedAccountData) {
+      const fileCached = await loadFromFileCache(uniqueId, 'account_data');
+      if (fileCached) {
+        cachedAccountData = fileCached as AccountData;
+        console.log(`[API] Loaded cached TikTok data for ${uniqueId} from file cache`);
+      }
+    } else {
+      console.log(`[API] Using memory-cached TikTok data for ${uniqueId}`);
+    }
+
+    // Fetch account data (or use cached)
+    let result: Awaited<ReturnType<typeof fetchAccountForAnalysis>>;
+
+    if (cachedAccountData) {
+      // Use cached data - construct result object from cache
+      console.log(`[API] Using cached data for ${uniqueId} (${cachedAccountData.videos.length} videos)`);
+      result = {
+        success: true,
+        user: {
+          id: cachedAccountData.user.id,
+          uniqueId: cachedAccountData.user.uniqueId,
+          nickname: cachedAccountData.user.nickname,
+          avatarUrl: cachedAccountData.user.avatarUrl,
+          signature: cachedAccountData.user.signature,
+          verified: cachedAccountData.user.verified,
+          followers: cachedAccountData.user.followers,
+          following: cachedAccountData.user.following,
+          likes: cachedAccountData.user.likes,
+          videos: cachedAccountData.user.videos,
+          secUid: cachedAccountData.user.secUid,
+        },
+        videos: cachedAccountData.videos.map(v => ({
+          id: v.id,
+          description: v.description,
+          hashtags: v.hashtags,
+          musicTitle: v.musicTitle,
+          musicId: v.musicId,
+          isOwnMusic: v.isOwnMusic,
+          duration: v.duration,
+          author: {
+            uniqueId: cachedAccountData.user.uniqueId,
+            nickname: cachedAccountData.user.nickname,
+          },
+          stats: {
+            playCount: v.playCount,
+            likeCount: v.likeCount,
+            commentCount: v.commentCount,
+            shareCount: v.shareCount,
+          },
+          engagementRate: v.engagementRate,
+          createTime: v.createTime,
+          videoUrl: v.videoUrl,
+          thumbnailUrl: v.thumbnailUrl,
+        })),
+        totalFetched: cachedAccountData.videos.length,
+      };
+    } else {
+      // Fetch fresh data from TikTok
+      console.log(`[API] Fetching account data for ${uniqueId}...`);
+      result = await fetchAccountForAnalysis(uniqueId, videoCount);
+    }
 
     if (!result.success || !result.user) {
       console.error(`[API] TikTok fetch failed for ${uniqueId}:`, {
@@ -126,6 +196,47 @@ async function processAnalysis(
 
     // Calculate metrics
     const metrics = calculateAccountMetrics(result.videos);
+
+    // Cache the raw TikTok data immediately (prevents data loss on AI parsing failures)
+    const accountDataForCache: AccountData = {
+      user: {
+        id: result.user.id,
+        uniqueId: result.user.uniqueId,
+        nickname: result.user.nickname,
+        avatarUrl: result.user.avatarUrl || '',
+        signature: result.user.signature || '',
+        verified: result.user.verified,
+        followers: result.user.followers,
+        following: result.user.following,
+        likes: result.user.likes,
+        videos: result.user.videos,
+        secUid: result.user.secUid,
+        totalLikes: result.user.likes,
+      },
+      videos: result.videos.map(v => ({
+        id: v.id,
+        description: v.description || '',
+        hashtags: v.hashtags || [],
+        musicTitle: v.musicTitle,
+        musicId: v.musicId,
+        isOwnMusic: v.isOwnMusic,
+        duration: v.duration || 0,
+        playCount: v.stats.playCount,
+        likeCount: v.stats.likeCount,
+        commentCount: v.stats.commentCount,
+        shareCount: v.stats.shareCount,
+        engagementRate: v.engagementRate,
+        createTime: v.createTime,
+        videoUrl: v.videoUrl || '',
+        thumbnailUrl: v.thumbnailUrl || '',
+      })),
+      metrics,
+    };
+
+    // Save to memory cache and file cache for persistence
+    setInMemoryCache(uniqueId, { accountData: accountDataForCache });
+    await saveToFileCache(uniqueId, 'account_data', accountDataForCache);
+    console.log(`[API] Cached TikTok data for ${uniqueId} (${result.videos.length} videos)`);
 
     // Prepare account data for AI analysis
     const accountData: AccountData = {

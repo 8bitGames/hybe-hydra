@@ -72,6 +72,66 @@ function isValidVibe(vibe: string): vibe is VibeType {
   return VALID_VIBES.includes(vibe as VibeType);
 }
 
+/**
+ * Generate fallback keywords from user prompt when AI keyword generation fails
+ * Extracts meaningful phrases and adds quality modifiers
+ */
+function generateFallbackKeywordsFromPrompt(prompt: string, vibe: string): string[] {
+  // Common stop words to filter out
+  const stopWords = new Set([
+    'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'in', 'on', 'at', 'to', 'for', 'of', 'with', 'and', 'or', 'but',
+    'this', 'that', 'these', 'those', 'it', 'its', 'from', 'by', 'as',
+    'their', 'they', 'them', 'her', 'his', 'him', 'she', 'he', 'we', 'our',
+  ]);
+
+  // Vibe-based quality modifiers
+  const vibeModifiers: Record<string, string[]> = {
+    'Exciting': ['dynamic', 'vibrant', '4K'],
+    'Emotional': ['cinematic', 'aesthetic', 'HD'],
+    'Pop': ['trendy', 'modern', '4K'],
+    'Minimal': ['clean', 'minimal', 'aesthetic'],
+  };
+
+  const modifiers = vibeModifiers[vibe] || ['aesthetic', '4K'];
+
+  // Extract meaningful words from prompt
+  const words = prompt.toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !stopWords.has(w));
+
+  // Remove duplicates while preserving order
+  const uniqueWords = [...new Set(words)];
+
+  // Build search-friendly keyword phrases (2-word combinations)
+  const keywords: string[] = [];
+
+  // Create 2-word phrases for better search results
+  for (let i = 0; i < uniqueWords.length && keywords.length < 4; i++) {
+    const word1 = uniqueWords[i];
+    const word2 = uniqueWords[i + 1];
+
+    if (word2) {
+      keywords.push(`${word1} ${word2} ${modifiers[keywords.length % modifiers.length]}`);
+      i++; // Skip the next word since we used it
+    } else {
+      keywords.push(`${word1} ${modifiers[0]} photography`);
+    }
+  }
+
+  // Ensure at least 4 keywords
+  if (keywords.length < 4 && uniqueWords.length > 0) {
+    const remaining = 4 - keywords.length;
+    for (let i = 0; i < remaining && i < uniqueWords.length; i++) {
+      keywords.push(`${uniqueWords[i]} ${vibe.toLowerCase()} ${modifiers[i % modifiers.length]}`);
+    }
+  }
+
+  console.log('[FastCut Pipeline] Generated fallback keywords from prompt:', keywords);
+  return keywords.length > 0 ? keywords : [`${vibe.toLowerCase()} aesthetic 4K`, `${vibe.toLowerCase()} mood cinematic`];
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
@@ -166,34 +226,37 @@ export async function POST(request: NextRequest) {
       ? scriptOutput.vibe
       : 'Pop';
 
-    const keywordResult = await keywordAgent.execute(
-      {
-        vibe: normalizedVibe,
-        userPrompt,
-        artistName,
-        scriptLines,
-        language,
-      },
-      agentContext
-    );
-
-    // Process keyword results
+    // Process keyword results with retry logic
     let searchKeywords: string[] = [];
     let keywordCategories: KeywordCategories | undefined;
+    const MAX_KEYWORD_RETRIES = 2;
 
-    if (keywordResult.success && keywordResult.data) {
-      searchKeywords = keywordResult.data.searchKeywords;
-      keywordCategories = keywordResult.data.keywordCategories;
-      console.log('[FastCut Pipeline] Stage 2 complete. Keywords:', searchKeywords.length);
-    } else {
-      console.warn('[FastCut Pipeline] Stage 2 failed, using fallback keywords:', keywordResult.error);
-      // Fallback to basic keywords
-      searchKeywords = [
-        'concert stage lights 4K',
-        'performance crowd cheering HD',
-        'music video aesthetic cinematic',
-        'stage spotlight professional photo',
-      ];
+    for (let attempt = 1; attempt <= MAX_KEYWORD_RETRIES; attempt++) {
+      const keywordResult = await keywordAgent.execute(
+        {
+          vibe: normalizedVibe,
+          userPrompt,
+          artistName,
+          scriptLines,
+          language,
+        },
+        agentContext
+      );
+
+      if (keywordResult.success && keywordResult.data) {
+        searchKeywords = keywordResult.data.searchKeywords;
+        keywordCategories = keywordResult.data.keywordCategories;
+        console.log(`[FastCut Pipeline] Stage 2 complete (attempt ${attempt}). Keywords:`, searchKeywords.length);
+        break;
+      } else {
+        console.warn(`[FastCut Pipeline] Stage 2 attempt ${attempt}/${MAX_KEYWORD_RETRIES} failed:`, keywordResult.error);
+
+        if (attempt === MAX_KEYWORD_RETRIES) {
+          // All retries failed - generate fallback from user prompt
+          console.warn('[FastCut Pipeline] All keyword generation attempts failed, generating from prompt');
+          searchKeywords = generateFallbackKeywordsFromPrompt(userPrompt, normalizedVibe);
+        }
+      }
     }
 
     // Add user-provided trend keywords (highest priority)

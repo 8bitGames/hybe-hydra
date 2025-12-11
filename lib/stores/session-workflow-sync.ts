@@ -215,30 +215,32 @@ export function syncWorkflowToSession(): void {
   }
 
   // Sync title from multiple sources (prioritized)
-  // 1. analyze.campaignName (AI Video flow)
-  // 2. analyze.selectedIdea.title (AI Video flow)
-  // 3. start.source (Fast Cut flow - video/trends/idea)
-  let title = workflowState.analyze.campaignName ||
-    workflowState.analyze.selectedIdea?.title ||
-    "";
+  // 1. start.source (primary - set when leaving start stage)
+  // 2. analyze.campaignName (secondary - fallback)
+  let title = "";
 
-  // If no title from analyze, try to extract from start source
-  if (!title && workflowState.start.source) {
+  // 1순위: start.source 기반
+  if (workflowState.start.source) {
     const source = workflowState.start.source;
     if (source.type === "video") {
-      // Use author name or truncated description for video source
-      title = source.author?.name
-        ? `@${source.author.name}`
-        : source.description?.slice(0, 30) || "";
+      // Description 20자 + "..."
+      const desc = source.description?.trim() || "";
+      title = desc.length > 20 ? `${desc.slice(0, 20)}...` : desc;
     } else if (source.type === "trends") {
-      // Use keywords for trends source
+      // 키워드 (기존과 동일)
       title = source.keywords?.length
         ? source.keywords.slice(0, 3).map((k: string) => `#${k}`).join(" ")
         : "";
     } else if (source.type === "idea") {
-      // Use truncated idea text
-      title = source.idea?.slice(0, 30) || "";
+      // 아이디어 20자 + "..."
+      const idea = source.idea?.trim() || "";
+      title = idea.length > 20 ? `${idea.slice(0, 20)}...` : idea;
     }
+  }
+
+  // 2순위: campaignName (start.source 제목이 없을 때만)
+  if (!title) {
+    title = workflowState.analyze.campaignName || "";
   }
 
   if (title && title !== sessionStore.activeSession.metadata.title) {

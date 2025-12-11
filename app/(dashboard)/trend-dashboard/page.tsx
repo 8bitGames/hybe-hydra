@@ -69,6 +69,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useSessionStore } from "@/lib/stores/session-store";
 import { useAuthStore } from "@/lib/auth-store";
+import { RelatedKeywordsDiscovery, SuggestedAccounts, SearchRecommendations } from "@/components/trends/expansion";
 
 // ============================================================================
 // Types
@@ -134,7 +135,7 @@ interface KeywordAnalysisData {
   topHashtags: { tag: string; count: number; avgEngagement: number }[];
   viralVideos: ViralVideo[];
   aiSuggestions: string[];
-  topCreators: { name: string; avgEngagement: number }[];
+  topCreators: { id: string; name: string; videoCount: number; avgEngagement: number; totalViews: number }[];
   aiInsights?: {
     summary: string;
     contentStrategy: string[];
@@ -409,8 +410,11 @@ function transformAPIToKeywordAnalysis(apiData: APIKeywordAnalysis): KeywordAnal
 
   // Transform top creators
   const topCreators = apiData.creatorInsights.topCreators.slice(0, 5).map(c => ({
+    id: c.id,
     name: c.name,
+    videoCount: c.videoCount,
     avgEngagement: c.avgEngagement,
+    totalViews: c.totalViews,
   }));
 
   // Build AI suggestions from aiInsights
@@ -867,23 +871,26 @@ function HashtagBadge({
   tag,
   count,
   engagement,
-  onClick,
 }: {
   tag: string;
   count?: number;
   engagement?: number;
-  onClick?: () => void;
 }) {
   return (
-    <Badge
-      variant="secondary"
-      className="cursor-pointer hover:bg-muted transition-colors text-xs"
-      onClick={onClick}
+    <a
+      href={`https://www.tiktok.com/tag/${tag}`}
+      target="_blank"
+      rel="noopener noreferrer"
     >
-      #{tag}
-      {count && <span className="ml-1 text-muted-foreground">({count})</span>}
-      {engagement && <span className="ml-1 text-emerald-600">{formatPercent(engagement)}</span>}
-    </Badge>
+      <Badge
+        variant="secondary"
+        className="cursor-pointer hover:bg-muted transition-colors text-xs"
+      >
+        #{tag}
+        {count && <span className="ml-1 text-muted-foreground">({count})</span>}
+        {engagement && <span className="ml-1 text-emerald-600">{formatPercent(engagement)}</span>}
+      </Badge>
+    </a>
   );
 }
 
@@ -2195,10 +2202,17 @@ export default function TrendDashboardPage() {
                   </h4>
                   <div className="flex flex-wrap gap-2">
                     {keywordAnalysis.topCreators.map((creator) => (
-                      <Badge key={creator.name} variant="outline" className="text-xs">
-                        @{creator.name}
-                        <span className="ml-1 text-emerald-600">{formatPercent(creator.avgEngagement)}</span>
-                      </Badge>
+                      <a
+                        key={creator.name}
+                        href={`https://www.tiktok.com/@${creator.name}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Badge variant="outline" className="text-xs cursor-pointer hover:bg-muted transition-colors">
+                          @{creator.name}
+                          <span className="ml-1 text-emerald-600">{formatPercent(creator.avgEngagement)}</span>
+                        </Badge>
+                      </a>
                     ))}
                   </div>
                 </div>
@@ -2319,7 +2333,8 @@ export default function TrendDashboardPage() {
           </Card>
         )}
 
-        {/* Row 4: Cross-Keyword Insights */}
+        {/* Row 4: Cross-Keyword Insights - Only show when 2+ keywords */}
+        {trackedKeywords.length >= 2 && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -2368,8 +2383,76 @@ export default function TrendDashboardPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
-        {/* Row 5: Search History */}
+        {/* Row 5: Expansion & Discovery */}
+        {trackedKeywords.length > 0 && keywordAnalysis && (
+          <div className="grid grid-cols-3 gap-4">
+            {/* Related Keywords Discovery */}
+            {selectedKeyword && (
+              <RelatedKeywordsDiscovery
+                hashtags={keywordAnalysis.topHashtags}
+                sourceKeyword={selectedKeyword.keyword}
+                trackedKeywords={trackedKeywords.map(k => k.keyword)}
+                onAddKeyword={async (keyword) => {
+                  // Add keyword to tracked list
+                  const newKeyword: TrackedKeyword = {
+                    id: `kw-${Date.now()}`,
+                    keyword,
+                    type: "hashtag",
+                    addedAt: new Date().toISOString(),
+                    lastAnalyzedAt: new Date().toISOString(),
+                    currentMetrics: { avgViews: 0, avgEngagement: 0, totalVideos: 0 },
+                    trend: { direction: "stable", changePercent: 0 },
+                    topHashtags: [],
+                  };
+                  setTrackedKeywords(prev => [...prev, newKeyword]);
+                  // Trigger analysis for new keyword
+                  setAnalyzingKeywords(prev => new Set(prev).add(newKeyword.id));
+                  try {
+                    const analyses = await fetchKeywordAnalysis([keyword], 50);
+                    if (analyses.length > 0) {
+                      const analysis = transformAPIToKeywordAnalysis(analyses[0]);
+                      setKeywordAnalysisData(prev => ({ ...prev, [keyword]: analysis }));
+                      // Update keyword metrics
+                      setTrackedKeywords(prev => prev.map(k =>
+                        k.id === newKeyword.id ? {
+                          ...k,
+                          currentMetrics: {
+                            avgViews: analysis.aggregateStats.avgViews,
+                            avgEngagement: analysis.aggregateStats.avgEngagement,
+                            totalVideos: analysis.aggregateStats.totalVideos,
+                          },
+                          topHashtags: analysis.topHashtags.slice(0, 5).map(h => h.tag),
+                        } : k
+                      ));
+                    }
+                  } finally {
+                    setAnalyzingKeywords(prev => {
+                      const next = new Set(prev);
+                      next.delete(newKeyword.id);
+                      return next;
+                    });
+                  }
+                }}
+              />
+            )}
+
+            {/* Suggested Accounts */}
+            <SuggestedAccounts
+              creators={keywordAnalysis.topCreators}
+            />
+
+            {/* Search Recommendations - Shows recommended keywords/hashtags with TikTok links */}
+            <SearchRecommendations
+              hashtags={keywordAnalysis.topHashtags}
+              creators={keywordAnalysis.topCreators}
+              trackedKeywords={trackedKeywords.map(k => k.keyword)}
+            />
+          </div>
+        )}
+
+        {/* Row 6: Search History */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">

@@ -35,35 +35,41 @@ export const VideoClassifierInputSchema = z.object({
   language: z.enum(['ko', 'en']).default('ko'),
 });
 
+// Lenient classification schema - AI may not return all fields consistently
+const ClassificationItemSchema = z.object({
+  videoId: z.string().optional().default(''),
+  primaryCategory: z.string().optional().default('other'),
+  secondaryCategories: z.array(z.string()).optional().default([]),
+  contentType: z.enum(['performance', 'behind-the-scenes', 'promotional', 'trend', 'personal', 'collaboration', 'challenge', 'other']).optional().default('other'),
+  confidence: z.number().min(0).max(1).optional().default(0.5),
+  reasoning: z.string().optional().default(''),
+  engagementPotential: z.enum(['high', 'medium', 'low']).optional().default('medium'),
+}).passthrough();
+
+const DistributionItemSchema = z.object({
+  category: z.string().optional().default(''),
+  contentType: z.string().optional().default(''),
+  count: z.number().optional().default(0),
+  percentage: z.number().optional().default(0),
+  avgEngagement: z.number().optional().default(0),
+}).passthrough();
+
 export const VideoClassifierOutputSchema = z.object({
-  classifications: z.array(z.object({
-    videoId: z.string(),
-    primaryCategory: z.string(),
-    secondaryCategories: z.array(z.string()),
-    contentType: z.enum(['performance', 'behind-the-scenes', 'promotional', 'trend', 'personal', 'collaboration', 'challenge', 'other']),
-    confidence: z.number().min(0).max(1),
-    reasoning: z.string(),
-    engagementPotential: z.enum(['high', 'medium', 'low']),
-  })),
-  categoryDistribution: z.array(z.object({
-    category: z.string(),
-    count: z.number(),
-    percentage: z.number(),
-    avgEngagement: z.number(),
-  })),
-  contentTypeDistribution: z.array(z.object({
-    contentType: z.string(),
-    count: z.number(),
-    percentage: z.number(),
-    avgEngagement: z.number(),
-  })),
+  classifications: z.array(ClassificationItemSchema).optional().default([]),
+  categoryDistribution: z.array(DistributionItemSchema).optional().default([]),
+  contentTypeDistribution: z.array(DistributionItemSchema).optional().default([]),
   insights: z.object({
-    dominantCategory: z.string(),
-    dominantContentType: z.string(),
-    contentDiversity: z.number().min(0).max(1),
-    recommendations: z.array(z.string()),
+    dominantCategory: z.string().optional().default(''),
+    dominantContentType: z.string().optional().default(''),
+    contentDiversity: z.number().min(0).max(1).optional().default(0),
+    recommendations: z.array(z.string()).optional().default([]),
+  }).optional().default({
+    dominantCategory: '',
+    dominantContentType: '',
+    contentDiversity: 0,
+    recommendations: [],
   }),
-});
+}).passthrough();
 
 export type VideoClassifierInput = z.infer<typeof VideoClassifierInputSchema>;
 export type VideoClassifierOutput = z.infer<typeof VideoClassifierOutputSchema>;
@@ -100,6 +106,12 @@ Analyze the video's:
 - Consider context (artist account type)
 - Weight engagement data in potential assessment
 - Provide clear reasoning for each classification
+
+### LANGUAGE REQUIREMENT:
+- You MUST respond in the language specified in the prompt (Korean or English)
+- ALL text fields (reasoning, recommendations, insights) MUST be in the specified language
+- If language is "Korean", write reasoning and insights in Korean (한국어로 작성)
+- If language is "English", write reasoning and insights in English
 
 ## CRITICAL: Response JSON Schema
 You MUST return a valid JSON object matching this EXACT structure:
@@ -144,7 +156,10 @@ IMPORTANT:
 - categoryDistribution MUST be an ARRAY of objects, NOT an object with category keys
 - contentTypeDistribution MUST be an ARRAY of objects, NOT an object with type keys
 - insights MUST be an OBJECT with the exact fields shown, NOT a string
-- Return ONLY valid JSON, no markdown code blocks or extra text`;
+- Return ONLY valid JSON, no markdown code blocks or extra text
+- ALWAYS complete the entire JSON structure - never truncate or cut off mid-response
+- Keep reasoning strings SHORT (1-2 sentences max) to ensure full response completion
+- If analyzing many videos, prioritize completing all classifications over detailed reasoning`;
 
 // =============================================================================
 // Agent Implementation
@@ -162,7 +177,7 @@ export class VideoClassifierAgent extends BaseAgent<VideoClassifierInput, VideoC
         name: 'gemini-2.5-flash',
         options: {
           temperature: 0.3, // Low temperature for consistent classification
-          maxTokens: 8192,
+          maxTokens: 16384, // Increased to handle many video classifications
         },
       },
       prompts: {
@@ -179,7 +194,9 @@ export class VideoClassifierAgent extends BaseAgent<VideoClassifierInput, VideoC
 {{videos}}
 
 Classify each video and provide overall category/content type distribution with insights.
-Respond in {{language}} language for insights and recommendations.`,
+
+**IMPORTANT: You MUST respond entirely in {{language}}.**
+All text fields including reasoning, recommendations, and insights MUST be written in {{language}}.`,
         },
       },
       inputSchema: VideoClassifierInputSchema,

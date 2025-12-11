@@ -174,6 +174,12 @@ Your task is to analyze account metrics and provide actionable strategic insight
 - Consider the artist/celebrity context
 - Prioritize recommendations by impact
 
+### LANGUAGE REQUIREMENT:
+- You MUST respond in the language specified in the prompt (Korean or English)
+- ALL text fields (summary, descriptions, recommendations, reasoning) MUST be in the specified language
+- If language is "Korean", write all analysis text in Korean (한국어로 작성)
+- If language is "English", write all analysis text in English
+
 ## CRITICAL: Response JSON Schema
 You MUST return a valid JSON object matching this EXACT structure:
 
@@ -237,7 +243,9 @@ IMPORTANT:
 - growthPotential.score MUST be one of: "high", "medium", "low"
 - recommendations[].priority MUST be one of: "high", "medium", "low"
 - All numeric scores should be between 0 and 100
-- Return ONLY valid JSON, no markdown code blocks or extra text`;
+- Return ONLY valid JSON, no markdown code blocks or extra text
+- ALWAYS complete the entire JSON structure - never truncate or cut off mid-response
+- Keep description strings SHORT (1-2 sentences max) to ensure full response completion`;
 
 // =============================================================================
 // Agent Implementation
@@ -255,7 +263,7 @@ export class AccountMetricsAgent extends BaseAgent<AccountMetricsInput, AccountM
         name: 'gemini-2.5-flash',
         options: {
           temperature: 0.5,
-          maxTokens: 8192,
+          maxTokens: 12288, // Increased for complete metrics responses
         },
       },
       prompts: {
@@ -307,7 +315,9 @@ export class AccountMetricsAgent extends BaseAgent<AccountMetricsInput, AccountM
 - Tier Avg Views: {{tierAvgViews}}
 
 ---
-Provide a comprehensive analysis in {{language}}.`,
+
+**IMPORTANT: You MUST respond entirely in {{language}}.**
+All text fields including summary, descriptions, strengths, weaknesses, recommendations, and strategy insights MUST be written in {{language}}.`,
         },
       },
       inputSchema: AccountMetricsInputSchema,

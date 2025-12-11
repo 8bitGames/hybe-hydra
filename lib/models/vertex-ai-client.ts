@@ -79,7 +79,7 @@ export class VertexAIMediaClient {
 
   // Model IDs
   private static readonly VEO_MODEL = 'veo-3.1-generate-001';  // Veo 3.1
-  private static readonly IMAGE_MODEL = 'gemini-3-pro-image-preview';  // Gemini 3 Pro Image
+  private static readonly IMAGE_MODEL = 'imagen-3.0-generate-001';  // Imagen 3.0
 
   constructor(config?: { projectId?: string; location?: string }) {
     this.authManager = getGCPAuthManager({

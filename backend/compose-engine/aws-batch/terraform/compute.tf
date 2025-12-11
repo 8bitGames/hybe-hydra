@@ -395,7 +395,10 @@ resource "aws_batch_job_definition" "ai_generation" {
       { name = "GCP_SECRETS_NAME", value = "hydra/gcp-config" },
       { name = "GCP_PROJECT_ID", value = var.gcp_project_id },
       { name = "GCP_LOCATION", value = var.gcp_location },
-      { name = "GOOGLE_APPLICATION_CREDENTIALS", value = "/root/clientLibraryConfig.json" }
+      { name = "GOOGLE_APPLICATION_CREDENTIALS", value = "/root/clientLibraryConfig.json" },
+      # WIF 1-hop authentication: WIF → Central SA (code-based impersonation)
+      { name = "GCP_CENTRAL_SERVICE_ACCOUNT", value = "sa-wif-aws-batch@${var.gcp_project_id}.iam.gserviceaccount.com" },
+      { name = "GCP_TARGET_SERVICE_ACCOUNT", value = "skip" }
     ]
 
     logConfiguration = {

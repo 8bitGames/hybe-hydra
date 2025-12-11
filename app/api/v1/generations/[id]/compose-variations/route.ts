@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Prisma } from "@prisma/client";
 import { searchImagesMultiQuery, isGoogleSearchConfigured } from "@/lib/google-search";
 import { submitBatchRenderToModal, ModalRenderRequest } from "@/lib/modal/client";
+import { getSettingsFromStylePresets, getStyleSetById, StylePresetSettings } from "@/lib/constants/style-presets";
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
@@ -18,6 +19,7 @@ interface VariationSettings {
   colorGrade: string;
   textStyle: string;
   vibe: string;
+  stylePresetId?: string;  // Track which preset was used
 }
 
 // Default presets when not provided
@@ -170,7 +172,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const body = await request.json();
 
-    // Accept both field name conventions (snake_case from frontend, camelCase fallback)
+    // Check for new style_presets format first
+    const stylePresets: string[] = body.style_presets || body.stylePresets || [];
+
+    // Legacy fields (for backwards compatibility)
     const maxVariations = body.variation_count || body.max_variations || 9;
     const effectPresets: string[] = body.effect_presets || body.effectPresets || [];
     const colorGrades: string[] = body.color_grades || body.colorGrades || [];
@@ -192,27 +197,51 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       duration: number;
     }> | undefined;
 
-    // Generate all combinations of settings
-    const settingsCombinations = generateSettingsCombinations(
-      effectPresets,
-      colorGrades,
-      textStyles,
-      vibeVariations,
-      maxVariations
-    );
+    // Generate settings based on input format
+    let settingsCombinations: VariationSettings[];
 
-    console.log(`[Compose Variations] Creating ${settingsCombinations.length} variations from:`, {
-      effectPresets: effectPresets.length || "default",
-      colorGrades: colorGrades.length || "default",
-      textStyles: textStyles.length || "default",
-      vibeVariations: vibeVariations.length || "default",
-      maxVariations,
-      searchTags,
-      hasScriptLines: !!originalScriptLines && originalScriptLines.length > 0,
-      scriptLinesCount: originalScriptLines?.length || 0,
-      originalPrompt: originalComposeData?.originalPrompt || seedGeneration.prompt,
-      hasComposeData: !!originalComposeData,
-    });
+    if (stylePresets.length > 0) {
+      // New format: style presets (each preset = one variation)
+      const presetSettings = getSettingsFromStylePresets(stylePresets);
+      settingsCombinations = presetSettings.map((settings, index) => ({
+        effectPreset: settings.effectPreset,
+        colorGrade: settings.colorGrade,
+        textStyle: settings.textStyle,
+        vibe: settings.vibe,
+        stylePresetId: stylePresets[index],
+      }));
+
+      console.log(`[Compose Variations] Creating ${settingsCombinations.length} variations from style presets:`, {
+        stylePresets,
+        searchTags,
+        hasScriptLines: !!originalScriptLines && originalScriptLines.length > 0,
+        scriptLinesCount: originalScriptLines?.length || 0,
+        originalPrompt: originalComposeData?.originalPrompt || seedGeneration.prompt,
+        hasComposeData: !!originalComposeData,
+      });
+    } else {
+      // Legacy format: generate combinations from individual settings
+      settingsCombinations = generateSettingsCombinations(
+        effectPresets,
+        colorGrades,
+        textStyles,
+        vibeVariations,
+        maxVariations
+      );
+
+      console.log(`[Compose Variations] Creating ${settingsCombinations.length} variations from legacy settings:`, {
+        effectPresets: effectPresets.length || "default",
+        colorGrades: colorGrades.length || "default",
+        textStyles: textStyles.length || "default",
+        vibeVariations: vibeVariations.length || "default",
+        maxVariations,
+        searchTags,
+        hasScriptLines: !!originalScriptLines && originalScriptLines.length > 0,
+        scriptLinesCount: originalScriptLines?.length || 0,
+        originalPrompt: originalComposeData?.originalPrompt || seedGeneration.prompt,
+        hasComposeData: !!originalComposeData,
+      });
+    }
 
     // Create batch ID
     const batchId = uuidv4();
@@ -220,7 +249,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Create placeholder generations for each variation
     const createdGenerations = await Promise.all(
       settingsCombinations.map(async (settings, index) => {
-        const variationLabel = `${settings.vibe} - ${settings.effectPreset} / ${settings.colorGrade}`;
+        // Use style preset name if available, otherwise use legacy format
+        const styleSet = settings.stylePresetId ? getStyleSetById(settings.stylePresetId) : null;
+        const variationLabel = styleSet
+          ? `${styleSet.name} (${styleSet.nameKo})`
+          : `${settings.vibe} - ${settings.effectPreset} / ${settings.colorGrade}`;
 
         // Create the generation placeholder
         const generation = await prisma.videoGeneration.create({
@@ -247,6 +280,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 colorGrade: settings.colorGrade,
                 textStyle: settings.textStyle,
                 vibe: settings.vibe,
+                stylePresetId: settings.stylePresetId || null,
               },
               originalPrompt: seedGeneration.prompt,
               originalComposeData: originalComposeData as Prisma.InputJsonValue | null,
@@ -380,6 +414,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                   colorGrade: genData.settings.colorGrade,
                   textStyle: genData.settings.textStyle,
                   vibe: genData.settings.vibe,
+                  stylePresetId: genData.settings.stylePresetId || null,
                 },
               } as Prisma.InputJsonValue,
             },

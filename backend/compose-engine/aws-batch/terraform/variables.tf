@@ -70,7 +70,7 @@ variable "spot_bid_percentage" {
 variable "gcp_project_id" {
   description = "GCP project ID for Vertex AI"
   type        = string
-  default     = "hyb-hydra-dev"
+  default     = "poised-time-480910-r2"
 }
 
 variable "gcp_location" {

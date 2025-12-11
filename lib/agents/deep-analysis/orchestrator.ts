@@ -90,8 +90,8 @@ export interface FullAnalysisResult {
 const DEFAULT_CONFIG: DeepAnalysisConfig = {
   stages: ['classify', 'metrics', 'compare'],
   parallelClassification: true,
-  maxRetries: 2,
-  timeoutMs: 180000, // 3 minutes
+  maxRetries: 3, // Increased for better AI response resilience
+  timeoutMs: 600000, // 10 minutes (increased for retries and complex analysis)
   language: 'ko',
 };
 
@@ -286,12 +286,12 @@ export class DeepAnalysisOrchestrator {
     const errors: string[] = [];
     const accountResults = new Map<string, SingleAccountAnalysisResult>();
 
-    if (accounts.length < 2 || accounts.length > 5) {
+    if (accounts.length < 2 || accounts.length > 10) {
       return {
         success: false,
         accountResults,
         totalDuration: Date.now() - startTime,
-        errors: ['Comparison requires 2-5 accounts'],
+        errors: ['Comparison requires 2-10 accounts'],
       };
     }
 
@@ -407,11 +407,11 @@ export class DeepAnalysisOrchestrator {
     const startTime = Date.now();
     const errors: string[] = [];
 
-    if (input.accounts.length < 2 || input.accounts.length > 5) {
+    if (input.accounts.length < 2 || input.accounts.length > 10) {
       return {
         success: false,
         duration: Date.now() - startTime,
-        errors: ['Comparison requires 2-5 accounts'],
+        errors: ['Comparison requires 2-10 accounts'],
       };
     }
 

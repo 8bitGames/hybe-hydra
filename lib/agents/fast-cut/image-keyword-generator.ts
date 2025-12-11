@@ -169,19 +169,23 @@ Photography/cinematography style keywords.
 Format: "{style} {medium} {quality}"
 Examples: "cinematic film grain aesthetic", "editorial fashion photography 4K"
 
-## OUTPUT JSON
+## OUTPUT JSON (ALL FIELDS ARE REQUIRED)
+⚠️ CRITICAL: You MUST include ALL fields below. Missing any field will cause validation failure.
+
 {
+  "reasoning": "REQUIRED - Brief explanation of why you chose these keywords based on the prompt",
   "searchKeywords": [
-    "all keywords in order of importance for image search"
+    "all keywords in order of importance for image search (10-12 keywords)"
   ],
   "keywordCategories": {
     "subject": ["subject keyword 1", "subject keyword 2"],
     "scene": ["scene keyword 1", "scene keyword 2", "scene keyword 3"],
     "moodVisual": ["mood visual 1", "mood visual 2"],
     "style": ["style keyword 1", "style keyword 2"]
-  },
-  "reasoning": "Brief explanation of keyword selection strategy"
-}`,
+  }
+}
+
+IMPORTANT: The "reasoning" field MUST be included and explain your keyword selection strategy.`,
     },
   },
 

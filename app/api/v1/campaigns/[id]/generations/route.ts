@@ -7,7 +7,7 @@ import { generateVideo, VeoGenerationParams, getVeoConfig } from "@/lib/veo";
 import { analyzeAudio } from "@/lib/audio-analyzer";
 // Use Modal for audio composition (GPU-accelerated, works in serverless)
 import { composeVideoWithAudioModal, type AudioComposeRequest } from "@/lib/modal/client";
-import { generateS3Key } from "@/lib/storage";
+import { generateS3Key, getPresignedUrlFromS3Url } from "@/lib/storage";
 import { generateImage, convertAspectRatioForGeminiImage } from "@/lib/imagen";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import type { AgentContext } from "@/lib/agents/types";
@@ -501,63 +501,74 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const pages = Math.ceil(total / pageSize) || 1;
 
-    const items = generations.map((gen) => ({
-      id: gen.id,
-      campaign_id: gen.campaignId,
-      prompt: gen.prompt,
-      negative_prompt: gen.negativePrompt,
-      duration_seconds: gen.durationSeconds,
-      aspect_ratio: gen.aspectRatio,
-      reference_image_id: gen.referenceImageId,
-      reference_style: gen.referenceStyle,
-      // Audio fields
-      audio_asset_id: gen.audioAssetId,
-      audio_analysis: gen.audioAnalysis,
-      audio_start_time: gen.audioStartTime,
-      audio_duration: gen.audioDuration,
-      composed_output_url: gen.composedOutputUrl,
-      status: gen.status.toLowerCase(),
-      progress: gen.progress,
-      error_message: gen.errorMessage,
-      vertex_operation_name: gen.vertexOperationName,
-      vertex_request_id: gen.vertexRequestId,
-      output_asset_id: gen.outputAssetId,
-      output_url: gen.outputUrl,
-      quality_score: gen.qualityScore,
-      quality_metadata: gen.qualityMetadata,
-      // Bridge context fields
-      original_input: gen.originalInput,
-      trend_keywords: gen.trendKeywords,
-      reference_urls: gen.referenceUrls,
-      prompt_analysis: gen.promptAnalysis,
-      is_favorite: gen.isFavorite,
-      tags: gen.tags,
-      created_by: gen.createdBy,
-      created_at: gen.createdAt.toISOString(),
-      updated_at: gen.updatedAt.toISOString(),
-      generation_type: gen.generationType,
-      reference_image: gen.referenceImage
-        ? {
-            id: gen.referenceImage.id,
-            filename: gen.referenceImage.filename,
-            s3_url: gen.referenceImage.s3Url,
-          }
-        : null,
-      output_asset: gen.outputAsset
-        ? {
-            id: gen.outputAsset.id,
-            filename: gen.outputAsset.filename,
-            s3_url: gen.outputAsset.s3Url,
-          }
-        : null,
-      audio_asset: gen.audioAsset
-        ? {
-            id: gen.audioAsset.id,
-            filename: gen.audioAsset.filename,
-            original_filename: gen.audioAsset.originalFilename,
-            s3_url: gen.audioAsset.s3Url,
-          }
-        : null,
+    // Generate presigned URLs for video playback
+    const items = await Promise.all(generations.map(async (gen) => {
+      // Get presigned URLs for S3-stored videos
+      const outputUrl = gen.outputUrl
+        ? await getPresignedUrlFromS3Url(gen.outputUrl)
+        : null;
+      const composedOutputUrl = gen.composedOutputUrl
+        ? await getPresignedUrlFromS3Url(gen.composedOutputUrl)
+        : null;
+
+      return {
+        id: gen.id,
+        campaign_id: gen.campaignId,
+        prompt: gen.prompt,
+        negative_prompt: gen.negativePrompt,
+        duration_seconds: gen.durationSeconds,
+        aspect_ratio: gen.aspectRatio,
+        reference_image_id: gen.referenceImageId,
+        reference_style: gen.referenceStyle,
+        // Audio fields
+        audio_asset_id: gen.audioAssetId,
+        audio_analysis: gen.audioAnalysis,
+        audio_start_time: gen.audioStartTime,
+        audio_duration: gen.audioDuration,
+        composed_output_url: composedOutputUrl,
+        status: gen.status.toLowerCase(),
+        progress: gen.progress,
+        error_message: gen.errorMessage,
+        vertex_operation_name: gen.vertexOperationName,
+        vertex_request_id: gen.vertexRequestId,
+        output_asset_id: gen.outputAssetId,
+        output_url: outputUrl,
+        quality_score: gen.qualityScore,
+        quality_metadata: gen.qualityMetadata,
+        // Bridge context fields
+        original_input: gen.originalInput,
+        trend_keywords: gen.trendKeywords,
+        reference_urls: gen.referenceUrls,
+        prompt_analysis: gen.promptAnalysis,
+        is_favorite: gen.isFavorite,
+        tags: gen.tags,
+        created_by: gen.createdBy,
+        created_at: gen.createdAt.toISOString(),
+        updated_at: gen.updatedAt.toISOString(),
+        generation_type: gen.generationType,
+        reference_image: gen.referenceImage
+          ? {
+              id: gen.referenceImage.id,
+              filename: gen.referenceImage.filename,
+              s3_url: gen.referenceImage.s3Url,
+            }
+          : null,
+        output_asset: gen.outputAsset
+          ? {
+              id: gen.outputAsset.id,
+              filename: gen.outputAsset.filename,
+              s3_url: gen.outputAsset.s3Url,
+            }
+          : null,
+        audio_asset: gen.audioAsset
+          ? {
+              id: gen.audioAsset.id,
+              filename: gen.audioAsset.filename,
+              original_filename: gen.audioAsset.originalFilename,
+              s3_url: gen.audioAsset.s3Url,
+            }
+          : null,
+      };
     }));
 
     return NextResponse.json({

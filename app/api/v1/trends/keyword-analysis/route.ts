@@ -4,6 +4,8 @@ import { searchTikTok } from "@/lib/tiktok-mcp";
 import { prisma } from "@/lib/db/prisma";
 import { getKeywordInsightsAgent } from "@/lib/agents/analyzers/keyword-insights";
 import type { AgentContext } from "@/lib/agents/types";
+import { coOccurrenceAnalyzer } from "@/lib/expansion/co-occurrence";
+import { accountDiscoveryService } from "@/lib/expansion/account-discovery";
 
 const CACHE_DURATION_HOURS = 24;
 
@@ -850,6 +852,58 @@ async function saveAnalysisToDb(analysis: KeywordAnalysis): Promise<void> {
   await saveAnalysisHistoryToDb(analysis);
 }
 
+// Process expansion data in background (co-occurrence + account discovery)
+async function processExpansionData(
+  analysis: KeywordAnalysis,
+  videos: any[]
+): Promise<void> {
+  try {
+    console.log(`[KEYWORD-ANALYSIS] Processing expansion data for: ${analysis.keyword}`);
+
+    // 1. Process co-occurrence data from videos
+    const videosForCoOccurrence = videos.map(v => ({
+      id: v.id,
+      authorId: v.author?.uniqueId || v.author?.id || '',
+      authorName: v.author?.nickname || v.author?.name || '',
+      hashtags: v.hashtags || [],
+      stats: {
+        engagementRate: v.engagementRate || calculateEngagementRate(v.stats)
+      }
+    }));
+
+    const coOccurrenceResult = await coOccurrenceAnalyzer.processVideos(
+      videosForCoOccurrence,
+      analysis.keyword
+    );
+    console.log(`[KEYWORD-ANALYSIS] Co-occurrence: ${coOccurrenceResult.pairs} pairs from ${coOccurrenceResult.processed} videos`);
+
+    // 2. Process account discovery from videos
+    const videosForDiscovery = videos.map(v => ({
+      id: v.id,
+      authorId: v.author?.uniqueId || v.author?.id,
+      authorName: v.author?.nickname || v.author?.name,
+      hashtags: v.hashtags || [],
+      stats: {
+        engagementRate: v.engagementRate || calculateEngagementRate(v.stats)
+      }
+    }));
+
+    // Get all tracked keywords (for now just use the source keyword)
+    const trackedKeywords = [analysis.keyword];
+
+    const discoveredCreators = await accountDiscoveryService.discoverFromVideos(
+      videosForDiscovery,
+      analysis.keyword,
+      trackedKeywords
+    );
+    console.log(`[KEYWORD-ANALYSIS] Account discovery: ${discoveredCreators.length} creators processed`);
+
+  } catch (error) {
+    // Don't fail the main analysis if expansion processing fails
+    console.error(`[KEYWORD-ANALYSIS] Expansion processing error for ${analysis.keyword}:`, error);
+  }
+}
+
 // GET /api/v1/trends/keyword-analysis?keywords=countrymusic,kpop,dance&refresh=true
 export async function GET(request: NextRequest) {
   try {
@@ -982,6 +1036,11 @@ export async function GET(request: NextRequest) {
           // Save to database
           await saveAnalysisToDb(analysis);
           console.log(`[KEYWORD-ANALYSIS] Saved analysis for: ${keyword}`);
+
+          // Process expansion data in background (non-blocking)
+          processExpansionData(analysis, result.videos).catch(err => {
+            console.error(`[KEYWORD-ANALYSIS] Background expansion error for ${keyword}:`, err);
+          });
 
           return analysis;
         } catch (err) {

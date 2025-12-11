@@ -602,7 +602,7 @@ export function useSeedCandidates(campaigns: Array<{ id: string; name: string }>
             });
             if (response.data) {
               return response.data.items
-                .filter((video) => !video.id.startsWith("fast-cut-"))
+                .filter((video) => !video.id.startsWith("compose-"))
                 .map((video) => ({
                   ...video,
                   campaign_name: campaignNames[campaign.id],
@@ -626,41 +626,23 @@ export function useSeedCandidates(campaigns: Array<{ id: string; name: string }>
 }
 
 // Fast Cut Candidates - completed fast cut videos for creating variations
+// Uses the fast-cut API which returns presigned URLs for video playback
 export function useFastCutCandidates(campaigns: Array<{ id: string; name: string }>) {
   return useQuery({
-    queryKey: ["seeds", "fast-cut"],
+    queryKey: ["seeds", "fast-cut", campaigns.map(c => c.id)],
     queryFn: async () => {
       if (campaigns.length === 0) return [];
 
-      const campaignNames = campaigns.reduce((acc, c) => {
-        acc[c.id] = c.name;
-        return acc;
-      }, {} as Record<string, string>);
+      // Use fast-cut API which returns presigned URLs
+      const response = await fastCutApi.getFastCutVideos({
+        page_size: 100, // Get all fast-cut videos
+      });
 
-      const results = await Promise.all(
-        campaigns.map(async (campaign) => {
-          try {
-            const response = await videoApi.getAll(campaign.id, {
-              status: "completed",
-              page_size: 50,
-            });
-            if (response.data) {
-              return response.data.items
-                .filter((video) => video.id.startsWith("fast-cut-"))
-                .map((video) => ({
-                  ...video,
-                  campaign_name: campaignNames[campaign.id],
-                  video_type: "fast-cut" as const,
-                }));
-            }
-            return [];
-          } catch {
-            return [];
-          }
-        })
-      );
-
-      return results.flat().sort(
+      // Map to expected format with video_type field
+      return response.items.map((video) => ({
+        ...video,
+        video_type: "fast-cut" as const,
+      })).sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
     },

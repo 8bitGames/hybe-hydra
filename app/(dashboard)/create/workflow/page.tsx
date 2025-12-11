@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore, type PreviewImageData as StorePreviewImageData } from "@/lib/stores/workflow-store";
@@ -935,27 +935,37 @@ function InlinePromptPersonalizer({
     return prompt;
   }, [context, analyzeState]);
 
+  // Track previous isActive to detect activation changes
+  const prevIsActiveRef = useRef(isActive);
+
   // Initialize when component becomes active - restore preview image from store
   useEffect(() => {
+    const wasJustActivated = isActive && !prevIsActiveRef.current;
+    prevIsActiveRef.current = isActive;
+
     if (isActive) {
       const prompt = getVideoPrompt();
-      setIsGeneratingPreview(false);
-      setError(null);
-      setPreviewError(null);
       setVideoPrompt(prompt);
-      // Don't reset imagePrompt - let user manually generate/regenerate
-      // Restore preview image from store if available (convert camelCase → snake_case)
-      if (analyzeState.previewImage) {
-        setPreviewImage({
-          preview_id: analyzeState.previewImage.previewId,
-          image_url: analyzeState.previewImage.imageUrl,
-          image_base64: analyzeState.previewImage.imageBase64 || "",
-          gemini_image_prompt: analyzeState.previewImage.geminiImagePrompt,
-        });
-      } else {
-        setPreviewImage(null);
-      }
       setLightboxOpen(false);
+
+      // Only reset states when component is first activated, not on every store update
+      // This prevents the loading from disappearing when analyzeState.previewImage changes during generation
+      if (wasJustActivated) {
+        setIsGeneratingPreview(false);
+        setError(null);
+        setPreviewError(null);
+        // Restore preview image from store if available (convert camelCase → snake_case)
+        if (analyzeState.previewImage) {
+          setPreviewImage({
+            preview_id: analyzeState.previewImage.previewId,
+            image_url: analyzeState.previewImage.imageUrl,
+            image_base64: analyzeState.previewImage.imageBase64 || "",
+            gemini_image_prompt: analyzeState.previewImage.geminiImagePrompt,
+          });
+        } else {
+          setPreviewImage(null);
+        }
+      }
     }
   }, [isActive, getVideoPrompt, analyzeState.previewImage]);
 

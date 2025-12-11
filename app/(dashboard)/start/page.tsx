@@ -448,6 +448,8 @@ export default function StartPage() {
         // No trend data found or keywords empty - just set as simple idea and proceed
         setStartFromIdea({ idea: input, keywords });
         setIdeaInput("");
+        // CRITICAL: Sync to save title before navigating
+        syncNow();
         // For simple ideas without trend data, go directly to analyze
         transferToAnalyze();
         setCurrentStage("analyze");
@@ -457,6 +459,8 @@ export default function StartPage() {
         // Fallback: just set the idea and proceed
         setStartFromIdea({ idea: input });
         setIdeaInput("");
+        // CRITICAL: Sync to save title before navigating
+        syncNow();
         transferToAnalyze();
         setCurrentStage("analyze");
         router.push("/analyze");

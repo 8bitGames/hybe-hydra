@@ -26,12 +26,10 @@ import {
   Send,
   Hash,
   Timer,
-  Zap,
-  Palette,
-  Type,
-  Sparkles,
   Bot,
   TrendingUp,
+  Lightbulb,
+  type LucideIcon,
 } from "lucide-react";
 import {
   Select,
@@ -45,68 +43,13 @@ import { Input } from "@/components/ui/input";
 import { SocialAccount } from "@/lib/publishing-api";
 import { useI18n } from "@/lib/i18n";
 import { FastCutPipelineMetadata } from "../types";
-
-// Effect presets for compose variations
-const EFFECT_PRESETS = [
-  {
-    value: "zoom_beat",
-    label: "Zoom Beat",
-    labelKo: "줌 비트",
-    description: "Zoom effects synced to music beats",
-    descriptionKo: "음악 비트에 맞춘 줌 효과",
-    icon: Zap,
-  },
-  {
-    value: "crossfade",
-    label: "Crossfade",
-    labelKo: "크로스페이드",
-    description: "Smooth fade transitions",
-    descriptionKo: "부드러운 페이드 전환",
-    icon: Sparkles,
-  },
-  {
-    value: "bounce",
-    label: "Bounce",
-    labelKo: "바운스",
-    description: "Bouncy, playful transitions",
-    descriptionKo: "통통 튀는 전환 효과",
-    icon: Zap,
-  },
-  {
-    value: "minimal",
-    label: "Minimal",
-    labelKo: "미니멀",
-    description: "Simple cuts, no effects",
-    descriptionKo: "심플한 컷, 효과 없음",
-    icon: Type,
-  },
-];
-
-// Color grade presets
-const COLOR_GRADE_PRESETS = [
-  { value: "vibrant", label: "Vibrant", labelKo: "비비드", description: "Saturated, punchy colors" },
-  { value: "cinematic", label: "Cinematic", labelKo: "시네마틱", description: "Film-like color grading" },
-  { value: "bright", label: "Bright", labelKo: "밝은", description: "Light and airy tones" },
-  { value: "natural", label: "Natural", labelKo: "자연스러운", description: "Minimal color adjustment" },
-  { value: "moody", label: "Moody", labelKo: "무디", description: "Dark, atmospheric tones" },
-];
-
-// Text style presets
-const TEXT_STYLE_PRESETS = [
-  { value: "bold_pop", label: "Bold Pop", labelKo: "볼드 팝", description: "Bold, eye-catching text" },
-  { value: "fade_in", label: "Fade In", labelKo: "페이드 인", description: "Gentle fade-in text" },
-  { value: "slide_in", label: "Slide In", labelKo: "슬라이드 인", description: "Text slides into frame" },
-  { value: "minimal", label: "Minimal", labelKo: "미니멀", description: "Simple, clean text" },
-  { value: "none", label: "No Text", labelKo: "텍스트 없음", description: "Hide text overlay" },
-];
-
-// Vibe presets for compose
-const VIBE_PRESETS = [
-  { value: "Exciting", label: "Exciting", labelKo: "신나는", description: "Fast, energetic" },
-  { value: "Emotional", label: "Emotional", labelKo: "감성적인", description: "Slow, heartfelt" },
-  { value: "Pop", label: "Pop", labelKo: "팝", description: "Trendy, mainstream" },
-  { value: "Minimal", label: "Minimal", labelKo: "미니멀", description: "Clean, professional" },
-];
+import { cn } from "@/lib/utils";
+import {
+  STYLE_PRESETS_UI,
+  STYLE_ICONS,
+  DEFAULT_SELECTED_STYLES,
+  MAX_STYLE_VARIATIONS,
+} from "@/lib/constants/style-presets";
 
 export interface AutoPublishConfig {
   enabled: boolean;
@@ -114,15 +57,18 @@ export interface AutoPublishConfig {
   intervalMinutes: number;
   caption: string;
   hashtags: string[];
-  generateGeoAeo: boolean;  // Auto-generate GEO/AEO optimized caption when video completes
+  generateGeoAeo: boolean;
 }
 
+// Updated config to use style presets
 export interface ComposeVariationConfig {
-  effectPresets: string[];
-  colorGrades: string[];
-  textStyles: string[];
-  vibeVariations: string[];
-  maxVariations: number;
+  stylePresets: string[];  // Array of style preset IDs
+  // Legacy fields for backwards compatibility
+  effectPresets?: string[];
+  colorGrades?: string[];
+  textStyles?: string[];
+  vibeVariations?: string[];
+  maxVariations?: number;
   autoPublish?: AutoPublishConfig;
 }
 
@@ -159,14 +105,8 @@ export function ComposeVariationModal({
   const { t, language } = useI18n();
   const isKorean = language === "ko";
 
-  // Selected options
-  const [selectedEffects, setSelectedEffects] = useState<string[]>(["zoom_beat", "crossfade"]);
-  const [selectedColorGrades, setSelectedColorGrades] = useState<string[]>(["vibrant"]);
-  const [selectedTextStyles, setSelectedTextStyles] = useState<string[]>(["bold_pop"]);
-  const [selectedVibes, setSelectedVibes] = useState<string[]>([]);
-
-  // Max variations limit
-  const [maxVariations, setMaxVariations] = useState(9);
+  // Selected style presets
+  const [selectedStyles, setSelectedStyles] = useState<string[]>(DEFAULT_SELECTED_STYLES);
 
   // Auto-publish settings
   const [enableAutoPublish, setEnableAutoPublish] = useState(false);
@@ -185,69 +125,47 @@ export function ComposeVariationModal({
     );
   }, [socialAccounts]);
 
-  // Calculate estimated variations
-  const estimatedVariations = useMemo(() => {
-    let count = 1;
-
-    if (selectedEffects.length > 0) {
-      count *= selectedEffects.length;
-    }
-    if (selectedColorGrades.length > 0) {
-      count *= selectedColorGrades.length;
-    }
-    if (selectedTextStyles.length > 0) {
-      count *= selectedTextStyles.length;
-    }
-    if (selectedVibes.length > 0) {
-      count *= selectedVibes.length;
-    }
-
-    return Math.min(count, maxVariations);
-  }, [selectedEffects, selectedColorGrades, selectedTextStyles, selectedVibes, maxVariations]);
-
-  // Toggle selection helpers
-  const toggleEffect = (value: string) => {
-    setSelectedEffects((prev) =>
-      prev.includes(value)
-        ? prev.filter((v) => v !== value)
-        : [...prev, value]
-    );
+  // Toggle style selection
+  const toggleStyleSelection = (styleId: string) => {
+    setSelectedStyles((prev) => {
+      if (prev.includes(styleId)) {
+        return prev.filter((id) => id !== styleId);
+      }
+      // Max 7 styles (since original is counted as 1)
+      if (prev.length >= MAX_STYLE_VARIATIONS - 1) {
+        return prev;
+      }
+      return [...prev, styleId];
+    });
   };
 
-  const toggleColorGrade = (value: string) => {
-    setSelectedColorGrades((prev) =>
-      prev.includes(value)
-        ? prev.filter((v) => v !== value)
-        : [...prev, value]
-    );
+  // Select all styles (max 7)
+  const selectAllStyles = () => {
+    setSelectedStyles(STYLE_PRESETS_UI.slice(0, MAX_STYLE_VARIATIONS - 1).map((s) => s.id));
   };
 
-  const toggleTextStyle = (value: string) => {
-    setSelectedTextStyles((prev) =>
-      prev.includes(value)
-        ? prev.filter((v) => v !== value)
-        : [...prev, value]
-    );
+  // Clear all selections
+  const clearStyleSelection = () => {
+    setSelectedStyles([]);
   };
 
-  const toggleVibe = (value: string) => {
-    setSelectedVibes((prev) =>
-      prev.includes(value)
-        ? prev.filter((v) => v !== value)
-        : [...prev, value]
-    );
-  };
+  // Estimated variations = number of selected styles
+  const estimatedVariations = selectedStyles.length;
+
+  // Estimated time (2 min per variation)
+  const estimatedTime = useMemo(() => {
+    if (estimatedVariations === 0) return null;
+    const minutesPerVideo = 2;
+    const totalMinutes = estimatedVariations * minutesPerVideo;
+    return isKorean ? `약 ${totalMinutes}분` : `~${totalMinutes} min`;
+  }, [estimatedVariations, isKorean]);
 
   // Handle create variations
   const handleCreate = async () => {
-    if (!seedGeneration) return;
+    if (!seedGeneration || selectedStyles.length === 0) return;
 
     const config: ComposeVariationConfig = {
-      effectPresets: selectedEffects,
-      colorGrades: selectedColorGrades,
-      textStyles: selectedTextStyles,
-      vibeVariations: selectedVibes,
-      maxVariations,
+      stylePresets: selectedStyles,
     };
 
     // Add auto-publish config if enabled
@@ -261,7 +179,7 @@ export function ComposeVariationModal({
           .split(/[,\s]+/)
           .map((tag) => tag.replace(/^#/, "").trim())
           .filter(Boolean),
-        generateGeoAeo: enableGeoAeo,  // Include GEO/AEO auto-generation setting
+        generateGeoAeo: enableGeoAeo,
       };
     }
 
@@ -271,52 +189,46 @@ export function ComposeVariationModal({
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
-      setSelectedEffects(["zoom_beat", "crossfade"]);
-      setSelectedColorGrades(["vibrant"]);
-      setSelectedTextStyles(["bold_pop"]);
-      setSelectedVibes([]);
-      setMaxVariations(9);
-      // Reset auto-publish settings
+      setSelectedStyles(DEFAULT_SELECTED_STYLES);
       setEnableAutoPublish(false);
       setSelectedAccountId("");
       setPublishIntervalMinutes(30);
       setPublishCaption("");
       setPublishHashtags("");
-      // Reset GEO/AEO toggle (default enabled)
       setEnableGeoAeo(true);
     }
   }, [isOpen]);
 
   if (!seedGeneration) return null;
 
-  const hasSelections = selectedEffects.length > 0 || selectedColorGrades.length > 0 || selectedTextStyles.length > 0;
+  const hasSelections = selectedStyles.length > 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Wand2 className="w-5 h-5 text-purple-500" />
-            {isKorean ? "컴포즈 영상 변형 생성" : "Create Compose Video Variations"}
+            <Wand2 className="w-5 h-5" />
+            {isKorean ? "패스트 컷 영상 변형 생성" : "Create Fast Cut Video Variations"}
           </DialogTitle>
           <DialogDescription>
             {isKorean
-              ? "컴포즈 영상의 효과와 스타일을 다양하게 변형합니다"
-              : "Create variations with different effects and styles for your Compose video"}
+              ? "스타일 프리셋을 선택하여 다양한 버전의 영상을 생성합니다"
+              : "Select style presets to create different versions of your video"}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-6 py-4">
           {/* Seed Generation Info - Fixed Settings */}
-          <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-4 space-y-3">
+          <div className="bg-muted/50 border rounded-lg p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <Check className="w-4 h-4 text-purple-500" />
-              {isKorean ? "고정 설정 (Seed 컴포즈 영상)" : "Fixed Settings (Seed Compose Video)"}
+              <Check className="w-4 h-4 text-muted-foreground" />
+              {isKorean ? "고정 설정 (Seed 패스트 컷 영상)" : "Fixed Settings (Seed Fast Cut Video)"}
             </div>
 
             <div className="space-y-2">
               <div className="flex items-start gap-2">
-                <Badge variant="outline" className="text-xs shrink-0 border-purple-500/30">
+                <Badge variant="outline" className="text-xs shrink-0">
                   {isKorean ? "키워드" : "Keywords"}
                 </Badge>
                 <p className="text-sm text-muted-foreground line-clamp-2">
@@ -327,13 +239,13 @@ export function ComposeVariationModal({
               <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                 {metadata?.imageCount && (
                   <span className="flex items-center gap-1">
-                    <Image className="w-3 h-3 text-purple-500" />
+                    <Image className="w-3 h-3" />
                     {metadata.imageCount} {isKorean ? "장" : "images"}
                   </span>
                 )}
                 {seedGeneration.audio_asset && (
                   <span className="flex items-center gap-1">
-                    <Music className="w-3 h-3 text-pink-500" />
+                    <Music className="w-3 h-3" />
                     {seedGeneration.audio_asset.original_filename}
                   </span>
                 )}
@@ -349,157 +261,113 @@ export function ComposeVariationModal({
             </div>
           </div>
 
-          {/* Effect Preset Selection */}
+          {/* Style Selection Grid */}
           <div className="space-y-3">
-            <Label className="text-sm font-medium flex items-center gap-2">
-              <Zap className="w-4 h-4 text-purple-500" />
-              {isKorean ? "트랜지션 효과" : "Transition Effects"}
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">
+                {isKorean ? "생성할 스타일 선택" : "Select Styles to Generate"}
+                <span className="text-muted-foreground font-normal ml-2">(1-7개)</span>
+              </Label>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={selectAllStyles}
+                  className="text-xs h-7"
+                >
+                  {isKorean ? "전체 선택" : "Select All"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearStyleSelection}
+                  className="text-xs h-7"
+                >
+                  {isKorean ? "선택 해제" : "Clear"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Style Grid */}
             <div className="grid grid-cols-2 gap-2">
-              {EFFECT_PRESETS.map((effect) => {
-                const isSelected = selectedEffects.includes(effect.value);
-                const Icon = effect.icon;
+              {STYLE_PRESETS_UI.map((style) => {
+                const Icon: LucideIcon = style.icon;
+                const isSelected = selectedStyles.includes(style.id);
+                const isDisabled = !isSelected && selectedStyles.length >= MAX_STYLE_VARIATIONS - 1;
+
                 return (
                   <div
-                    key={effect.value}
+                    key={style.id}
                     role="button"
                     tabIndex={0}
-                    onClick={() => toggleEffect(effect.value)}
+                    onClick={() => !isDisabled && toggleStyleSelection(style.id)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
+                      if ((e.key === "Enter" || e.key === " ") && !isDisabled) {
                         e.preventDefault();
-                        toggleEffect(effect.value);
+                        toggleStyleSelection(style.id);
                       }
                     }}
-                    className={`p-3 rounded-lg border-2 text-left transition-all cursor-pointer ${
+                    className={cn(
+                      "relative p-3 rounded-lg border-2 text-left transition-all",
                       isSelected
-                        ? "border-purple-500 bg-purple-500/5"
-                        : "border-border hover:border-purple-500/50"
-                    }`}
+                        ? "border-foreground bg-muted/50"
+                        : isDisabled
+                        ? "border-border opacity-50 cursor-not-allowed"
+                        : "border-border hover:border-muted-foreground/50 cursor-pointer"
+                    )}
                   >
-                    <div className="flex items-center gap-2">
-                      <Checkbox checked={isSelected} onCheckedChange={() => toggleEffect(effect.value)} />
-                      <Icon className={`w-4 h-4 ${isSelected ? "text-purple-500" : "text-muted-foreground"}`} />
-                      <span className="text-sm font-medium">
-                        {isKorean ? effect.labelKo : effect.label}
-                      </span>
+                    {/* Checkbox */}
+                    <div className="absolute top-2 right-2">
+                      <Checkbox
+                        checked={isSelected}
+                        disabled={isDisabled}
+                        onCheckedChange={() => !isDisabled && toggleStyleSelection(style.id)}
+                        className="data-[state=checked]:bg-foreground data-[state=checked]:border-foreground"
+                      />
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1 pl-6">
-                      {isKorean ? effect.descriptionKo : effect.description}
+
+                    {/* Icon */}
+                    <div
+                      className={cn(
+                        "w-8 h-8 rounded-md flex items-center justify-center mb-2",
+                        isSelected ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </div>
+
+                    {/* Text */}
+                    <h4 className="font-medium text-foreground text-sm pr-6">
+                      {isKorean ? style.nameKo : style.name}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                      {isKorean ? style.descriptionKo : style.description}
                     </p>
                   </div>
                 );
               })}
             </div>
-          </div>
 
-          {/* Color Grade Selection */}
-          <div className="space-y-3">
-            <Label className="text-sm font-medium flex items-center gap-2">
-              <Palette className="w-4 h-4 text-purple-500" />
-              {isKorean ? "컬러 그레이딩" : "Color Grading"}
-            </Label>
-            <div className="flex flex-wrap gap-2">
-              {COLOR_GRADE_PRESETS.map((grade) => {
-                const isSelected = selectedColorGrades.includes(grade.value);
-                return (
-                  <Badge
-                    key={grade.value}
-                    variant={isSelected ? "default" : "outline"}
-                    className={`cursor-pointer transition-all ${
-                      isSelected
-                        ? "bg-purple-500 hover:bg-purple-600"
-                        : "hover:border-purple-500/50"
-                    }`}
-                    onClick={() => toggleColorGrade(grade.value)}
-                  >
-                    {isKorean ? grade.labelKo : grade.label}
-                  </Badge>
-                );
-              })}
+            {/* Selection Info */}
+            <div className="flex items-center justify-between text-sm pt-2 border-t">
+              <div className="flex items-center gap-4">
+                <span className="text-muted-foreground">
+                  {isKorean ? "선택됨:" : "Selected:"}{" "}
+                  <span className="font-medium text-foreground">{selectedStyles.length}개</span>
+                </span>
+                {estimatedTime && (
+                  <span className="text-muted-foreground">
+                    {isKorean ? "예상 시간:" : "Est. time:"} {estimatedTime}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Lightbulb className="w-3.5 h-3.5" />
+                {isKorean
+                  ? "3-5개 스타일 추천"
+                  : "3-5 styles recommended"}
+              </div>
             </div>
-          </div>
-
-          {/* Text Style Selection */}
-          <div className="space-y-3">
-            <Label className="text-sm font-medium flex items-center gap-2">
-              <Type className="w-4 h-4 text-purple-500" />
-              {isKorean ? "텍스트 스타일" : "Text Style"}
-            </Label>
-            <div className="flex flex-wrap gap-2">
-              {TEXT_STYLE_PRESETS.map((style) => {
-                const isSelected = selectedTextStyles.includes(style.value);
-                return (
-                  <Badge
-                    key={style.value}
-                    variant={isSelected ? "default" : "outline"}
-                    className={`cursor-pointer transition-all ${
-                      isSelected
-                        ? "bg-purple-500 hover:bg-purple-600"
-                        : "hover:border-purple-500/50"
-                    }`}
-                    onClick={() => toggleTextStyle(style.value)}
-                  >
-                    {isKorean ? style.labelKo : style.label}
-                  </Badge>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Vibe Variation (Optional) */}
-          <div className="space-y-3">
-            <Label className="text-sm font-medium flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-purple-500" />
-              {isKorean ? "분위기 변형 (선택)" : "Vibe Variations (Optional)"}
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              {isKorean
-                ? "다른 분위기로 재생성합니다. 선택하지 않으면 현재 분위기를 유지합니다."
-                : "Re-generate with different vibes. Leave empty to keep current vibe."}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {VIBE_PRESETS.map((vibe) => {
-                const isSelected = selectedVibes.includes(vibe.value);
-                return (
-                  <Badge
-                    key={vibe.value}
-                    variant={isSelected ? "default" : "outline"}
-                    className={`cursor-pointer transition-all ${
-                      isSelected
-                        ? "bg-pink-500 hover:bg-pink-600"
-                        : "hover:border-pink-500/50"
-                    }`}
-                    onClick={() => toggleVibe(vibe.value)}
-                  >
-                    {isKorean ? vibe.labelKo : vibe.label}
-                  </Badge>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Max Variations Slider */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">
-                {isKorean ? "최대 생성 수" : "Maximum Variations"}
-              </Label>
-              <span className="text-sm text-muted-foreground">{maxVariations}</span>
-            </div>
-            <Slider
-              value={[maxVariations]}
-              onValueChange={([value]) => setMaxVariations(value)}
-              min={3}
-              max={20}
-              step={1}
-              className="w-full"
-            />
-            <p className="text-xs text-muted-foreground">
-              {isKorean
-                ? "컴포즈 영상 렌더링은 AI 영상 생성보다 빠릅니다"
-                : "Compose Video rendering is faster than AI Video generation"}
-            </p>
           </div>
 
           {/* Auto-Publish Settings */}
@@ -511,7 +379,7 @@ export function ComposeVariationModal({
                 onCheckedChange={(checked: boolean | "indeterminate") => setEnableAutoPublish(checked === true)}
               />
               <Label htmlFor="auto-publish" className="text-sm font-medium cursor-pointer flex items-center gap-2">
-                <Send className="w-4 h-4 text-purple-500" />
+                <Send className="w-4 h-4 text-muted-foreground" />
                 {isKorean ? "완료 시 자동 TikTok 게시" : "Auto-publish to TikTok on completion"}
               </Label>
             </div>
@@ -587,7 +455,7 @@ export function ComposeVariationModal({
                     </div>
 
                     {/* GEO/AEO Auto Generate Toggle */}
-                    <div className="flex items-start gap-3 p-3 bg-gradient-to-r from-purple-500/5 to-green-500/5 border border-purple-500/20 rounded-lg">
+                    <div className="flex items-start gap-3 p-3 bg-muted/50 border rounded-lg">
                       <Checkbox
                         id="geo-aeo-toggle"
                         checked={enableGeoAeo}
@@ -596,9 +464,9 @@ export function ComposeVariationModal({
                       />
                       <div className="flex-1">
                         <Label htmlFor="geo-aeo-toggle" className="text-sm font-medium cursor-pointer flex items-center gap-2">
-                          <Bot className="w-4 h-4 text-purple-500" />
+                          <Bot className="w-4 h-4 text-muted-foreground" />
                           {isKorean ? "AI 캡션 & 태그 자동 생성" : "Auto-generate AI Caption & Tags"}
-                          <Badge variant="outline" className="text-xs border-green-500/50 text-green-600">
+                          <Badge variant="secondary" className="text-xs">
                             <TrendingUp className="w-3 h-3 mr-1" />
                             GEO/AEO
                           </Badge>
@@ -655,7 +523,7 @@ export function ComposeVariationModal({
           </div>
 
           {/* Estimation Summary */}
-          <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-4">
+          <div className="bg-muted/50 border rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">
@@ -664,36 +532,21 @@ export function ComposeVariationModal({
                 <p className="text-xs text-muted-foreground mt-1">
                   {!hasSelections
                     ? isKorean
-                      ? "옵션을 선택해주세요"
-                      : "Please select options"
-                    : [
-                        selectedEffects.length > 0 ? `${isKorean ? "효과" : "Effects"}(${selectedEffects.length})` : null,
-                        selectedColorGrades.length > 0 ? `${isKorean ? "컬러" : "Color"}(${selectedColorGrades.length})` : null,
-                        selectedTextStyles.length > 0 ? `${isKorean ? "텍스트" : "Text"}(${selectedTextStyles.length})` : null,
-                        selectedVibes.length > 0 ? `${isKorean ? "분위기" : "Vibe"}(${selectedVibes.length})` : null,
-                      ].filter(Boolean).join(" × ")}
+                      ? "스타일을 선택해주세요"
+                      : "Please select styles"
+                    : isKorean
+                    ? `${selectedStyles.length}개 스타일 선택됨`
+                    : `${selectedStyles.length} styles selected`}
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-3xl font-bold text-purple-500">{estimatedVariations}</p>
+                <p className="text-3xl font-bold">{estimatedVariations}</p>
                 <p className="text-xs text-muted-foreground">
                   {isKorean ? "영상" : "videos"}
                 </p>
               </div>
             </div>
           </div>
-
-          {/* Warning */}
-          {estimatedVariations > 10 && (
-            <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <AlertCircle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
-              <p className="text-xs text-yellow-600">
-                {isKorean
-                  ? `${estimatedVariations}개의 영상이 생성됩니다. 렌더링 시간이 오래 걸릴 수 있습니다.`
-                  : `${estimatedVariations} videos will be rendered. This may take some time.`}
-              </p>
-            </div>
-          )}
         </div>
 
         <DialogFooter className="border-t pt-4">
@@ -703,7 +556,6 @@ export function ComposeVariationModal({
           <Button
             onClick={handleCreate}
             disabled={isCreating || !hasSelections}
-            className="bg-purple-500 hover:bg-purple-600"
           >
             {isCreating ? (
               <>
@@ -714,8 +566,8 @@ export function ComposeVariationModal({
               <>
                 <Wand2 className="w-4 h-4 mr-2" />
                 {isKorean
-                  ? `${estimatedVariations}개 컴포즈 영상 변형 생성`
-                  : `Generate ${estimatedVariations} Compose Video Variations`}
+                  ? `${estimatedVariations}개 패스트 컷 영상 변형 생성`
+                  : `Generate ${estimatedVariations} Fast Cut Video Variations`}
               </>
             )}
           </Button>

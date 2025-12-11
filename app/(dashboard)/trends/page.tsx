@@ -57,6 +57,7 @@ import {
   Settings,
 } from "lucide-react";
 import { cn, sanitizeUsername, sanitizeText, getProxiedImageUrl } from "@/lib/utils";
+import { RelatedKeywordsDiscovery, SuggestedAccounts, SearchRecommendations } from "@/components/trends/expansion";
 
 // ============================================================================
 // Helper Functions
@@ -1034,6 +1035,44 @@ export default function TrendsPage() {
               ) : null}
             </div>
           </ScrollArea>
+
+          {/* Expansion & Discovery Section */}
+          {keywords.length > 0 && analysisData && currentAnalysis && (
+            <div className="border-t p-3 space-y-3 shrink-0">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5" />
+                {language === "ko" ? "확장 검색" : "Expand Search"}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <RelatedKeywordsDiscovery
+                  hashtags={currentAnalysis.hashtagInsights.topHashtags}
+                  sourceKeyword={activeTab || keywords[0]}
+                  trackedKeywords={keywords}
+                  onAddKeyword={async (keyword) => {
+                    const trimmed = keyword.trim().toLowerCase().replace(/^#/, "");
+                    if (trimmed && keywords.length < 3 && !keywords.includes(trimmed)) {
+                      const newKeywords = [...keywords, trimmed];
+                      setKeywords(newKeywords);
+                      if (newKeywords.length === 1) {
+                        setActiveTab(trimmed);
+                      }
+                    }
+                  }}
+                  className="text-xs"
+                />
+                <SuggestedAccounts
+                  creators={currentAnalysis.creatorInsights.topCreators}
+                  className="text-xs"
+                />
+                <SearchRecommendations
+                  hashtags={currentAnalysis.hashtagInsights.topHashtags}
+                  creators={currentAnalysis.creatorInsights.topCreators}
+                  trackedKeywords={keywords}
+                  className="text-xs"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Admin Collection */}
           {isAdmin && (

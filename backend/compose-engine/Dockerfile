@@ -272,26 +272,27 @@ COPY aws-batch/ai_worker.py /root/ai_worker.py
 # Copy GCP WIF credential config files (for Vertex AI authentication)
 # This file is used by google-auth to exchange AWS credentials for GCP tokens
 #
-# Code-based 2-hop Authentication Flow (all impersonation in Python code):
-#   WIF (STS only) → Central SA (code) → Target SA (code) → Vertex AI
+# Code-based 1-hop Authentication Flow:
+#   WIF (STS only) → Central SA (code impersonation) → Vertex AI
 #
-# Config files:
-# - clientLibraryConfig-wif-only.json: WIF-only (no SA impersonation) - DEFAULT for code-based 2-hop
-# - clientLibraryConfig-2hop-central.json: WIF → Central SA via config (config-based)
-# - clientLibraryConfig-hyb-hydra-dev.json: WIF → Target SA direct (hyb-hydra-dev)
-# - clientLibraryConfig-hyb-hydra-dev-direct.json: Direct config variant
-COPY clientLibraryConfig-wif-only.json /root/clientLibraryConfig.json
-COPY clientLibraryConfig-2hop-central.json /root/clientLibraryConfig-2hop-central.json
-COPY clientLibraryConfig-hyb-hydra-dev.json /root/clientLibraryConfig-hyb-hydra-dev.json
-COPY clientLibraryConfig-hyb-hydra-dev-direct.json /root/clientLibraryConfig-hyb-hydra-dev-direct.json
+# Project: poised-time-480910-r2
+# WIF Pool: aws-batch-pool
+# WIF Provider: aws-batch-provider
+# Service Account: sa-wif-aws-batch@poised-time-480910-r2.iam.gserviceaccount.com
+#
+# WIF-only config (no service_account_impersonation_url) - code handles SA impersonation
+COPY clientLibraryConfig-poised-time.json /root/clientLibraryConfig.json
 ENV GOOGLE_APPLICATION_CREDENTIALS=/root/clientLibraryConfig.json
 
-# Code-based 2-hop authentication: Both impersonations done in gcp_auth.py
-# Central SA (1st hop): WIF → Central SA (hyb-mgmt-prod)
-ENV GCP_CENTRAL_SERVICE_ACCOUNT=sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com
-# Target SA (2nd hop): Central SA → Target SA (hyb-hydra-dev) → Vertex AI
-ENV GCP_TARGET_SERVICE_ACCOUNT=sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com
-ENV GCP_PROJECT_ID=hyb-hydra-dev
+# GCP Project and Authentication Settings
+ENV GCP_PROJECT_ID=poised-time-480910-r2
+ENV GCP_LOCATION=us-central1
+
+# 1-hop authentication: WIF → Central SA (code-based impersonation)
+# Central SA is the service account that WIF will impersonate via code
+ENV GCP_CENTRAL_SERVICE_ACCOUNT=sa-wif-aws-batch@poised-time-480910-r2.iam.gserviceaccount.com
+# Skip 2nd hop (Target SA) - use 1-hop mode only
+ENV GCP_TARGET_SERVICE_ACCOUNT=skip
 
 EXPOSE 8000
 

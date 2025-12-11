@@ -23,9 +23,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (analysisIds.length > 5) {
+    if (analysisIds.length > 10) {
       return NextResponse.json(
-        { success: false, error: 'Maximum 5 accounts can be compared' },
+        { success: false, error: 'Maximum 10 accounts can be compared' },
         { status: 400 }
       );
     }
@@ -143,18 +143,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Save comparison report to database
+    // Use JSON.parse(JSON.stringify(...)) to strip Zod's index signatures from .passthrough()
     const report = await prisma.comparisonReport.create({
       data: {
         title: `Comparison: ${accounts.map(a => '@' + a.user.uniqueId).join(' vs ')}`,
         language,
         accountCount: accounts.length,
         overallSummary: result.comparison.overallSummary,
-        rankings: result.comparison.rankings,
-        significantDifferences: result.comparison.significantDifferences,
-        radarChartData: result.comparison.radarChartData,
-        strategicInsights: result.comparison.strategicInsights,
-        accountRecommendations: result.comparison.accountSpecificRecommendations,
-        competitivePositioning: result.comparison.competitivePositioning,
+        rankings: JSON.parse(JSON.stringify(result.comparison.rankings)),
+        significantDifferences: JSON.parse(JSON.stringify(result.comparison.significantDifferences)),
+        radarChartData: JSON.parse(JSON.stringify(result.comparison.radarChartData)),
+        strategicInsights: JSON.parse(JSON.stringify(result.comparison.strategicInsights)),
+        accountRecommendations: JSON.parse(JSON.stringify(result.comparison.accountSpecificRecommendations)),
+        competitivePositioning: JSON.parse(JSON.stringify(result.comparison.competitivePositioning)),
         accounts: {
           create: analysisIds.map((analysisId: string) => ({
             analysisId,

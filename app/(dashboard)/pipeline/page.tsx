@@ -1241,17 +1241,17 @@ export default function GlobalPipelinePage() {
           </TabsContent>
 
           {/* Compose Videos Tab */}
-          <TabsContent value="compose" className="space-y-4 mt-4">
+          <TabsContent value="fast-cut" className="space-y-4 mt-4">
             {/* Info Banner */}
-            <Card className="bg-gradient-to-r from-purple-500/5 to-pink-500/10 border-purple-500/20">
+            <Card className="bg-muted/50 border">
               <CardContent className="py-4">
                 <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center shrink-0">
-                    <Wand2 className="w-6 h-6 text-purple-500" />
+                  <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center shrink-0">
+                    <Wand2 className="w-6 h-6 text-muted-foreground" />
                   </div>
                   <div className="flex-1">
                     <h3 className="font-semibold flex items-center gap-2">
-                      {isKorean ? "컴포즈 영상 자동 변형" : "Compose Video Auto-Variations"}
+                      {isKorean ? "패스트 컷 영상 자동 변형" : "Fast Cut Video Auto-Variations"}
                       <Badge variant="secondary" className="text-xs">
                         <Zap className="w-3 h-3 mr-1" />
                         Auto
@@ -1259,13 +1259,13 @@ export default function GlobalPipelinePage() {
                     </h3>
                     <p className="text-sm text-muted-foreground">
                       {isKorean
-                        ? "컴포즈 영상으로 만든 슬라이드쇼입니다. 자동 변형은 새로운 이미지를 검색하여 다른 시각적 스타일의 영상을 생성합니다."
-                        : "Slideshows created as Compose videos. Auto-variation searches for new images and generates videos with different visual styles."}
+                        ? "패스트 컷 영상으로 만든 슬라이드쇼입니다. 자동 변형은 새로운 이미지를 검색하여 다른 시각적 스타일의 영상을 생성합니다."
+                        : "Slideshows created as Fast Cut videos. Auto-variation searches for new images and generates videos with different visual styles."}
                     </p>
                   </div>
-                  <Button onClick={() => router.push("/compose")} variant="outline" className="shrink-0 border-purple-500/50 text-purple-600 hover:bg-purple-500/10">
+                  <Button onClick={() => router.push("/compose")} variant="outline" className="shrink-0">
                     <Film className="w-4 h-4 mr-2" />
-                    {isKorean ? "컴포즈 영상 만들기" : "Create Compose Video"}
+                    {isKorean ? "패스트 컷 영상 만들기" : "Create Fast Cut Video"}
                   </Button>
                 </div>
               </CardContent>
@@ -1315,16 +1315,16 @@ export default function GlobalPipelinePage() {
                 <CardContent className="py-16 text-center">
                   <Film className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium mb-2">
-                    {isKorean ? "컴포즈 영상이 없습니다" : "No Compose Videos"}
+                    {isKorean ? "패스트 컷 영상이 없습니다" : "No Fast Cut Videos"}
                   </h3>
                   <p className="text-muted-foreground text-sm mb-6">
                     {isKorean
                       ? "컴포즈 페이지에서 슬라이드쇼 영상을 먼저 생성해주세요"
                       : "Create slideshow videos on the Compose page first"}
                   </p>
-                  <Button onClick={() => router.push("/compose")} className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600">
+                  <Button onClick={() => router.push("/compose")}>
                     <Wand2 className="w-4 h-4 mr-2" />
-                    {isKorean ? "컴포즈 영상 만들기" : "Create Compose Video"}
+                    {isKorean ? "패스트 컷 영상 만들기" : "Create Fast Cut Video"}
                   </Button>
                 </CardContent>
               </Card>
@@ -1354,9 +1354,9 @@ export default function GlobalPipelinePage() {
                         )}
                         {/* Type Badge */}
                         <div className="absolute top-2 left-2">
-                          <Badge className="bg-purple-500/90 text-white backdrop-blur-sm">
+                          <Badge variant="secondary" className="backdrop-blur-sm">
                             <Wand2 className="w-3 h-3 mr-1" />
-                            {isKorean ? "컴포즈 영상" : "Compose Video"}
+                            {isKorean ? "패스트 컷 영상" : "Fast Cut Video"}
                           </Badge>
                         </div>
                         {/* Duration Badge */}
@@ -1371,7 +1371,7 @@ export default function GlobalPipelinePage() {
                       {/* Info */}
                       <div className="p-3 space-y-2">
                         {video.campaign_name && (
-                          <p className="text-xs text-purple-500 font-medium truncate">
+                          <p className="text-xs text-muted-foreground font-medium truncate">
                             {video.campaign_name}
                           </p>
                         )}
@@ -1396,7 +1396,7 @@ export default function GlobalPipelinePage() {
                         <div className="flex items-center gap-2 pt-1">
                           <Button
                             size="sm"
-                            className="flex-1 h-8 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                            className="flex-1 h-8"
                             onClick={() => handleAutoCreateVariations(video)}
                             disabled={creatingAutoPipeline}
                           >

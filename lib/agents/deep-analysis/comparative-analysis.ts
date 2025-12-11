@@ -33,82 +33,94 @@ export const ComparativeAnalysisInputSchema = z.object({
     }),
     topCategories: z.array(z.string()).optional(),
     performanceScore: z.number().optional(),
-  })).min(2).max(5),
+  })).min(2).max(10),
   benchmarks: z.object({
     industryAvgEngagement: z.number(),
   }),
   language: z.enum(['ko', 'en']).default('ko'),
 });
 
+// Lenient ranking item schema - AI may not return all fields consistently
+const RankingItemSchema = z.object({
+  rank: z.number().optional().default(0),
+  uniqueId: z.string().optional().default(''),
+  value: z.number().optional().default(0),
+  score: z.string().optional(),
+  interpretation: z.string().optional().default(''),
+}).passthrough();
+
+// Lenient difference item schema
+const DifferenceItemSchema = z.object({
+  metric: z.string().optional().default(''),
+  leader: z.string().optional().default(''),
+  follower: z.string().optional().default(''),
+  difference: z.number().optional().default(0),
+  differencePercent: z.number().optional().default(0),
+  insight: z.string().optional().default(''),
+  isSignificant: z.boolean().optional().default(false),
+}).passthrough();
+
+// Lenient strategic insight schema
+const StrategicInsightSchema = z.object({
+  category: z.string().optional().default('content'),
+  insight: z.string().optional().default(''),
+  affectedAccounts: z.array(z.string()).optional().default([]),
+  recommendation: z.string().optional().default(''),
+}).passthrough();
+
+// Lenient account recommendation schema
+const AccountRecommendationSchema = z.object({
+  uniqueId: z.string().optional().default(''),
+  learnFrom: z.array(z.object({
+    fromAccount: z.string().optional().default(''),
+    aspect: z.string().optional().default(''),
+    suggestion: z.string().optional().default(''),
+  }).passthrough()).optional().default([]),
+  uniqueStrengths: z.array(z.string()).optional().default([]),
+  areasToImprove: z.array(z.string()).optional().default([]),
+}).passthrough();
+
+// Lenient positioning item schema
+const PositioningItemSchema = z.object({
+  uniqueId: z.string().optional().default(''),
+  quadrant: z.string().optional().default('question-mark'),
+  reasoning: z.string().optional().default(''),
+}).passthrough();
+
 export const ComparativeAnalysisOutputSchema = z.object({
-  overallSummary: z.string(),
+  overallSummary: z.string().optional().default(''),
   rankings: z.object({
-    byEngagement: z.array(z.object({
-      rank: z.number(),
-      uniqueId: z.string(),
-      value: z.number(),
-      interpretation: z.string(),
-    })),
-    byViews: z.array(z.object({
-      rank: z.number(),
-      uniqueId: z.string(),
-      value: z.number(),
-      interpretation: z.string(),
-    })),
-    byConsistency: z.array(z.object({
-      rank: z.number(),
-      uniqueId: z.string(),
-      value: z.number(),
-      interpretation: z.string(),
-    })),
-    byGrowthPotential: z.array(z.object({
-      rank: z.number(),
-      uniqueId: z.string(),
-      score: z.enum(['high', 'medium', 'low']),
-      interpretation: z.string(),
-    })),
+    byEngagement: z.array(RankingItemSchema).optional().default([]),
+    byViews: z.array(RankingItemSchema).optional().default([]),
+    byConsistency: z.array(RankingItemSchema).optional().default([]),
+    byGrowthPotential: z.array(RankingItemSchema).optional().default([]),
+  }).optional().default({
+    byEngagement: [],
+    byViews: [],
+    byConsistency: [],
+    byGrowthPotential: [],
   }),
-  significantDifferences: z.array(z.object({
-    metric: z.string(),
-    leader: z.string(),
-    follower: z.string(),
-    difference: z.number(),
-    differencePercent: z.number(),
-    insight: z.string(),
-    isSignificant: z.boolean(),
-  })),
+  significantDifferences: z.array(DifferenceItemSchema).optional().default([]),
   radarChartData: z.object({
-    dimensions: z.array(z.string()),
+    dimensions: z.array(z.string()).optional().default([]),
     accounts: z.array(z.object({
-      uniqueId: z.string(),
-      values: z.array(z.number()), // Normalized 0-100
-    })),
+      uniqueId: z.string().optional().default(''),
+      values: z.array(z.number()).optional().default([]),
+    }).passthrough()).optional().default([]),
+  }).optional().default({
+    dimensions: [],
+    accounts: [],
   }),
-  strategicInsights: z.array(z.object({
-    category: z.enum(['content', 'engagement', 'growth', 'posting', 'music']),
-    insight: z.string(),
-    affectedAccounts: z.array(z.string()),
-    recommendation: z.string(),
-  })),
-  accountSpecificRecommendations: z.array(z.object({
-    uniqueId: z.string(),
-    learnFrom: z.array(z.object({
-      fromAccount: z.string(),
-      aspect: z.string(),
-      suggestion: z.string(),
-    })),
-    uniqueStrengths: z.array(z.string()),
-    areasToImprove: z.array(z.string()),
-  })),
+  strategicInsights: z.array(StrategicInsightSchema).optional().default([]),
+  accountSpecificRecommendations: z.array(AccountRecommendationSchema).optional().default([]),
   competitivePositioning: z.object({
-    matrix: z.array(z.object({
-      uniqueId: z.string(),
-      quadrant: z.enum(['star', 'question-mark', 'cash-cow', 'dog']),
-      reasoning: z.string(),
-    })),
-    explanation: z.string(),
+    matrix: z.array(PositioningItemSchema).optional().default([]),
+    explanation: z.string().optional().default(''),
+  }).optional().default({
+    matrix: [],
+    explanation: '',
   }),
-});
+}).passthrough();
 
 export type ComparativeAnalysisInput = z.infer<typeof ComparativeAnalysisInputSchema>;
 export type ComparativeAnalysisOutput = z.infer<typeof ComparativeAnalysisOutputSchema>;
@@ -156,7 +168,48 @@ Convert all metrics to 0-100 scale where:
 - Highlight actionable differences
 - Give specific recommendations per account
 - Consider account context (size, verification, genre)
-- Be diplomatic but clear about weaknesses`;
+- Be diplomatic but clear about weaknesses
+
+### LANGUAGE REQUIREMENT:
+- You MUST respond in the language specified in the prompt (Korean or English)
+- ALL text fields (summary, insights, recommendations, interpretations) MUST be in the specified language
+- If language is "Korean", write all analysis text in Korean (한국어로 작성)
+- If language is "English", write all analysis text in English
+
+## CRITICAL: Response JSON Schema
+You MUST return a valid JSON object. Return ONLY valid JSON, no markdown code blocks or extra text.
+
+{
+  "overallSummary": "string - 2-3 sentence comparison summary",
+  "rankings": {
+    "byEngagement": [{"rank": 1, "uniqueId": "@account", "value": 5.5, "interpretation": "string"}],
+    "byViews": [{"rank": 1, "uniqueId": "@account", "value": 100000, "interpretation": "string"}],
+    "byConsistency": [{"rank": 1, "uniqueId": "@account", "value": 85, "interpretation": "string"}],
+    "byGrowthPotential": [{"rank": 1, "uniqueId": "@account", "score": "high|medium|low", "interpretation": "string"}]
+  },
+  "significantDifferences": [
+    {"metric": "string", "leader": "@account", "follower": "@account", "difference": 100, "differencePercent": 50, "insight": "string", "isSignificant": true}
+  ],
+  "radarChartData": {
+    "dimensions": ["Engagement", "Views", "Consistency", "Diversity", "Originality"],
+    "accounts": [{"uniqueId": "@account", "values": [80, 60, 70, 50, 90]}]
+  },
+  "strategicInsights": [
+    {"category": "content|engagement|growth|posting|music", "insight": "string", "affectedAccounts": ["@acc1"], "recommendation": "string"}
+  ],
+  "accountSpecificRecommendations": [
+    {"uniqueId": "@account", "learnFrom": [{"fromAccount": "@other", "aspect": "string", "suggestion": "string"}], "uniqueStrengths": ["str1"], "areasToImprove": ["area1"]}
+  ],
+  "competitivePositioning": {
+    "matrix": [{"uniqueId": "@account", "quadrant": "star|question-mark|cash-cow|dog", "reasoning": "string"}],
+    "explanation": "string"
+  }
+}
+
+IMPORTANT:
+- Keep all strings SHORT (1-2 sentences max) to ensure complete response
+- ALWAYS complete the entire JSON structure - never truncate
+- All arrays must have at least one element for each account being compared`;
 
 // =============================================================================
 // Agent Implementation
@@ -174,7 +227,7 @@ export class ComparativeAnalysisAgent extends BaseAgent<ComparativeAnalysisInput
         name: 'gemini-2.5-flash',
         options: {
           temperature: 0.4,
-          maxTokens: 12288,
+          maxTokens: 32768, // Increased for up to 10 account comparisons
         },
       },
       prompts: {
@@ -200,7 +253,8 @@ Provide:
 6. Account-specific recommendations
 7. Competitive positioning (BCG matrix)
 
-Respond in {{language}}.`,
+**IMPORTANT: You MUST respond entirely in {{language}}.**
+All text fields including overallSummary, interpretations, insights, and recommendations MUST be written in {{language}}.`,
         },
       },
       inputSchema: ComparativeAnalysisInputSchema,

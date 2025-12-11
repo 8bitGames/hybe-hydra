@@ -1010,36 +1010,191 @@ export abstract class BaseAgent<TInput, TOutput> {
   protected parseResponse(response: ModelResponse): unknown {
     let content = response.content.trim();
 
+    // Log raw response for debugging (first 500 chars)
+    const previewLength = Math.min(content.length, 500);
+    console.log(`[${this.config.id}] Raw AI response (${content.length} chars): ${content.substring(0, previewLength)}${content.length > previewLength ? '...' : ''}`);
+
+    // Helper function to attempt JSON parse with detailed error logging
+    const tryParseJSON = (jsonStr: string, source: string): unknown | null => {
+      try {
+        return JSON.parse(jsonStr);
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          // Find the position of the error
+          const match = e.message.match(/position (\d+)/);
+          if (match) {
+            const pos = parseInt(match[1], 10);
+            const start = Math.max(0, pos - 50);
+            const end = Math.min(jsonStr.length, pos + 50);
+            const context = jsonStr.substring(start, end);
+            const pointer = ' '.repeat(Math.min(50, pos - start)) + '^';
+            console.error(`[${this.config.id}] ${source} JSON parse error at position ${pos}:`);
+            console.error(`Context: ...${context}...`);
+            console.error(`         ${pointer}`);
+          } else {
+            console.error(`[${this.config.id}] ${source} JSON parse error: ${e.message}`);
+          }
+        } else {
+          console.error(`[${this.config.id}] ${source} parse error: ${e instanceof Error ? e.message : 'unknown'}`);
+        }
+        return null;
+      }
+    };
+
     // Try direct JSON parse first
-    try {
-      return JSON.parse(content);
-    } catch {
-      // If direct parse fails, try to extract JSON from markdown code blocks
-    }
+    const directResult = tryParseJSON(content, 'Direct');
+    if (directResult !== null) return directResult;
 
     // Extract JSON from markdown code blocks: ```json ... ``` or ``` ... ```
     const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (jsonBlockMatch) {
-      try {
-        return JSON.parse(jsonBlockMatch[1].trim());
-      } catch {
-        // Continue to next fallback
-      }
+      const extracted = jsonBlockMatch[1].trim();
+      const blockResult = tryParseJSON(extracted, 'Code block');
+      if (blockResult !== null) return blockResult;
     }
 
     // Try to find JSON object in the content (starts with { and ends with })
     const jsonObjectMatch = content.match(/\{[\s\S]*\}/);
     if (jsonObjectMatch) {
-      try {
-        return JSON.parse(jsonObjectMatch[0]);
-      } catch {
-        // Continue to next fallback
+      const objectResult = tryParseJSON(jsonObjectMatch[0], 'Extracted object');
+      if (objectResult !== null) return objectResult;
+    }
+
+    // Try to find JSON array in the content (starts with [ and ends with ])
+    const jsonArrayMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonArrayMatch) {
+      const arrayResult = tryParseJSON(jsonArrayMatch[0], 'Extracted array');
+      if (arrayResult !== null) return arrayResult;
+    }
+
+    // Try to fix common JSON issues and retry
+    console.log(`[${this.config.id}] Attempting JSON repair...`);
+    const repairedContent = this.repairJSON(content);
+    if (repairedContent !== content) {
+      const repairedResult = tryParseJSON(repairedContent, 'Repaired');
+      if (repairedResult !== null) return repairedResult;
+    }
+
+    // If all JSON parsing fails, throw an error with details
+    // Don't return raw string as it will cause Zod validation to fail with confusing error
+    console.error(`[${this.config.id}] All JSON parsing attempts failed. Full response (last 500 chars):\n${content.slice(-500)}`);
+    throw new Error(`Failed to parse AI response as JSON. Response starts with: "${content.substring(0, 100)}..."`);
+  }
+
+  /**
+   * Attempt to repair common JSON formatting issues
+   */
+  private repairJSON(content: string): string {
+    let repaired = content;
+
+    // Remove any text before the first { or [
+    const firstBrace = repaired.indexOf('{');
+    const firstBracket = repaired.indexOf('[');
+    const firstJson = Math.min(
+      firstBrace >= 0 ? firstBrace : Infinity,
+      firstBracket >= 0 ? firstBracket : Infinity
+    );
+    if (firstJson > 0 && firstJson !== Infinity) {
+      repaired = repaired.substring(firstJson);
+    }
+
+    // Remove any text after the last } or ]
+    const lastBrace = repaired.lastIndexOf('}');
+    const lastBracket = repaired.lastIndexOf(']');
+    const lastJson = Math.max(lastBrace, lastBracket);
+    if (lastJson >= 0 && lastJson < repaired.length - 1) {
+      repaired = repaired.substring(0, lastJson + 1);
+    }
+
+    // Fix trailing commas before } or ]
+    repaired = repaired.replace(/,(\s*[}\]])/g, '$1');
+
+    // Fix missing commas between array elements (common AI error)
+    repaired = repaired.replace(/\}(\s*)\{/g, '},$1{');
+
+    // Fix missing commas between array elements with strings
+    repaired = repaired.replace(/\](\s*)\[/g, '],$1[');
+
+    // Fix missing commas after string values
+    repaired = repaired.replace(/"(\s*)\n(\s*)"/g, '",\n$2"');
+
+    // Attempt to close truncated JSON (AI response cut off mid-way)
+    repaired = this.closeTruncatedJSON(repaired);
+
+    return repaired;
+  }
+
+  /**
+   * Attempt to close truncated JSON by balancing braces/brackets
+   */
+  private closeTruncatedJSON(content: string): string {
+    let result = content;
+
+    // Count open braces/brackets
+    let braceCount = 0;
+    let bracketCount = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = 0; i < result.length; i++) {
+      const char = result[i];
+
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') braceCount++;
+        else if (char === '}') braceCount--;
+        else if (char === '[') bracketCount++;
+        else if (char === ']') bracketCount--;
       }
     }
 
-    // If all parsing fails, return the raw content
-    // Some agents might work with non-JSON responses
-    return content;
+    // If we're still inside a string (unclosed quote), try to close it
+    if (inString) {
+      // Find the last unclosed string and truncate content there, adding closing quote
+      const lastQuote = result.lastIndexOf('"');
+      if (lastQuote >= 0) {
+        // Check if this is likely a truncated string value
+        const afterQuote = result.substring(lastQuote + 1);
+        if (!afterQuote.includes('"')) {
+          // Truncate and close the string
+          result = result.substring(0, lastQuote + 1) + '"';
+          console.log(`[repairJSON] Closed truncated string at position ${lastQuote}`);
+        }
+      }
+    }
+
+    // Close any remaining open brackets/braces
+    // First close arrays, then objects (inner-to-outer order assumed)
+    if (bracketCount > 0 || braceCount > 0) {
+      console.log(`[repairJSON] Closing ${bracketCount} brackets and ${braceCount} braces`);
+
+      // Remove trailing comma if present (would be invalid before closing)
+      result = result.replace(/,\s*$/, '');
+
+      // Close arrays first, then objects
+      for (let i = 0; i < bracketCount; i++) {
+        result += ']';
+      }
+      for (let i = 0; i < braceCount; i++) {
+        result += '}';
+      }
+    }
+
+    return result;
   }
 
   /**

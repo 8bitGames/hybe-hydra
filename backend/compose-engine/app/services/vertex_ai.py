@@ -3,7 +3,7 @@ Vertex AI Client for Video and Image Generation.
 
 Provides high-level interface for:
 - Veo 3.1: Video generation from text/image prompts
-- Gemini 3 Pro Image: Image generation from text prompts
+- Gemini 2.5 Flash Image: Image generation from text prompts
 
 Uses GCP WIF authentication via gcp_auth module.
 """
@@ -95,7 +95,7 @@ class VertexAIClient:
 
     # Model endpoints
     VEO_MODEL = "veo-3.1-generate-001"  # Veo 3.1
-    IMAGE_MODEL = "gemini-3-pro-image-preview"  # Gemini 3 Pro Image
+    IMAGE_MODEL = "gemini-2.5-flash-image-preview"  # Gemini 2.5 Flash Image
 
     def __init__(
         self,
@@ -263,75 +263,80 @@ class VertexAIClient:
         output_gcs_uri: Optional[str] = None,
     ) -> GenerationResult:
         """
-        Generate an image using Gemini 3 Pro Image.
+        Generate an image using Gemini 2.5 Flash Image.
+
+        Uses Gemini's generateContent API with responseModalities for image output.
 
         Args:
             config: Image generation configuration
-            output_gcs_uri: Optional GCS URI for output (if not provided, returns base64)
+            output_gcs_uri: Optional GCS URI for output (not used for Gemini, always returns base64)
 
         Returns:
             GenerationResult with image data or error
         """
         logger.info(f"Starting image generation: {config.prompt[:50]}...")
 
-        # Build request payload for Imagen 3
-        instances = [{
-            "prompt": config.prompt,
-        }]
-
-        parameters = {
-            "aspectRatio": config.aspect_ratio.value,
-            "sampleCount": config.number_of_images,
-            "safetyFilterLevel": config.safety_filter_level,
-            "personGeneration": config.person_generation,
-        }
-
+        # Build request payload for Gemini generateContent API
+        # Gemini uses a different format than Imagen predict API
+        prompt_text = config.prompt
         if config.negative_prompt:
-            parameters["negativePrompt"] = config.negative_prompt
-
-        if config.seed is not None:
-            parameters["seed"] = config.seed
-
-        if output_gcs_uri:
-            parameters["outputOptions"] = {
-                "gcsUri": output_gcs_uri,
-            }
+            prompt_text += f"\n\nAvoid: {config.negative_prompt}"
 
         request_body = {
-            "instances": instances,
-            "parameters": parameters,
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": f"Generate an image: {prompt_text}"}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "responseModalities": ["TEXT", "IMAGE"],
+            }
         }
 
         try:
-            endpoint = self._get_model_endpoint(self.IMAGE_MODEL, "predict")
+            endpoint = self._get_model_endpoint(self.IMAGE_MODEL, "generateContent")
             logger.info(f"Calling Gemini Image endpoint: {endpoint}")
 
             response = await self._make_request("POST", endpoint, request_body)
 
-            predictions = response.get("predictions", [])
+            # Parse Gemini generateContent response format
+            # Response: { "candidates": [{ "content": { "parts": [{ "inlineData": { "mimeType": "...", "data": "base64..." } }] } }] }
+            candidates = response.get("candidates", [])
 
-            if predictions and len(predictions) > 0:
-                prediction = predictions[0]
+            if candidates and len(candidates) > 0:
+                content = candidates[0].get("content", {})
+                parts = content.get("parts", [])
 
-                # Check for GCS output
-                if "gcsUri" in prediction:
+                for part in parts:
+                    # Check for inline image data
+                    inline_data = part.get("inlineData")
+                    if inline_data:
+                        image_base64 = inline_data.get("data")
+                        if image_base64:
+                            logger.info("Image generated successfully (base64)")
+                            return GenerationResult(
+                                success=True,
+                                image_base64=image_base64,
+                                metadata=response,
+                            )
+
+            # Check for blocked content or other issues
+            if candidates and len(candidates) > 0:
+                finish_reason = candidates[0].get("finishReason", "")
+                if finish_reason == "SAFETY":
                     return GenerationResult(
-                        success=True,
-                        image_uri=prediction["gcsUri"],
-                        metadata=response,
-                    )
-
-                # Check for base64 output
-                if "bytesBase64Encoded" in prediction:
-                    return GenerationResult(
-                        success=True,
-                        image_base64=prediction["bytesBase64Encoded"],
+                        success=False,
+                        error="Image generation blocked by safety filters",
                         metadata=response,
                     )
 
             return GenerationResult(
                 success=False,
-                error="No predictions returned from Imagen API",
+                error="No image data returned from Gemini API",
+                metadata=response,
             )
 
         except Exception as e:
