@@ -509,8 +509,10 @@ export default function PublishPage() {
 
         // Mark session as completed
         try {
+          // Get current activeSession from store (avoids stale closure)
+          const currentActiveSession = useSessionStore.getState().activeSession;
           // Ensure session is loaded before completing (handles fast-cut flow)
-          if (!activeSession && sessionIdFromUrl) {
+          if (!currentActiveSession && sessionIdFromUrl) {
             console.log("[Publish] Loading session before completing:", sessionIdFromUrl);
             await loadSession(sessionIdFromUrl);
           }
