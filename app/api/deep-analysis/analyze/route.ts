@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import {
   fetchAccountForAnalysis,
@@ -261,7 +262,7 @@ async function processAnalysis(
       return {
         analysisId,
         tiktokVideoId: video.id,
-        videoUrl: video.videoUrl,
+        videoUrl: video.videoUrl || `https://www.tiktok.com/video/${video.id}`,
         thumbnailUrl: video.thumbnailUrl,
         description: video.description,
         playCount: BigInt(video.stats.playCount),
@@ -272,16 +273,19 @@ async function processAnalysis(
         aiCategories: aiClassification
           ? [aiClassification.primaryCategory, ...aiClassification.secondaryCategories]
           : [],
-        aiContentType: aiClassification?.contentType,
         aiConfidence: aiClassification?.confidence || 0,
-        aiReasoning: aiClassification?.reasoning,
-        engagementPotential: aiClassification?.engagementPotential,
+        reasoning: aiClassification?.reasoning,
         customTags: [],
         musicTitle: video.musicTitle,
         musicId: video.musicId,
         isOwnMusic: video.isOwnMusic,
         publishedAt: video.createTime ? new Date(video.createTime * 1000) : null,
         duration: video.duration,
+        // Store additional AI data in contentAnalysis JSON field
+        contentAnalysis: aiClassification ? {
+          contentType: aiClassification.contentType,
+          engagementPotential: aiClassification.engagementPotential,
+        } : Prisma.JsonNull,
       };
     });
 

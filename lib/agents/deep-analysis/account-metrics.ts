@@ -111,7 +111,7 @@ export const AccountMetricsOutputSchema = z.object({
       engagement: z.number(),
       interpretation: z.string(),
     }),
-  }),
+  }).optional(),
 });
 
 export type AccountMetricsInput = z.infer<typeof AccountMetricsInputSchema>;

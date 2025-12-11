@@ -668,7 +668,9 @@ export const publishToTikTok = inngest.createFunction(
     retries: 3,
     onFailure: async ({ event, error }) => {
       // Mark the post as FAILED when all retries are exhausted
-      const { videoId, accountId } = event.data;
+      // In onFailure, original event is at event.data.event
+      const originalEvent = event.data.event;
+      const { videoId, accountId } = originalEvent?.data ?? {};
       console.error("[TikTok Publish] Function failed after all retries:", error.message);
 
       try {

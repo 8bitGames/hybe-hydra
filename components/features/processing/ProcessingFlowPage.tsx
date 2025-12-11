@@ -14,6 +14,8 @@ import {
   selectSession,
   selectOriginalVideo,
 } from "@/lib/stores/processing-session-store";
+import { useSessionStore } from "@/lib/stores/session-store";
+import { useShallow } from "zustand/react/shallow";
 import { fastCutApi } from "@/lib/fast-cut-api";
 import {
   GeneratingView,
@@ -46,6 +48,14 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
   const setOriginalVideoCompleted = useProcessingSessionStore((state) => state.setOriginalVideoCompleted);
   const startVariationGeneration = useProcessingSessionStore((state) => state.startVariationGeneration);
   const cancelVariationGeneration = useProcessingSessionStore((state) => state.cancelVariationGeneration);
+
+  // Session store for stage progression (syncs with SessionDashboard)
+  const { proceedToStage, activeSession } = useSessionStore(
+    useShallow((state) => ({
+      proceedToStage: state.proceedToStage,
+      activeSession: state.activeSession,
+    }))
+  );
 
   // Local state for initialization
   const [isInitializing, setIsInitializing] = useState(true);
@@ -158,11 +168,15 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     setState("VARIATION_CONFIG");
   }, [setState]);
 
-  const handleGoToPublish = useCallback(() => {
+  const handleGoToPublish = useCallback(async () => {
     // Direct publish without variations
+    // Update session stage to "publish" before navigating
+    if (activeSession) {
+      await proceedToStage("publish");
+    }
     // Navigate to publish page with the session data
     router.push(`/publish?sessionId=${session?.id}`);
-  }, [router, session?.id]);
+  }, [router, session?.id, activeSession, proceedToStage]);
 
   const handleBackToReady = useCallback(() => {
     setState("READY");
@@ -190,10 +204,14 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     setState("VARIATION_CONFIG");
   }, [cancelVariationGeneration, setState]);
 
-  const handlePublish = useCallback(() => {
+  const handlePublish = useCallback(async () => {
+    // Update session stage to "publish" before navigating
+    if (activeSession) {
+      await proceedToStage("publish");
+    }
     // Navigate to publish page with approved videos
     router.push(`/publish?sessionId=${session?.id}`);
-  }, [router, session?.id]);
+  }, [router, session?.id, activeSession, proceedToStage]);
 
   // Debug logging
   console.log("[ProcessingFlowPage] isHydrated:", isHydrated, "isInitializing:", isInitializing, "session:", session?.id, "state:", session?.state);
