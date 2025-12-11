@@ -67,7 +67,7 @@ interface CacheEntry<T> {
   timestamp: number;
 }
 
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes cache
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours cache
 const userInfoCache = new Map<string, CacheEntry<DeepAnalysisUser>>();
 const videosCache = new Map<string, CacheEntry<DeepAnalysisVideo[]>>();
 

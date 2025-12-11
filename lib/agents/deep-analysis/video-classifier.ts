@@ -101,12 +101,50 @@ Analyze the video's:
 - Weight engagement data in potential assessment
 - Provide clear reasoning for each classification
 
-## Response Format
-Return a JSON object with:
-- classifications: Array of per-video classifications
-- categoryDistribution: Summary by category
-- contentTypeDistribution: Summary by content type
-- insights: Overall analysis and recommendations`;
+## CRITICAL: Response JSON Schema
+You MUST return a valid JSON object matching this EXACT structure:
+
+{
+  "classifications": [
+    {
+      "videoId": "string (video ID)",
+      "primaryCategory": "string (main category)",
+      "secondaryCategories": ["array", "of", "strings"],
+      "contentType": "performance|behind-the-scenes|promotional|trend|personal|collaboration|challenge|other",
+      "confidence": 0.85,
+      "reasoning": "string explanation",
+      "engagementPotential": "high|medium|low"
+    }
+  ],
+  "categoryDistribution": [
+    {
+      "category": "string (category name)",
+      "count": 5,
+      "percentage": 25.0,
+      "avgEngagement": 3.5
+    }
+  ],
+  "contentTypeDistribution": [
+    {
+      "contentType": "string (content type name)",
+      "count": 3,
+      "percentage": 15.0,
+      "avgEngagement": 4.2
+    }
+  ],
+  "insights": {
+    "dominantCategory": "string (most common category)",
+    "dominantContentType": "string (most common content type)",
+    "contentDiversity": 0.65,
+    "recommendations": ["array", "of", "recommendation", "strings"]
+  }
+}
+
+IMPORTANT:
+- categoryDistribution MUST be an ARRAY of objects, NOT an object with category keys
+- contentTypeDistribution MUST be an ARRAY of objects, NOT an object with type keys
+- insights MUST be an OBJECT with the exact fields shown, NOT a string
+- Return ONLY valid JSON, no markdown code blocks or extra text`;
 
 // =============================================================================
 // Agent Implementation

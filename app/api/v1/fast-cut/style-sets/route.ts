@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
       textStyle: set.text.style,
       intensity: set.audio.intensity,
       bpmRange: set.audio.bpmRange,
+      cutDuration: set.audio.cutDuration,
     }));
 
     return NextResponse.json({
@@ -123,6 +124,7 @@ export async function POST(request: NextRequest) {
         colorGrade: selected.video.colorGrade,
         textStyle: selected.text.style,
         intensity: selected.audio.intensity,
+        cutDuration: selected.audio.cutDuration,
       },
       alternatives: alternatives.map(alt => ({
         id: alt.id,

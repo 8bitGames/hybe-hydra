@@ -252,8 +252,9 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
   // Get current session ID for state validation
   const activeSessionId = useSessionStore((state) => state.activeSession?.id);
 
-  // Track if we've hydrated from sessionStorage (client-side only)
-  const [isHydrated, setIsHydrated] = useState(false);
+  // Track which session ID was used for hydration
+  // This allows re-hydration when switching between sessions
+  const [hydratedForSessionId, setHydratedForSessionId] = useState<string | null>(null);
 
   // State - initialize with default, will hydrate from sessionStorage after mount
   const [state, setState] = useState<FastCutState>(() => {
@@ -264,8 +265,25 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
 
   // Hydrate from sessionStorage after mount (client-side only)
   // This is necessary because sessionStorage is not available during SSR
+  // CRITICAL: Re-hydrates when session ID changes to prevent stale data from previous sessions
   useEffect(() => {
-    if (isHydrated) return;
+    // CRITICAL FIX: Wait for activeSessionId to be available before hydrating
+    // This prevents loading stale data when the session store hasn't updated yet
+    if (!activeSessionId) {
+      console.log("[FastCutProvider] Waiting for activeSessionId to be available...");
+      return;
+    }
+
+    // Skip if we've already hydrated for this specific session
+    if (hydratedForSessionId === activeSessionId) {
+      return;
+    }
+
+    // CRITICAL: Clear any stale state when switching to a different session
+    if (hydratedForSessionId !== null && hydratedForSessionId !== activeSessionId) {
+      console.log("[FastCutProvider] Session changed from", hydratedForSessionId, "to", activeSessionId, "- clearing stale state");
+      clearFastCutSessionStorage();
+    }
 
     // CRITICAL: Pass current session ID to validate stored state
     // This prevents loading stale data from previous sessions
@@ -298,16 +316,18 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
       });
     }
 
-    setIsHydrated(true);
-  }, [isHydrated, activeSessionId, analyze.optimizedPrompt, analyze.selectedIdea, analyze.campaignId, analyze.campaignName, discover.keywords]);
+    // Mark that we've hydrated for this specific session
+    setHydratedForSessionId(activeSessionId);
+  }, [hydratedForSessionId, activeSessionId, analyze.optimizedPrompt, analyze.selectedIdea, analyze.campaignId, analyze.campaignName, discover.keywords]);
 
   // Save state to sessionStorage whenever it changes (only after hydration)
   // Include session ID for future validation
   useEffect(() => {
-    if (isHydrated) {
+    // Only save after we've hydrated for a session
+    if (hydratedForSessionId) {
       saveToSessionStorage(state, activeSessionId);
     }
-  }, [state, isHydrated, activeSessionId]);
+  }, [state, hydratedForSessionId, activeSessionId]);
 
   // Fetch style sets on mount
   useEffect(() => {

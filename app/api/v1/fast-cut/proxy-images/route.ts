@@ -30,6 +30,32 @@ function hashUrl(url: string): string {
   return crypto.createHash('md5').update(url).digest('hex').slice(0, 12);
 }
 
+// Check if URL is a base64 data URL
+function isBase64DataUrl(url: string): boolean {
+  return url.startsWith('data:image/');
+}
+
+// Parse base64 data URL and return buffer and mime type
+function parseBase64DataUrl(dataUrl: string): { buffer: Buffer; mimeType: string } | null {
+  try {
+    // Format: data:image/jpeg;base64,/9j/4AAQ...
+    const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+    if (!matches) {
+      return null;
+    }
+
+    const imageType = matches[1]; // jpeg, png, webp, gif, etc.
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+    const mimeType = `image/${imageType}`;
+
+    return { buffer, mimeType };
+  } catch (error) {
+    console.error('[Fast Cut Proxy] Failed to parse base64 data URL:', error);
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
@@ -58,6 +84,71 @@ export async function POST(request: NextRequest) {
       images.map(async (image, index) => {
         try {
           // =====================================================
+          // STEP 0: Handle base64 data URLs directly
+          // =====================================================
+          if (isBase64DataUrl(image.url)) {
+            console.log(`[Fast Cut Proxy] 📦 BASE64: Processing base64 data URL for image ${image.id}`);
+
+            const parsed = parseBase64DataUrl(image.url);
+            if (!parsed) {
+              throw new Error('Invalid base64 data URL format');
+            }
+
+            const { buffer, mimeType } = parsed;
+
+            // Generate hash from content for deduplication
+            const contentHash = generateContentHash(buffer);
+
+            // Check content hash cache
+            const contentCacheCheck = await getOrCheckImageCache(image.url, buffer);
+            if (contentCacheCheck.cached) {
+              cacheHits++;
+              console.log(`[Fast Cut Proxy] ✅ CACHE HIT (base64 content hash): ${image.id}`);
+              results.push({
+                originalUrl: image.url.slice(0, 50) + '...[base64]',
+                minioUrl: contentCacheCheck.s3Url,
+                id: image.id,
+                success: true,
+                fromCache: true,
+              });
+              return;
+            }
+
+            // Upload to S3
+            cacheMisses++;
+            let ext = 'jpg';
+            if (mimeType.includes('png')) ext = 'png';
+            else if (mimeType.includes('webp')) ext = 'webp';
+            else if (mimeType.includes('gif')) ext = 'gif';
+
+            const urlHash = hashUrl(contentHash); // Use content hash for filename
+            const objectKey = `fast-cut/cached/${urlHash}.${ext}`;
+            const minioUrl = await uploadToS3(buffer, objectKey, mimeType);
+
+            // Store in cache
+            setCachedImage({
+              sourceUrl: image.url,
+              contentHash,
+              s3Url: minioUrl,
+              s3Key: objectKey,
+              mimeType,
+              fileSize: buffer.length,
+            }).catch(err => {
+              console.warn(`[Fast Cut Proxy] Cache store failed (non-fatal):`, err);
+            });
+
+            console.log(`[Fast Cut Proxy] 💾 BASE64 → S3: ${image.id} → ${objectKey} (${buffer.length} bytes)`);
+            results.push({
+              originalUrl: image.url.slice(0, 50) + '...[base64]',
+              minioUrl,
+              id: image.id,
+              success: true,
+              fromCache: false,
+            });
+            return;
+          }
+
+          // =====================================================
           // STEP 1: Check URL cache first (fast, no download)
           // =====================================================
           const urlCacheCheck = await getOrCheckImageCache(image.url);
@@ -75,7 +166,7 @@ export async function POST(request: NextRequest) {
           }
 
           // =====================================================
-          // STEP 2: Cache miss - download image
+          // STEP 2: Cache miss - download image via HTTP
           // =====================================================
           const response = await fetch(image.url, {
             headers: {

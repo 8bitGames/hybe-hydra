@@ -8,6 +8,7 @@ import {
   useProcessingSessionHydrated,
   selectSession,
 } from "@/lib/stores/processing-session-store";
+import { useSessionStore } from "@/lib/stores/session-store";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
 import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 import { useI18n } from "@/lib/i18n";
@@ -128,6 +129,7 @@ export default function PublishPage() {
   // Session sync for persisted state management
   const sessionId = searchParams.get("session");
   const { activeSession, syncNow } = useSessionWorkflowSync("publish");
+  const completeSession = useSessionStore((state) => state.completeSession);
 
   // Workflow store
   const discover = useWorkflowStore((state) => state.discover);
@@ -483,6 +485,15 @@ export default function PublishPage() {
           isKorean ? "발행 예약 완료" : "Scheduled",
           isKorean ? `${successCount}개의 발행이 예약되었습니다` : `${successCount} posts scheduled`
         );
+
+        // Mark session as completed
+        try {
+          await completeSession();
+          console.log("[Publish] Session marked as completed");
+        } catch (err) {
+          console.error("[Publish] Failed to mark session as completed:", err);
+        }
+
         // Show success dialog instead of immediately redirecting
         setPublishedVideos(approvedVideos);
         setShowSuccessDialog(true);

@@ -46,8 +46,6 @@ import {
   AudioMatch,
   TikTokSEO,
   StyleSetSummary,
-  VIBE_PRESETS,
-  VibeType,
 } from "@/lib/fast-cut-api";
 import { KeywordInputPopover } from "@/components/ui/keyword-input-popover";
 
@@ -65,15 +63,6 @@ interface FastCutEffectStepProps {
   setTiktokSEO: (seo: TikTokSEO | null) => void;
   rendering: boolean;
   onStartRender: () => void;
-}
-
-// Helper function to get cut duration from vibe
-function getCutDurationFromVibe(vibe: string): number {
-  const vibeKey = vibe as VibeType;
-  if (vibeKey in VIBE_PRESETS) {
-    return VIBE_PRESETS[vibeKey].cutDuration;
-  }
-  return 1.5; // Default fallback
 }
 
 // Format seconds to mm:ss.s
@@ -106,9 +95,8 @@ function SubtitleTimelineEditor({
 
   // Get cut duration from style (for display purposes)
   const cutDuration = useMemo(() => {
-    if (!selectedStyleSet?.vibe) return 1.5;
-    return getCutDurationFromVibe(selectedStyleSet.vibe);
-  }, [selectedStyleSet?.vibe]);
+    return selectedStyleSet?.cutDuration ?? 1.5;
+  }, [selectedStyleSet?.cutDuration]);
 
   // Total duration comes from script (fixed by prompt), not from images
   const totalDuration = useMemo(() => {
@@ -771,7 +759,7 @@ export function FastCutEffectStep({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {styleSets.map((styleSet) => {
             const isSelected = styleSet.id === styleSetId;
-            const styleCutDuration = getCutDurationFromVibe(styleSet.vibe);
+            const styleCutDuration = styleSet.cutDuration;
             return (
               <button
                 key={styleSet.id}
@@ -881,7 +869,7 @@ export function FastCutEffectStep({
               <div>
                 <span className="text-neutral-500 block">{language === "ko" ? "전환 속도" : "Transition"}</span>
                 <span className="text-neutral-700 font-medium">
-                  {getCutDurationFromVibe(selectedStyleSet.vibe)}s
+                  {selectedStyleSet.cutDuration}s
                 </span>
               </div>
             </div>

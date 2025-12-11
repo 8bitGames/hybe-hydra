@@ -724,14 +724,23 @@ function KeywordCard({
   isLoading,
   onClick,
   onDelete,
+  isKorean = false,
 }: {
   keyword: TrackedKeyword;
   isSelected: boolean;
   isLoading?: boolean;
   onClick: () => void;
   onDelete: (e: React.MouseEvent) => void;
+  isKorean?: boolean;
 }) {
   const isUser = keyword.type === "user";
+
+  // Type labels
+  const typeLabels = {
+    user: isKorean ? "사용자" : "User",
+    hashtag: isKorean ? "해시태그" : "Hashtag",
+    keyword: isKorean ? "키워드" : "Keyword",
+  };
 
   // Show skeleton state when loading
   if (isLoading) {
@@ -744,7 +753,11 @@ function KeywordCard({
             : "border-border bg-background"
         )}
       >
-        <div className="flex items-center gap-2 mb-2">
+        {/* Type badge */}
+        <span className="absolute top-1 left-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground">
+          {typeLabels[keyword.type]}
+        </span>
+        <div className="flex items-center gap-2 mb-2 mt-4">
           <Skeleton className="h-4 w-20 flex-1" />
           <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
         </div>
@@ -775,10 +788,15 @@ function KeywordCard({
         <X className="h-3 w-3" />
       </button>
 
+      {/* Type badge */}
+      <span className="absolute top-1 left-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground">
+        {typeLabels[keyword.type]}
+      </span>
+
       {isUser && keyword.userInfo ? (
         <>
           {/* User Card Layout */}
-          <div className="flex items-center gap-2 mb-2 pr-5">
+          <div className="flex items-center gap-2 mb-2 pr-5 mt-4">
             {keyword.userInfo.avatarUrl ? (
               <img
                 src={keyword.userInfo.avatarUrl}
@@ -808,7 +826,7 @@ function KeywordCard({
       ) : (
         <>
           {/* Keyword/Hashtag Card Layout */}
-          <div className="flex items-center gap-2 mb-2 pr-5">
+          <div className="flex items-center gap-2 mb-2 pr-5 mt-4">
             <span className="text-sm font-semibold truncate flex-1 min-w-0">
               {keyword.type === "hashtag" ? "#" : ""}
               {keyword.keyword}
@@ -2048,6 +2066,7 @@ export default function TrendDashboardPage() {
                         e.stopPropagation();
                         handleRemoveKeyword(kw.id);
                       }}
+                      isKorean={isKorean}
                     />
                   ))}
                   <AddKeywordCard onClick={() => setAddKeywordDialogOpen(true)} />

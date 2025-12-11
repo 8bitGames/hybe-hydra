@@ -197,3 +197,17 @@ TikTok 공유 화면 열림
 개수: 최대 5개
 도메인: 영상에 보이는 URL이 hydra.ai.kr과 일치해야 함
 환경: Sandbox 환경 사용 (앱 미승인 상태)
+
+
+
+
+(1) AI Accounts (created with Sanghyun; 우리가 2개월동안 만든거)
+
+@talentedtr  38 Followers 4541 Likes
+@writteninstonecold 356Followers 41.6KLikes
+@postcardsfromperry 35 Followers 10.8K Likes
+
+(2) 동기간, 동일 아티  비교군 Accounts: 
+https://www.tiktok.com/@carlysnextgirl  83 Followers 18.7K Likes
+https://www.tiktok.com/@trfansforever  220 Followers 52K Likes
+https://www.tiktok.com/@burymeinsatin_3  6 Followers 1076 Likes

@@ -1,0 +1,382 @@
+{
+  "events": [
+    {
+      "timestamp": 1765437000135,
+      "message": "==========",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000135,
+      "message": "== CUDA ==",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000135,
+      "message": "==========",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000137,
+      "message": "CUDA Version 12.4.0",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000138,
+      "message": "Container image Copyright (c) 2016-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000139,
+      "message": "This container image and its contents are governed by the NVIDIA Deep Learning Container License.",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000139,
+      "message": "By pulling and using the container, you accept the terms and conditions of this license:",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000139,
+      "message": "https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000139,
+      "message": "A copy of this license is made available in this container at /NGC-DL-CONTAINER-LICENSE for your convenience.",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000140,
+      "message": "/opt/nvidia/entrypoint.d/50-gpu-driver-check.sh: line 5: ldconfig: command not found",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000147,
+      "message": "WARNING: The NVIDIA Driver was not detected.  GPU functionality will not be available.",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000147,
+      "message": "   Use the NVIDIA Container Toolkit to start this container with GPU support; see",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000147,
+      "message": "   https://docs.nvidia.com/datacenter/cloud-native/ .",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437000570,
+      "message": "[FFmpeg] Using NVENC FFmpeg: /usr/local/bin/ffmpeg",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001363,
+      "message": "[GL_RENDERER] PyOpenGL + OSMesa imported successfully!",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001411,
+      "message": "2025-12-11 07:10:01,411 - __main__ - INFO - === AWS Batch AI Worker Starting ===",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001411,
+      "message": "2025-12-11 07:10:01,411 - __main__ - INFO - Loading secrets from AWS Secrets Manager: hydra/compose-engine",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001581,
+      "message": "2025-12-11 07:10:01,581 - __main__ - INFO - Loaded 6 secrets from AWS Secrets Manager",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001589,
+      "message": "2025-12-11 07:10:01,589 - __main__ - INFO - GCP secrets not found, using defaults",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001591,
+      "message": "2025-12-11 07:10:01,590 - __main__ - INFO - GCP credentials file found: /root/clientLibraryConfig.json",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001591,
+      "message": "2025-12-11 07:10:01,591 - __main__ - INFO - === Checking AWS Identity for WIF ===",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001669,
+      "message": "2025-12-11 07:10:01,669 - __main__ - INFO - AWS Account: 139984419402",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001669,
+      "message": "2025-12-11 07:10:01,669 - __main__ - INFO - AWS ARN: arn:aws:sts::139984419402:assumed-role/hydra-batch-job-role/a1a095ca9a3d46bfb39dc6cc2c156355",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001669,
+      "message": "2025-12-11 07:10:01,669 - __main__ - INFO - AWS UserId: AROASBF5YXJFIFLXHKTJD:a1a095ca9a3d46bfb39dc6cc2c156355",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001669,
+      "message": "2025-12-11 07:10:01,669 - __main__ - INFO - Role Name (for WIF): hydra-batch-job-role",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001669,
+      "message": "2025-12-11 07:10:01,669 - __main__ - INFO - Expected WIF attribute: arn:aws:sts::139984419402:assumed-role/hydra-batch-job-role",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001670,
+      "message": "2025-12-11 07:10:01,670 - __main__ - INFO - Running WIF diagnostic mode...",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001670,
+      "message": "2025-12-11 07:10:01,670 - __main__ - INFO - ",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001671,
+      "message": "2025-12-11 07:10:01,670 - __main__ - INFO - ============================================================",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001671,
+      "message": "2025-12-11 07:10:01,671 - __main__ - INFO -     WIF COMPREHENSIVE DIAGNOSTIC TEST v5",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001671,
+      "message": "2025-12-11 07:10:01,671 - __main__ - INFO - ============================================================",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001671,
+      "message": "2025-12-11 07:10:01,671 - __main__ - INFO - ",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001671,
+      "message": "2025-12-11 07:10:01,671 - __main__ - INFO - === Test 1: WIF STS Token Exchange (No Impersonation) ===",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001671,
+      "message": "2025-12-11 07:10:01,671 - __main__ - WARNING - WIF-only config not found: /root/clientLibraryConfig-wif-only.json",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001671,
+      "message": "2025-12-11 07:10:01,671 - __main__ - INFO - Creating WIF-only config...",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437001671,
+      "message": "2025-12-11 07:10:01,671 - __main__ - INFO - Created WIF-only config",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437002505,
+      "message": "2025-12-11 07:10:02,504 - __main__ - INFO - Credential type: Credentials",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437002505,
+      "message": "2025-12-11 07:10:02,504 - __main__ - INFO - Detected project: None",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437002746,
+      "message": "2025-12-11 07:10:02,746 - __main__ - INFO - ✅ WIF STS Token acquired: ya29.d.c0AYnqXliU4fe1fE2edY4S4...",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437002746,
+      "message": "2025-12-11 07:10:02,746 - __main__ - INFO - ✅ Test 1 PASSED: WIF STS token exchange works!",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437002747,
+      "message": "2025-12-11 07:10:02,747 - __main__ - INFO - ",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437002747,
+      "message": "2025-12-11 07:10:02,747 - __main__ - INFO - === Test 2: WIF + Auto Impersonation (hyb-mgmt-prod SA) ===",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003133,
+      "message": "2025-12-11 07:10:03,133 - __main__ - ERROR - ❌ Test 2 FAILED: ('Unable to acquire impersonated credentials', '{\\n  \"error\": {\\n    \"code\": 403,\\n    \"message\": \"Permission \\'iam.serviceAccounts.getAccessToken\\' denied on resource (or it may not exist).\",\\n    \"status\": \"PERMISSION_DENIED\",\\n    \"details\": [\\n      {\\n        \"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\",\\n        \"reason\": \"IAM_PERMISSION_DENIED\",\\n        \"domain\": \"iam.googleapis.com\",\\n        \"metadata\": {\\n          \"permission\": \"iam.serviceAccounts.getAccessToken\"\\n        }\\n      }\\n    ]\\n  }\\n}\\n')",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003133,
+      "message": "2025-12-11 07:10:03,133 - __main__ - ERROR - → Root cause: WIF principal lacks 'Service Account Token Creator' role",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003133,
+      "message": "2025-12-11 07:10:03,133 - __main__ - ERROR - → Check: sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com permissions",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003136,
+      "message": "2025-12-11 07:10:03,135 - __main__ - INFO - ",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003136,
+      "message": "2025-12-11 07:10:03,136 - __main__ - INFO - === Test 2b: WIF Direct to hyb-hydra-dev SA ===",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003540,
+      "message": "2025-12-11 07:10:03,539 - __main__ - ERROR - [FAIL] Test 2b FAILED: ('Unable to acquire impersonated credentials', '{\\n  \"error\": {\\n    \"code\": 403,\\n    \"message\": \"Permission \\'iam.serviceAccounts.getAccessToken\\' denied on resource (or it may not exist).\",\\n    \"status\": \"PERMISSION_DENIED\",\\n    \"details\": [\\n      {\\n        \"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\",\\n        \"reason\": \"IAM_PERMISSION_DENIED\",\\n        \"domain\": \"iam.googleapis.com\",\\n        \"metadata\": {\\n          \"permission\": \"iam.serviceAccounts.getAccessToken\"\\n        }\\n      }\\n    ]\\n  }\\n}\\n')",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003540,
+      "message": "2025-12-11 07:10:03,539 - __main__ - ERROR - -> Root cause: WIF principal lacks 'Service Account Token Creator' role",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003540,
+      "message": "2025-12-11 07:10:03,539 - __main__ - ERROR - -> Need: Grant Token Creator to WIF principal on hyb-hydra-dev SA",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,541 - __main__ - INFO - ",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - === Test 3: Skipped (Test 2 failed) ===",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - ",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - ============================================================",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO -     DIAGNOSTIC SUMMARY",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - ============================================================",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - Test 1  (WIF STS Token):           [PASS]",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - Test 2  (WIF -> mgmt-prod SA):     [FAIL]",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - Test 2b (WIF -> hyb-hydra-dev):    [FAIL]",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - Test 3  (mgmt-prod -> hydra-dev):  [SKIP]",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - ============================================================",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - ",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - [FIX] RECOMMENDATION: Need Token Creator on hyb-hydra-dev SA",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO -    - Grant 'Service Account Token Creator' role to WIF principal",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO -    - Principal: principal://iam.googleapis.com/projects/1087943557989/locations/global/workloadIdentityPools/hyb-hydra-dev/subject/arn:aws:sts::139984419402:assumed-role/hydra-batch-job-role",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003542,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO -    - Target: sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003543,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO - ",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003543,
+      "message": "2025-12-11 07:10:03,542 - __main__ - INFO -    GCloud command:",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003543,
+      "message": "2025-12-11 07:10:03,543 - __main__ - INFO -    gcloud iam service-accounts add-iam-policy-binding \\",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003543,
+      "message": "2025-12-11 07:10:03,543 - __main__ - INFO -      sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com \\",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003543,
+      "message": "2025-12-11 07:10:03,543 - __main__ - INFO -      --role='roles/iam.serviceAccountTokenCreator' \\",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003543,
+      "message": "2025-12-11 07:10:03,543 - __main__ - INFO -      --member='principal://iam.googleapis.com/projects/1087943557989/locations/global/workloadIdentityPools/hyb-hydra-dev/subject/arn:aws:sts::139984419402:assumed-role/hydra-batch-job-role'",
+      "ingestionTime": 1765437003849
+    },
+    {
+      "timestamp": 1765437003543,
+      "message": "2025-12-11 07:10:03,543 - __main__ - INFO - Diagnostic complete - exiting",
+      "ingestionTime": 1765437003849
+    }
+  ],
+  "nextForwardToken": "f/39370560780069847967651674027426959288374612978843451464/s",
+  "nextBackwardToken": "b/39370560704068908331059310361073231415188996966462193664/s",
+  "ResponseMetadata": {
+    "RequestId": "b5fbb152-96a8-43d6-beff-6b49495cea1c",
+    "HTTPStatusCode": 200,
+    "HTTPHeaders": {
+      "x-amzn-requestid": "b5fbb152-96a8-43d6-beff-6b49495cea1c",
+      "content-type": "application/x-amz-json-1.1",
+      "content-length": "17776",
+      "date": "Thu, 11 Dec 2025 07:10:12 GMT"
+    },
+    "RetryAttempts": 0
+  }
+}

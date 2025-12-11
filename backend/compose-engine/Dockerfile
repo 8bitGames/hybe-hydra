@@ -269,9 +269,14 @@ COPY app/ /root/app/
 COPY aws-batch/batch_worker.py /root/batch_worker.py
 COPY aws-batch/ai_worker.py /root/ai_worker.py
 
-# Copy GCP WIF credential config (for Vertex AI authentication)
+# Copy GCP WIF credential config files (for Vertex AI authentication)
 # This file is used by google-auth to exchange AWS credentials for GCP tokens
-COPY clientLibraryConfig-hyb-hydra-dev.json /root/clientLibraryConfig.json
+# - clientLibraryConfig-wif-only.json: WIF direct (no SA impersonation) - DEFAULT
+# - clientLibraryConfig-hyb-hydra-dev.json: With SA impersonation to hyb-mgmt-prod
+# - clientLibraryConfig-hyb-hydra-dev-direct.json: Direct config (points to hyb-hydra-dev SA)
+COPY clientLibraryConfig-wif-only.json /root/clientLibraryConfig.json
+COPY clientLibraryConfig-hyb-hydra-dev.json /root/clientLibraryConfig-hyb-hydra-dev.json
+COPY clientLibraryConfig-hyb-hydra-dev-direct.json /root/clientLibraryConfig-hyb-hydra-dev-direct.json
 ENV GOOGLE_APPLICATION_CREDENTIALS=/root/clientLibraryConfig.json
 
 EXPOSE 8000

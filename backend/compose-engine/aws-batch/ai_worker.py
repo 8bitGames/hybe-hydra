@@ -621,6 +621,76 @@ def test_wif_with_impersonation():
         return False
 
 
+def test_wif_direct_to_hydra_dev():
+    """
+    Test 2b: WIF direct impersonation to hyb-hydra-dev SA.
+    This tests if WIF can directly impersonate sa-wif-hyb-hydra-dev@hyb-hydra-dev.
+    Uses clientLibraryConfig-hyb-hydra-dev-direct.json config.
+    """
+    logger.info("=== Test 2b: WIF Direct to hyb-hydra-dev SA ===")
+
+    # Use the direct config that points to hyb-hydra-dev SA
+    direct_config = "/root/clientLibraryConfig-hyb-hydra-dev-direct.json"
+
+    if not os.path.exists(direct_config):
+        logger.warning(f"Direct config not found: {direct_config}")
+        logger.info("Creating direct config for hyb-hydra-dev...")
+
+        # Read current config and change impersonation URL
+        current_config = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "/root/clientLibraryConfig.json")
+        try:
+            with open(current_config, 'r') as f:
+                config = json.load(f)
+
+            # Change impersonation URL to hyb-hydra-dev SA
+            config['service_account_impersonation_url'] = \
+                "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com:generateAccessToken"
+
+            with open(direct_config, 'w') as f:
+                json.dump(config, f, indent=2)
+
+            logger.info("Created direct config for hyb-hydra-dev")
+        except Exception as e:
+            logger.error(f"Failed to create direct config: {e}")
+            return False
+
+    # Temporarily use direct config
+    original_cred = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = direct_config
+
+    try:
+        import google.auth
+        from google.auth.transport.requests import Request
+
+        credentials, project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+
+        logger.info(f"Credential type: {type(credentials).__name__}")
+
+        # Try to refresh token (this triggers impersonation)
+        request = Request()
+        credentials.refresh(request)
+
+        if credentials.token:
+            logger.info(f"[PASS] Direct Token acquired: {credentials.token[:30]}...")
+            logger.info("[PASS] Test 2b PASSED: WIF direct to hyb-hydra-dev works!")
+            return True
+        else:
+            logger.error("[FAIL] No token returned")
+            return False
+
+    except Exception as e:
+        logger.error(f"[FAIL] Test 2b FAILED: {e}")
+        error_str = str(e)
+        if "iam.serviceAccounts.getAccessToken" in error_str:
+            logger.error("-> Root cause: WIF principal lacks 'Service Account Token Creator' role")
+            logger.error("-> Need: Grant Token Creator to WIF principal on hyb-hydra-dev SA")
+        return False
+    finally:
+        # Restore original config
+        if original_cred:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = original_cred
+
+
 def test_manual_impersonation(target_sa: str):
     """
     Test 3: Manual impersonation to another SA.
@@ -672,22 +742,26 @@ def run_wif_diagnostics():
     """Run comprehensive WIF diagnostics."""
     logger.info("")
     logger.info("=" * 60)
-    logger.info("    WIF COMPREHENSIVE DIAGNOSTIC TEST")
+    logger.info("    WIF COMPREHENSIVE DIAGNOSTIC TEST v5")
     logger.info("=" * 60)
     logger.info("")
 
     results = {}
 
-    # Test 1: WIF STS only
+    # Test 1: WIF STS only (no impersonation)
     results['wif_sts'] = test_wif_sts_only()
     logger.info("")
 
-    # Test 2: WIF + auto impersonation
-    results['wif_impersonation'] = test_wif_with_impersonation()
+    # Test 2: WIF + mgmt-prod impersonation (current config)
+    results['wif_mgmt_prod'] = test_wif_with_impersonation()
     logger.info("")
 
-    # Test 3: Manual impersonation (only if Test 2 passes)
-    if results['wif_impersonation']:
+    # Test 2b: WIF + direct hyb-hydra-dev impersonation (THIS IS WHAT WE NEED)
+    results['wif_hydra_dev_direct'] = test_wif_direct_to_hydra_dev()
+    logger.info("")
+
+    # Test 3: Manual impersonation chain (only if Test 2 passes)
+    if results['wif_mgmt_prod']:
         target_sa = "sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com"
         results['manual_impersonation'] = test_manual_impersonation(target_sa)
     else:
@@ -699,35 +773,40 @@ def run_wif_diagnostics():
     logger.info("=" * 60)
     logger.info("    DIAGNOSTIC SUMMARY")
     logger.info("=" * 60)
-    logger.info(f"Test 1 (WIF STS Token):        {'✅ PASS' if results['wif_sts'] else '❌ FAIL'}")
-    logger.info(f"Test 2 (WIF + mgmt-prod SA):   {'✅ PASS' if results['wif_impersonation'] else '❌ FAIL'}")
+    logger.info(f"Test 1  (WIF STS Token):           {'[PASS]' if results['wif_sts'] else '[FAIL]'}")
+    logger.info(f"Test 2  (WIF -> mgmt-prod SA):     {'[PASS]' if results['wif_mgmt_prod'] else '[FAIL]'}")
+    logger.info(f"Test 2b (WIF -> hyb-hydra-dev):    {'[PASS]' if results['wif_hydra_dev_direct'] else '[FAIL]'}")
     if results['manual_impersonation'] is not None:
-        logger.info(f"Test 3 (→ hyb-hydra-dev SA):   {'✅ PASS' if results['manual_impersonation'] else '❌ FAIL'}")
+        logger.info(f"Test 3  (mgmt-prod -> hydra-dev):  {'[PASS]' if results['manual_impersonation'] else '[FAIL]'}")
     else:
-        logger.info(f"Test 3 (→ hyb-hydra-dev SA):   ⏭️ SKIPPED")
+        logger.info(f"Test 3  (mgmt-prod -> hydra-dev):  [SKIP]")
     logger.info("=" * 60)
 
-    # Recommendations
+    # Recommendations based on results
     logger.info("")
     if not results['wif_sts']:
-        logger.info("🔧 RECOMMENDATION: WIF Pool/Provider configuration issue")
+        logger.info("[FIX] RECOMMENDATION: WIF Pool/Provider configuration issue")
         logger.info("   - Check WIF Pool audience matches config")
         logger.info("   - Check WIF Provider attribute mapping")
         logger.info("   - Verify AWS Role ARN in attribute conditions")
-    elif not results['wif_impersonation']:
-        logger.info("🔧 RECOMMENDATION: Missing permission on hyb-mgmt-prod SA")
-        logger.info("   - Add 'Service Account Token Creator' role to WIF principal")
-        logger.info("   - Principal: principal://iam.googleapis.com/projects/1087943557989/...")
-        logger.info("   - Target: sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com")
-    elif results['manual_impersonation'] is False:
-        logger.info("🔧 RECOMMENDATION: Missing permission for 2nd impersonation")
-        logger.info("   - Add 'Service Account Token Creator' role to mgmt-prod SA")
-        logger.info("   - Principal: sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com")
+    elif results['wif_hydra_dev_direct']:
+        # Test 2b passed - this is the correct path!
+        logger.info("[OK] SUCCESS: WIF direct to hyb-hydra-dev works!")
+        logger.info("   - Use clientLibraryConfig-hyb-hydra-dev-direct.json for production")
+        logger.info("   - Target SA: sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com")
+    elif not results['wif_hydra_dev_direct']:
+        logger.info("[FIX] RECOMMENDATION: Need Token Creator on hyb-hydra-dev SA")
+        logger.info("   - Grant 'Service Account Token Creator' role to WIF principal")
+        logger.info("   - Principal: principal://iam.googleapis.com/projects/1087943557989/locations/global/workloadIdentityPools/hyb-hydra-dev/subject/arn:aws:sts::139984419402:assumed-role/hydra-batch-job-role")
         logger.info("   - Target: sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com")
-    else:
-        logger.info("✅ All tests passed! WIF authentication is working correctly.")
+        logger.info("")
+        logger.info("   GCloud command:")
+        logger.info("   gcloud iam service-accounts add-iam-policy-binding \\")
+        logger.info("     sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com \\")
+        logger.info("     --role='roles/iam.serviceAccountTokenCreator' \\")
+        logger.info("     --member='principal://iam.googleapis.com/projects/1087943557989/locations/global/workloadIdentityPools/hyb-hydra-dev/subject/arn:aws:sts::139984419402:assumed-role/hydra-batch-job-role'")
 
-    return all(v for v in results.values() if v is not None)
+    return results.get('wif_hydra_dev_direct', False)
 
 
 def test_gcp_auth():

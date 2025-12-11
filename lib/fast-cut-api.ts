@@ -20,6 +20,7 @@ export interface StyleSetSummary {
   textStyle: string;
   intensity: 'low' | 'medium' | 'high';
   bpmRange?: [number, number];
+  cutDuration: number;
 }
 
 export interface StyleSetSelection {

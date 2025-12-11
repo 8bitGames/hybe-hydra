@@ -61,6 +61,7 @@ interface UploadedImage {
   name: string;
   file?: File;
   order: number;
+  isBase64?: boolean; // Flag to identify base64 stored images
 }
 
 interface AudioAsset {
@@ -86,8 +87,40 @@ export default function StyleSetTestPage() {
   const audioInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // Image State
-  const [images, setImages] = useState<UploadedImage[]>([]);
+  // Image State - Initialize from localStorage
+  const [images, setImages] = useState<UploadedImage[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("fastcut-test-images");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Filter out blob URLs (they won't work after refresh)
+        // Keep base64 data URLs and external URLs
+        return parsed.filter((img: UploadedImage) =>
+          !img.url.startsWith("blob:") || img.isBase64
+        );
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return [];
+  });
+
+  // Save images to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // Save base64 URLs and external URLs (not blob URLs without base64 flag)
+    const savableImages = images
+      .filter((img) => !img.url.startsWith("blob:") || img.isBase64)
+      .map(({ file, ...rest }) => rest); // Remove file objects (can't be serialized)
+
+    try {
+      localStorage.setItem("fastcut-test-images", JSON.stringify(savableImages));
+    } catch (e) {
+      // Handle localStorage quota exceeded
+      console.warn("Failed to save images to localStorage:", e);
+    }
+  }, [images]);
 
   // Campaign State
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -182,7 +215,49 @@ export default function StyleSetTestPage() {
     return audioAssets.find((a) => a.id === selectedAudioId);
   }, [audioAssets, selectedAudioId]);
 
-  // Handle file upload
+  // Generate default script lines for testing (15 seconds total)
+  const generateTestScript = useCallback(() => {
+    const cutDuration = selectedStyleSet?.cutDuration ?? 1.5;
+    const totalDuration = 15; // Fixed 15 seconds
+    const numSubtitles = Math.ceil(totalDuration / cutDuration);
+
+    const testSubtitles = [
+      "스타일 테스트 영상",
+      "Fast Cut으로 만든",
+      "짧고 임팩트 있는",
+      "숏폼 콘텐츠",
+      "다양한 효과와",
+      "트랜지션으로",
+      "눈길을 사로잡는",
+      "영상을 만들어보세요",
+      "지금 바로 시작!",
+      "더 많은 기능을",
+    ];
+
+    const lines = [];
+    for (let idx = 0; idx < numSubtitles; idx++) {
+      const timing = idx * cutDuration;
+      if (timing >= totalDuration) break;
+      lines.push({
+        text: testSubtitles[idx % testSubtitles.length],
+        timing,
+        duration: Math.min(cutDuration, totalDuration - timing),
+      });
+    }
+    return lines;
+  }, [selectedStyleSet?.cutDuration]);
+
+  // Convert file to base64 data URL
+  const fileToBase64 = useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  // Handle file upload - convert to base64 for persistence
   const handleFileUpload = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
@@ -193,18 +268,33 @@ export default function StyleSetTestPage() {
       const file = files[i];
       if (!file.type.startsWith("image/")) continue;
 
-      const url = URL.createObjectURL(file);
-      newImages.push({
-        id: uuidv4(),
-        url,
-        name: file.name,
-        file,
-        order: currentOrder + i,
-      });
+      try {
+        // Convert to base64 data URL for localStorage persistence
+        const base64Url = await fileToBase64(file);
+        newImages.push({
+          id: uuidv4(),
+          url: base64Url,
+          name: file.name,
+          file,
+          order: currentOrder + i,
+          isBase64: true,
+        });
+      } catch (err) {
+        console.error("Failed to convert image to base64:", err);
+        // Fallback to blob URL if base64 fails
+        const url = URL.createObjectURL(file);
+        newImages.push({
+          id: uuidv4(),
+          url,
+          name: file.name,
+          file,
+          order: currentOrder + i,
+        });
+      }
     }
 
     setImages((prev) => [...prev, ...newImages]);
-  }, [images.length]);
+  }, [images.length, fileToBase64]);
 
   // Add sample images
   const addSampleImages = useCallback(() => {
@@ -221,6 +311,11 @@ export default function StyleSetTestPage() {
   // Remove image
   const removeImage = useCallback((id: string) => {
     setImages((prev) => {
+      const imgToRemove = prev.find((img) => img.id === id);
+      // Only revoke blob URLs, not base64 data URLs
+      if (imgToRemove?.url.startsWith("blob:")) {
+        URL.revokeObjectURL(imgToRemove.url);
+      }
       const filtered = prev.filter((img) => img.id !== id);
       return filtered.map((img, idx) => ({ ...img, order: idx }));
     });
@@ -229,11 +324,16 @@ export default function StyleSetTestPage() {
   // Clear all images
   const clearAllImages = useCallback(() => {
     images.forEach((img) => {
-      if (img.file) {
+      // Only revoke blob URLs, not base64 data URLs
+      if (img.file && img.url.startsWith("blob:")) {
         URL.revokeObjectURL(img.url);
       }
     });
     setImages([]);
+    // Also clear from localStorage
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("fastcut-test-images");
+    }
   }, [images]);
 
   // Move image order
@@ -388,17 +488,68 @@ export default function StyleSetTestPage() {
     console.log(`${LOG_PREFIX} Generated job ID: ${newGenerationId}`);
 
     try {
+      // Check if any images are base64 data URLs and need to be proxied to S3
+      const hasBase64Images = images.some((img) => img.url.startsWith("data:image/"));
+      let processedImages = images;
+
+      if (hasBase64Images) {
+        console.log(`${LOG_PREFIX} Found base64 images, uploading to S3 first...`);
+        setRenderStatus({
+          status: "processing",
+          progress: 5,
+          currentStep: language === "ko" ? "이미지 업로드 중..." : "Uploading images...",
+        });
+
+        try {
+          const proxyResult = await fastCutApi.proxyImages(
+            newGenerationId,
+            images.map((img) => ({ url: img.url, id: img.id }))
+          );
+
+          console.log(`${LOG_PREFIX} Proxy result:`, {
+            successful: proxyResult.successful,
+            failed: proxyResult.failed,
+          });
+
+          if (proxyResult.successful < 3) {
+            throw new Error(
+              language === "ko"
+                ? `이미지 업로드 실패: ${proxyResult.successful}개만 성공 (최소 3개 필요)`
+                : `Image upload failed: only ${proxyResult.successful} succeeded (need at least 3)`
+            );
+          }
+
+          // Replace base64 URLs with S3 URLs
+          processedImages = images.map((img) => {
+            const proxyItem = proxyResult.results.find((r) => r.id === img.id);
+            if (proxyItem?.success && proxyItem.minioUrl) {
+              return { ...img, url: proxyItem.minioUrl };
+            }
+            return img;
+          });
+
+          console.log(`${LOG_PREFIX} Images uploaded to S3:`, processedImages.map((img) => img.url.substring(0, 80)));
+        } catch (proxyError) {
+          console.error(`${LOG_PREFIX} Proxy failed:`, proxyError);
+          throw proxyError;
+        }
+      }
+
+      // Generate test script with subtitles
+      const scriptLines = generateTestScript();
+
       const renderRequest = {
         generationId: newGenerationId,
         campaignId: "", // Empty = no campaign (test mode)
         audioAssetId: selectedAudioId,
-        images: images.map((img) => ({
+        images: processedImages.map((img) => ({
           url: img.url,
           order: img.order,
         })),
+        script: { lines: scriptLines }, // Include test subtitles
         styleSetId: selectedStyleSetId,
         aspectRatio,
-        targetDuration: 0, // Auto-calculate
+        targetDuration: 15, // Fixed 15 seconds for test
         prompt: "Style set test video",
       };
 
@@ -472,7 +623,7 @@ export default function StyleSetTestPage() {
       setRendering(false);
       console.log(`${LOG_PREFIX} Render process ended at ${new Date().toISOString()}`);
     }
-  }, [images, selectedStyleSetId, selectedAudioId, aspectRatio, language, selectedStyleSet, selectedAudio]);
+  }, [images, selectedStyleSetId, selectedAudioId, aspectRatio, language, selectedStyleSet, selectedAudio, generateTestScript]);
 
   // Reset test (also clears rendering state for killed jobs)
   const resetTest = useCallback(() => {
@@ -876,19 +1027,24 @@ export default function StyleSetTestPage() {
                         {language === "ko" ? styleSet.nameKo : styleSet.name}
                       </p>
 
-                      <Badge
-                        variant="secondary"
-                        className={cn(
-                          "text-[9px] py-0 mt-1",
-                          styleSet.intensity === "high" && "bg-red-100 text-red-700",
-                          styleSet.intensity === "medium" && "bg-yellow-100 text-yellow-700",
-                          styleSet.intensity === "low" && "bg-green-100 text-green-700"
-                        )}
-                      >
-                        {styleSet.intensity === "high" && (language === "ko" ? "강렬함" : "High")}
-                        {styleSet.intensity === "medium" && (language === "ko" ? "보통" : "Medium")}
-                        {styleSet.intensity === "low" && (language === "ko" ? "차분함" : "Low")}
-                      </Badge>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            "text-[9px] py-0",
+                            styleSet.intensity === "high" && "bg-red-100 text-red-700",
+                            styleSet.intensity === "medium" && "bg-yellow-100 text-yellow-700",
+                            styleSet.intensity === "low" && "bg-green-100 text-green-700"
+                          )}
+                        >
+                          {styleSet.intensity === "high" && (language === "ko" ? "강렬함" : "High")}
+                          {styleSet.intensity === "medium" && (language === "ko" ? "보통" : "Medium")}
+                          {styleSet.intensity === "low" && (language === "ko" ? "차분함" : "Low")}
+                        </Badge>
+                        <Badge variant="outline" className="text-[9px] py-0 text-neutral-500">
+                          {styleSet.cutDuration}s
+                        </Badge>
+                      </div>
                     </button>
                   );
                 })}

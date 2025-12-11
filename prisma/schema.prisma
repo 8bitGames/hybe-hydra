@@ -983,6 +983,10 @@ model VideoClassification {
   // AI Analysis for this video
   contentAnalysis Json?    @map("content_analysis")
 
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
   @@index([analysisId])
   @@index([tiktokVideoId])
   @@map("video_classifications")

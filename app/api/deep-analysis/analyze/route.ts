@@ -173,14 +173,16 @@ async function processAnalysis(
 
     const aiResult = await orchestrator.analyzeSingleAccount(
       { account: accountData },
-      (stage, accountId, progress, message) => {
+      (stage, _accountId, progress, message) => {
         console.log(`[API] ${uniqueId} [${stage}] ${progress}% - ${message}`);
       }
     );
 
     // Prepare AI insights data
+    // Use JSON.parse(JSON.stringify(...)) to strip Zod's index signatures
+    // and convert to plain JSON compatible with Prisma's InputJsonValue
     const aiInsights = aiResult.success && aiResult.metrics
-      ? {
+      ? JSON.parse(JSON.stringify({
           summary: aiResult.metrics.summary,
           performanceScore: aiResult.metrics.performanceScore,
           performanceTier: aiResult.metrics.performanceTier,
@@ -191,18 +193,19 @@ async function processAnalysis(
           growthPotential: aiResult.metrics.growthPotential,
           recommendations: aiResult.metrics.recommendations,
           benchmarkComparison: aiResult.metrics.benchmarkComparison,
-        }
+        }))
       : null;
 
     // Prepare content mix data from classification
+    // Use JSON.parse(JSON.stringify(...)) to strip Zod's index signatures
     const contentMixMetrics = aiResult.success && aiResult.classification
-      ? {
+      ? JSON.parse(JSON.stringify({
           categoryDistribution: aiResult.classification.categoryDistribution,
           contentTypeDistribution: aiResult.classification.contentTypeDistribution,
           dominantCategory: aiResult.classification.insights.dominantCategory,
           dominantContentType: aiResult.classification.insights.dominantContentType,
           contentDiversity: aiResult.classification.insights.contentDiversity,
-        }
+        }))
       : null;
 
     // Update analysis with user info, metrics, and AI insights
@@ -261,39 +264,142 @@ async function processAnalysis(
       .filter(video => video.id) // Filter out videos without ID
       .map((video) => {
         const aiClassification = classificationMap.get(video.id);
+
+        // Safely extract secondary categories (handle undefined/null)
+        const secondaryCategories = aiClassification?.secondaryCategories;
+        const safeSecondaryCategories = Array.isArray(secondaryCategories) ? secondaryCategories : [];
+
+        // Build aiCategories safely
+        const aiCategories = aiClassification
+          ? [aiClassification.primaryCategory, ...safeSecondaryCategories].filter((c): c is string => typeof c === 'string' && c.length > 0)
+          : [];
+
+        // Ensure all required number fields are valid (not NaN, not null)
+        const safePlayCount = Number(video.stats?.playCount) || 0;
+        const safeLikeCount = Number(video.stats?.likeCount) || 0;
+        const safeCommentCount = Number(video.stats?.commentCount) || 0;
+        const safeShareCount = Number(video.stats?.shareCount) || 0;
+        const safeEngagementRate = Number(video.engagementRate) || 0;
+
         return {
           analysisId,
-          tiktokVideoId: video.id,
+          tiktokVideoId: String(video.id),
           videoUrl: video.videoUrl || `https://www.tiktok.com/video/${video.id}`,
           thumbnailUrl: video.thumbnailUrl || null,
           description: video.description || null,
-          playCount: BigInt(video.stats?.playCount || 0),
-          likeCount: video.stats?.likeCount || 0,
-          commentCount: video.stats?.commentCount || 0,
-          shareCount: video.stats?.shareCount || 0,
-          engagementRate: video.engagementRate || 0,
-          aiCategories: aiClassification
-            ? [aiClassification.primaryCategory, ...aiClassification.secondaryCategories].filter(Boolean)
-            : [],
-          aiConfidence: aiClassification?.confidence || 0,
+          playCount: BigInt(Math.max(0, Math.floor(safePlayCount))),
+          likeCount: Math.max(0, Math.floor(safeLikeCount)),
+          commentCount: Math.max(0, Math.floor(safeCommentCount)),
+          shareCount: Math.max(0, Math.floor(safeShareCount)),
+          engagementRate: Number.isFinite(safeEngagementRate) ? safeEngagementRate : 0,
+          aiCategories,
+          aiConfidence: Number(aiClassification?.confidence) || 0,
           reasoning: aiClassification?.reasoning || null,
-          customTags: [],
+          customTags: [] as string[],
           musicTitle: video.musicTitle || null,
           musicId: video.musicId || null,
-          isOwnMusic: video.isOwnMusic || false,
+          isOwnMusic: Boolean(video.isOwnMusic),
           publishedAt: video.createTime ? new Date(video.createTime * 1000) : null,
           duration: video.duration || null,
-          // Store additional AI data in contentAnalysis JSON field
-          contentAnalysis: aiClassification ? {
-            contentType: aiClassification.contentType,
-            engagementPotential: aiClassification.engagementPotential,
-          } : Prisma.JsonNull,
+          // Store additional AI data in contentAnalysis JSON field (nullable)
+          // Use Prisma.DbNull for database NULL, not Prisma.JsonNull (which is JSON null value)
+          contentAnalysis: aiClassification
+            ? { contentType: aiClassification.contentType || 'unknown', engagementPotential: aiClassification.engagementPotential || 'medium' }
+            : Prisma.DbNull,
         };
       });
 
-    await prisma.videoClassification.createMany({
-      data: videoClassifications,
-    });
+    // Validate each record before insertion
+    const validRecords: typeof videoClassifications = [];
+    const invalidRecords: { index: number; reason: string; data: Record<string, unknown> }[] = [];
+
+    for (let i = 0; i < videoClassifications.length; i++) {
+      const record = videoClassifications[i];
+      const issues: string[] = [];
+
+      // Check all required fields
+      if (!record.analysisId) issues.push('analysisId is empty');
+      if (!record.tiktokVideoId) issues.push('tiktokVideoId is empty');
+      if (!record.videoUrl) issues.push('videoUrl is empty');
+      if (record.playCount === null || record.playCount === undefined) issues.push('playCount is null/undefined');
+      if (record.likeCount === null || record.likeCount === undefined) issues.push('likeCount is null/undefined');
+      if (record.commentCount === null || record.commentCount === undefined) issues.push('commentCount is null/undefined');
+      if (record.shareCount === null || record.shareCount === undefined) issues.push('shareCount is null/undefined');
+      if (record.engagementRate === null || record.engagementRate === undefined || !Number.isFinite(record.engagementRate)) {
+        issues.push(`engagementRate is invalid: ${record.engagementRate}`);
+      }
+      if (!Array.isArray(record.aiCategories)) issues.push('aiCategories is not an array');
+      if (!Array.isArray(record.customTags)) issues.push('customTags is not an array');
+
+      if (issues.length > 0) {
+        invalidRecords.push({
+          index: i,
+          reason: issues.join(', '),
+          data: {
+            analysisId: record.analysisId,
+            tiktokVideoId: record.tiktokVideoId,
+            videoUrl: record.videoUrl?.substring(0, 30),
+            playCount: String(record.playCount),
+            likeCount: record.likeCount,
+            commentCount: record.commentCount,
+            shareCount: record.shareCount,
+            engagementRate: record.engagementRate,
+            aiCategories: record.aiCategories,
+            customTags: record.customTags,
+          },
+        });
+      } else {
+        validRecords.push(record);
+      }
+    }
+
+    // Log validation results
+    console.log(`[API] Video classifications validation: ${validRecords.length} valid, ${invalidRecords.length} invalid`);
+    if (invalidRecords.length > 0) {
+      console.error(`[API] Invalid records:`, JSON.stringify(invalidRecords, null, 2));
+    }
+
+    // Log sample of valid record
+    if (validRecords.length > 0) {
+      const sample = validRecords[0];
+      console.log(`[API] Valid record sample:`, JSON.stringify({
+        analysisId: sample.analysisId,
+        tiktokVideoId: sample.tiktokVideoId,
+        playCount: String(sample.playCount),
+        likeCount: sample.likeCount,
+        aiCategories: sample.aiCategories,
+        customTags: sample.customTags,
+      }, null, 2));
+    }
+
+    if (validRecords.length === 0) {
+      console.error(`[API] No valid video classifications to save!`);
+    } else {
+      console.log(`[API] Saving ${validRecords.length} video classifications...`);
+
+      // Try individual inserts to identify problematic records
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const record of validRecords) {
+        try {
+          await prisma.videoClassification.create({
+            data: record,
+          });
+          successCount++;
+        } catch (insertError) {
+          failCount++;
+          console.error(`[API] Failed to insert video ${record.tiktokVideoId}:`, insertError);
+          console.error(`[API] Failed record data:`, JSON.stringify({
+            ...record,
+            playCount: String(record.playCount),
+          }, null, 2));
+          // Continue with other records
+        }
+      }
+
+      console.log(`[API] Video classification insert results: ${successCount} success, ${failCount} failed`);
+    }
 
     console.log(`[API] Analysis completed for ${uniqueId}: ${result.totalFetched} videos, AI: ${aiResult.success ? 'success' : 'failed'}`);
   } catch (error) {
