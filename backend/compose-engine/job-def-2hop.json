@@ -1,0 +1,42 @@
+{
+    "jobDefinitionName": "hydra-ai-gpu-worker",
+    "type": "container",
+    "containerProperties": {
+        "image": "139984419402.dkr.ecr.ap-northeast-2.amazonaws.com/hydra-compose-engine@sha256:7c40dc858d34fa53da3e8fa46c0e675cefc33d784acaaf36b955b6fd07aa2608",
+        "command": ["python3", "/root/ai_worker.py"],
+        "jobRoleArn": "arn:aws:iam::139984419402:role/hydra-batch-job-role",
+        "executionRoleArn": "arn:aws:iam::139984419402:role/hydra-ecs-execution-role",
+        "environment": [
+            {"name": "AWS_REGION", "value": "ap-northeast-2"},
+            {"name": "GCP_PROJECT_ID", "value": "hyb-hydra-dev"},
+            {"name": "GCP_LOCATION", "value": "us-central1"},
+            {"name": "GCP_CENTRAL_SERVICE_ACCOUNT", "value": "sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com"},
+            {"name": "GCP_TARGET_SERVICE_ACCOUNT", "value": "sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com"},
+            {"name": "GOOGLE_APPLICATION_CREDENTIALS", "value": "/root/clientLibraryConfig.json"},
+            {"name": "SECRETS_NAME", "value": "hydra/compose-engine"},
+            {"name": "GCP_SECRETS_NAME", "value": "hydra/gcp-config"}
+        ],
+        "resourceRequirements": [
+            {"value": "4", "type": "VCPU"},
+            {"value": "14000", "type": "MEMORY"},
+            {"value": "1", "type": "GPU"}
+        ],
+        "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+                "awslogs-group": "/aws/batch/hydra-compose-engine",
+                "awslogs-region": "ap-northeast-2",
+                "awslogs-stream-prefix": "ai-generation"
+            }
+        }
+    },
+    "retryStrategy": {
+        "attempts": 2,
+        "evaluateOnExit": [
+            {"onStatusReason": "Host EC2*", "action": "retry"},
+            {"onReason": "CannotInspectContainerError*", "action": "retry"}
+        ]
+    },
+    "timeout": {"attemptDurationSeconds": 900},
+    "platformCapabilities": ["EC2"]
+}

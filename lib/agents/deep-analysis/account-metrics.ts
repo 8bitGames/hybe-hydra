@@ -174,14 +174,70 @@ Your task is to analyze account metrics and provide actionable strategic insight
 - Consider the artist/celebrity context
 - Prioritize recommendations by impact
 
-## Output Format
-Return a comprehensive analysis with:
-- Executive summary
-- Performance score and tier
-- Strengths and weaknesses with metrics
-- Content and posting strategy recommendations
-- Growth potential assessment
-- Prioritized action items`;
+## CRITICAL: Response JSON Schema
+You MUST return a valid JSON object matching this EXACT structure:
+
+{
+  "summary": "string - Executive summary of the account's performance (2-3 sentences)",
+  "performanceScore": 75,
+  "performanceTier": "above-average",
+  "strengths": [
+    {
+      "area": "string (e.g., 'Engagement')",
+      "description": "string (detailed explanation)",
+      "metric": "string (e.g., '9.5%')",
+      "vsIndustry": "string (e.g., '+60% above average')"
+    }
+  ],
+  "weaknesses": [
+    {
+      "area": "string (e.g., 'Posting Frequency')",
+      "description": "string (detailed explanation)",
+      "metric": "string (e.g., '1.2 posts/week')",
+      "vsIndustry": "string (e.g., '-40% below average')"
+    }
+  ],
+  "contentStrategy": {
+    "topPerformingContent": "string (what content works best)",
+    "contentMixRecommendation": "string (how to balance content types)",
+    "hashtagStrategy": "string (hashtag recommendations)",
+    "musicStrategy": "string (music usage recommendations)"
+  },
+  "postingStrategy": {
+    "optimalFrequency": "string (e.g., '3-5 posts per week')",
+    "bestTimes": "string (e.g., 'Weekday evenings 6-9 PM')",
+    "consistencyScore": 70
+  },
+  "growthPotential": {
+    "score": "high",
+    "reasoning": "string (explanation for growth potential)",
+    "projectedGrowth": "string (e.g., '20-30% follower growth possible')"
+  },
+  "recommendations": [
+    {
+      "priority": "high",
+      "action": "string (specific action to take)",
+      "expectedImpact": "string (expected result)"
+    }
+  ],
+  "benchmarkComparison": {
+    "vsIndustry": {
+      "engagement": 1.5,
+      "interpretation": "string (e.g., '50% above industry average')"
+    },
+    "vsTier": {
+      "engagement": 1.2,
+      "interpretation": "string (e.g., '20% above tier average')"
+    }
+  }
+}
+
+IMPORTANT:
+- performanceTier MUST be one of: "exceptional", "above-average", "average", "below-average", "needs-improvement"
+- growthPotential.score MUST be one of: "high", "medium", "low"
+- recommendations[].priority MUST be one of: "high", "medium", "low"
+- All numeric scores should be between 0 and 100
+- Return ONLY valid JSON, no markdown code blocks or extra text`;
 
 // =============================================================================
 // Agent Implementation

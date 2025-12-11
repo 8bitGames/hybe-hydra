@@ -271,13 +271,27 @@ COPY aws-batch/ai_worker.py /root/ai_worker.py
 
 # Copy GCP WIF credential config files (for Vertex AI authentication)
 # This file is used by google-auth to exchange AWS credentials for GCP tokens
-# - clientLibraryConfig-wif-only.json: WIF direct (no SA impersonation) - DEFAULT
-# - clientLibraryConfig-hyb-hydra-dev.json: With SA impersonation to hyb-mgmt-prod
-# - clientLibraryConfig-hyb-hydra-dev-direct.json: Direct config (points to hyb-hydra-dev SA)
+#
+# Code-based 2-hop Authentication Flow (all impersonation in Python code):
+#   WIF (STS only) → Central SA (code) → Target SA (code) → Vertex AI
+#
+# Config files:
+# - clientLibraryConfig-wif-only.json: WIF-only (no SA impersonation) - DEFAULT for code-based 2-hop
+# - clientLibraryConfig-2hop-central.json: WIF → Central SA via config (config-based)
+# - clientLibraryConfig-hyb-hydra-dev.json: WIF → Target SA direct (hyb-hydra-dev)
+# - clientLibraryConfig-hyb-hydra-dev-direct.json: Direct config variant
 COPY clientLibraryConfig-wif-only.json /root/clientLibraryConfig.json
+COPY clientLibraryConfig-2hop-central.json /root/clientLibraryConfig-2hop-central.json
 COPY clientLibraryConfig-hyb-hydra-dev.json /root/clientLibraryConfig-hyb-hydra-dev.json
 COPY clientLibraryConfig-hyb-hydra-dev-direct.json /root/clientLibraryConfig-hyb-hydra-dev-direct.json
 ENV GOOGLE_APPLICATION_CREDENTIALS=/root/clientLibraryConfig.json
+
+# Code-based 2-hop authentication: Both impersonations done in gcp_auth.py
+# Central SA (1st hop): WIF → Central SA (hyb-mgmt-prod)
+ENV GCP_CENTRAL_SERVICE_ACCOUNT=sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com
+# Target SA (2nd hop): Central SA → Target SA (hyb-hydra-dev) → Vertex AI
+ENV GCP_TARGET_SERVICE_ACCOUNT=sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com
+ENV GCP_PROJECT_ID=hyb-hydra-dev
 
 EXPOSE 8000
 

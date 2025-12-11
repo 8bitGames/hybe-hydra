@@ -99,8 +99,9 @@ export async function POST(request: NextRequest) {
             // Generate hash from content for deduplication
             const contentHash = generateContentHash(buffer);
 
-            // Check content hash cache
-            const contentCacheCheck = await getOrCheckImageCache(image.url, buffer);
+            // Check content hash cache - use hash-based key for base64 URLs (original URL too large for DB)
+            const cacheKey = `base64:${contentHash}`;
+            const contentCacheCheck = await getOrCheckImageCache(cacheKey, buffer);
             if (contentCacheCheck.cached) {
               cacheHits++;
               console.log(`[Fast Cut Proxy] ✅ CACHE HIT (base64 content hash): ${image.id}`);
@@ -125,9 +126,9 @@ export async function POST(request: NextRequest) {
             const objectKey = `fast-cut/cached/${urlHash}.${ext}`;
             const minioUrl = await uploadToS3(buffer, objectKey, mimeType);
 
-            // Store in cache
+            // Store in cache - use content hash as sourceUrl for base64 (original URL is too large for DB index)
             setCachedImage({
-              sourceUrl: image.url,
+              sourceUrl: `base64:${contentHash}`, // Use hash instead of full base64 URL
               contentHash,
               s3Url: minioUrl,
               s3Key: objectKey,

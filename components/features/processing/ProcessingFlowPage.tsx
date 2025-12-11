@@ -13,10 +13,12 @@ import {
   useProcessingSessionHydrated,
   selectSession,
   selectOriginalVideo,
+  selectSelectedStyles,
+  selectIsGeneratingVariations,
 } from "@/lib/stores/processing-session-store";
 import { useSessionStore } from "@/lib/stores/session-store";
 import { useShallow } from "zustand/react/shallow";
-import { fastCutApi } from "@/lib/fast-cut-api";
+import { fastCutApi, type VariationsBatchStatus } from "@/lib/fast-cut-api";
 import {
   GeneratingView,
   ReadyView,
@@ -48,6 +50,12 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
   const setOriginalVideoCompleted = useProcessingSessionStore((state) => state.setOriginalVideoCompleted);
   const startVariationGeneration = useProcessingSessionStore((state) => state.startVariationGeneration);
   const cancelVariationGeneration = useProcessingSessionStore((state) => state.cancelVariationGeneration);
+  const updateVariation = useProcessingSessionStore((state) => state.updateVariation);
+  const setVariationCompleted = useProcessingSessionStore((state) => state.setVariationCompleted);
+  const setVariationFailed = useProcessingSessionStore((state) => state.setVariationFailed);
+  const selectedStyles = useProcessingSessionStore(selectSelectedStyles);
+  const isGeneratingVariations = useProcessingSessionStore(selectIsGeneratingVariations);
+  const variations = useProcessingSessionStore((state) => state.session?.variations || []);
 
   // Session store for stage progression (syncs with SessionDashboard)
   const { proceedToStage, activeSession } = useSessionStore(
@@ -62,6 +70,10 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
   // Polling ref to track interval
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Variation polling refs
+  const variationPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const variationBatchIdRef = useRef<string | null>(null);
 
   // Initialize session from URL params or existing session
   useEffect(() => {
@@ -158,6 +170,79 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     };
   }, [session?.state, originalVideo?.id, updateOriginalVideo, setOriginalVideoCompleted, setState]);
 
+  // Poll for variation generation status when isGeneratingVariations is true
+  useEffect(() => {
+    // Only poll when generating variations and we have a batch ID
+    if (!isGeneratingVariations || !variationBatchIdRef.current || !originalVideo?.id) {
+      // Clear any existing polling
+      if (variationPollingRef.current) {
+        clearInterval(variationPollingRef.current);
+        variationPollingRef.current = null;
+      }
+      return;
+    }
+
+    const pollVariationStatus = async () => {
+      const batchId = variationBatchIdRef.current;
+      const seedId = originalVideo?.id;
+
+      if (!batchId || !seedId) return;
+
+      try {
+        const status = await fastCutApi.getVariationsStatus(seedId, batchId);
+        console.log("[ProcessingFlowPage] Variation status:", status);
+
+        // Update each variation's progress in the store
+        status.variations.forEach((apiVar) => {
+          // Find matching variation in store by ID
+          const storeVar = variations.find((v) => v.id === apiVar.id);
+          if (!storeVar) return;
+
+          if (apiVar.status === "COMPLETED" && apiVar.output_url) {
+            setVariationCompleted(apiVar.id, apiVar.output_url, apiVar.thumbnail_url);
+          } else if (apiVar.status === "FAILED") {
+            setVariationFailed(apiVar.id, apiVar.error_message);
+          } else {
+            // Update progress for pending/processing
+            updateVariation(apiVar.id, {
+              progress: apiVar.progress,
+              status: apiVar.status === "PROCESSING" ? "generating" : "pending",
+              currentStep: apiVar.status === "PROCESSING" ? "Generating..." : "Queued",
+            });
+          }
+        });
+
+        // Check if batch is done
+        if (status.batch_status === "completed" || status.batch_status === "partial_failure") {
+          console.log("[ProcessingFlowPage] All variations done, batch status:", status.batch_status);
+          // Stop polling - store auto-transitions to COMPARE_AND_APPROVE when all done
+          if (variationPollingRef.current) {
+            clearInterval(variationPollingRef.current);
+            variationPollingRef.current = null;
+          }
+          variationBatchIdRef.current = null;
+        }
+      } catch (error) {
+        console.error("[ProcessingFlowPage] Failed to poll variation status:", error);
+        // Don't stop polling on network errors, just log them
+      }
+    };
+
+    // Initial poll
+    pollVariationStatus();
+
+    // Start polling interval (every 3 seconds)
+    variationPollingRef.current = setInterval(pollVariationStatus, 3000);
+
+    // Cleanup on unmount or state change
+    return () => {
+      if (variationPollingRef.current) {
+        clearInterval(variationPollingRef.current);
+        variationPollingRef.current = null;
+      }
+    };
+  }, [isGeneratingVariations, originalVideo?.id, variations, updateVariation, setVariationCompleted, setVariationFailed]);
+
   // Navigation handlers
   const handleBack = useCallback(() => {
     // Go back to effects page
@@ -182,13 +267,63 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     setState("READY");
   }, [setState]);
 
-  const handleStartGeneration = useCallback(() => {
+  const handleStartGeneration = useCallback(async () => {
+    // First update store to show generating UI with pending variations
     startVariationGeneration();
-    // The actual generation would be triggered here via API
-    // Styles are already set in the store through the VariationConfigView
-  }, [startVariationGeneration]);
+
+    // Get the original video ID (seed generation) for API call
+    const seedGenerationId = originalVideo?.id;
+    if (!seedGenerationId) {
+      console.error("[ProcessingFlowPage] No original video ID for variations");
+      return;
+    }
+
+    // Check if this is a compose video (required for compose-variations API)
+    if (!seedGenerationId.startsWith("compose-")) {
+      console.error("[ProcessingFlowPage] Variation generation only supported for compose videos");
+      return;
+    }
+
+    try {
+      console.log("[ProcessingFlowPage] Starting compose variations for:", seedGenerationId);
+
+      // Call the API to start variation generation
+      const response = await fastCutApi.startComposeVariations(seedGenerationId, {
+        variationCount: selectedStyles.length || 8,
+      });
+
+      console.log("[ProcessingFlowPage] Variations started:", response);
+
+      // Store the batch ID for polling
+      variationBatchIdRef.current = response.batch_id;
+
+      // Map API response to store variations (update IDs to match API)
+      response.variations.forEach((apiVar, index) => {
+        const storeVariation = variations[index];
+        if (storeVariation) {
+          updateVariation(storeVariation.id, {
+            id: apiVar.id, // Update to API's ID for tracking
+            status: "generating",
+            progress: 0,
+            currentStep: "Starting...",
+          });
+        }
+      });
+
+    } catch (error) {
+      console.error("[ProcessingFlowPage] Failed to start variations:", error);
+      // Mark all variations as failed
+      cancelVariationGeneration();
+    }
+  }, [startVariationGeneration, originalVideo?.id, selectedStyles.length, variations, updateVariation, cancelVariationGeneration]);
 
   const handleCancelGeneration = useCallback(() => {
+    // Clear batch ID to stop polling
+    variationBatchIdRef.current = null;
+    if (variationPollingRef.current) {
+      clearInterval(variationPollingRef.current);
+      variationPollingRef.current = null;
+    }
     cancelVariationGeneration();
     setState("READY");
   }, [cancelVariationGeneration, setState]);
@@ -200,6 +335,12 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
   const handleBackToConfig = useCallback(() => {
     // Cancel any pending generations and go back to config
+    // Clear batch ID to stop polling
+    variationBatchIdRef.current = null;
+    if (variationPollingRef.current) {
+      clearInterval(variationPollingRef.current);
+      variationPollingRef.current = null;
+    }
     cancelVariationGeneration();
     setState("VARIATION_CONFIG");
   }, [cancelVariationGeneration, setState]);

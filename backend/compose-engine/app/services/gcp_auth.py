@@ -4,14 +4,18 @@ GCP Workload Identity Federation (WIF) Authentication Module.
 Enables AWS Batch workers to authenticate with GCP Vertex AI using:
 1. AWS IAM Role credentials (from IMDSv2)
 2. GCP Security Token Service (STS) token exchange
-3. Service Account impersonation
+3. 2-hop Service Account impersonation (Central SA → Target SA) via CODE
 
-Authentication Flow:
-AWS Batch (IAM Role) → GCP WIF → STS Token → SA Impersonation → Vertex AI
+Authentication Flow (2-hop, all in code):
+AWS Batch (IAM Role) → GCP WIF (STS only) → Central SA (code impersonation) → Target SA (code impersonation) → Vertex AI
+
+The WIF config should NOT include service_account_impersonation_url (use wif-only config).
+Both Central SA and Target SA impersonation are done in code for full control.
 
 Required Environment Variables:
-- GOOGLE_APPLICATION_CREDENTIALS: Path to WIF credential config JSON
-- GCP_TARGET_SERVICE_ACCOUNT: Target SA to impersonate (for Vertex AI access)
+- GOOGLE_APPLICATION_CREDENTIALS: Path to WIF credential config JSON (NO SA impersonation in config)
+- GCP_CENTRAL_SERVICE_ACCOUNT: Central SA for 1st hop (e.g., sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com)
+- GCP_TARGET_SERVICE_ACCOUNT: Target SA for 2nd hop (e.g., sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com)
 - GCP_PROJECT_ID: GCP project ID for Vertex AI
 - GCP_LOCATION: GCP region (default: us-central1)
 """
@@ -44,124 +48,186 @@ VERTEX_AI_SCOPES = [
 
 class GCPAuthManager:
     """
-    Manages GCP authentication using Workload Identity Federation.
+    Manages GCP authentication using Workload Identity Federation with 2-hop impersonation.
 
     Usage:
         auth_manager = GCPAuthManager()
         credentials = auth_manager.get_credentials()
         access_token = auth_manager.get_access_token()
 
-    WIF Authentication Flow:
-        AWS Batch (IAM Role) → GCP WIF → STS Token → SA (from WIF config) → Vertex AI
+    2-hop WIF Authentication Flow (all in code):
+        1. AWS Batch (IAM Role) → GCP WIF → STS Token (pure WIF, no SA in config)
+        2. WIF Token → Central SA (hyb-mgmt-prod) [code impersonation - 1st hop]
+        3. Central SA → Target SA (hyb-hydra-dev) [code impersonation - 2nd hop] → Vertex AI
 
-    If the WIF config already includes service_account_impersonation_url,
-    the credentials will already be impersonated and no additional impersonation is needed.
+    Use WIF-only config (no service_account_impersonation_url).
+    GCP_CENTRAL_SERVICE_ACCOUNT specifies the Central SA for the 1st hop.
+    GCP_TARGET_SERVICE_ACCOUNT specifies the Target SA for the 2nd hop.
     """
 
     def __init__(
         self,
+        central_service_account: Optional[str] = None,
         target_service_account: Optional[str] = None,
         project_id: Optional[str] = None,
         location: Optional[str] = None,
         scopes: Optional[list[str]] = None,
     ):
         """
-        Initialize GCP Auth Manager.
+        Initialize GCP Auth Manager for 2-hop impersonation (all in code).
 
         Args:
-            target_service_account: SA to impersonate (e.g., sa-vertex@project.iam.gserviceaccount.com)
-                                    Set to empty string or "skip" to use WIF credentials directly
-            project_id: GCP project ID
+            central_service_account: Central SA for 1st hop impersonation
+                                     (e.g., sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com)
+            target_service_account: Target SA for 2nd hop impersonation
+                                    (e.g., sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com)
+                                    Set to empty string or "skip" to use Central SA credentials only (1-hop)
+            project_id: GCP project ID for Vertex AI
             location: GCP region for Vertex AI
             scopes: OAuth scopes (defaults to Vertex AI scopes)
         """
-        # Check environment variable for target SA
-        env_target_sa = os.environ.get("GCP_TARGET_SERVICE_ACCOUNT", "")
+        # Central SA for 1st hop (WIF → Central SA)
+        env_central_sa = os.environ.get("GCP_CENTRAL_SERVICE_ACCOUNT", "")
+        self.central_service_account = central_service_account or env_central_sa or \
+            "sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com"
 
-        # If env var is empty, "skip", or "none" - use WIF credentials directly
-        # This is the default behavior when WIF config already includes impersonation
+        # Target SA for 2nd hop (Central SA → Target SA)
+        env_target_sa = os.environ.get("GCP_TARGET_SERVICE_ACCOUNT", "")
         if env_target_sa.lower() in ("", "skip", "none"):
             self.target_service_account = None
-            self._skip_additional_impersonation = True
+            self._enable_2hop = False
         else:
             self.target_service_account = target_service_account or env_target_sa
-            self._skip_additional_impersonation = False
+            self._enable_2hop = True
 
         self.project_id = project_id or os.environ.get("GCP_PROJECT_ID", "hyb-hydra-dev")
         self.location = location or os.environ.get("GCP_LOCATION", DEFAULT_GCP_LOCATION)
         self.scopes = scopes or VERTEX_AI_SCOPES
 
-        self._source_credentials = None
-        self._target_credentials = None
+        self._wif_credentials = None      # Pure WIF credentials (no impersonation)
+        self._central_credentials = None  # Central SA credentials (1st hop)
+        self._target_credentials = None   # Target SA credentials (2nd hop)
         self._access_token = None
         self._token_expiry = None
 
         logger.info(f"GCPAuthManager initialized for project: {self.project_id}")
-        if self._skip_additional_impersonation:
-            logger.info("Using WIF credentials directly (no additional impersonation)")
+        logger.info(f"Central SA (1st hop): {self.central_service_account}")
+        logger.info(f"2-hop impersonation: {'ENABLED' if self._enable_2hop else 'DISABLED'}")
+        if self._enable_2hop:
+            logger.info(f"Target SA (2nd hop): {self.target_service_account}")
         else:
-            logger.info(f"Will impersonate SA: {self.target_service_account}")
+            logger.info("Using Central SA credentials only (1-hop)")
         logger.info(f"Location: {self.location}")
 
-    def _get_source_credentials(self):
+    def _get_wif_credentials(self):
         """
-        Get source credentials from WIF configuration.
+        Get pure WIF credentials (no SA impersonation).
 
-        This uses the GOOGLE_APPLICATION_CREDENTIALS environment variable
-        pointing to the WIF credential config JSON file.
+        This uses GOOGLE_APPLICATION_CREDENTIALS pointing to WIF-only config
+        (no service_account_impersonation_url).
+
+        Returns:
+            Credentials: Pure WIF/STS credentials
         """
-        if self._source_credentials is None:
-            logger.info("Loading source credentials from WIF config...")
+        if self._wif_credentials is None:
+            logger.info("Loading pure WIF credentials (no SA impersonation)...")
 
             # Check for credential config file
             cred_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
             if cred_file:
-                logger.info(f"Using credential file: {cred_file}")
+                logger.info(f"Using WIF config file: {cred_file}")
+                try:
+                    with open(cred_file, 'r') as f:
+                        config = json.load(f)
+                        # Verify no SA impersonation in config
+                        sa_url = config.get("service_account_impersonation_url")
+                        if sa_url:
+                            logger.warning(f"Config has service_account_impersonation_url: {sa_url}")
+                            logger.warning("For code-based 2-hop, use WIF-only config without SA impersonation")
+                        else:
+                            logger.info("WIF-only config confirmed (no SA impersonation URL)")
+                except Exception as e:
+                    logger.warning(f"Could not read config file: {e}")
 
             try:
-                # google.auth.default() automatically handles:
-                # 1. Service account JSON
-                # 2. WIF external account JSON
-                # 3. Compute Engine metadata
-                # 4. GKE Workload Identity
-                self._source_credentials, project = google.auth.default(scopes=DEFAULT_SCOPES)
+                # google.auth.default() with WIF-only config returns pure WIF credentials
+                self._wif_credentials, project = google.auth.default(scopes=DEFAULT_SCOPES)
 
                 if project:
-                    logger.info(f"Detected project from credentials: {project}")
+                    logger.info(f"Detected project from WIF: {project}")
 
-                logger.info(f"Source credentials type: {type(self._source_credentials).__name__}")
+                logger.info(f"WIF credentials type: {type(self._wif_credentials).__name__}")
+                logger.info("WIF STS token exchange ready")
 
             except Exception as e:
-                logger.error(f"Failed to load source credentials: {e}")
-                raise RuntimeError(f"GCP authentication failed: {e}")
+                logger.error(f"Failed to load WIF credentials: {e}")
+                raise RuntimeError(f"WIF authentication failed: {e}")
 
-        return self._source_credentials
+        return self._wif_credentials
 
-    def _get_impersonated_credentials(self):
+    def _get_central_credentials(self):
         """
-        Get impersonated credentials for the target service account.
+        Get Central SA credentials via code-based impersonation (1st hop).
 
-        This allows the WIF identity to act as the target SA which has
-        Vertex AI permissions.
+        WIF credentials → Central SA (hyb-mgmt-prod)
+
+        Returns:
+            Credentials: Central SA credentials
+        """
+        if self._central_credentials is None:
+            # Get pure WIF credentials first
+            wif_creds = self._get_wif_credentials()
+
+            logger.info(f"1st hop: WIF → Central SA (code-based impersonation)")
+            logger.info(f"Central SA: {self.central_service_account}")
+
+            try:
+                self._central_credentials = impersonated_credentials.Credentials(
+                    source_credentials=wif_creds,
+                    target_principal=self.central_service_account,
+                    target_scopes=DEFAULT_SCOPES,
+                    lifetime=3600,  # 1 hour
+                )
+
+                logger.info("1st hop completed: WIF → Central SA")
+                logger.info(f"Central SA credentials type: {type(self._central_credentials).__name__}")
+
+            except Exception as e:
+                logger.error(f"Failed 1st hop impersonation (WIF → Central SA): {e}")
+                raise RuntimeError(f"1st hop impersonation failed: {e}")
+
+        return self._central_credentials
+
+    def _get_target_credentials(self):
+        """
+        Get Target SA credentials via code-based impersonation (2nd hop).
+
+        Central SA (hyb-mgmt-prod) → Target SA (hyb-hydra-dev)
+
+        Returns:
+            Credentials: Target SA credentials with Vertex AI access
         """
         if self._target_credentials is None:
-            source_creds = self._get_source_credentials()
+            # Get Central SA credentials (1st hop result)
+            central_creds = self._get_central_credentials()
 
-            logger.info(f"Creating impersonated credentials for: {self.target_service_account}")
+            logger.info(f"2nd hop: Central SA → Target SA (code-based impersonation)")
+            logger.info(f"Target SA: {self.target_service_account}")
 
             try:
                 self._target_credentials = impersonated_credentials.Credentials(
-                    source_credentials=source_creds,
+                    source_credentials=central_creds,
                     target_principal=self.target_service_account,
                     target_scopes=self.scopes,
                     lifetime=3600,  # 1 hour
                 )
 
-                logger.info("Impersonated credentials created successfully")
+                logger.info("2nd hop completed: Central SA → Target SA")
+                logger.info(f"Target SA credentials type: {type(self._target_credentials).__name__}")
 
             except Exception as e:
-                logger.error(f"Failed to create impersonated credentials: {e}")
-                raise RuntimeError(f"Service account impersonation failed: {e}")
+                logger.error(f"Failed 2nd hop impersonation (Central SA → Target SA): {e}")
+                raise RuntimeError(f"2nd hop impersonation failed: {e}")
 
         return self._target_credentials
 
@@ -169,18 +235,21 @@ class GCPAuthManager:
         """
         Get authenticated credentials for GCP API calls.
 
-        If WIF config already includes impersonation, returns WIF credentials directly.
-        Otherwise, returns impersonated credentials for the target service account.
+        Code-based 2-hop impersonation flow:
+        - 2-hop enabled: WIF → Central SA (code) → Target SA (code) → Vertex AI
+        - 2-hop disabled: WIF → Central SA (code) only
 
         Returns:
             google.auth.credentials.Credentials: Authenticated credentials
         """
-        if self._skip_additional_impersonation:
-            # WIF config already includes impersonation, use directly
-            return self._get_source_credentials()
+        if self._enable_2hop:
+            # 2-hop: WIF → Central SA → Target SA (all in code)
+            logger.info("Using 2-hop authentication (code-based): WIF → Central SA → Target SA")
+            return self._get_target_credentials()
         else:
-            # Additional impersonation needed
-            return self._get_impersonated_credentials()
+            # 1-hop: WIF → Central SA only (code-based)
+            logger.info("Using 1-hop authentication (code-based): WIF → Central SA")
+            return self._get_central_credentials()
 
     def get_access_token(self, force_refresh: bool = False) -> str:
         """
@@ -246,9 +315,10 @@ class GCPAuthManager:
         result = {
             "valid": False,
             "project_id": self.project_id,
-            "target_sa": self.target_service_account or "(using WIF credentials directly)",
+            "target_sa": self.target_service_account or "(1-hop only, no Target SA)",
             "location": self.location,
-            "skip_impersonation": self._skip_additional_impersonation,
+            "enable_2hop": self._enable_2hop,
+            "auth_mode": "2-hop (WIF → Central SA → Target SA)" if self._enable_2hop else "1-hop (WIF → Central SA)",
             "error": None,
         }
 
@@ -258,6 +328,7 @@ class GCPAuthManager:
             result["valid"] = True
             result["token_preview"] = f"{token[:20]}..." if token else None
             logger.info("Authentication validation successful")
+            logger.info(f"Auth mode: {result['auth_mode']}")
 
         except Exception as e:
             result["error"] = str(e)
@@ -307,18 +378,23 @@ def get_auth_headers() -> dict:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    print("Testing GCP WIF Authentication...")
-    print("-" * 50)
+    print("Testing GCP WIF 2-hop Authentication...")
+    print("=" * 60)
 
     manager = GCPAuthManager()
     result = manager.validate_auth()
 
-    print(f"Valid: {result['valid']}")
-    print(f"Project: {result['project_id']}")
+    print(f"\nAuth Mode: {result['auth_mode']}")
+    print(f"2-hop Enabled: {result['enable_2hop']}")
+    print(f"Project ID: {result['project_id']}")
     print(f"Target SA: {result['target_sa']}")
     print(f"Location: {result['location']}")
+    print("-" * 60)
+    print(f"Valid: {result['valid']}")
 
     if result['error']:
         print(f"Error: {result['error']}")
     else:
         print(f"Token: {result['token_preview']}")
+
+    print("=" * 60)

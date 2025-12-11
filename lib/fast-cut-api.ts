@@ -192,6 +192,50 @@ export interface MusicMatchResponse {
   totalMatches: number;
 }
 
+// Compose Variations Types
+export interface ComposeVariationItem {
+  id: string;
+  variation_label: string;
+  search_tags: string[];
+  settings: {
+    effectPreset: string;
+    colorGrade: string;
+    textStyle: string;
+    vibe: string;
+  };
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+}
+
+export interface ComposeVariationsResponse {
+  seed_generation_id: string;
+  batch_id: string;
+  total_count: number;
+  search_tags: string[];
+  variations: ComposeVariationItem[];
+  message: string;
+}
+
+export interface VariationStatusItem {
+  id: string;
+  variation_label?: string;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  progress: number;
+  output_url?: string;
+  thumbnail_url?: string;
+  error_message?: string;
+}
+
+export interface VariationsBatchStatus {
+  batch_id: string;
+  seed_generation_id: string;
+  batch_status: 'pending' | 'processing' | 'completed' | 'partial_failure';
+  overall_progress: number;
+  total: number;
+  completed: number;
+  failed: number;
+  variations: VariationStatusItem[];
+}
+
 export interface RenderRequest {
   generationId: string;
   campaignId: string;
@@ -499,6 +543,90 @@ export const fastCutApi = {
     });
     if (response.error) throw new Error(response.error.message);
     return response.data!;
+  },
+
+  // ============================================
+  // Compose Variations API
+  // ============================================
+
+  /**
+   * Start compose video variations generation
+   * @param seedGenerationId - The original compose video generation ID
+   * @param options - Variation options including vibes, effects, colors, text styles
+   */
+  startComposeVariations: async (
+    seedGenerationId: string,
+    options: {
+      variationCount?: number;
+      vibeVariations?: string[];
+      effectPresets?: string[];
+      colorGrades?: string[];
+      textStyles?: string[];
+    } = {}
+  ): Promise<ComposeVariationsResponse> => {
+    const response = await api.post<ComposeVariationsResponse>(
+      `/api/v1/generations/${seedGenerationId}/compose-variations`,
+      {
+        variation_count: options.variationCount || 8,
+        vibe_variations: options.vibeVariations || ['Pop', 'Emotional', 'Exciting', 'Minimal'],
+        effect_presets: options.effectPresets || ['zoom_beat', 'crossfade'],
+        color_grades: options.colorGrades || ['vibrant', 'cinematic'],
+        text_styles: options.textStyles || ['bold_pop', 'fade_in'],
+      }
+    );
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Get variations batch status
+   * @param seedGenerationId - The original generation ID
+   * @param batchId - The batch ID returned from startComposeVariations
+   */
+  getVariationsStatus: async (
+    seedGenerationId: string,
+    batchId: string
+  ): Promise<VariationsBatchStatus> => {
+    const response = await api.get<VariationsBatchStatus>(
+      `/api/v1/generations/${seedGenerationId}/variations?batch_id=${batchId}`
+    );
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Poll for variations completion
+   * @param seedGenerationId - The original generation ID
+   * @param batchId - The batch ID
+   * @param onProgress - Callback for progress updates
+   * @param pollInterval - Polling interval in ms (default 3000)
+   * @param maxAttempts - Max polling attempts (default 600 = 30 min)
+   */
+  waitForVariations: async (
+    seedGenerationId: string,
+    batchId: string,
+    onProgress?: (status: VariationsBatchStatus) => void,
+    pollInterval = 3000,
+    maxAttempts = 600
+  ): Promise<VariationsBatchStatus> => {
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      const status = await fastCutApi.getVariationsStatus(seedGenerationId, batchId);
+
+      if (onProgress) {
+        onProgress(status);
+      }
+
+      if (status.batch_status === 'completed' || status.batch_status === 'partial_failure') {
+        return status;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      attempts++;
+    }
+
+    throw new Error('Variations generation timed out');
   },
 };
 
