@@ -46,7 +46,7 @@ const StyleSetSelectorConfig: AgentConfig<StyleSetSelectorInput, StyleSetSelecto
     name: 'gemini-2.5-flash',
     options: {
       temperature: 0.2,
-      maxTokens: 512,
+      maxTokens: 1024,
     },
   },
 
@@ -102,21 +102,31 @@ export class StyleSetSelectorAgent extends BaseAgent<StyleSetSelectorInput, Styl
     prompt: string,
     context: AgentContext
   ): Promise<StyleSetSelectionResult> {
-    const result = await this.execute({ prompt }, context);
+    try {
+      const result = await this.execute({ prompt }, context);
 
-    if (result.success && result.data) {
-      // Validate the returned ID exists
-      if (STYLE_SETS_BY_ID[result.data.styleSetId]) {
-        return {
-          styleSetId: result.data.styleSetId,
-          confidence: result.data.confidence,
-          reasoning: result.data.reasoning,
-          alternativeIds: result.data.alternativeIds?.filter(id => STYLE_SETS_BY_ID[id]),
-        };
+      if (result.success && result.data) {
+        // Validate the returned ID exists
+        if (STYLE_SETS_BY_ID[result.data.styleSetId]) {
+          console.log(`[StyleSetSelector] AI selected: ${result.data.styleSetId} (confidence: ${result.data.confidence})`);
+          return {
+            styleSetId: result.data.styleSetId,
+            confidence: result.data.confidence,
+            reasoning: result.data.reasoning,
+            alternativeIds: result.data.alternativeIds?.filter(id => STYLE_SETS_BY_ID[id]),
+          };
+        } else {
+          console.warn(`[StyleSetSelector] AI returned invalid styleSetId: ${result.data.styleSetId}, falling back to keywords`);
+        }
+      } else {
+        console.warn(`[StyleSetSelector] AI execution failed: ${result.error || 'Unknown error'}, falling back to keywords`);
       }
+    } catch (error) {
+      console.error(`[StyleSetSelector] AI selection threw error:`, error);
     }
 
     // Fallback to keyword-based selection
+    console.log(`[StyleSetSelector] Using keyword fallback for prompt: "${prompt.substring(0, 50)}..."`);
     return selectStyleSetByKeywords(prompt);
   }
 }
