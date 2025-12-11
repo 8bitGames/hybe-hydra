@@ -391,8 +391,11 @@ export async function generateDirectPreviewImage(
   let imageUrl: string;
   let s3Key: string = "";
 
+  // Type guard: imageBase64 is guaranteed to exist at this point (checked above)
+  const imageBase64 = imageResult.imageBase64!;
+
   try {
-    const imageBuffer = Buffer.from(imageResult.imageBase64, "base64");
+    const imageBuffer = Buffer.from(imageBase64, "base64");
     s3Key =
       s3Config.type === "user"
         ? `users/${s3Config.id}/previews/${filename}`
@@ -402,7 +405,7 @@ export async function generateDirectPreviewImage(
   } catch (uploadError) {
     console.error(`${logPrefix} S3 upload failed:`, uploadError);
     // Fallback: return base64 data URL
-    imageUrl = `data:image/png;base64,${imageResult.imageBase64}`;
+    imageUrl = `data:image/png;base64,${imageBase64}`;
     console.log(`${logPrefix} Using base64 data URL fallback`);
   }
 
@@ -420,7 +423,7 @@ export async function generateDirectPreviewImage(
     success: true,
     preview_id: previewId,
     image_url: imageUrl,
-    image_base64: imageResult.imageBase64,
+    image_base64: imageBase64,
     gemini_image_prompt: geminiImagePrompt,
     aspect_ratio,
     composition_mode: "direct",
