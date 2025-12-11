@@ -3,22 +3,35 @@ import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { VideoGenerationStatus } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
-import { generateVideo, VeoGenerationParams, getVeoConfig } from "@/lib/veo";
-import { analyzeAudio } from "@/lib/audio-analyzer";
-// Use Modal for audio composition (GPU-accelerated, works in serverless)
-import { composeVideoWithAudioModal, type AudioComposeRequest } from "@/lib/modal/client";
-import { generateS3Key, getPresignedUrlFromS3Url } from "@/lib/storage";
-import { generateImage, convertAspectRatioForGeminiImage } from "@/lib/imagen";
-import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
-import type { AgentContext } from "@/lib/agents/types";
+// AWS Batch AI client for video/image generation via Vertex AI
+import {
+  submitImageToVideo,
+  submitVideoGeneration,
+  getAIOutputSettings,
+  type VideoGenerationSettings,
+  type ImageToVideoSettings,
+  type VideoAspectRatio,
+} from "@/lib/batch/ai-client";
+import { getPresignedUrlFromS3Url } from "@/lib/storage";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// Async video generation handler (runs in background)
-// MANDATORY I2V: Always generates image first with Gemini, then animates with Veo3
-async function startVideoGeneration(
+/**
+ * Submit video generation job to AWS Batch
+ *
+ * AWS Batch Flow:
+ * 1. Submit job with parameters
+ * 2. AWS Batch picks up job from queue
+ * 3. Worker container runs with GCP WIF authentication
+ * 4. Worker calls Vertex AI for image/video generation
+ * 5. Worker uploads result to S3
+ * 6. Worker calls /api/v1/ai/callback to update status
+ *
+ * This function returns immediately - status updates come via callback
+ */
+async function submitToAWSBatch(
   generationId: string,
   campaignId: string,
   params: {
@@ -31,404 +44,143 @@ async function startVideoGeneration(
     audioUrl?: string;  // Audio URL for composition (optional)
     // MANDATORY I2V parameters
     imageDescription: string;  // How the image should be used in video (required)
-    // Pre-generated preview image (from two-step workflow) - skips AI image generation if provided
+    // Pre-generated preview image (from two-step workflow)
     previewImageBase64?: string;  // Skip image generation if provided (local uploads)
     previewImageUrl?: string;     // Skip image generation if provided (S3/external URLs)
   }
-) {
-  // Don't await - let it run in background
-  (async () => {
-    try {
-      // Update status to processing
-      await prisma.videoGeneration.update({
-        where: { id: generationId },
-        data: {
-          status: "PROCESSING",
-          progress: 5,
-        },
-      });
+): Promise<{ success: boolean; batchJobId?: string; error?: string }> {
+  try {
+    // Update status to processing
+    await prisma.videoGeneration.update({
+      where: { id: generationId },
+      data: {
+        status: "PROCESSING",
+        progress: 5,
+      },
+    });
 
-      // Step 1: Analyze audio first (for better UX, do this early) - only if audio is provided
-      let audioAnalysis;
-      if (params.audioUrl) {
-        console.log(`[Generation ${generationId}] Analyzing audio...`);
-        try {
-          audioAnalysis = await analyzeAudio(params.audioUrl);
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: {
-              progress: 10,
-              audioAnalysis: audioAnalysis as object,
-            },
-          });
-        } catch (audioError) {
-          console.warn(`[Generation ${generationId}] Audio analysis failed, continuing with defaults:`, audioError);
-        }
-      } else {
-        console.log(`[Generation ${generationId}] No audio provided, skipping audio analysis`);
-      }
+    // Get S3 output settings
+    const s3Bucket = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
+    const outputSettings = getAIOutputSettings(generationId, "image_to_video", s3Bucket);
 
-      // Step 2: MANDATORY I2V Mode - Always generate image first using Gemini, then animate with Veo3
-      // This is NOT optional - every video generation must go through this flow
-      let generatedImageBase64: string | undefined;
-      let geminiVideoPrompt: string | undefined;  // Will hold VEO-optimized prompt with animation instructions
+    // Map aspect ratio to Vertex AI format
+    const aspectRatio = (params.aspectRatio as VideoAspectRatio) || "9:16";
 
-      // Create I2V Specialist Agent for prompt generation
-      const i2vAgent = createI2VSpecialistAgent();
-      const agentContext: AgentContext = {
-        workflow: {
-          artistName: "Brand",
-          platform: "tiktok",
-          language: "ko",
-          sessionId: `generation-${generationId}`,
-        },
+    // Determine if we have a reference image (I2V mode)
+    const hasReferenceImage = params.previewImageUrl || params.referenceImageUrl;
+
+    console.log(`[Generation ${generationId}] ═══════════════════════════════════════════════════════`);
+    console.log(`[Generation ${generationId}] Submitting to AWS Batch (Vertex AI via WIF)`);
+    console.log(`[Generation ${generationId}] Mode: ${hasReferenceImage ? "I2V (Image-to-Video)" : "T2V (Text-to-Video)"}`);
+    console.log(`[Generation ${generationId}] Output: s3://${outputSettings.s3_bucket}/${outputSettings.s3_key}`);
+
+    let submitResult;
+
+    if (hasReferenceImage) {
+      // I2V Mode: Image-to-Video with reference image
+      const i2vSettings: ImageToVideoSettings = {
+        prompt: params.prompt,
+        negative_prompt: params.negativePrompt,
+        aspect_ratio: aspectRatio,
+        duration_seconds: (params.durationSeconds || 8) as 4 | 6 | 8,
+        person_generation: "allow_adult",
+        generate_audio: true,
+        reference_image_url: params.previewImageUrl || params.referenceImageUrl || "",
       };
 
-      console.log(`[Generation ${generationId}] ═══════════════════════════════════════════════════════`);
-      console.log(`[Generation ${generationId}] MANDATORY I2V MODE: Starting image generation step...`);
-
-      // Check if we have a pre-generated preview image (two-step workflow)
-      // Priority: base64 > URL > generate new with AI
-      if (params.previewImageBase64 || params.previewImageUrl) {
-        console.log(`[Generation ${generationId}] Using user-provided reference image`);
-
-        // Use base64 directly, or fetch URL and convert to base64
-        if (params.previewImageBase64) {
-          console.log(`[Generation ${generationId}] Using pre-uploaded base64 image`);
-          generatedImageBase64 = params.previewImageBase64;
-        } else if (params.previewImageUrl) {
-          console.log(`[Generation ${generationId}] Fetching image from URL: ${params.previewImageUrl.slice(0, 80)}...`);
-          try {
-            const imageResponse = await fetch(params.previewImageUrl);
-            if (imageResponse.ok) {
-              const arrayBuffer = await imageResponse.arrayBuffer();
-              generatedImageBase64 = Buffer.from(arrayBuffer).toString("base64");
-              console.log(`[Generation ${generationId}] Image fetched and converted: ${Math.round(arrayBuffer.byteLength / 1024)}KB`);
-            } else {
-              console.error(`[Generation ${generationId}] Failed to fetch image: ${imageResponse.status}`);
-              throw new Error(`Failed to fetch reference image: HTTP ${imageResponse.status}`);
-            }
-          } catch (fetchError) {
-            console.error(`[Generation ${generationId}] Error fetching image URL:`, fetchError);
-            throw new Error(`Failed to fetch reference image: ${fetchError instanceof Error ? fetchError.message : "Unknown error"}`);
-          }
-        }
-
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: { progress: 25 },
-        });
-
-        // Generate video prompt with animation instructions using I2V Specialist Agent
-        console.log(`[Generation ${generationId}] Generating video prompt with animation instructions...`);
-        const videoPromptResult = await i2vAgent.generateVideoPrompt(
-          {
-            visual_style: params.style || "cinematic",
-            color_palette: [],
-            mood: "dynamic",
-            main_subject: params.imageDescription,
-          },
-          `${params.prompt}. ${params.imageDescription}`,
-          agentContext,
-          { duration: params.durationSeconds || 8, style: params.style }
-        );
-
-        if (videoPromptResult.success && videoPromptResult.data?.prompt) {
-          geminiVideoPrompt = videoPromptResult.data.prompt;
-          console.log(`[Generation ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
-        } else {
-          console.warn(`[Generation ${generationId}] Gemini video prompt generation failed: ${videoPromptResult.error}`);
-          console.log(`[Generation ${generationId}] Using original prompt for video generation...`);
-        }
-
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: { progress: 30 },
-        });
-      } else {
-        // No preview image - MUST generate new image with Gemini 3 Pro + user's reference
-        console.log(`[Generation ${generationId}] No preview image - generating with Gemini 3 Pro...`);
-
-        // Step 2a: Use I2V Specialist Agent to generate optimized image prompt
-        console.log(`[Generation ${generationId}] Step 2a: Generating image prompt with I2V Agent...`);
-        const imagePromptResult = await i2vAgent.generateImagePrompt(
-          `${params.prompt}. ${params.imageDescription}`,
-          agentContext,
-          { style: params.style }
-        );
-
-        if (!imagePromptResult.success || !imagePromptResult.data?.prompt) {
-          // FAIL - Cannot continue without image in mandatory I2V mode
-          const errorMsg = `Image prompt generation failed: ${imagePromptResult.error}`;
-          console.error(`[Generation ${generationId}] ${errorMsg}`);
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: {
-              status: "FAILED",
-              progress: 100,
-              errorMessage: errorMsg,
-            },
-          });
-          return;
-        }
-
-        const geminiImagePrompt = imagePromptResult.data.prompt;
-        console.log(`[Generation ${generationId}] Gemini image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
-
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: { progress: 15 },
-        });
-
-        // Step 2b: Generate image with Gemini 3 Pro using the optimized prompt + reference image
-        console.log(`[Generation ${generationId}] Step 2b: Generating image with Gemini 3 Pro...`);
-        let imageResult;
-        try {
-          imageResult = await generateImage({
-            prompt: geminiImagePrompt,
-            negativePrompt: params.negativePrompt,
-            aspectRatio: convertAspectRatioForGeminiImage(params.aspectRatio || "16:9"),
-            style: params.style,
-            // Pass reference image URL for product/subject incorporation
-            referenceImageUrl: params.referenceImageUrl,
-          });
-        } catch (imagenError) {
-          console.error(`[Generation ${generationId}] Gemini image generation threw exception:`, imagenError);
-          imageResult = { success: false, error: imagenError instanceof Error ? imagenError.message : "Unknown error" };
-        }
-
-        if (!imageResult.success || !imageResult.imageBase64) {
-          // FAIL - Cannot continue without image in mandatory I2V mode
-          const errorMsg = `Image generation failed: ${imageResult.error}`;
-          console.error(`[Generation ${generationId}] ${errorMsg}`);
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: {
-              status: "FAILED",
-              progress: 100,
-              errorMessage: errorMsg,
-            },
-          });
-          return;
-        }
-
-        generatedImageBase64 = imageResult.imageBase64;
-        console.log(`[Generation ${generationId}] ✓ Image generated successfully!`);
-
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: { progress: 25 },
-        });
-
-        // Step 2c: Use I2V Specialist Agent to generate video prompt WITH animation instructions
-        console.log(`[Generation ${generationId}] Step 2c: Generating video prompt with animation instructions...`);
-        const videoPromptResult = await i2vAgent.generateVideoPrompt(
-          {
-            visual_style: params.style || "cinematic",
-            color_palette: [],
-            mood: "dynamic",
-            main_subject: params.imageDescription,
-          },
-          `${params.prompt}. ${params.imageDescription}`,
-          agentContext,
-          { duration: params.durationSeconds || 8, style: params.style }
-        );
-
-        if (videoPromptResult.success && videoPromptResult.data?.prompt) {
-          geminiVideoPrompt = videoPromptResult.data.prompt;
-          console.log(`[Generation ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
-        } else {
-          console.warn(`[Generation ${generationId}] Gemini video prompt failed: ${videoPromptResult.error}`);
-          console.log(`[Generation ${generationId}] Using original prompt for video generation...`);
-        }
-
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: { progress: 30 },
-        });
-      }
-
-      // MANDATORY: Verify we have an image before proceeding to Veo3
-      if (!generatedImageBase64) {
-        const errorMsg = "Image generation is required but no image was generated. Cannot proceed with I2V.";
-        console.error(`[Generation ${generationId}] ${errorMsg}`);
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: {
-            status: "FAILED",
-            progress: 100,
-            errorMessage: errorMsg,
-          },
-        });
-        return;
-      }
-
-      // Step 3: Generate video with VEO (MANDATORY I2V - always uses the generated image)
-      console.log(`[Generation ${generationId}] ═══════════════════════════════════════════════════════`);
-      console.log(`[Generation ${generationId}] Step 3: Generating video with VEO (I2V mode)...`);
-
-      // Use Gemini's video prompt if available, otherwise use original prompt
-      const finalVideoPrompt = geminiVideoPrompt || params.prompt;
-
-      // Determine image source for logging
-      const imageSource = params.previewImageBase64 ? "USER_UPLOAD_BASE64" :
-                         params.previewImageUrl ? "CAMPAIGN_URL" :
-                         "AI_GENERATED";
-
-      console.log(`[Generation ${generationId}] Image source: ${imageSource}`);
-      console.log(`[Generation ${generationId}] ✓ I2V mode - Image ready (${Math.round(generatedImageBase64.length / 1024)}KB)`);
-      if (geminiVideoPrompt) {
-        console.log(`[Generation ${generationId}] ✓ Using Gemini-generated video prompt with animation instructions`);
-      }
-
-      // Get VEO configuration (production/fast/sample mode)
-      const veoConfig = getVeoConfig();
-      console.log(`[Generation ${generationId}] VEO mode: ${veoConfig.mode} (${veoConfig.description})`);
-
-      const veoParams: VeoGenerationParams = {
-        prompt: finalVideoPrompt,
-        negativePrompt: params.negativePrompt,
-        durationSeconds: params.durationSeconds || 8,
-        aspectRatio: (params.aspectRatio as "16:9" | "9:16" | "1:1") || "16:9",
-        // MANDATORY I2V: Always use the generated image
-        referenceImageBase64: generatedImageBase64,
-        style: params.style,
-        model: veoConfig.model,
-      };
-
-      const currentProgress = 40;  // Always at 40% since image generation is mandatory
-      await prisma.videoGeneration.update({
-        where: { id: generationId },
-        data: { progress: currentProgress },
+      console.log(`[Generation ${generationId}] I2V Settings:`, {
+        prompt: i2vSettings.prompt.slice(0, 80) + "...",
+        aspect_ratio: i2vSettings.aspect_ratio,
+        duration: i2vSettings.duration_seconds,
+        reference_image: i2vSettings.reference_image_url.slice(0, 60) + "...",
       });
 
-      console.log(`[Generation ${generationId}] Calling VEO API (progress: ${currentProgress}%)...`);
-
-      let result;
-      try {
-        result = await generateVideo(veoParams, campaignId);
-      } catch (veoError) {
-        console.error(`[Generation ${generationId}] VEO API threw exception:`, veoError);
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: {
-            status: "FAILED",
-            progress: 100,
-            errorMessage: `VEO API error: ${veoError instanceof Error ? veoError.message : "Unknown error"}`,
-          },
-        });
-        return;
-      }
-
-      if (!result.success || !result.videoUrl) {
-        console.error(`[Generation ${generationId}] VEO returned failure:`, result.error);
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: {
-            status: "FAILED",
-            progress: 100,
-            errorMessage: result.error || "Video generation failed",
-          },
-        });
-        return;
-      }
-
-      console.log(`[Generation ${generationId}] VEO succeeded, video URL: ${result.videoUrl}`);
-
-      // Update with raw video URL
-      await prisma.videoGeneration.update({
-        where: { id: generationId },
-        data: {
-          progress: 70,
-          outputUrl: result.videoUrl,
-          qualityMetadata: result.metadata as object,
-        },
-      });
-
-      // Step 3: Compose video with audio using Modal (GPU-accelerated) - only if audio is provided
-      if (params.audioUrl) {
-        console.log(`[Generation ${generationId}] Composing video with audio via Modal...`);
-
-        const s3Bucket = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
-        const s3Key = generateS3Key(campaignId, "composed_video.mp4");
-
-        const composeRequest: AudioComposeRequest = {
-          job_id: uuidv4(),
-          video_url: result.videoUrl,
+      submitResult = await submitImageToVideo(
+        generationId,
+        i2vSettings,
+        outputSettings,
+        {
+          campaign_id: campaignId,
+          image_description: params.imageDescription,
+          style: params.style,
           audio_url: params.audioUrl,
-          audio_start_time: audioAnalysis?.best_15s_start || 0,
-          audio_volume: 1.0,
-          fade_in: 0.5,
-          fade_out: 1.0,
-          mix_original_audio: false,
-          output_s3_bucket: s3Bucket,
-          output_s3_key: s3Key,
-        };
-
-        console.log(`[Generation ${generationId}] Modal compose request:`, {
-          video_url: result.videoUrl.slice(0, 60) + "...",
-          audio_start_time: composeRequest.audio_start_time,
-          output_key: s3Key,
-        });
-
-        const composeResult = await composeVideoWithAudioModal({
-          ...composeRequest,
-          pollInterval: 3000,  // Poll every 3 seconds
-          maxWaitTime: 300000, // Max 5 minutes
-          onProgress: (status) => {
-            console.log(`[Generation ${generationId}] Modal compose status: ${status.status}`);
-          },
-        });
-
-        if (composeResult.status === "completed" && composeResult.output_url) {
-          // Success - update with composed video URL
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: {
-              status: "COMPLETED",
-              progress: 100,
-              composedOutputUrl: composeResult.output_url,
-              audioStartTime: audioAnalysis?.best_15s_start || 0,
-              audioDuration: 15,
-            },
-          });
-          console.log(`[Generation ${generationId}] Complete with audio! URL: ${composeResult.output_url.slice(0, 60)}...`);
-        } else {
-          // Composition failed, but video succeeded - mark as completed with warning
-          console.warn(`[Generation ${generationId}] Audio composition failed:`, composeResult.error);
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: {
-              status: "COMPLETED",
-              progress: 100,
-              errorMessage: `Video generated but audio composition failed: ${composeResult.error}`,
-            },
-          });
         }
-      } else {
-        // No audio - mark video as completed directly
-        console.log(`[Generation ${generationId}] No audio provided, completing without composition...`);
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: {
-            status: "COMPLETED",
-            progress: 100,
-          },
-        });
-        console.log(`[Generation ${generationId}] Complete (no audio)! URL: ${result.videoUrl.slice(0, 60)}...`);
-      }
-    } catch (error) {
-      console.error("Video generation error:", error);
+      );
+    } else {
+      // T2V Mode: Text-to-Video without reference image
+      const videoSettings: VideoGenerationSettings = {
+        prompt: params.prompt,
+        negative_prompt: params.negativePrompt,
+        aspect_ratio: aspectRatio,
+        duration_seconds: (params.durationSeconds || 8) as 4 | 6 | 8,
+        person_generation: "allow_adult",
+        generate_audio: true,
+      };
+
+      console.log(`[Generation ${generationId}] T2V Settings:`, {
+        prompt: videoSettings.prompt.slice(0, 80) + "...",
+        aspect_ratio: videoSettings.aspect_ratio,
+        duration: videoSettings.duration_seconds,
+      });
+
+      submitResult = await submitVideoGeneration(
+        generationId,
+        videoSettings,
+        outputSettings,
+        {
+          campaign_id: campaignId,
+          image_description: params.imageDescription,
+          style: params.style,
+          audio_url: params.audioUrl,
+        }
+      );
+    }
+
+    if (submitResult.status === "error") {
+      console.error(`[Generation ${generationId}] AWS Batch submit failed:`, submitResult.error);
       await prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "FAILED",
           progress: 100,
-          errorMessage: error instanceof Error ? error.message : "Unknown error",
+          errorMessage: submitResult.error || "Failed to submit to AWS Batch",
         },
       });
+      return { success: false, error: submitResult.error };
     }
-  })();
+
+    // Update with batch job ID for tracking
+    await prisma.videoGeneration.update({
+      where: { id: generationId },
+      data: {
+        progress: 10,
+        vertexOperationName: submitResult.batch_job_id,  // Store batch job ID
+        qualityMetadata: {
+          batch_job_id: submitResult.batch_job_id,
+          job_type: hasReferenceImage ? "image_to_video" : "video_generation",
+          submitted_at: new Date().toISOString(),
+          output_bucket: outputSettings.s3_bucket,
+          output_key: outputSettings.s3_key,
+        },
+      },
+    });
+
+    console.log(`[Generation ${generationId}] ✓ AWS Batch job submitted: ${submitResult.batch_job_id}`);
+    console.log(`[Generation ${generationId}] Status updates will come via /api/v1/ai/callback`);
+
+    return { success: true, batchJobId: submitResult.batch_job_id };
+  } catch (error) {
+    console.error(`[Generation ${generationId}] Error submitting to AWS Batch:`, error);
+    await prisma.videoGeneration.update({
+      where: { id: generationId },
+      data: {
+        status: "FAILED",
+        progress: 100,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      },
+    });
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+  }
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -725,15 +477,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       console.log(`[Generation] Reference image URL: ${referenceImageUrl}`);
     }
 
-    // Start async video generation - ALWAYS in I2V mode
-    console.log(`[Generation] Starting MANDATORY I2V video generation with params:`, {
+    // Submit to AWS Batch for video generation via Vertex AI
+    console.log(`[Generation] Submitting to AWS Batch (Vertex AI) with params:`, {
       hasPreviewBase64: !!preview_image_base64,
       hasPreviewUrl: !!preview_image_url,
       hasReferenceImageId: !!reference_image_id,
       hasImageDescription: !!image_description,
     });
 
-    startVideoGeneration(generation.id, campaignId, {
+    // Note: AWS Batch handles the entire I2V flow:
+    // 1. Download reference image
+    // 2. Call Vertex AI Veo 3.1 for video generation
+    // 3. Upload result to S3
+    // 4. Callback to /api/v1/ai/callback with status
+    submitToAWSBatch(generation.id, campaignId, {
       prompt,
       negativePrompt: negative_prompt,
       durationSeconds: duration_seconds,
@@ -786,7 +543,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               s3_url: generation.audioAsset.s3Url,
             }
           : null,
-        message: "Video generation started (with audio composition)",
+        message: "Video generation submitted to AWS Batch (Vertex AI via WIF)",
       },
       { status: 201 }
     );

@@ -15,7 +15,7 @@ import { GCPAuthManager, getGCPAuthManager } from './gcp-auth';
 
 export type VideoAspectRatio = '16:9' | '9:16' | '1:1';
 export type ImageAspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
-export type VideoDuration = 5 | 8;
+export type VideoDuration = 4 | 6 | 8;  // Veo 3.1 supports 4, 6, or 8 seconds
 export type PersonGeneration = 'allow_adult' | 'dont_allow';
 export type SafetyFilterLevel = 'block_none' | 'block_few' | 'block_some' | 'block_most';
 
@@ -58,6 +58,13 @@ interface OperationResult {
     code?: number;
   };
   response?: {
+    // Veo 3.1 uses 'videos' array
+    videos?: Array<{
+      gcsUri?: string;
+      uri?: string;
+      mimeType?: string;
+    }>;
+    // Legacy/fallback: some models use 'predictions'
     predictions?: Array<{
       gcsUri?: string;
       bytesBase64Encoded?: string;
@@ -131,9 +138,8 @@ export class VertexAIMediaClient {
         durationSeconds: config.durationSeconds || 8,
         personGeneration: config.personGeneration || 'allow_adult',
         generateAudio: config.generateAudio ?? true,
-        outputOptions: {
-          gcsUri: outputGcsUri,
-        },
+        storageUri: outputGcsUri,
+        sampleCount: 1,
       };
 
       if (config.negativePrompt) {
@@ -176,12 +182,15 @@ export class VertexAIMediaClient {
           };
         }
 
-        const predictions = result.response?.predictions || [];
-        if (predictions.length > 0) {
+        // Veo 3.1 returns videos array, not predictions
+        const responseData = result.response || {};
+        const videos = responseData.videos || responseData.predictions || [];
+        if (videos.length > 0) {
+          const firstVideo = videos[0] as { gcsUri?: string; uri?: string };
           return {
             success: true,
             operationName,
-            videoUri: predictions[0].gcsUri || outputGcsUri,
+            videoUri: firstVideo.gcsUri || firstVideo.uri || outputGcsUri,
             metadata: result.response as Record<string, unknown>,
           };
         }

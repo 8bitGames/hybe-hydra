@@ -7,7 +7,7 @@ from enum import Enum
 
 class AIJobType(str, Enum):
     """Types of AI generation jobs."""
-    VIDEO_GENERATION = "video_generation"  # Veo 3
+    VIDEO_GENERATION = "video_generation"  # Veo 3 (with optional audio overlay)
     IMAGE_GENERATION = "image_generation"  # Imagen 3
     IMAGE_TO_VIDEO = "image_to_video"  # Veo 3 with reference image
 
@@ -29,8 +29,9 @@ class ImageAspectRatio(str, Enum):
 
 
 class VideoDuration(int, Enum):
-    """Supported video durations for Veo 3."""
-    SHORT = 5  # 5 seconds
+    """Supported video durations for Veo 3.1."""
+    SHORT = 4  # 4 seconds
+    MEDIUM = 6  # 6 seconds
     STANDARD = 8  # 8 seconds
 
 
@@ -46,6 +47,59 @@ class SafetyFilterLevel(str, Enum):
     BLOCK_FEW = "block_few"
     BLOCK_SOME = "block_some"
     BLOCK_MOST = "block_most"
+
+
+# ============================================================
+# Audio Overlay Settings (used inline with video generation)
+# ============================================================
+
+class SubtitleEntry(BaseModel):
+    """A single subtitle entry for overlay."""
+    text: str = Field(..., description="Subtitle text")
+    start: float = Field(..., description="Start time in seconds")
+    end: float = Field(..., description="End time in seconds")
+
+
+class AudioOverlaySettings(BaseModel):
+    """
+    Optional audio overlay settings for video generation.
+    If provided, FFmpeg will compose the audio after AI video generation.
+    """
+    audio_url: str = Field(..., description="URL of the audio file to overlay")
+    audio_start_time: float = Field(
+        default=0,
+        description="Start time in audio file (seconds)"
+    )
+    audio_volume: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=2.0,
+        description="Audio volume (0.0 - 2.0)"
+    )
+    fade_in: float = Field(
+        default=0,
+        ge=0,
+        description="Audio fade in duration (seconds)"
+    )
+    fade_out: float = Field(
+        default=0,
+        ge=0,
+        description="Audio fade out duration (seconds)"
+    )
+    mix_original_audio: bool = Field(
+        default=False,
+        description="Whether to mix with original video audio"
+    )
+    original_audio_volume: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Original audio volume if mixing"
+    )
+    subtitles: Optional[List[SubtitleEntry]] = Field(
+        default=None,
+        description="Optional subtitle entries for overlay"
+    )
 
 
 # ============================================================
@@ -78,6 +132,11 @@ class VideoGenerationSettings(BaseModel):
     seed: Optional[int] = Field(
         default=None,
         description="Random seed for reproducibility"
+    )
+    # Optional audio overlay - if provided, FFmpeg will compose audio after generation
+    audio_overlay: Optional[AudioOverlaySettings] = Field(
+        default=None,
+        description="Optional audio overlay settings (FFmpeg composition after AI generation)"
     )
 
 
@@ -144,9 +203,9 @@ class AIJobRequest(BaseModel):
     Request model for AI generation jobs.
 
     Supports:
-    - video_generation: Text-to-video with Veo 3
+    - video_generation: Text-to-video with Veo 3 (with optional audio overlay via FFmpeg)
     - image_generation: Text-to-image with Imagen 3
-    - image_to_video: Image-to-video with Veo 3
+    - image_to_video: Image-to-video with Veo 3 (with optional audio overlay via FFmpeg)
     """
     job_id: str = Field(..., description="Unique job identifier")
     job_type: AIJobType = Field(..., description="Type of AI job")

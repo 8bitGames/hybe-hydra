@@ -44,8 +44,8 @@ class ImageAspectRatio(str, Enum):
 class VideoGenerationConfig:
     """Configuration for video generation."""
     prompt: str
-    aspect_ratio: VideoAspectRatio = VideoAspectRatio.LANDSCAPE_16_9
-    duration_seconds: int = 8  # 5 or 8 seconds for Veo 3
+    aspect_ratio: VideoAspectRatio = VideoAspectRatio.PORTRAIT_9_16  # Default for TikTok/Shorts/Reels
+    duration_seconds: int = 8  # 4, 6, or 8 seconds for Veo 3.1
     negative_prompt: Optional[str] = None
     seed: Optional[int] = None
     reference_image_uri: Optional[str] = None  # GCS URI for image-to-video
@@ -57,7 +57,7 @@ class VideoGenerationConfig:
 class ImageGenerationConfig:
     """Configuration for image generation."""
     prompt: str
-    aspect_ratio: ImageAspectRatio = ImageAspectRatio.SQUARE_1_1
+    aspect_ratio: ImageAspectRatio = ImageAspectRatio.PORTRAIT_9_16  # Default for Veo 3.1 video previews
     negative_prompt: Optional[str] = None
     seed: Optional[int] = None
     number_of_images: int = 1
@@ -95,7 +95,7 @@ class VertexAIClient:
 
     # Model endpoints
     VEO_MODEL = "veo-3.1-generate-001"  # Veo 3.1
-    IMAGE_MODEL = "gemini-2.5-flash-image-preview"  # Gemini 2.5 Flash Image
+    IMAGE_MODEL = "gemini-2.5-flash-image"  # Gemini 2.5 Flash Image
 
     def __init__(
         self,
@@ -182,10 +182,8 @@ class VertexAIClient:
             "aspectRatio": config.aspect_ratio.value,
             "durationSeconds": config.duration_seconds,
             "personGeneration": config.person_generation,
-            "generateAudio": config.generate_audio,
-            "outputOptions": {
-                "gcsUri": output_gcs_uri,
-            },
+            "storageUri": output_gcs_uri,
+            "sampleCount": 1,
         }
 
         if config.negative_prompt:
@@ -225,18 +223,21 @@ class VertexAIClient:
 
             if result.get("done"):
                 if "error" in result:
+                    error_msg = str(result["error"])
+                    logger.error(f"Video generation error: {error_msg}")
                     return GenerationResult(
                         success=False,
                         operation_name=operation_name,
-                        error=str(result["error"]),
+                        error=error_msg,
                     )
 
                 # Extract video URI from response
+                # Response format: {"videos": [{"gcsUri": "...", "mimeType": "video/mp4"}]}
                 response_data = result.get("response", {})
-                predictions = response_data.get("predictions", [])
+                videos = response_data.get("videos", [])
 
-                if predictions and len(predictions) > 0:
-                    video_uri = predictions[0].get("gcsUri", output_gcs_uri)
+                if videos and len(videos) > 0:
+                    video_uri = videos[0].get("gcsUri", output_gcs_uri)
                     return GenerationResult(
                         success=True,
                         operation_name=operation_name,
@@ -244,10 +245,22 @@ class VertexAIClient:
                         metadata=response_data,
                     )
 
+                # No videos returned - log the full response for debugging
+                logger.error(f"No videos in response. Full result: {result}")
+                # Check for RAI (Responsible AI) filtering
+                rai_result = response_data.get("raiMediaFilteredReasons", [])
+                if rai_result:
+                    return GenerationResult(
+                        success=False,
+                        operation_name=operation_name,
+                        error=f"Video blocked by content filter: {rai_result}",
+                        metadata=response_data,
+                    )
+
             return GenerationResult(
                 success=False,
                 operation_name=operation_name,
-                error="Video generation did not complete within timeout",
+                error=f"Video generation did not complete. Response: {result}",
             )
 
         except Exception as e:
@@ -293,6 +306,9 @@ class VertexAIClient:
             ],
             "generationConfig": {
                 "responseModalities": ["TEXT", "IMAGE"],
+                "imageConfig": {
+                    "aspectRatio": config.aspect_ratio.value,  # e.g., "9:16", "16:9", "1:1"
+                }
             }
         }
 
@@ -363,9 +379,9 @@ class VertexAIClient:
         Returns:
             dict: Final operation status
         """
-        # Build operation status URL
-        base_url = f"https://{self.location}-aiplatform.googleapis.com/v1"
-        operation_url = f"{base_url}/{operation_name}"
+        # Build fetchPredictOperation URL for Veo
+        # Veo uses POST to fetchPredictOperation endpoint instead of GET to operation URL
+        fetch_url = self._get_model_endpoint(self.VEO_MODEL, "fetchPredictOperation")
 
         start_time = time.time()
 
@@ -377,10 +393,15 @@ class VertexAIClient:
                 return {"done": False, "error": "Timeout"}
 
             try:
-                result = await self._make_request("GET", operation_url)
+                # Use POST with operationName in body for Veo
+                result = await self._make_request("POST", fetch_url, {"operationName": operation_name})
 
                 if result.get("done"):
                     logger.info(f"Operation completed after {elapsed:.1f}s")
+                    # Log full result for debugging
+                    logger.info(f"Operation result: done={result.get('done')}, has_error={'error' in result}, has_response={'response' in result}")
+                    if 'error' in result:
+                        logger.error(f"Operation error details: {result.get('error')}")
                     return result
 
                 # Log progress if available

@@ -53,9 +53,26 @@ export type AIJobType = 'video_generation' | 'image_generation' | 'image_to_vide
 
 export type VideoAspectRatio = '16:9' | '9:16' | '1:1';
 export type ImageAspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
-export type VideoDuration = 5 | 8;
+export type VideoDuration = 4 | 6 | 8;  // Veo 3.1 supports 4, 6, or 8 seconds
 export type PersonGeneration = 'allow_adult' | 'dont_allow';
 export type SafetyFilterLevel = 'block_none' | 'block_few' | 'block_some' | 'block_most';
+
+export interface SubtitleEntry {
+  text: string;
+  start: number;
+  end: number;
+}
+
+export interface AudioOverlaySettings {
+  audio_url: string;
+  audio_start_time?: number;
+  audio_volume?: number;
+  fade_in?: number;
+  fade_out?: number;
+  mix_original_audio?: boolean;
+  original_audio_volume?: number;
+  subtitles?: SubtitleEntry[];
+}
 
 export interface VideoGenerationSettings {
   prompt: string;
@@ -65,6 +82,7 @@ export interface VideoGenerationSettings {
   person_generation?: PersonGeneration;
   generate_audio?: boolean;
   seed?: number;
+  audio_overlay?: AudioOverlaySettings;
 }
 
 export interface ImageGenerationSettings {
@@ -134,7 +152,7 @@ export async function submitVideoGeneration(
     job_id: jobId,
     job_type: 'video_generation',
     video_settings: {
-      aspect_ratio: '16:9',
+      aspect_ratio: '9:16',  // Portrait for TikTok/Shorts/Reels
       duration_seconds: 8,
       person_generation: 'allow_adult',
       generate_audio: true,
@@ -162,7 +180,7 @@ export async function submitImageGeneration(
     job_id: jobId,
     job_type: 'image_generation',
     image_settings: {
-      aspect_ratio: '1:1',
+      aspect_ratio: '9:16',  // Match Veo 3.1 video aspect ratio
       number_of_images: 1,
       safety_filter_level: 'block_some',
       person_generation: 'allow_adult',
@@ -190,7 +208,7 @@ export async function submitImageToVideo(
     job_id: jobId,
     job_type: 'image_to_video',
     i2v_settings: {
-      aspect_ratio: '16:9',
+      aspect_ratio: '9:16',  // Portrait for TikTok/Shorts/Reels
       duration_seconds: 8,
       person_generation: 'allow_adult',
       generate_audio: true,
@@ -337,7 +355,7 @@ export function generateAIJobId(prefix: string = 'ai'): string {
 export function getAIOutputSettings(
   jobId: string,
   jobType: AIJobType,
-  bucket: string = process.env.NEXT_PUBLIC_S3_BUCKET || 'hydra-ai-output'
+  bucket: string = process.env.NEXT_PUBLIC_S3_BUCKET || process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || 'hydra-assets-seoul'
 ): AIOutputSettings {
   const extension = jobType === 'image_generation' ? 'png' : 'mp4';
   const folder = jobType === 'image_generation' ? 'images' : 'videos';
