@@ -3,9 +3,11 @@ Vertex AI Client for Video and Image Generation.
 
 Provides high-level interface for:
 - Veo 3.1: Video generation from text/image prompts
-- Gemini 2.5 Flash Image: Image generation from text prompts
+- Gemini 3 Pro Image Preview: Image generation from text prompts (via google-genai SDK)
 
 Uses GCP WIF authentication via gcp_auth module.
+
+VERSION: v3.1 (2024-12-12) - Uses http_options for JWT authentication
 """
 
 import os
@@ -13,11 +15,16 @@ import json
 import time
 import logging
 import asyncio
+import base64
 from typing import Optional, Literal
 from dataclasses import dataclass
 from enum import Enum
 
 import httpx
+
+# Google GenAI SDK for Gemini 3 Pro Image Preview
+from google import genai
+from google.genai import types as genai_types
 
 from .gcp_auth import get_auth_manager, GCPAuthManager
 
@@ -97,7 +104,7 @@ class VertexAIClient:
 
     # Model endpoints
     VEO_MODEL = "veo-3.1-generate-001"  # Veo 3.1
-    IMAGE_MODEL = "gemini-2.5-flash-image"  # Gemini 2.5 Flash Image
+    IMAGE_MODEL = "gemini-3-pro-image-preview"  # Gemini 3 Pro Image Preview (Vertex AI Model Garden)
 
     def __init__(
         self,
@@ -286,9 +293,9 @@ class VertexAIClient:
         output_gcs_uri: Optional[str] = None,
     ) -> GenerationResult:
         """
-        Generate an image using Gemini 2.5 Flash Image.
+        Generate an image using Gemini 3 Pro Image Preview.
 
-        Uses Gemini's generateContent API with responseModalities for image output.
+        Uses google-genai SDK with vertexai=True for Vertex AI Model Garden access.
 
         Args:
             config: Image generation configuration
@@ -297,72 +304,88 @@ class VertexAIClient:
         Returns:
             GenerationResult with image data or error
         """
-        logger.info(f"Starting image generation: {config.prompt[:50]}...")
+        logger.info(f"[vertex_ai v3.1] Starting image generation: {config.prompt[:50]}...")
 
-        # Build request payload for Gemini generateContent API
-        # Gemini uses a different format than Imagen predict API
+        # Build prompt text
         prompt_text = config.prompt
         if config.negative_prompt:
             prompt_text += f"\n\nAvoid: {config.negative_prompt}"
 
-        request_body = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [
-                        {"text": f"Generate an image: {prompt_text}"}
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "responseModalities": ["TEXT", "IMAGE"],
-                "imageConfig": {
-                    "aspectRatio": config.aspect_ratio.value,  # e.g., "9:16", "16:9", "1:1"
-                }
-            }
-        }
-
         try:
-            endpoint = self._get_model_endpoint(self.IMAGE_MODEL, "generateContent")
-            logger.info(f"Calling Gemini Image endpoint: {endpoint}")
+            # Get self-signed JWT from auth manager (bypasses OAuth2 token exchange)
+            # This is the most reliable method for Vertex AI authentication
+            access_token = self.auth.get_access_token()
 
-            response = await self._make_request("POST", endpoint, request_body)
+            # Initialize GenAI client with Vertex AI mode
+            # Use "global" location for Gemini 3 Pro Image Preview
+            # Pass JWT via http_options headers instead of credentials object
+            # This prevents the SDK from internally calling credentials.refresh()
+            client = genai.Client(
+                vertexai=True,
+                project=self.project_id,
+                location="global",  # Gemini 3 Pro Image Preview requires "global" location
+                http_options=genai_types.HttpOptions(
+                    headers={"Authorization": f"Bearer {access_token}"}
+                )
+            )
 
-            # Parse Gemini generateContent response format
-            # Response: { "candidates": [{ "content": { "parts": [{ "inlineData": { "mimeType": "...", "data": "base64..." } }] } }] }
-            candidates = response.get("candidates", [])
+            logger.info(f"Calling Gemini 3 Pro Image Preview via google-genai SDK (project={self.project_id}, location=global, using self-signed JWT)")
 
-            if candidates and len(candidates) > 0:
-                content = candidates[0].get("content", {})
-                parts = content.get("parts", [])
-
-                for part in parts:
-                    # Check for inline image data
-                    inline_data = part.get("inlineData")
-                    if inline_data:
-                        image_base64 = inline_data.get("data")
-                        if image_base64:
-                            logger.info("Image generated successfully (base64)")
-                            return GenerationResult(
-                                success=True,
-                                image_base64=image_base64,
-                                metadata=response,
-                            )
-
-            # Check for blocked content or other issues
-            if candidates and len(candidates) > 0:
-                finish_reason = candidates[0].get("finishReason", "")
-                if finish_reason == "SAFETY":
-                    return GenerationResult(
-                        success=False,
-                        error="Image generation blocked by safety filters",
-                        metadata=response,
+            # Generate content with image response modality
+            # Run in executor since SDK is synchronous
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: client.models.generate_content(
+                    model=self.IMAGE_MODEL,
+                    contents=prompt_text,
+                    config=genai_types.GenerateContentConfig(
+                        response_modalities=["TEXT", "IMAGE"]
                     )
+                )
+            )
+
+            # Parse response - extract image from parts
+            if response.candidates and len(response.candidates) > 0:
+                content = response.candidates[0].content
+                if content and content.parts:
+                    for part in content.parts:
+                        # Check for inline_data (image)
+                        if hasattr(part, 'inline_data') and part.inline_data is not None:
+                            image_data = part.inline_data.data
+                            if image_data:
+                                # Convert bytes to base64 string if needed
+                                if isinstance(image_data, bytes):
+                                    image_base64 = base64.b64encode(image_data).decode('utf-8')
+                                else:
+                                    image_base64 = image_data
+
+                                logger.info("Image generated successfully (base64)")
+                                return GenerationResult(
+                                    success=True,
+                                    image_base64=image_base64,
+                                    metadata={"model": self.IMAGE_MODEL, "location": "global"},
+                                )
+                        # Log text parts for debugging
+                        elif hasattr(part, 'text') and part.text:
+                            logger.info(f"Text response: {part.text[:100]}...")
+
+            # Check for blocked content
+            if response.candidates and len(response.candidates) > 0:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'finish_reason'):
+                    finish_reason = str(candidate.finish_reason)
+                    if "SAFETY" in finish_reason:
+                        return GenerationResult(
+                            success=False,
+                            error="Image generation blocked by safety filters",
+                            metadata={"finish_reason": finish_reason},
+                        )
 
             return GenerationResult(
                 success=False,
                 error="No image data returned from Gemini API",
-                metadata=response,
+                metadata={"response": str(response)},
             )
 
         except Exception as e:

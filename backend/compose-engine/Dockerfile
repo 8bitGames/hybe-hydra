@@ -221,6 +221,11 @@ RUN echo "=== Verifying PyOpenGL + OSMesa ===" \
 RUN pip3 install --no-cache-dir \
     google-generativeai==0.8.3
 
+# Google GenAI SDK for Vertex AI Model Garden (Gemini 3 Pro Image Preview)
+# This package is different from google-generativeai - provides google.genai module
+RUN pip3 install --no-cache-dir \
+    google-genai>=1.0.0
+
 # GCP Workload Identity Federation (WIF) and Service Account for Vertex AI
 RUN pip3 install --no-cache-dir \
     google-auth>=2.36.0 \
@@ -247,6 +252,7 @@ RUN echo "=== Final Verification ===" \
     && python3 -c "import fastapi; print('fastapi: OK')" \
     && python3 -c "from OpenGL import GL; from OpenGL.osmesa import OSMesaCreateContext, OSMESA_RGBA; print('GL Transitions (OSMesa): OK')" \
     && python3 -c "import google.auth; print(f'google-auth: {google.auth.__version__} (GCP WIF ready)')" \
+    && python3 -c "from google import genai; print('google-genai: OK (Vertex AI Model Garden ready)')" \
     && echo "=== All verifications passed ==="
 
 # =============================================================================

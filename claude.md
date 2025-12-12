@@ -19,7 +19,7 @@
   ## AI Integration - MUST USE AGENT SYSTEM
 
   **CRITICAL**: All AI usage in this project MUST go through the Agent System at `lib/agents/`.
-  Do NOT use direct AI API calls (GoogleGenAI, OpenAI SDK, etc.) outside of the agent system.
+  Do NOT use direct AI API calls (GoogleGenAI, OpenAI SDK, etc.) outside of the agent system.       
 
   ### Why Agent System?
   - Centralized prompt management (database-driven prompts)
@@ -146,3 +146,49 @@
   These are already integrated into `BaseAgent` and should not be used directly outside agents.
 
 - use only muted colors like black, grey, and white. never use colors unless i tell you to for design.
+
+  ## Gemini AI Integration
+  When using Gemini AI, follow these requirements:
+
+  ### Dependencies
+  ```bash
+  npm install @google/genai mime
+  npm install -D @types/node
+  ```
+
+  ### Model Selection
+  - For image generation: use gemini-3-pro-image-preview
+  - For text generation: use gemini-flash-lite-latest
+
+  ### Required Code Pattern
+  ```typescript
+  import { GoogleGenAI } from '@google/genai';
+
+  const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY,
+  });
+
+  const tools = [{ googleSearch: {} }];
+
+  const config = {
+    thinkingConfig: {
+      thinkingLevel: 'HIGH',
+    },
+    tools,
+  };
+
+  const response = await ai.models.generateContentStream({
+    model: 'gemini-flash-lite-latest', // or gemini-3-pro-image-preview for images
+    config,
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: 'your prompt here' }],
+      },
+    ],
+  });
+
+  for await (const chunk of response) {
+    console.log(chunk.text);
+  }
+  ```

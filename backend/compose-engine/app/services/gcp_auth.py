@@ -111,7 +111,8 @@ class GCPAuthManager:
         self._access_token = None
         self._token_expiry = None
 
-        logger.info(f"GCPAuthManager initialized for project: {self.project_id}")
+        # VERSION MARKER - v3.0 (2024-12-12) with self-signed JWT support
+        logger.info(f"[gcp_auth v3.0] GCPAuthManager initialized for project: {self.project_id}")
         if self._use_service_account:
             logger.info("Auth method: Service Account JSON (direct)")
         else:
@@ -410,6 +411,9 @@ class GCPAuthManager:
         Returns:
             str: Valid access token or self-signed JWT
         """
+        # VERSION MARKER - v3.0 with self-signed JWT (2024-12-12)
+        logger.info(f"[gcp_auth v3.0] get_access_token() called, _use_service_account={self._use_service_account}")
+
         # For service account JSON, use self-signed JWT directly (most reliable)
         # Self-signed JWT can be used directly as Bearer token for Google Cloud APIs
         if self._use_service_account:
