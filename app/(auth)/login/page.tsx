@@ -17,8 +17,8 @@ export default function LoginPage() {
   const { login, isLoading } = useAuthStore();
   const { t } = useI18n();
 
-  const [email, setEmail] = useState("admin@hydra.com");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
