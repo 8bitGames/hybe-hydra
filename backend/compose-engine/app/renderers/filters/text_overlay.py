@@ -17,13 +17,23 @@ FONTS_DIR = os.path.join(
 COOPER_BLACK = os.path.join(FONTS_DIR, "COOPBL.TTF")
 
 # Noto Sans font paths (preferred) with fallbacks
+# Updated for AWS Batch/Modal Docker containers
 FALLBACK_FONTS = [
+    # Common Linux paths
     "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
     "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-    "/System/Library/Fonts/NotoSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    # Ubuntu/Debian default paths
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    # macOS paths
+    "/System/Library/Fonts/NotoSans-Bold.ttf",
     "/System/Library/Fonts/Helvetica.ttc",
-    "Arial",
+    # Generic fallback - works with fontconfig
+    "Sans",
 ]
 
 # Animation registry matching text_overlay.py
@@ -97,19 +107,32 @@ def escape_ffmpeg_text(text: str) -> str:
     return text
 
 
-def get_font_path() -> str:
+def get_font_path() -> tuple[str, bool]:
     """Get available font path - prioritizes Noto Sans.
 
     Returns:
-        Path to font file, or font name for system fonts
+        Tuple of (font_path_or_name, is_file_path)
+        - If is_file_path is True, font_path_or_name is a file path
+        - If is_file_path is False, font_path_or_name is a font name for fontconfig
     """
-    # Prioritize Noto Sans fonts, skip Cooper Black
-    for fallback in FALLBACK_FONTS:
-        if os.path.exists(fallback):
-            return fallback
+    import logging
+    logger = logging.getLogger(__name__)
 
-    # Return generic font name as last resort
-    return "Sans"
+    # Check each font file in order of preference
+    for fallback in FALLBACK_FONTS:
+        # For generic font names (no path), return as font name
+        if not fallback.startswith("/"):
+            logger.info(f"[text_overlay] Using generic font name: {fallback}")
+            return (fallback, False)
+        if os.path.exists(fallback):
+            logger.info(f"[text_overlay] Using font file: {fallback}")
+            return (fallback, True)
+        else:
+            logger.debug(f"[text_overlay] Font not found: {fallback}")
+
+    # Return generic font name as last resort (use fontconfig)
+    logger.warning("[text_overlay] No specific fonts found, using 'Sans' via fontconfig")
+    return ("Sans", False)
 
 
 @dataclass
@@ -179,7 +202,7 @@ def build_drawtext_filter(
     escaped_text = escape_ffmpeg_text(wrapped_text)
 
     # Get font
-    font_path = get_font_path()
+    font_path, is_font_file = get_font_path()
 
     # Position: centered vertically
     num_lines = len(lines)
@@ -238,7 +261,15 @@ def build_drawtext_filter(
 
     filter_parts = [
         f"drawtext=text='{escaped_text}'",
-        f"fontfile='{font_path}'",
+    ]
+
+    # Use fontfile for file paths, font for font names (fontconfig)
+    if is_font_file:
+        filter_parts.append(f"fontfile='{font_path}'")
+    else:
+        filter_parts.append(f"font='{font_path}'")
+
+    filter_parts.extend([
         f"fontsize={font_size}",
         f"fontcolor={config['fontcolor']}",
         f"borderw={config['borderw']}",
@@ -247,7 +278,7 @@ def build_drawtext_filter(
         f"y={y_expr}",
         f"alpha='{alpha_expr}'",
         f"enable='between(t\\,{start_time}\\,{end_time})'",
-    ]
+    ])
 
     return ":".join(filter_parts)
 
@@ -307,23 +338,26 @@ def build_korean_text_filter(
     Returns:
         FFmpeg drawtext filter string
     """
-    # Korean font paths
+    # Korean font paths - includes CJK fonts that support Hangul
     korean_fonts = [
         "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Bold.otf",
         "/System/Library/Fonts/AppleSDGothicNeo.ttc",
     ]
 
     # Find available Korean font
     font_path = None
+    is_font_file = False
     for font in korean_fonts:
         if os.path.exists(font):
             font_path = font
+            is_font_file = True
             break
 
     if not font_path:
         # Fall back to default (may not render Korean properly)
-        font_path = get_font_path()
+        font_path, is_font_file = get_font_path()
 
     # Use the standard build function but with Korean font
     width, height = video_size
@@ -352,7 +386,15 @@ def build_korean_text_filter(
 
     filter_parts = [
         f"drawtext=text='{escaped_text}'",
-        f"fontfile='{font_path}'",
+    ]
+
+    # Use fontfile for file paths, font for font names (fontconfig)
+    if is_font_file:
+        filter_parts.append(f"fontfile='{font_path}'")
+    else:
+        filter_parts.append(f"font='{font_path}'")
+
+    filter_parts.extend([
         f"fontsize={font_size}",
         f"fontcolor={config['fontcolor']}",
         f"borderw={config['borderw']}",
@@ -361,6 +403,6 @@ def build_korean_text_filter(
         f"y={y_expr}",
         f"alpha='{alpha_expr}'",
         f"enable='between(t\\,{start_time}\\,{end_time})'",
-    ]
+    ])
 
     return ":".join(filter_parts)

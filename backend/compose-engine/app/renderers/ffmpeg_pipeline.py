@@ -392,7 +392,10 @@ async def apply_filter_to_video(
     elapsed = time.time() - start_time
 
     if proc.returncode != 0:
-        logger.error(f"[{job_id}] Filter FAILED ({elapsed:.1f}s, {encoder_name}): {stderr.decode()[:500]}")
+        stderr_text = stderr.decode()
+        logger.error(f"[{job_id}] Filter FAILED ({elapsed:.1f}s, {encoder_name})")
+        logger.error(f"[{job_id}] Full filter string: {filter_str}")
+        logger.error(f"[{job_id}] Full FFmpeg stderr:\n{stderr_text}")
         return False
 
     if os.path.exists(output_path):
@@ -494,24 +497,24 @@ async def final_encode(
     """
     ffmpeg = find_ffmpeg()
 
-    # High quality encoding settings
+    # High quality encoding settings - optimized to prevent pixelation
     if use_gpu and is_nvenc_available():
         encoder_opts = [
             "-c:v", "h264_nvenc",
             "-preset", "p1",  # Highest quality preset
             "-tune", "hq",
             "-rc", "vbr",
-            "-cq", "23",
-            "-b:v", target_bitrate,
-            "-maxrate", "12M",
-            "-bufsize", "16M",
+            "-cq", "18",  # Lower CQ = higher quality (was 23)
+            "-b:v", "15M",  # Higher bitrate for better quality (was 8M)
+            "-maxrate", "20M",  # Higher max bitrate (was 12M)
+            "-bufsize", "30M",  # Higher buffer (was 16M)
             "-profile:v", "high",
         ]
     else:
         encoder_opts = [
             "-c:v", "libx264",
             "-preset", "slow",
-            "-crf", "23",
+            "-crf", "18",  # Lower CRF = higher quality (was 23)
             "-profile:v", "high",
             "-level", "4.1",
         ]
