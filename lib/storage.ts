@@ -176,12 +176,12 @@ export async function getPresignedUrl(key: string, expiresIn = 3600): Promise<st
  * Works with any S3 bucket that the AWS credentials have access to.
  *
  * @param s3Url - Full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/key)
- * @param expiresIn - Expiration time in seconds (default: 24 hours)
+ * @param expiresIn - Expiration time in seconds (default: 7 days - maximum allowed)
  * @returns Presigned URL or original URL if not a valid S3 URL
  */
 export async function getPresignedUrlFromS3Url(
   s3Url: string,
-  expiresIn = 86400
+  expiresIn = 604800 // 7 days (maximum allowed for presigned URLs)
 ): Promise<string> {
   // Parse S3 URL: https://BUCKET.s3.REGION.amazonaws.com/KEY
   // Use [^?]+ to stop at query string (handles already-presigned URLs)

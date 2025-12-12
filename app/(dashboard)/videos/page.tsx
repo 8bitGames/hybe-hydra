@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
-import { useFastCutVideos, useAllAIVideos, AllVideoItem } from "@/lib/queries";
-import { FastCutVideo } from "@/lib/fast-cut-api";
+import { useFastCutVideos, useAllAIVideos } from "@/lib/queries";
 import {
   Card,
   CardContent,
@@ -12,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -21,33 +21,24 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   PlayCircle,
   Search,
-  Clock,
   ExternalLink,
   MoreVertical,
   Trash2,
   Send,
   Download,
   Eye,
-  Music,
-  Wand2,
   Film,
   Sparkles,
-  Calendar,
-  Tag,
-  FileText,
-  Settings,
   Layers,
   Volume2,
   VolumeX,
   ChevronLeft,
   ChevronRight,
-  Play,
+  X,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -59,6 +50,132 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { VideoGeneration as FullVideoGeneration } from "@/lib/video-api";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+
+// Lazy Video Component - only loads when in viewport
+function LazyVideo({
+  src,
+  soundEnabled,
+  className,
+  onVideoClick,
+}: {
+  src: string;
+  soundEnabled: boolean;
+  className?: string;
+  onVideoClick?: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "100px" }
+    );
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  const stopVideo = () => {
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+      videoRef.current.muted = true;
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className={cn("w-full h-full bg-zinc-900", className)}
+      onClick={() => {
+        stopVideo();
+        onVideoClick?.();
+      }}
+    >
+      {isVisible ? (
+        <>
+          {!isLoaded && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-8 h-8 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
+            </div>
+          )}
+          <video
+            ref={videoRef}
+            src={src}
+            className={cn("w-full h-full object-cover", !isLoaded && "opacity-0")}
+            muted
+            preload="metadata"
+            onLoadedData={() => setIsLoaded(true)}
+            onMouseOver={(e) => {
+              const videoEl = e.currentTarget;
+              if (soundEnabled) {
+                videoEl.muted = false;
+                videoEl.volume = 0.1;
+              }
+              videoEl.play().catch(() => {
+                videoEl.muted = true;
+                videoEl.play().catch(() => {});
+              });
+            }}
+            onMouseOut={(e) => {
+              const videoEl = e.currentTarget;
+              videoEl.pause();
+              videoEl.currentTime = 0;
+              videoEl.muted = true;
+            }}
+          />
+        </>
+      ) : (
+        <div className="w-full h-full bg-zinc-800 animate-pulse" />
+      )}
+    </div>
+  );
+}
+
+// Video Card Skeleton
+function VideoCardSkeleton() {
+  return (
+    <Card className="overflow-hidden">
+      <div className="relative aspect-video">
+        <Skeleton className="w-full h-full" />
+      </div>
+      <CardContent className="p-3 space-y-2">
+        <Skeleton className="h-3 w-3/4" />
+        <Skeleton className="h-2 w-1/2" />
+        <Skeleton className="h-2 w-full" />
+      </CardContent>
+    </Card>
+  );
+}
+
+// Unified video type
+type UnifiedVideo = {
+  id: string;
+  campaign_id: string;
+  campaign_name: string;
+  artist_name: string;
+  prompt: string;
+  duration_seconds: number;
+  aspect_ratio: string;
+  status: string;
+  output_url: string | null;
+  composed_output_url: string | null;
+  created_at: string;
+  updated_at: string;
+  generation_type: "AI" | "COMPOSE";
+};
 
 type VideoType = "all" | "ai" | "fast-cut";
 
@@ -70,24 +187,22 @@ export default function AllVideosPage() {
   const [videoType, setVideoType] = useState<VideoType>("all");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [page, setPage] = useState(1);
-  const pageSize = 24;
+  const pageSize = 12;
 
-  // Detail modal state
-  const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const [selectedVideo, setSelectedVideo] = useState<FullVideoGeneration | null>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  // Side panel state
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedVideo, setSelectedVideo] = useState<UnifiedVideo | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
 
   // Delete state
   const [deleteVideoId, setDeleteVideoId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Fetch fast-cut videos with pagination
+  // Fetch videos
   const { data: composeData, isLoading: loadingCompose, refetch: refetchCompose } = useFastCutVideos({
     page,
     page_size: pageSize,
   });
-
-  // Fetch AI videos from all campaigns
   const { data: aiData, isLoading: loadingAI, refetch: refetchAI } = useAllAIVideos();
 
   const composeVideos = composeData?.items || [];
@@ -111,136 +226,21 @@ export default function AllVideosPage() {
     tryAdjust: language === "ko" ? "필터를 조정해보세요" : "Try adjusting your filters",
     page: language === "ko" ? "페이지" : "Page",
     of: language === "ko" ? "/" : "of",
-    totalVideos: language === "ko" ? "전체 영상" : "Total Videos",
     viewDetails: language === "ko" ? "상세보기" : "View Details",
     viewInCampaign: language === "ko" ? "캠페인에서 보기" : "View in Campaign",
     schedulePublish: language === "ko" ? "게시 예약" : "Schedule Publish",
     download: language === "ko" ? "다운로드" : "Download",
     delete: language === "ko" ? "삭제" : "Delete",
-    completed: language === "ko" ? "완료" : "Completed",
-    processing: language === "ko" ? "처리중" : "Processing",
-    failed: language === "ko" ? "실패" : "Failed",
-    videoDetails: language === "ko" ? "영상 상세 정보" : "Video Details",
-    prompt: language === "ko" ? "프롬프트" : "Prompt",
-    negativePrompt: language === "ko" ? "네거티브 프롬프트" : "Negative Prompt",
-    videoSettings: language === "ko" ? "영상 설정" : "Video Settings",
-    duration: language === "ko" ? "길이" : "Duration",
-    aspectRatio: language === "ko" ? "비율" : "Aspect Ratio",
-    status: language === "ko" ? "상태" : "Status",
-    qualityScore: language === "ko" ? "품질 점수" : "Quality Score",
-    generationType: language === "ko" ? "생성 타입" : "Generation Type",
-    fastCutVideo: language === "ko" ? "패스트 컷 영상" : "Fast Cut Video",
-    aiVideo: language === "ko" ? "AI 영상" : "AI Video",
-    audio: language === "ko" ? "오디오" : "Audio",
-    filename: language === "ko" ? "파일명" : "Filename",
-    startTime: language === "ko" ? "시작 시간" : "Start Time",
-    referenceStyle: language === "ko" ? "참조 스타일" : "Reference Style",
-    effectPreset: language === "ko" ? "이펙트 프리셋" : "Effect Preset",
-    metadata: language === "ko" ? "메타데이터" : "Metadata",
-    tags: language === "ko" ? "태그" : "Tags",
-    createdAt: language === "ko" ? "생성일" : "Created",
-    updatedAt: language === "ko" ? "수정일" : "Updated",
-    loadFailed: language === "ko" ? "영상 정보를 불러올 수 없습니다" : "Failed to load video details",
-    openInNewTab: language === "ko" ? "새 탭에서 열기" : "Open in New Tab",
-    createSimilar: language === "ko" ? "유사하게 만들기" : "Create Similar",
     deleteConfirm: language === "ko" ? "정말 이 영상을 삭제하시겠습니까?" : "Are you sure you want to delete this video?",
     deleteConfirmTitle: language === "ko" ? "영상 삭제" : "Delete Video",
     deleting: language === "ko" ? "삭제 중..." : "Deleting...",
-    deleteSuccess: language === "ko" ? "영상이 삭제되었습니다" : "Video deleted",
-    deleteFailed: language === "ko" ? "삭제에 실패했습니다" : "Failed to delete video",
     confirm: language === "ko" ? "확인" : "Confirm",
     cancel: language === "ko" ? "취소" : "Cancel",
+    previous: language === "ko" ? "이전" : "Previous",
+    next: language === "ko" ? "다음" : "Next",
   };
 
-  const handleDownload = (url: string, filename: string) => {
-    try {
-      // Use server-side streaming to avoid CORS issues with S3
-      const downloadUrl = `/api/v1/assets/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}&stream=true`;
-
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error('Download failed:', error);
-      // Fallback: open in new tab
-      window.open(url, '_blank');
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteVideoId) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/api/v1/generations/${deleteVideoId}?force=true`);
-      setDeleteVideoId(null);
-      // Refresh data
-      refetchCompose();
-      refetchAI();
-    } catch (error) {
-      console.error('Delete failed:', error);
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const fetchVideoDetail = async (videoId: string, campaignId?: string) => {
-    setLoadingDetail(true);
-    setDetailModalOpen(true);
-    try {
-      const response = await api.get<FullVideoGeneration>(`/api/v1/generations/${videoId}`);
-      if (response.data) {
-        setSelectedVideo(response.data);
-      }
-    } catch (err) {
-      console.error("Failed to load video detail:", err);
-    } finally {
-      setLoadingDetail(false);
-    }
-  };
-
-  // Helper to get video URL for unified video type
-  const getUnifiedVideoUrl = (video: { composed_output_url: string | null; output_url: string | null }) => {
-    return video.composed_output_url || video.output_url;
-  };
-
-  const getDetailVideoUrl = (video: FullVideoGeneration) => {
-    return video.composed_output_url || video.output_url;
-  };
-
-  // Check if video is compose type
-  const isComposeVideo = (video: FullVideoGeneration) => {
-    if (video.generation_type === "COMPOSE") return true;
-    if (video.id?.startsWith("compose-")) return true;
-    const variationType = video.quality_metadata?.variationType as string | undefined;
-    return variationType === "compose_variation" || variationType === "compose";
-  };
-
-  // Check if video is portrait (9:16)
-  const isPortraitVideo = (video: FullVideoGeneration) => {
-    return video.aspect_ratio === "9:16";
-  };
-
-  // Unified video type for rendering
-  type UnifiedVideo = {
-    id: string;
-    campaign_id: string;
-    campaign_name: string;
-    artist_name: string;
-    prompt: string;
-    duration_seconds: number;
-    aspect_ratio: string;
-    status: string;
-    output_url: string | null;
-    composed_output_url: string | null;
-    created_at: string;
-    updated_at: string;
-    generation_type: "AI" | "COMPOSE";
-  };
-
-  // Convert compose videos to unified format
+  // Convert to unified format
   const unifiedComposeVideos: UnifiedVideo[] = composeVideos.map((video) => ({
     id: video.id,
     campaign_id: video.campaign_id,
@@ -257,7 +257,6 @@ export default function AllVideosPage() {
     generation_type: "COMPOSE" as const,
   }));
 
-  // Convert AI videos to unified format
   const unifiedAIVideos: UnifiedVideo[] = aiVideos.map((video) => ({
     id: video.id,
     campaign_id: video.campaign_id,
@@ -274,13 +273,11 @@ export default function AllVideosPage() {
     generation_type: "AI" as const,
   }));
 
-  // Filter videos based on search and type
+  // Filter videos
   const filteredVideos = useMemo(() => {
-    // Choose videos based on type filter
     let baseVideos: UnifiedVideo[] = [];
 
     if (videoType === "all") {
-      // Combine both and sort by created_at
       baseVideos = [...unifiedAIVideos, ...unifiedComposeVideos].sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
@@ -290,7 +287,6 @@ export default function AllVideosPage() {
       baseVideos = unifiedComposeVideos;
     }
 
-    // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       return baseVideos.filter(
@@ -304,18 +300,8 @@ export default function AllVideosPage() {
     return baseVideos;
   }, [unifiedAIVideos, unifiedComposeVideos, searchQuery, videoType]);
 
-  const getAspectRatioLabel = (ratio: string) => {
-    switch (ratio) {
-      case "9:16":
-        return "TikTok/Reels";
-      case "16:9":
-        return "YouTube";
-      case "1:1":
-        return "Instagram";
-      default:
-        return ratio;
-    }
-  };
+  // Helpers
+  const getVideoUrl = (video: UnifiedVideo) => video.composed_output_url || video.output_url;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString(language === "ko" ? "ko-KR" : "en-US", {
@@ -325,7 +311,78 @@ export default function AllVideosPage() {
     });
   };
 
+  const handleDownload = (url: string, filename: string) => {
+    const downloadUrl = `/api/v1/assets/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}&stream=true`;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteVideoId) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/api/v1/generations/${deleteVideoId}?force=true`);
+      setDeleteVideoId(null);
+      refetchCompose();
+      refetchAI();
+    } catch (error) {
+      console.error('Delete failed:', error);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Open video in side panel
+  const openVideo = (video: UnifiedVideo, index: number) => {
+    setSelectedVideo(video);
+    setSelectedIndex(index);
+    setPanelOpen(true);
+  };
+
+  // Navigate to prev/next video
+  const goToPrevious = () => {
+    if (selectedIndex > 0) {
+      const newIndex = selectedIndex - 1;
+      setSelectedVideo(filteredVideos[newIndex]);
+      setSelectedIndex(newIndex);
+    }
+  };
+
+  const goToNext = () => {
+    if (selectedIndex < filteredVideos.length - 1) {
+      const newIndex = selectedIndex + 1;
+      setSelectedVideo(filteredVideos[newIndex]);
+      setSelectedIndex(newIndex);
+    }
+  };
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (!panelOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goToPrevious();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goToNext();
+      } else if (e.key === "Escape") {
+        setPanelOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [panelOpen, selectedIndex, filteredVideos]);
+
   const loading = loadingCompose || loadingAI;
+  const videoUrl = selectedVideo ? getVideoUrl(selectedVideo) : null;
+  const isPortrait = selectedVideo?.aspect_ratio === "9:16";
 
   return (
     <div className="space-y-6 pb-8 px-[7%]">
@@ -340,9 +397,8 @@ export default function AllVideosPage() {
         </Button>
       </div>
 
-      {/* Stats & Filters */}
+      {/* Filters */}
       <div className="flex flex-col gap-4">
-        {/* Type Tabs */}
         <div className="flex items-center justify-between">
           <Tabs value={videoType} onValueChange={(v) => { setVideoType(v as VideoType); setPage(1); }}>
             <TabsList>
@@ -378,7 +434,6 @@ export default function AllVideosPage() {
               variant={soundEnabled ? "default" : "outline"}
               size="icon"
               onClick={() => setSoundEnabled(!soundEnabled)}
-              title={soundEnabled ? "Mute" : "Unmute"}
             >
               {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
             </Button>
@@ -388,8 +443,10 @@ export default function AllVideosPage() {
 
       {/* Videos Grid */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Spinner className="h-8 w-8" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <VideoCardSkeleton key={i} />
+          ))}
         </div>
       ) : filteredVideos.length === 0 ? (
         <Card>
@@ -406,63 +463,42 @@ export default function AllVideosPage() {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
-            {filteredVideos.map((video) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+            {filteredVideos.map((video, index) => (
               <Card
                 key={`${video.generation_type}-${video.id}`}
-                className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow group"
-                onClick={() => fetchVideoDetail(video.id, video.campaign_id)}
+                className={cn(
+                  "overflow-hidden cursor-pointer hover:shadow-lg transition-all group",
+                  selectedVideo?.id === video.id && panelOpen && "ring-2 ring-primary"
+                )}
+                onClick={() => openVideo(video, index)}
               >
-                {/* Video Thumbnail */}
                 <div className="relative aspect-video bg-muted">
-                  {getUnifiedVideoUrl(video) ? (
-                    <video
-                      src={getUnifiedVideoUrl(video)!}
-                      className="w-full h-full object-cover"
-                      muted
-                      preload="metadata"
-                      onMouseOver={(e) => {
-                        const videoEl = e.currentTarget as HTMLVideoElement;
-                        if (soundEnabled) {
-                          videoEl.muted = false;
-                          videoEl.volume = 0.1;
-                        }
-                        videoEl.play();
-                      }}
-                      onMouseOut={(e) => {
-                        const videoEl = e.currentTarget as HTMLVideoElement;
-                        videoEl.pause();
-                        videoEl.currentTime = 0;
-                        videoEl.muted = true;
-                      }}
+                  {getVideoUrl(video) ? (
+                    <LazyVideo
+                      src={getVideoUrl(video)!}
+                      soundEnabled={soundEnabled}
+                      onVideoClick={() => openVideo(video, index)}
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full">
                       <Film className="h-8 w-8 text-muted-foreground" />
                     </div>
                   )}
-                  {/* Duration badge */}
                   <Badge
                     variant="secondary"
                     className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px]"
                   >
                     {video.duration_seconds}s
                   </Badge>
-                  {/* Type badge */}
                   <Badge
                     variant="secondary"
                     className="absolute top-2 left-2 bg-black/70 text-white text-[10px]"
                   >
                     {video.generation_type === "AI" ? (
-                      <>
-                        <Sparkles className="h-3 w-3 mr-1" />
-                        AI
-                      </>
+                      <><Sparkles className="h-3 w-3 mr-1" />AI</>
                     ) : (
-                      <>
-                        <Layers className="h-3 w-3 mr-1" />
-                        Fast Cut
-                      </>
+                      <><Layers className="h-3 w-3 mr-1" />Fast Cut</>
                     )}
                   </Badge>
                 </div>
@@ -483,41 +519,26 @@ export default function AllVideosPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => fetchVideoDetail(video.id, video.campaign_id)}>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openVideo(video, index); }}>
                             <Eye className="h-4 w-4 mr-2" />
                             {t.viewDetails}
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => router.push(`/campaigns/${video.campaign_id}/curation`)}
-                          >
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/campaigns/${video.campaign_id}/curation`); }}>
                             <ExternalLink className="h-4 w-4 mr-2" />
                             {t.viewInCampaign}
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => router.push(`/campaigns/${video.campaign_id}/publish`)}
-                          >
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/campaigns/${video.campaign_id}/publish`); }}>
                             <Send className="h-4 w-4 mr-2" />
                             {t.schedulePublish}
                           </DropdownMenuItem>
-                          {getUnifiedVideoUrl(video) && (
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownload(getUnifiedVideoUrl(video)!, `video-${video.id}.mp4`);
-                              }}
-                            >
+                          {getVideoUrl(video) && (
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDownload(getVideoUrl(video)!, `video-${video.id}.mp4`); }}>
                               <Download className="h-4 w-4 mr-2" />
                               {t.download}
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteVideoId(video.id);
-                            }}
-                          >
+                          <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteVideoId(video.id); }}>
                             <Trash2 className="h-4 w-4 mr-2" />
                             {t.delete}
                           </DropdownMenuItem>
@@ -533,23 +554,13 @@ export default function AllVideosPage() {
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 pt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="text-sm text-muted-foreground">
                 {page} {t.of} {totalPages} {t.page}
               </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-              >
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
@@ -557,244 +568,112 @@ export default function AllVideosPage() {
         </>
       )}
 
-      {/* Video Detail Modal */}
-      <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Film className="h-5 w-5" />
-              {t.videoDetails}
-            </DialogTitle>
-          </DialogHeader>
+      {/* Centered Video Overlay */}
+      {panelOpen && selectedVideo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={() => setPanelOpen(false)}
+          />
 
-          {loadingDetail ? (
-            <div className="flex items-center justify-center py-12">
-              <Spinner className="h-8 w-8" />
-            </div>
-          ) : selectedVideo ? (
-            <ScrollArea className="flex-1 pr-4">
-              <div className="space-y-6">
-                {/* Video Preview */}
-                <div className="flex justify-center">
-                  <div className={cn(
-                    "relative bg-black rounded-lg overflow-hidden",
-                    isPortraitVideo(selectedVideo)
-                      ? "w-[360px] aspect-[9/16]"
-                      : "w-full max-w-3xl aspect-video"
-                  )}>
-                    {getDetailVideoUrl(selectedVideo) ? (
-                      <video
-                        key={selectedVideo.id}
-                        src={getDetailVideoUrl(selectedVideo)!}
-                        className="w-full h-full object-contain"
-                        controls
-                        autoPlay
-                        playsInline
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Film className="h-12 w-12 text-muted-foreground" />
-                      </div>
-                    )}
-                  </div>
-                </div>
+          {/* Content */}
+          <div className="relative z-10 w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden rounded-lg bg-zinc-950 border border-zinc-800 shadow-2xl">
+            {/* Close button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-3 right-3 z-20 text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+              onClick={() => setPanelOpen(false)}
+            >
+              <X className="h-5 w-5" />
+            </Button>
 
-                {/* Download Button */}
-                {getDetailVideoUrl(selectedVideo) && (
-                  <div className="flex justify-center">
-                    <Button
-                      onClick={() => handleDownload(getDetailVideoUrl(selectedVideo)!, `video-${selectedVideo.id}.mp4`)}
-                      className="gap-2"
-                    >
-                      <Download className="h-4 w-4" />
-                      {t.download}
-                    </Button>
-                  </div>
-                )}
+            {/* Navigation arrows on sides */}
+            {selectedIndex > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute left-3 top-1/2 -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-black/50 text-white hover:bg-black/70"
+                onClick={goToPrevious}
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </Button>
+            )}
+            {selectedIndex < filteredVideos.length - 1 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-3 top-1/2 -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-black/50 text-white hover:bg-black/70"
+                onClick={goToNext}
+              >
+                <ChevronRight className="h-6 w-6" />
+              </Button>
+            )}
 
-                {/* Basic Info */}
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-2">
-                      <FileText className="h-4 w-4" />
-                      {t.prompt}
-                    </h3>
-                    <p className="text-sm bg-muted p-3 rounded-lg">{selectedVideo.prompt}</p>
-                  </div>
-
-                  {selectedVideo.negative_prompt && (
-                    <div>
-                      <h3 className="text-sm font-medium text-muted-foreground mb-2">
-                        {t.negativePrompt}
-                      </h3>
-                      <p className="text-sm bg-muted p-3 rounded-lg">{selectedVideo.negative_prompt}</p>
-                    </div>
+            {/* Video Player */}
+            <div className={cn(
+              "relative bg-black flex items-center justify-center",
+              isPortrait ? "h-[70vh]" : "aspect-video"
+            )}>
+              {videoUrl ? (
+                <video
+                  key={videoUrl}
+                  src={videoUrl}
+                  controls
+                  autoPlay
+                  playsInline
+                  className={cn(
+                    "max-w-full max-h-full",
+                    isPortrait ? "h-[70vh] w-auto" : "w-full"
                   )}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-48">
+                  <Film className="h-12 w-12 text-zinc-600" />
                 </div>
+              )}
+            </div>
 
-                <Separator />
-
-                {/* Video Settings */}
-                <div>
-                  <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
-                    <Settings className="h-4 w-4" />
-                    {t.videoSettings}
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-muted p-3 rounded-lg">
-                      <p className="text-xs text-muted-foreground">{t.duration}</p>
-                      <p className="font-medium">{selectedVideo.duration_seconds}s</p>
-                    </div>
-                    <div className="bg-muted p-3 rounded-lg">
-                      <p className="text-xs text-muted-foreground">{t.aspectRatio}</p>
-                      <p className="font-medium">{selectedVideo.aspect_ratio}</p>
-                    </div>
-                    <div className="bg-muted p-3 rounded-lg">
-                      <p className="text-xs text-muted-foreground">{t.status}</p>
-                      <p className="font-medium">{selectedVideo.status}</p>
-                    </div>
-                    <div className="bg-muted p-3 rounded-lg">
-                      <p className="text-xs text-muted-foreground">{t.qualityScore}</p>
-                      <p className="font-medium">{selectedVideo.quality_score ?? "-"}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Generation Type */}
-                <div>
-                  <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
-                    <Wand2 className="h-4 w-4" />
-                    {t.generationType}
-                  </h3>
-                  <Badge variant="outline" className="border-zinc-400 bg-zinc-100 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
-                    {isComposeVideo(selectedVideo) ? (
-                      <>
-                        <Layers className="h-3 w-3 mr-1" />
-                        {t.fastCutVideo}
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-3 w-3 mr-1" />
-                        {t.aiVideo}
-                      </>
-                    )}
+            {/* Info Bar */}
+            <div className="bg-zinc-900 border-t border-zinc-800">
+              {/* Header Row - Fixed */}
+              <div className="flex items-center justify-between gap-4 p-4 pb-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium text-white">{selectedVideo.campaign_name}</h3>
+                  <Badge variant="outline" className="text-xs border-zinc-700 text-zinc-300">
+                    {selectedVideo.generation_type === "AI" ? "AI" : "Fast Cut"}
                   </Badge>
                 </div>
-
-                {/* Audio Info */}
-                {selectedVideo.audio_asset && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
-                        <Music className="h-4 w-4" />
-                        {t.audio}
-                      </h3>
-                      <div className="bg-muted p-3 rounded-lg space-y-2">
-                        <p className="text-sm">
-                          <span className="text-muted-foreground">{t.filename}: </span>
-                          {selectedVideo.audio_asset.original_filename || selectedVideo.audio_asset.filename}
-                        </p>
-                        {selectedVideo.audio_start_time !== undefined && selectedVideo.audio_start_time !== null && (
-                          <p className="text-sm">
-                            <span className="text-muted-foreground">{t.startTime}: </span>
-                            {selectedVideo.audio_start_time.toFixed(1)}s
-                          </p>
-                        )}
-                        {selectedVideo.audio_duration !== undefined && selectedVideo.audio_duration !== null && (
-                          <p className="text-sm">
-                            <span className="text-muted-foreground">{t.duration}: </span>
-                            {selectedVideo.audio_duration.toFixed(1)}s
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </>
+                {videoUrl && (
+                  <Button
+                    size="sm"
+                    className="bg-black text-white hover:bg-zinc-800 border border-zinc-700"
+                    onClick={() => handleDownload(videoUrl, `video-${selectedVideo.id}.mp4`)}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    {t.download}
+                  </Button>
                 )}
-
-                {/* Reference Style */}
-                {selectedVideo.reference_style && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
-                        {t.referenceStyle}
-                      </h3>
-                      <p className="text-sm bg-muted p-3 rounded-lg">{selectedVideo.reference_style}</p>
-                    </div>
-                  </>
-                )}
-
-                {/* Effect Preset */}
-                {selectedVideo.effect_preset && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
-                        <Sparkles className="h-4 w-4" />
-                        {t.effectPreset}
-                      </h3>
-                      <Badge variant="outline">{selectedVideo.effect_preset}</Badge>
-                    </div>
-                  </>
-                )}
-
-                {/* Tags */}
-                {selectedVideo.tags && selectedVideo.tags.length > 0 && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
-                        <Tag className="h-4 w-4" />
-                        {t.tags}
-                      </h3>
-                      <div className="flex flex-wrap gap-1">
-                        {selectedVideo.tags.map((tag, i) => (
-                          <Badge key={i} variant="outline">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                <Separator />
-
-                {/* Timestamps */}
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {t.createdAt}
-                    </span>
-                    <p>{new Date(selectedVideo.created_at).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {t.updatedAt}
-                    </span>
-                    <p>{new Date(selectedVideo.updated_at).toLocaleString()}</p>
-                  </div>
-                </div>
-
-                {/* ID */}
-                <div className="text-xs text-muted-foreground">
-                  <span>ID: </span>
-                  <code className="bg-muted px-1 py-0.5 rounded">{selectedVideo.id}</code>
-                </div>
               </div>
-            </ScrollArea>
-          ) : (
-            <div className="py-12 text-center text-muted-foreground">
-              {t.loadFailed}
+
+              {/* Scrollable Content */}
+              <div className="px-4 max-h-[20vh] overflow-y-auto">
+                <p className="text-sm text-zinc-400 mb-2">{selectedVideo.artist_name}</p>
+                <p className="text-sm text-zinc-400 whitespace-pre-wrap">{selectedVideo.prompt}</p>
+              </div>
+
+              {/* Footer Row - Fixed */}
+              <div className="flex items-center gap-4 px-4 py-3 text-xs text-zinc-500 border-t border-zinc-800/50">
+                <span>{selectedVideo.duration_seconds}s</span>
+                <span>{selectedVideo.aspect_ratio}</span>
+                <span>{formatDate(selectedVideo.created_at)}</span>
+                <span className="ml-auto">{selectedIndex + 1} / {filteredVideos.length}</span>
+              </div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteVideoId} onOpenChange={(open) => !open && setDeleteVideoId(null)}>
@@ -804,28 +683,14 @@ export default function AllVideosPage() {
             <DialogDescription>{t.deleteConfirm}</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteVideoId(null)}
-              disabled={deleting}
-            >
+            <Button variant="outline" onClick={() => setDeleteVideoId(null)} disabled={deleting}>
               {t.cancel}
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
               {deleting ? (
-                <>
-                  <Spinner className="h-4 w-4 mr-2" />
-                  {t.deleting}
-                </>
+                <><Spinner className="h-4 w-4 mr-2" />{t.deleting}</>
               ) : (
-                <>
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  {t.delete}
-                </>
+                <><Trash2 className="h-4 w-4 mr-2" />{t.delete}</>
               )}
             </Button>
           </DialogFooter>

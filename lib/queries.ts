@@ -178,6 +178,12 @@ export function useCampaigns(params?: {
       }
       return response.data!;
     },
+    // Campaigns don't change often - aggressive caching
+    staleTime: 15 * 60 * 1000, // 15 minutes
+    gcTime: 60 * 60 * 1000, // 1 hour
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    placeholderData: (previousData) => previousData,
   });
 }
 
@@ -662,7 +668,13 @@ export function useFastCutVideos(params?: {
     queryFn: async () => {
       return fastCutApi.getFastCutVideos(params);
     },
-    staleTime: 60 * 1000, // 1 minute
+    // Aggressive caching - data persists in IndexedDB
+    staleTime: 30 * 60 * 1000, // 30 minutes before considered stale
+    gcTime: 24 * 60 * 60 * 1000, // 24 hours in-memory (matched by IndexedDB persist)
+    refetchOnWindowFocus: false,
+    refetchOnMount: false, // Use cached data on mount
+    refetchOnReconnect: false,
+    placeholderData: (previousData) => previousData, // Show stale while revalidating
   });
 }
 
@@ -743,7 +755,13 @@ export function useAllAIVideos() {
       };
     },
     enabled: campaigns.length > 0,
-    staleTime: 60 * 1000, // 1 minute
+    // Aggressive caching - data persists in IndexedDB
+    staleTime: 30 * 60 * 1000, // 30 minutes before considered stale
+    gcTime: 24 * 60 * 60 * 1000, // 24 hours in-memory (matched by IndexedDB persist)
+    refetchOnWindowFocus: false,
+    refetchOnMount: false, // Use cached data on mount
+    refetchOnReconnect: false,
+    placeholderData: (previousData) => previousData, // Show stale while revalidating
   });
 }
 
