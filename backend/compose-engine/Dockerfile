@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libass-dev \
     libfreetype6-dev \
     libfontconfig1-dev \
+    libfribidi-dev \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -58,6 +59,7 @@ ENV PATH=/usr/local/cuda/bin:${PATH}
 # Compile FFmpeg with NVENC support (runtime-only, no CUDA compile needed)
 # Note: --enable-nvenc/nvdec only need nv-codec-headers at build time
 # The actual encoding uses libnvidia-encode.so at runtime on GPU instances
+# IMPORTANT: drawtext filter requires libfreetype AND libfontconfig
 RUN git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg \
     && cd /tmp/ffmpeg \
     && ./configure \
@@ -76,6 +78,7 @@ RUN git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git /tmp/ffm
         --enable-libass \
         --enable-libfreetype \
         --enable-libfontconfig \
+        --enable-libfribidi \
         --enable-openssl \
     && make -j$(nproc) \
     && make install \
@@ -94,13 +97,16 @@ ENV PATH=/usr/local/nvidia/bin:/usr/local/bin:/usr/bin:/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
 ENV NVIDIA_VISIBLE_DEVICES=all
 
-# Verify FFmpeg is correctly installed with NVENC
+# Verify FFmpeg is correctly installed with NVENC and drawtext
 RUN echo "=== FFmpeg NVENC Verification ===" \
     && which ffmpeg \
     && ffmpeg -version | head -5 \
     && echo "=== Checking for NVENC encoders ===" \
     && ffmpeg -encoders 2>&1 | grep -i nvenc \
-    && echo "=== NVENC encoders found ==="
+    && echo "=== NVENC encoders found ===" \
+    && echo "=== Checking for drawtext filter ===" \
+    && ffmpeg -filters 2>&1 | grep drawtext \
+    && echo "=== drawtext filter found ==="
 
 # =============================================================================
 # STEP 2: Install Python 3.11
