@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
+import { createClient } from '@supabase/supabase-js';
 
 /**
  * Render Callback Endpoint
@@ -12,6 +13,12 @@ import { prisma } from '@/lib/db/prisma';
  */
 
 const LOG_PREFIX = '[Fast Cut Callback]';
+
+// Initialize Supabase client for session updates
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 // Support both Modal and AWS Batch callback secrets
 const MODAL_CALLBACK_SECRET = process.env.MODAL_CALLBACK_SECRET || 'hydra-modal-callback-secret';
@@ -33,6 +40,83 @@ interface CallbackPayload {
   output_url: string | null;
   error: string | null;
   secret: string;
+}
+
+/**
+ * Update creation_session when render completes
+ * Fast Cut stages: start → script → images → music → effects → render → publish
+ */
+async function updateSessionOnRenderComplete(generationId: string, success: boolean): Promise<void> {
+  try {
+    // Find fast-cut sessions and filter by generationId in script_data or images_data
+    const { data: sessions, error: findError } = await supabase
+      .from('creation_sessions')
+      .select('id, current_stage, status, script_data, images_data, completed_stages')
+      .eq('metadata->>contentType', 'fast-cut')
+      .order('updated_at', { ascending: false })
+      .limit(20);
+
+    if (findError) {
+      console.error(`${LOG_PREFIX} Session lookup error:`, findError.message);
+      return;
+    }
+
+    if (!sessions || sessions.length === 0) {
+      console.log(`${LOG_PREFIX} No fast-cut sessions found`);
+      return;
+    }
+
+    // Find session with matching generationId
+    const session = sessions.find(s => {
+      const scriptData = s.script_data as Record<string, unknown> | null;
+      const imagesData = s.images_data as Record<string, unknown> | null;
+      return scriptData?.generationId === generationId || imagesData?.generationId === generationId;
+    });
+
+    if (!session) {
+      console.log(`${LOG_PREFIX} No session found for generationId: ${generationId}`);
+      return;
+    }
+    console.log(`${LOG_PREFIX} Found session ${session.id}, current_stage: ${session.current_stage}`);
+
+    // Only update if currently in render stage or earlier
+    const fastCutStages = ['start', 'script', 'images', 'music', 'effects', 'render', 'publish'];
+    const currentIndex = fastCutStages.indexOf(session.current_stage);
+    const renderIndex = fastCutStages.indexOf('render');
+
+    if (currentIndex > renderIndex) {
+      console.log(`${LOG_PREFIX} Session already past render stage, skipping update`);
+      return;
+    }
+
+    // Update to publish stage on success, keep current on failure
+    const newStage = success ? 'publish' : session.current_stage;
+    const newStatus = success ? 'in_progress' : session.status;
+
+    // Merge existing completed stages with new ones
+    const existingCompleted = (session.completed_stages as string[]) || [];
+    const newCompletedStages = success
+      ? [...new Set([...existingCompleted, ...fastCutStages.slice(0, renderIndex + 1)])]
+      : existingCompleted;
+
+    const { error: updateError } = await supabase
+      .from('creation_sessions')
+      .update({
+        current_stage: newStage,
+        status: newStatus,
+        completed_stages: newCompletedStages,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', session.id);
+
+    if (updateError) {
+      console.error(`${LOG_PREFIX} Session update error:`, updateError.message);
+    } else {
+      console.log(`${LOG_PREFIX} ✓ Session ${session.id} updated: stage=${newStage}, status=${newStatus}`);
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} Session update exception:`, err);
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -149,6 +233,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Update creation_session to publish stage
+      await updateSessionOnRenderComplete(job_id, true);
+
     } else if (status === 'failed') {
       await prisma.videoGeneration.update({
         where: { id: job_id },
@@ -166,6 +253,9 @@ export async function POST(request: NextRequest) {
         totalRenderSeconds: Math.round(renderDurationMs / 1000),
         backend: renderBackend || 'unknown',
       });
+
+      // Update creation_session on failure (keeps current stage but logs)
+      await updateSessionOnRenderComplete(job_id, false);
     }
 
     const totalMs = Date.now() - requestStartTime;

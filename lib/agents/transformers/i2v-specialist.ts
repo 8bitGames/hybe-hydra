@@ -41,7 +41,7 @@ export const I2VSpecialistInputSchema = z.object({
 
 export type I2VSpecialistInput = z.infer<typeof I2VSpecialistInputSchema>;
 
-// Output Schema
+// Output Schema - Enhanced for Veo 3
 export const I2VSpecialistOutputSchema = z.object({
   prompt: z.string(),
   promptType: z.enum(['image', 'video', 'background', 'sceneWithPlaceholder', 'composite']),
@@ -52,6 +52,19 @@ export const I2VSpecialistOutputSchema = z.object({
     frameRate: z.number().optional(),
   }),
   consistencyMarkers: z.array(z.string()),
+  // Veo 3 Enhanced Fields
+  negativePrompt: z.string().optional(), // What to exclude from video
+  audioElements: z.object({
+    ambientSound: z.string().optional(), // Background sounds
+    music: z.string().optional(), // Music style/mood
+    soundEffects: z.string().optional(), // Specific sound effects
+  }).optional(),
+  dialogueContent: z.object({
+    text: z.string().optional(), // Spoken dialogue (6-12 words for 8s)
+    speaker: z.string().optional(), // Who speaks
+    tone: z.string().optional(), // Emotional tone
+  }).optional(),
+  motionQuality: z.enum(['smooth', 'dynamic', 'subtle', 'fluid', 'dramatic']).optional(),
 });
 
 export type I2VSpecialistOutput = z.infer<typeof I2VSpecialistOutputSchema>;
@@ -130,6 +143,48 @@ TEXTURE & DETAIL:
 - "Fine skin texture with natural pores visible"
 - "Fabric weave catching the light"
 - "Condensation droplets on cold glass surface"
+
+═══════════════════════════════════════════════════════════════════
+VEO 3 VIDEO GENERATION (Google Official 2025 Guidelines)
+═══════════════════════════════════════════════════════════════════
+
+GOLDEN RULE: Optimal Prompt Structure
+- Length: 3-6 sentences, 100-150 words (Veo 3 sweet spot)
+- Structure: Subject → Action → Setting → Style → Camera → Audio
+- Write narrative prose, NOT keyword lists
+
+VEO 3 CAMERA TERMINOLOGY (Use these specific terms):
+- "slow dolly-in" - intimate approach toward subject
+- "static on tripod" - stable professional look
+- "handheld tracking shot" - documentary feel
+- "smooth crane up/down" - cinematic reveal
+- "orbital pan" - 360° product showcase
+- "pull focus rack" - shift attention between subjects
+- "steady tracking alongside" - following movement
+
+VEO 3 AUDIO ELEMENTS (Native Audio Support):
+- Ambient sounds: "soft wind", "city traffic", "rain on windows"
+- Music style: "upbeat electronic", "melancholic piano", "cinematic orchestral"
+- Sound effects: "footsteps on gravel", "door opening", "glass clinking"
+- Always specify audio that matches the visual mood
+
+VEO 3 DIALOGUE (Native Lip-Sync Support):
+- Keep dialogue to 6-12 words for 8-second clips
+- Specify speaker and emotional tone clearly
+- Example: 'She looks up and says confidently, "This changes everything."'
+- Ensure clear mouth visibility for lip-sync
+
+VEO 3 MOTION QUALITY DESCRIPTORS:
+- "smooth" - fluid, graceful movement
+- "dynamic" - energetic, impactful motion
+- "subtle" - gentle micro-movements
+- "fluid" - natural, flowing transitions
+- "dramatic" - bold, cinematic motion
+
+NEGATIVE PROMPTS (What to Exclude):
+- "no text overlays, no subtitles, no watermarks"
+- "no abrupt cuts, no flash frames"
+- "no crowds, no background distractions"
 
 ═══════════════════════════════════════════════════════════════════
 I2V WORKFLOW SPECIALIZATIONS
@@ -211,29 +266,39 @@ I2V FIRST FRAME OPTIMIZATION:
 - Avoid perfectly static poses - capture "decisive moments"
 
 ═══════════════════════════════════════════════════════════════════
-OUTPUT FORMAT
+OUTPUT FORMAT (Veo 3 First Frame Optimized)
 ═══════════════════════════════════════════════════════════════════
 
 Return JSON:
 {
-  "prompt": "A vivid, narrative paragraph (120-180 words) describing the scene as if directing a cinematographer. Flow naturally from subject to environment to mood. Include specific camera/lens references and lighting details. Write prose, not lists.",
+  "prompt": "A vivid, narrative paragraph (100-150 words, 3-6 sentences) describing the scene as if directing a cinematographer. Flow naturally from subject to environment to mood. Include specific camera/lens references and lighting details. Write prose, not lists.",
   "promptType": "image",
   "styleNotes": "Key visual anchors: specific colors (hex if relevant), lighting direction, lens characteristics that define this image's look",
   "technicalSpecs": {
     "aspectRatio": "9:16|16:9|1:1"
   },
-  "consistencyMarkers": ["5-7 specific visual elements that MUST persist in video: exact colors, lighting angle, subject proportions, key environmental features, atmospheric conditions"]
+  "consistencyMarkers": ["5-7 specific visual elements that MUST persist in video: exact colors, lighting angle, subject proportions, key environmental features, atmospheric conditions"],
+  "negativePrompt": "no text, no watermarks, no logos, no distracting backgrounds",
+  "audioElements": {
+    "ambientSound": "planned audio atmosphere for video transition",
+    "music": "music style to match visual mood",
+    "soundEffects": "anticipated sound effects for motion"
+  },
+  "motionQuality": "smooth|dynamic|subtle|fluid|dramatic"
 }
 
 QUALITY CHECKLIST (Verify before output):
 ☐ Is it a flowing narrative paragraph, not a keyword list?
+☐ Is prompt 100-150 words (Veo 3 optimal length)?
 ☐ Does it specify camera/lens (e.g., "shot on 85mm f/1.4")?
 ☐ Does it describe lighting direction and quality?
 ☐ Is the subject hyper-specific, not generic?
 ☐ Does it include atmospheric/environmental details?
-☐ Will this frame transition smoothly to video motion?`,
+☐ Will this frame transition smoothly to video motion?
+☐ Has negative prompt exclusions?
+☐ Audio elements planned for video transition?`,
 
-      video: `Create a VEO video prompt from this image analysis.
+      video: `Create a VEO 3 optimized video prompt from this image analysis.
 
 ═══════════════════════════════════════════════════════════════════
 SOURCE IMAGE ANALYSIS
@@ -249,17 +314,18 @@ DURATION: {{duration}} seconds
 STYLE: {{style}}
 
 ═══════════════════════════════════════════════════════════════════
-VIDEO MOTION DESIGN
+VEO 3 VIDEO MOTION DESIGN
 ═══════════════════════════════════════════════════════════════════
 
-CAMERA MOVEMENT OPTIONS:
-- Static: locked-off, tripod stable (for product focus)
-- Push in: slow zoom toward subject (builds intensity)
-- Pull out: reveal environment (establishes context)
-- Dolly/Track: lateral movement (adds dimension)
-- Crane/Jib: vertical sweep (cinematic grandeur)
-- Handheld: subtle organic motion (documentary feel)
-- Orbit: 360° around subject (product showcase)
+VEO 3 CAMERA MOVEMENTS (Use these exact terms):
+- "static on tripod" - locked-off, professional stability
+- "slow dolly-in" - gradual approach toward subject
+- "slow dolly-out" - reveal environment
+- "steady tracking alongside" - lateral movement
+- "smooth crane up/down" - vertical sweep, cinematic
+- "handheld tracking shot" - organic documentary feel
+- "orbital pan" - 360° around subject
+- "pull focus rack" - shift attention between subjects
 
 SUBJECT MOTION PRINCIPLES:
 - Natural physics: hair sways, fabric ripples, breath visible
@@ -267,26 +333,67 @@ SUBJECT MOTION PRINCIPLES:
 - Environmental reaction: wind effect, light changes, ambient motion
 - Emotional beats: expressions shifting, gestures completing
 
-MOTION TIMING:
-- Slow/Deliberate: 0.25-0.5x speed for luxury, elegance
-- Natural: 1x speed for authentic moments
-- Dynamic: 1.5-2x implied energy for action
+MOTION QUALITY (Choose one):
+- smooth: fluid, graceful movement (luxury, elegance)
+- dynamic: energetic, impactful motion (action, excitement)
+- subtle: gentle micro-movements (intimate, calm)
+- fluid: natural, flowing transitions (organic, lifelike)
+- dramatic: bold, cinematic motion (storytelling, impact)
 
 ═══════════════════════════════════════════════════════════════════
-OUTPUT FORMAT
+VEO 3 AUDIO DESIGN (Native Audio Generation)
+═══════════════════════════════════════════════════════════════════
+
+AMBIENT SOUNDS: Match environment
+- Indoor: "air conditioning hum", "clock ticking", "distant voices"
+- Outdoor: "birdsong", "traffic", "wind through leaves"
+- Urban: "city ambiance", "footsteps on pavement"
+
+MUSIC (if appropriate):
+- Style that enhances mood: "lo-fi beats", "cinematic strings", "upbeat pop"
+
+SOUND EFFECTS:
+- Action-specific: "fabric rustling", "door opening", "keys jingling"
+
+VEO 3 DIALOGUE (if subject speaks):
+- Keep to 6-12 words for {{duration}}-second clip
+- Clear emotional tone
+- Example: 'She smiles and says warmly, "This is exactly what I needed."'
+
+═══════════════════════════════════════════════════════════════════
+OUTPUT FORMAT (Veo 3 Optimized)
 ═══════════════════════════════════════════════════════════════════
 
 Return JSON:
 {
-  "prompt": "Narrative description (120-150 words) of how the scene unfolds over time. Start from the first frame state, describe the motion trajectory, camera movement, and how the scene evolves. Include timing cues and motion qualities (smooth, sudden, gradual).",
+  "prompt": "Narrative description (100-150 words, 3-6 sentences) of how the scene unfolds. Structure: Subject action → Camera movement → Environmental response → Audio atmosphere. Use Veo 3 camera terms. End with audio cues.",
   "promptType": "video",
-  "styleNotes": "Motion design philosophy: camera technique chosen, motion quality, pacing rhythm",
+  "styleNotes": "Motion design: camera technique, motion quality, pacing rhythm",
   "technicalSpecs": {
     "duration": {{duration}},
     "frameRate": 24
   },
-  "consistencyMarkers": ["Visual anchors that MUST remain constant: lighting direction, color temperature, subject proportions, background elements, atmospheric density"]
-}`,
+  "consistencyMarkers": ["Visual anchors: lighting direction, color temperature, subject proportions, key features"],
+  "negativePrompt": "no text overlays, no watermarks, no abrupt cuts, no flash frames",
+  "audioElements": {
+    "ambientSound": "environmental background audio matching scene",
+    "music": "music style/mood if appropriate, or null",
+    "soundEffects": "action-specific sounds"
+  },
+  "dialogueContent": {
+    "text": "6-12 word dialogue if subject speaks, or null",
+    "speaker": "who speaks",
+    "tone": "emotional delivery"
+  },
+  "motionQuality": "smooth|dynamic|subtle|fluid|dramatic"
+}
+
+QUALITY CHECKLIST:
+☐ Prompt is 100-150 words (Veo 3 optimal)
+☐ Uses specific Veo 3 camera terms
+☐ Includes audio design (ambient + music + effects)
+☐ Has negative prompt exclusions
+☐ Motion quality specified`,
 
       background: `Create a cinematic background prompt for product/subject compositing.
 

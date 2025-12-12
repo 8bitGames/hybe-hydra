@@ -484,11 +484,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     let referenceImageUrl: string | undefined;
 
     if (reference_image_id) {
-      // Get URL from campaign asset
+      // Get URL from campaign asset and generate fresh presigned URL
       const refAsset = await prisma.asset.findUnique({ where: { id: reference_image_id } });
-      referenceImageUrl = refAsset?.s3Url;
-      console.log(`[Generation] I2V mode: Using campaign asset ${reference_image_id}`);
-      console.log(`[Generation] Reference image URL: ${referenceImageUrl}`);
+      if (refAsset?.s3Url) {
+        try {
+          // Generate presigned URL with 48 hour expiration for AWS Batch
+          referenceImageUrl = await getPresignedUrlFromS3Url(refAsset.s3Url, 172800);
+          console.log(`[Generation] I2V mode: Using campaign asset ${reference_image_id}`);
+          console.log(`[Generation] Generated presigned reference image URL`);
+        } catch (error) {
+          console.error(`[Generation] Failed to generate reference image presigned URL:`, error);
+          referenceImageUrl = refAsset.s3Url;  // Fallback to original URL
+        }
+      }
     }
 
     // Submit to AWS Batch for video generation via Vertex AI
@@ -499,11 +507,40 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       hasImageDescription: !!image_description,
     });
 
+    // Generate fresh presigned URLs for all S3 assets (48 hour expiry for AWS Batch queue wait time)
+    // This is CRITICAL: stored s3Urls may be expired or inaccessible to the worker
+
+    // Presign audio URL if provided
+    let audioPresignedUrl: string | undefined;
+    if (audioAsset?.s3Url) {
+      try {
+        audioPresignedUrl = await getPresignedUrlFromS3Url(audioAsset.s3Url, 172800);
+        console.log(`[Generation] Generated fresh audio presigned URL for: ${audioAsset.originalFilename || audioAsset.filename}`);
+      } catch (error) {
+        console.error(`[Generation] Failed to generate audio presigned URL:`, error);
+      }
+    }
+
+    // Presign preview_image_url if it's an S3 URL
+    let presignedPreviewImageUrl: string | undefined;
+    if (preview_image_url && preview_image_url.includes('.s3.') && preview_image_url.includes('amazonaws.com')) {
+      try {
+        presignedPreviewImageUrl = await getPresignedUrlFromS3Url(preview_image_url, 172800);
+        console.log(`[Generation] Generated presigned preview image URL`);
+      } catch (error) {
+        console.error(`[Generation] Failed to generate preview image presigned URL:`, error);
+        presignedPreviewImageUrl = preview_image_url;  // Fallback to original
+      }
+    } else {
+      presignedPreviewImageUrl = preview_image_url;  // Non-S3 URL, use as-is
+    }
+
     // Note: AWS Batch handles the entire I2V flow:
     // 1. Download reference image
     // 2. Call Vertex AI Veo 3.1 for video generation
-    // 3. Upload result to S3
-    // 4. Callback to /api/v1/ai/callback with status
+    // 3. Apply audio overlay (if audioUrl provided)
+    // 4. Upload result to S3
+    // 5. Callback to /api/v1/ai/callback with status
     submitToAWSBatch(generation.id, campaignId, {
       prompt,
       negativePrompt: negative_prompt,
@@ -511,12 +548,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       aspectRatio: aspect_ratio,
       referenceImageUrl,
       style: reference_style,
-      audioUrl: audioAsset?.s3Url,
+      audioUrl: audioPresignedUrl,  // Use fresh presigned URL instead of potentially expired s3Url
       // I2V is MANDATORY - always generate image first
       imageDescription: image_description || prompt,  // Use prompt as fallback description
       // Pre-generated preview image (skip AI image generation step if provided)
       previewImageBase64: preview_image_base64,
-      previewImageUrl: preview_image_url || referenceImageUrl,  // Use reference image URL if no preview
+      previewImageUrl: presignedPreviewImageUrl || referenceImageUrl,  // Use presigned URLs for S3 access
     });
 
     return NextResponse.json(

@@ -411,12 +411,18 @@ export function useSessionWorkflowSync(stage: WorkflowStage) {
 
     return () => {
       isMountedRef.current = false;
-      if (activeSessionRef.current) {
+      // CRITICAL FIX: Check store state directly instead of using ref
+      // This prevents race condition when clearActiveSession() is called
+      // just before unmount (e.g., clicking "New Project" in publish page).
+      // The ref may not be updated yet due to React's async update cycle,
+      // causing stale session data to be synced and persisted.
+      const currentActiveSession = useSessionStore.getState().activeSession;
+      if (currentActiveSession) {
         syncWorkflowToSession();
-        saveSessionRef.current();
+        useSessionStore.getState().saveSession();
       }
     };
-  }, []); // Empty deps - uses refs
+  }, []); // Empty deps - checks store directly on cleanup
 
   // Manual sync function
   const syncNow = useCallback(() => {

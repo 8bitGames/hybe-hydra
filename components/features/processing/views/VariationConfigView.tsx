@@ -82,6 +82,26 @@ export function VariationConfigView({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
 
+  // Track image load errors for fallback
+  const [originalImageError, setOriginalImageError] = useState(false);
+  const [variationImageErrors, setVariationImageErrors] = useState<Record<string, boolean>>({});
+
+  // Handle image error
+  const handleOriginalImageError = useCallback(() => {
+    setOriginalImageError(true);
+  }, []);
+
+  const handleVariationImageError = useCallback((variationId: string) => {
+    setVariationImageErrors(prev => ({ ...prev, [variationId]: true }));
+  }, []);
+
+  // Check if URL is likely a video URL (not suitable for img tag)
+  const isVideoUrl = useCallback((url?: string) => {
+    if (!url) return false;
+    const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv'];
+    return videoExtensions.some(ext => url.toLowerCase().includes(ext));
+  }, []);
+
   // Toggle play
   const togglePlay = useCallback(() => {
     if (!videoRef.current) return;
@@ -361,14 +381,24 @@ export function VariationConfigView({
                   {/* Original - always complete */}
                   <div className="p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50">
                     <div className="aspect-[9/16] bg-black rounded-lg mb-3 relative overflow-hidden">
-                      {originalVideo.thumbnailUrl || originalVideo.outputUrl ? (
+                      {/* Try to show thumbnail, fallback to video frame, or show check icon */}
+                      {originalVideo.thumbnailUrl && !originalImageError && !isVideoUrl(originalVideo.thumbnailUrl) ? (
                         <img
-                          src={originalVideo.thumbnailUrl || originalVideo.outputUrl}
+                          src={originalVideo.thumbnailUrl}
                           alt="Original"
                           className="w-full h-full object-cover"
+                          onError={handleOriginalImageError}
+                        />
+                      ) : originalVideo.outputUrl && !originalImageError ? (
+                        // For video URLs, use video element with poster or first frame
+                        <video
+                          src={originalVideo.outputUrl}
+                          className="w-full h-full object-cover"
+                          muted
+                          preload="metadata"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center">
+                        <div className="w-full h-full flex items-center justify-center bg-emerald-100">
                           <Check className="w-8 h-8 text-emerald-500" />
                         </div>
                       )}
@@ -401,14 +431,25 @@ export function VariationConfigView({
                         )}
                       >
                         <div className="aspect-[9/16] bg-neutral-100 rounded-lg mb-3 relative overflow-hidden flex items-center justify-center">
-                          {isComplete && variation.thumbnailUrl ? (
+                          {isComplete && variation.thumbnailUrl && !variationImageErrors[variation.id] && !isVideoUrl(variation.thumbnailUrl) ? (
                             <img
                               src={variation.thumbnailUrl}
                               alt={variation.styleName}
                               className="w-full h-full object-cover"
+                              onError={() => handleVariationImageError(variation.id)}
+                            />
+                          ) : isComplete && variation.outputUrl && !variationImageErrors[variation.id] ? (
+                            // For video URLs, use video element to show first frame
+                            <video
+                              src={variation.outputUrl}
+                              className="w-full h-full object-cover"
+                              muted
+                              preload="metadata"
                             />
                           ) : isComplete ? (
-                            <Check className="w-8 h-8 text-emerald-500" />
+                            <div className="w-full h-full flex items-center justify-center bg-emerald-100">
+                              <Check className="w-8 h-8 text-emerald-500" />
+                            </div>
                           ) : isFailed ? (
                             <X className="w-8 h-8 text-red-500" />
                           ) : (

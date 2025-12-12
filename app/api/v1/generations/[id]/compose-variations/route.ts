@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Prisma } from "@prisma/client";
 import { searchImagesMultiQuery, isGoogleSearchConfigured } from "@/lib/google-search";
 import { submitBatchRenderToModal, ModalRenderRequest } from "@/lib/modal/client";
-import { getSettingsFromStylePresets, getStyleSetById, StylePresetSettings } from "@/lib/constants/style-presets";
+import { getSettingsFromStylePresets, getStyleSetById } from "@/lib/constants/style-presets";
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
@@ -463,6 +463,122 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   } catch (error) {
     console.error("Create compose variations error:", error);
+    return NextResponse.json({ detail: "Internal server error" }, { status: 500 });
+  }
+}
+
+// GET /api/v1/generations/[id]/compose-variations?batch_id=xxx - Get compose variation batch status
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    const authHeader = request.headers.get("authorization");
+    const user = await getUserFromHeader(authHeader);
+
+    if (!user) {
+      return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const { id: seedGenerationId } = await params;
+    const { searchParams } = new URL(request.url);
+    const batchId = searchParams.get("batch_id");
+
+    if (!batchId) {
+      return NextResponse.json({ detail: "batch_id query parameter is required" }, { status: 400 });
+    }
+
+    // Fetch seed generation for access check
+    const seedGeneration = await prisma.videoGeneration.findUnique({
+      where: { id: seedGenerationId },
+      include: {
+        campaign: {
+          include: {
+            artist: { select: { labelId: true } },
+          },
+        },
+      },
+    });
+
+    if (!seedGeneration) {
+      return NextResponse.json({ detail: "Seed generation not found" }, { status: 404 });
+    }
+
+    // Check access - handle Quick Create (no campaign) vs campaign-based generations
+    if (user.role !== "ADMIN") {
+      if (seedGeneration.campaign) {
+        if (!user.labelIds.includes(seedGeneration.campaign.artist.labelId)) {
+          return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+        }
+      } else if (seedGeneration.createdBy !== user.id) {
+        // Quick Create - only owner can access
+        return NextResponse.json({ detail: "Access denied" }, { status: 403 });
+      }
+    }
+
+    // Find all compose variations with this batch ID (exclude soft-deleted)
+    const generations = await prisma.videoGeneration.findMany({
+      where: {
+        deletedAt: null,
+        qualityMetadata: {
+          path: ["batchId"],
+          equals: batchId,
+        },
+      },
+      include: {
+        audioAsset: {
+          select: { id: true, filename: true, s3Url: true, originalFilename: true },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (generations.length === 0) {
+      return NextResponse.json({ detail: "Compose variation batch not found" }, { status: 404 });
+    }
+
+    // Calculate batch status
+    const statuses = generations.map((g) => g.status);
+    let batchStatus: "pending" | "processing" | "completed" | "partial_failure" = "processing";
+    if (statuses.every((s) => s === "COMPLETED")) {
+      batchStatus = "completed";
+    } else if (statuses.some((s) => s === "FAILED")) {
+      batchStatus = statuses.every((s) => s === "FAILED" || s === "COMPLETED")
+        ? "partial_failure"
+        : "processing";
+    } else if (statuses.every((s) => s === "PENDING")) {
+      batchStatus = "pending";
+    }
+
+    const completedCount = statuses.filter((s) => s === "COMPLETED").length;
+    const failedCount = statuses.filter((s) => s === "FAILED").length;
+    const overallProgress = Math.round(
+      generations.reduce((sum, g) => sum + g.progress, 0) / generations.length
+    );
+
+    // Format response to match VariationsBatchStatus interface
+    const variations = generations.map((gen) => {
+      const metadata = gen.qualityMetadata as Record<string, unknown> | null;
+      return {
+        id: gen.id,
+        variation_label: (metadata?.variationLabel as string) || "",
+        status: gen.status as "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED",
+        progress: gen.progress,
+        output_url: gen.composedOutputUrl || gen.outputUrl || undefined,
+        thumbnail_url: undefined, // Compose videos don't have separate thumbnails
+        error_message: gen.errorMessage || undefined,
+      };
+    });
+
+    return NextResponse.json({
+      batch_id: batchId,
+      seed_generation_id: seedGenerationId,
+      batch_status: batchStatus,
+      overall_progress: overallProgress,
+      total: generations.length,
+      completed: completedCount,
+      failed: failedCount,
+      variations,
+    });
+  } catch (error) {
+    console.error("Get compose variation batch error:", error);
     return NextResponse.json({ detail: "Internal server error" }, { status: 500 });
   }
 }

@@ -19,7 +19,8 @@ import {
 } from "@/lib/stores/processing-session-store";
 import { useSessionStore } from "@/lib/stores/session-store";
 import { useShallow } from "zustand/react/shallow";
-import { fastCutApi, type VariationsBatchStatus } from "@/lib/fast-cut-api";
+import { fastCutApi } from "@/lib/fast-cut-api";
+import { variationsApi } from "@/lib/video-api";
 import {
   GeneratingView,
   ReadyView,
@@ -184,6 +185,9 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
       return;
     }
 
+    const contentType = session?.contentType;
+    const isAIVideo = contentType === "ai_video";
+
     const pollVariationStatus = async () => {
       const batchId = variationBatchIdRef.current;
       const seedId = originalVideo?.id;
@@ -191,38 +195,87 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
       if (!batchId || !seedId) return;
 
       try {
-        const status = await fastCutApi.getVariationsStatus(seedId, batchId);
-        console.log("[ProcessingFlowPage] Variation status:", status);
+        if (isAIVideo) {
+          // Poll AI Video variations API
+          const response = await variationsApi.getStatus(seedId, batchId);
 
-        // Update each variation's progress in the store
-        status.variations.forEach((apiVar) => {
-          // Find matching variation in store by ID
-          const storeVar = variations.find((v) => v.id === apiVar.id);
-          if (!storeVar) return;
-
-          if (apiVar.status === "COMPLETED" && apiVar.output_url) {
-            setVariationCompleted(apiVar.id, apiVar.output_url, apiVar.thumbnail_url);
-          } else if (apiVar.status === "FAILED") {
-            setVariationFailed(apiVar.id, apiVar.error_message);
-          } else {
-            // Update progress for pending/processing
-            updateVariation(apiVar.id, {
-              progress: apiVar.progress,
-              status: apiVar.status === "PROCESSING" ? "generating" : "pending",
-              currentStep: apiVar.status === "PROCESSING" ? "Generating..." : "Queued",
-            });
+          if (!response.data) {
+            console.error("[ProcessingFlowPage] No data in AI Video variation status response");
+            return;
           }
-        });
 
-        // Check if batch is done
-        if (status.batch_status === "completed" || status.batch_status === "partial_failure") {
-          console.log("[ProcessingFlowPage] All variations done, batch status:", status.batch_status);
-          // Stop polling - store auto-transitions to COMPARE_AND_APPROVE when all done
-          if (variationPollingRef.current) {
-            clearInterval(variationPollingRef.current);
-            variationPollingRef.current = null;
+          const status = response.data;
+          console.log("[ProcessingFlowPage] AI Video variation status:", status);
+
+          // Update each variation's progress in the store
+          status.variations.forEach((apiVar) => {
+            // Find matching variation in store by ID
+            const storeVar = variations.find((v) => v.id === apiVar.id);
+            if (!storeVar) return;
+
+            // AI Video API returns status as lowercase
+            const apiStatus = apiVar.status?.toUpperCase?.() || apiVar.status;
+            const generation = apiVar.generation;
+
+            if (apiStatus === "COMPLETED" && generation?.output_url) {
+              setVariationCompleted(apiVar.id, generation.output_url, undefined);
+            } else if (apiStatus === "FAILED") {
+              setVariationFailed(apiVar.id, generation?.error_message || undefined);
+            } else {
+              // Update progress for pending/processing
+              updateVariation(apiVar.id, {
+                progress: generation?.progress || 0,
+                status: apiStatus === "PROCESSING" ? "generating" : "pending",
+                currentStep: apiStatus === "PROCESSING" ? "Generating..." : "Queued",
+              });
+            }
+          });
+
+          // Check if batch is done
+          if (status.batch_status === "completed" || status.batch_status === "partial_failure") {
+            console.log("[ProcessingFlowPage] All AI Video variations done, batch status:", status.batch_status);
+            // Stop polling - store auto-transitions to COMPARE_AND_APPROVE when all done
+            if (variationPollingRef.current) {
+              clearInterval(variationPollingRef.current);
+              variationPollingRef.current = null;
+            }
+            variationBatchIdRef.current = null;
           }
-          variationBatchIdRef.current = null;
+        } else {
+          // Poll Compose variations API (uses /compose-variations endpoint)
+          const status = await fastCutApi.getComposeVariationsStatus(seedId, batchId);
+          console.log("[ProcessingFlowPage] Compose variation status:", status);
+
+          // Update each variation's progress in the store
+          status.variations.forEach((apiVar) => {
+            // Find matching variation in store by ID
+            const storeVar = variations.find((v) => v.id === apiVar.id);
+            if (!storeVar) return;
+
+            if (apiVar.status === "COMPLETED" && apiVar.output_url) {
+              setVariationCompleted(apiVar.id, apiVar.output_url, apiVar.thumbnail_url);
+            } else if (apiVar.status === "FAILED") {
+              setVariationFailed(apiVar.id, apiVar.error_message);
+            } else {
+              // Update progress for pending/processing
+              updateVariation(apiVar.id, {
+                progress: apiVar.progress,
+                status: apiVar.status === "PROCESSING" ? "generating" : "pending",
+                currentStep: apiVar.status === "PROCESSING" ? "Generating..." : "Queued",
+              });
+            }
+          });
+
+          // Check if batch is done
+          if (status.batch_status === "completed" || status.batch_status === "partial_failure") {
+            console.log("[ProcessingFlowPage] All Compose variations done, batch status:", status.batch_status);
+            // Stop polling - store auto-transitions to COMPARE_AND_APPROVE when all done
+            if (variationPollingRef.current) {
+              clearInterval(variationPollingRef.current);
+              variationPollingRef.current = null;
+            }
+            variationBatchIdRef.current = null;
+          }
         }
       } catch (error) {
         console.error("[ProcessingFlowPage] Failed to poll variation status:", error);
@@ -243,7 +296,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
         variationPollingRef.current = null;
       }
     };
-  }, [isGeneratingVariations, originalVideo?.id, variations, updateVariation, setVariationCompleted, setVariationFailed]);
+  }, [isGeneratingVariations, originalVideo?.id, session?.contentType, variations, updateVariation, setVariationCompleted, setVariationFailed]);
 
   // Navigation handlers
   const handleBack = useCallback(() => {
@@ -290,44 +343,100 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
       return;
     }
 
-    // Check if this is a compose video (required for compose-variations API)
-    if (!seedGenerationId.startsWith("compose-")) {
-      console.error("[ProcessingFlowPage] Variation generation only supported for compose videos");
-      return;
-    }
+    const contentType = session?.contentType;
+    const isAIVideo = contentType === "ai_video";
 
     try {
-      console.log("[ProcessingFlowPage] Starting compose variations for:", seedGenerationId);
+      if (isAIVideo) {
+        // AI Video (VEO) variation generation
+        console.log("[ProcessingFlowPage] Starting AI Video variations for:", seedGenerationId);
 
-      // Call the API to start variation generation
-      const response = await fastCutApi.startComposeVariations(seedGenerationId, {
-        variationCount: selectedStyles.length || 8,
-      });
+        // Map selected styles to style_categories for AI Video API
+        // Style Sets map to style_categories: viral_tiktok -> tiktok, cinematic_mood -> cinematic, etc.
+        const styleCategoryMap: Record<string, string> = {
+          viral_tiktok: "tiktok",
+          cinematic_mood: "cinematic",
+          dynamic_energy: "dynamic",
+          minimal_clean: "minimal",
+          retro_aesthetic: "retro",
+          premium_brand: "premium",
+          experimental_art: "experimental",
+          emotional_story: "emotional",
+        };
 
-      console.log("[ProcessingFlowPage] Variations started:", response);
+        const styleCategories = selectedStyles.map(
+          (styleId) => styleCategoryMap[styleId] || styleId
+        );
 
-      // Store the batch ID for polling
-      variationBatchIdRef.current = response.batch_id;
+        // Call AI Video variations API
+        const response = await variationsApi.create(seedGenerationId, {
+          style_categories: styleCategories.length > 0 ? styleCategories : ["tiktok"], // Default to tiktok
+          enable_prompt_variation: true,
+          prompt_variation_types: ["camera", "expression"],
+          max_variations: selectedStyles.length || 4,
+        });
 
-      // Map API response to store variations (update IDs to match API)
-      response.variations.forEach((apiVar, index) => {
-        const storeVariation = variations[index];
-        if (storeVariation) {
-          updateVariation(storeVariation.id, {
-            id: apiVar.id, // Update to API's ID for tracking
-            status: "generating",
-            progress: 0,
-            currentStep: "Starting...",
-          });
+        if (!response.data) {
+          throw new Error("Failed to create AI Video variations");
         }
-      });
 
+        console.log("[ProcessingFlowPage] AI Video variations started:", response.data);
+
+        // Store the batch ID for polling
+        variationBatchIdRef.current = response.data.batch_id;
+
+        // Map API response to store variations (update IDs to match API)
+        response.data.variations.forEach((apiVar, index) => {
+          const storeVariation = variations[index];
+          if (storeVariation) {
+            updateVariation(storeVariation.id, {
+              id: apiVar.id, // Update to API's ID for tracking
+              status: "generating",
+              progress: 0,
+              currentStep: "Starting...",
+            });
+          }
+        });
+      } else {
+        // Compose (Fast Cut) variation generation
+        // Check if this is a compose video (required for compose-variations API)
+        if (!seedGenerationId.startsWith("compose-")) {
+          console.error("[ProcessingFlowPage] Compose variation requires compose- prefixed ID");
+          cancelVariationGeneration();
+          return;
+        }
+
+        console.log("[ProcessingFlowPage] Starting compose variations for:", seedGenerationId);
+
+        // Call the API to start variation generation
+        const response = await fastCutApi.startComposeVariations(seedGenerationId, {
+          variationCount: selectedStyles.length || 8,
+        });
+
+        console.log("[ProcessingFlowPage] Compose variations started:", response);
+
+        // Store the batch ID for polling
+        variationBatchIdRef.current = response.batch_id;
+
+        // Map API response to store variations (update IDs to match API)
+        response.variations.forEach((apiVar, index) => {
+          const storeVariation = variations[index];
+          if (storeVariation) {
+            updateVariation(storeVariation.id, {
+              id: apiVar.id, // Update to API's ID for tracking
+              status: "generating",
+              progress: 0,
+              currentStep: "Starting...",
+            });
+          }
+        });
+      }
     } catch (error) {
       console.error("[ProcessingFlowPage] Failed to start variations:", error);
       // Mark all variations as failed
       cancelVariationGeneration();
     }
-  }, [startVariationGeneration, originalVideo?.id, selectedStyles.length, variations, updateVariation, cancelVariationGeneration]);
+  }, [startVariationGeneration, originalVideo?.id, session?.contentType, selectedStyles, variations, updateVariation, cancelVariationGeneration]);
 
   const handleCancelGeneration = useCallback(() => {
     // Clear batch ID to stop polling

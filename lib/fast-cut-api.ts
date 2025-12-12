@@ -579,7 +579,24 @@ export const fastCutApi = {
   },
 
   /**
-   * Get variations batch status
+   * Get compose variations batch status
+   * @param seedGenerationId - The original generation ID (compose video)
+   * @param batchId - The batch ID returned from startComposeVariations
+   */
+  getComposeVariationsStatus: async (
+    seedGenerationId: string,
+    batchId: string
+  ): Promise<VariationsBatchStatus> => {
+    const response = await api.get<VariationsBatchStatus>(
+      `/api/v1/generations/${seedGenerationId}/compose-variations?batch_id=${batchId}`
+    );
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Get variations batch status (for AI Video - uses /variations endpoint)
+   * @deprecated Use getComposeVariationsStatus for compose videos
    * @param seedGenerationId - The original generation ID
    * @param batchId - The batch ID returned from startComposeVariations
    */
@@ -595,7 +612,43 @@ export const fastCutApi = {
   },
 
   /**
-   * Poll for variations completion
+   * Poll for compose variations completion
+   * @param seedGenerationId - The original generation ID (compose video)
+   * @param batchId - The batch ID
+   * @param onProgress - Callback for progress updates
+   * @param pollInterval - Polling interval in ms (default 3000)
+   * @param maxAttempts - Max polling attempts (default 600 = 30 min)
+   */
+  waitForComposeVariations: async (
+    seedGenerationId: string,
+    batchId: string,
+    onProgress?: (status: VariationsBatchStatus) => void,
+    pollInterval = 3000,
+    maxAttempts = 600
+  ): Promise<VariationsBatchStatus> => {
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      const status = await fastCutApi.getComposeVariationsStatus(seedGenerationId, batchId);
+
+      if (onProgress) {
+        onProgress(status);
+      }
+
+      if (status.batch_status === 'completed' || status.batch_status === 'partial_failure') {
+        return status;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      attempts++;
+    }
+
+    throw new Error('Compose variations generation timed out');
+  },
+
+  /**
+   * Poll for AI video variations completion (uses /variations endpoint)
+   * @deprecated Use waitForComposeVariations for compose videos
    * @param seedGenerationId - The original generation ID
    * @param batchId - The batch ID
    * @param onProgress - Callback for progress updates

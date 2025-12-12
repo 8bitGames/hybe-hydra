@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase client for session updates
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 /**
  * Callback payload from AWS Batch AI Worker
@@ -16,6 +23,88 @@ interface AICallbackPayload {
 
 // Callback secret for authentication
 const AI_CALLBACK_SECRET = process.env.AI_CALLBACK_SECRET || process.env.BATCH_CALLBACK_SECRET || 'hydra-ai-callback-secret';
+
+/**
+ * Update creation_session when AI video generation completes
+ * AI Video stages: start → analyze → create → processing → publish
+ */
+async function updateSessionOnAIComplete(generationId: string, success: boolean): Promise<void> {
+  try {
+    // Find session that has this generationId in stage_data (processing stage saves generationId)
+    // AI Video workflow stores generationId in processing_data or stage_data
+    const { data: sessions, error: findError } = await supabase
+      .from('creation_sessions')
+      .select('id, current_stage, status, stage_data, metadata, completed_stages')
+      .eq('metadata->>contentType', 'ai_video')
+      .order('updated_at', { ascending: false })
+      .limit(20);
+
+    if (findError) {
+      console.error('[AI Callback] Session lookup error:', findError.message);
+      return;
+    }
+
+    if (!sessions || sessions.length === 0) {
+      console.log('[AI Callback] No AI video sessions found');
+      return;
+    }
+
+    // Find session with matching generationId in stage_data
+    const session = sessions.find(s => {
+      const stageData = s.stage_data as Record<string, unknown> | null;
+      if (!stageData) return false;
+      // Check various places where generationId might be stored
+      return stageData.generationId === generationId ||
+             (stageData.processing as Record<string, unknown>)?.generationId === generationId ||
+             (stageData.create as Record<string, unknown>)?.generationId === generationId;
+    });
+
+    if (!session) {
+      console.log(`[AI Callback] No session found for generationId: ${generationId}`);
+      return;
+    }
+
+    console.log(`[AI Callback] Found session ${session.id}, current_stage: ${session.current_stage}`);
+
+    // Only update if currently in processing stage or earlier
+    const aiVideoStages = ['start', 'analyze', 'create', 'processing', 'publish'];
+    const currentIndex = aiVideoStages.indexOf(session.current_stage);
+    const processingIndex = aiVideoStages.indexOf('processing');
+
+    if (currentIndex > processingIndex) {
+      console.log('[AI Callback] Session already past processing stage, skipping update');
+      return;
+    }
+
+    // Update to publish stage on success, keep current on failure
+    const newStage = success ? 'publish' : session.current_stage;
+    const newStatus = success ? 'in_progress' : session.status;
+
+    // Merge existing completed stages with new ones
+    const existingCompleted = (session.completed_stages as string[]) || [];
+    const newCompletedStages = success
+      ? [...new Set([...existingCompleted, ...aiVideoStages.slice(0, processingIndex + 1)])]
+      : existingCompleted;
+
+    const { error: updateError } = await supabase
+      .from('creation_sessions')
+      .update({
+        current_stage: newStage,
+        status: newStatus,
+        completed_stages: newCompletedStages,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', session.id);
+
+    if (updateError) {
+      console.error('[AI Callback] Session update error:', updateError.message);
+    } else {
+      console.log(`[AI Callback] ✓ Session ${session.id} updated: stage=${newStage}, status=${newStatus}`);
+    }
+  } catch (err) {
+    console.error('[AI Callback] Session update exception:', err);
+  }
+}
 
 /**
  * Map AI job status to Prisma VideoStatus enum
@@ -115,6 +204,11 @@ export async function POST(request: NextRequest) {
       });
 
       console.log(`[AI Callback] Updated job ${job_id}: status=${prismaStatus}, progress=${progress}%, outputUrl=${updated.outputUrl?.slice(0, 50) || 'none'}`);
+
+      // Update creation_session when completed or failed
+      if (status === 'completed' || status === 'failed') {
+        await updateSessionOnAIComplete(job_id, status === 'completed');
+      }
 
       return NextResponse.json({
         success: true,
