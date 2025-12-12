@@ -636,7 +636,11 @@ class FFmpegRenderer:
         aspect_ratio: str,
         job_id: str,
     ) -> List[str]:
-        """Process images (resize/crop) in parallel."""
+        """Process images (resize/crop) in parallel.
+
+        Invalid images are filtered out (not replaced with black screens).
+        This ensures only valid images are used in the video loop.
+        """
         loop = asyncio.get_event_loop()
 
         processed = []
@@ -650,8 +654,17 @@ class FFmpegRenderer:
                 aspect_ratio,
                 output_path,
             )
-            processed.append(result)
-            logger.debug(f"[{job_id}] Processed image {i+1}/{len(image_paths)}")
+            if result is not None:
+                processed.append(result)
+                logger.debug(f"[{job_id}] Processed image {i+1}/{len(image_paths)}")
+            else:
+                logger.warning(f"[{job_id}] Skipping invalid image {i+1}/{len(image_paths)}: {path}")
+
+        if len(processed) < len(image_paths):
+            logger.warning(f"[{job_id}] Filtered out {len(image_paths) - len(processed)} invalid images")
+
+        if len(processed) < 1:
+            raise ValueError("No valid images could be processed")
 
         return processed
 

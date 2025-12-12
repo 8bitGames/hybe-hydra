@@ -73,56 +73,171 @@ export const I2VSpecialistConfig: AgentConfig<I2VSpecialistInput, I2VSpecialistO
   },
 
   prompts: {
-    system: `You specialize in Image-to-Video prompt engineering.
-Create prompts that bring still images to life with natural motion.
-Maintain visual consistency between source image and video.
+    system: `You are a world-class Image-to-Video prompt engineer specializing in Gemini image generation.
+Your core strength is leveraging Gemini's deep language understanding - describe scenes narratively, don't just list keywords.
 
-Your expertise includes:
-- FLUX image generation prompts (for first frames)
-- VEO video prompts (for animation)
-- Background prompts (for compositing)
+═══════════════════════════════════════════════════════════════════
+GEMINI PROMPTING FUNDAMENTALS (Official Google Guidelines)
+═══════════════════════════════════════════════════════════════════
 
-Key Principles:
-1. Image prompts should focus on composition and subject positioning
-2. Video prompts should describe smooth, natural motion
-3. Background prompts should complement without competing
-4. Always maintain visual consistency across all prompts
+GOLDEN RULE: "Describe the scene, don't just list keywords."
+A narrative, descriptive paragraph ALWAYS produces better, more coherent images than disconnected word lists.
 
-Technical Considerations:
-- FLUX excels at: detailed textures, lighting, composition
-- VEO excels at: camera movement, subject motion, scene dynamics
-- Backgrounds should: support the subject, match color palette
+SIX ESSENTIAL ELEMENTS (Include ALL in every prompt):
+1. SUBJECT: Be hyper-specific about who/what appears
+   ✓ "a stoic robot barista with glowing blue optics and weathered chrome plating"
+   ✗ "a robot"
+
+2. COMPOSITION: Frame the shot like a cinematographer
+   - Extreme close-up, medium shot, wide establishing shot
+   - Low angle (power), high angle (vulnerability), Dutch angle (tension)
+   - Rule of thirds, centered composition, negative space
+
+3. ACTION: Describe what's happening in the moment
+   ✓ "mid-stride, arms swinging naturally, hair catching the wind"
+   ✗ "walking"
+
+4. LOCATION/ENVIRONMENT: Set the scene with atmosphere
+   ✓ "a rain-slicked Tokyo alley at 3am, neon signs reflecting in puddles"
+   ✗ "city street"
+
+5. STYLE/AESTHETIC: Define the visual treatment
+   - Photography styles: editorial, documentary, portrait, product
+   - Art movements: film noir, art deco, cyberpunk, cottagecore
+   - Camera/lens: 85mm f/1.4, anamorphic lens flare, tilt-shift miniature
+
+6. LIGHTING & MOOD: Paint with light
+   - Golden hour, blue hour, harsh midday sun, overcast diffused
+   - Three-point studio setup, Rembrandt lighting, rim light silhouette
+   - Emotional tone: intimate, dramatic, serene, tense
+
+═══════════════════════════════════════════════════════════════════
+PHOTOREALISTIC PROMPTING (Think like a photographer)
+═══════════════════════════════════════════════════════════════════
+
+CAMERA LANGUAGE:
+- Lens: "shot on 50mm f/1.8", "85mm portrait lens", "24mm wide angle", "macro lens"
+- Depth of field: "shallow DOF with creamy bokeh", "deep focus", "tilt-shift"
+- Camera movement: "steady cam following", "handheld documentary feel"
+
+LIGHTING SETUPS:
+- "Three-point softbox lighting with subtle rim light"
+- "Natural window light from camera left, soft fill from right"
+- "Dramatic chiaroscuro lighting, deep shadows"
+- "Golden hour backlighting creating lens flare"
+
+TEXTURE & DETAIL:
+- "Fine skin texture with natural pores visible"
+- "Fabric weave catching the light"
+- "Condensation droplets on cold glass surface"
+
+═══════════════════════════════════════════════════════════════════
+I2V WORKFLOW SPECIALIZATIONS
+═══════════════════════════════════════════════════════════════════
+
+FIRST FRAME OPTIMIZATION:
+- Position subjects in natural starting poses for motion
+- Leave "motion space" - room for subjects to move into
+- Establish clear focal points that can be tracked
+- Lighting should support the intended movement direction
+
+VIDEO TRANSITION PREPARATION:
+- Describe elements that will create satisfying motion
+- Hair, fabric, particles, water - elements with natural flow
+- Avoid static poses that will look frozen
+
+CONSISTENCY MARKERS:
+- Document specific visual details that MUST persist
+- Color values, lighting direction, subject proportions
+- Background elements, atmospheric conditions
 
 Always respond in valid JSON format.`,
 
     templates: {
-      image: `Create a FLUX image prompt for this scene:
+      image: `Create a Gemini-optimized image prompt for this scene.
+
+═══════════════════════════════════════════════════════════════════
+INPUT CONTEXT
+═══════════════════════════════════════════════════════════════════
 
 SCENE DESCRIPTION:
 {{sceneDescription}}
 
-STYLE: {{style}}
-MOOD: {{mood}}
+REQUESTED STYLE: {{style}}
+DESIRED MOOD: {{mood}}
 
-This image will serve as the first frame for video generation.
-Focus on:
-- Clear composition with defined subject placement
-- Rich lighting that sets the mood
-- Balanced color palette
-- Natural pose/position for subsequent motion
+═══════════════════════════════════════════════════════════════════
+YOUR TASK: Transform into a cinematographic masterpiece prompt
+═══════════════════════════════════════════════════════════════════
+
+REMEMBER: Write a NARRATIVE PARAGRAPH, not keyword lists!
+Gemini's language understanding thrives on descriptive prose.
+
+MANDATORY ELEMENTS TO INCLUDE:
+
+1. SUBJECT (Hyper-specific)
+   - WHO/WHAT exactly? Age, expression, clothing details, posture
+   - Distinguishing features that make them unique
+
+2. COMPOSITION (Cinematographer's eye)
+   - Shot type: extreme close-up, medium shot, full body, wide establishing
+   - Camera angle: eye-level, low angle (heroic), high angle (vulnerable), Dutch tilt
+   - Rule of thirds? Centered? Leading lines?
+
+3. ACTION (Frozen moment)
+   - What's happening RIGHT NOW in this frame?
+   - Body language, gesture, movement direction
+   - "Caught mid-action" creates better video transitions
+
+4. LOCATION (Immersive environment)
+   - Specific place with atmospheric details
+   - Foreground, midground, background elements
+   - Environmental storytelling
+
+5. STYLE (Visual treatment)
+   - Photography style: editorial, cinematic, documentary, commercial
+   - Reference: "shot on 85mm f/1.4", "Kodak Portra 400 film grain"
+   - Art direction: color palette, contrast level, saturation
+
+6. LIGHTING (Paint with light)
+   - Direction: front, side, back, Rembrandt, split
+   - Quality: soft diffused, hard dramatic, natural ambient
+   - Time of day: golden hour, blue hour, midday, night
+
+I2V FIRST FRAME OPTIMIZATION:
+- Position subject with "motion space" to move into
+- Include elements that will animate beautifully (hair, fabric, smoke, water)
+- Establish clear focal point for eye tracking
+- Avoid perfectly static poses - capture "decisive moments"
+
+═══════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════
 
 Return JSON:
 {
-  "prompt": "Detailed FLUX image prompt (100-150 words) optimized for I2V workflow...",
+  "prompt": "A vivid, narrative paragraph (120-180 words) describing the scene as if directing a cinematographer. Flow naturally from subject to environment to mood. Include specific camera/lens references and lighting details. Write prose, not lists.",
   "promptType": "image",
-  "styleNotes": "Key style elements to maintain in video",
+  "styleNotes": "Key visual anchors: specific colors (hex if relevant), lighting direction, lens characteristics that define this image's look",
   "technicalSpecs": {
     "aspectRatio": "9:16|16:9|1:1"
   },
-  "consistencyMarkers": ["elements that must remain consistent in video"]
-}`,
+  "consistencyMarkers": ["5-7 specific visual elements that MUST persist in video: exact colors, lighting angle, subject proportions, key environmental features, atmospheric conditions"]
+}
 
-      video: `Create a video prompt from this image analysis:
+QUALITY CHECKLIST (Verify before output):
+☐ Is it a flowing narrative paragraph, not a keyword list?
+☐ Does it specify camera/lens (e.g., "shot on 85mm f/1.4")?
+☐ Does it describe lighting direction and quality?
+☐ Is the subject hyper-specific, not generic?
+☐ Does it include atmospheric/environmental details?
+☐ Will this frame transition smoothly to video motion?`,
+
+      video: `Create a VEO video prompt from this image analysis.
+
+═══════════════════════════════════════════════════════════════════
+SOURCE IMAGE ANALYSIS
+═══════════════════════════════════════════════════════════════════
 
 IMAGE ANALYSIS:
 {{imageAnalysis}}
@@ -130,109 +245,220 @@ IMAGE ANALYSIS:
 SCENE DESCRIPTION:
 {{sceneDescription}}
 
-DURATION: {{duration}}s
+DURATION: {{duration}} seconds
 STYLE: {{style}}
 
-Create smooth camera movements and natural motion that:
-- Respect the original composition
-- Maintain visual consistency with source image
-- Feel natural and cinematic
-- Work within the duration
+═══════════════════════════════════════════════════════════════════
+VIDEO MOTION DESIGN
+═══════════════════════════════════════════════════════════════════
+
+CAMERA MOVEMENT OPTIONS:
+- Static: locked-off, tripod stable (for product focus)
+- Push in: slow zoom toward subject (builds intensity)
+- Pull out: reveal environment (establishes context)
+- Dolly/Track: lateral movement (adds dimension)
+- Crane/Jib: vertical sweep (cinematic grandeur)
+- Handheld: subtle organic motion (documentary feel)
+- Orbit: 360° around subject (product showcase)
+
+SUBJECT MOTION PRINCIPLES:
+- Natural physics: hair sways, fabric ripples, breath visible
+- Micro-movements: blinks, subtle weight shifts, finger movements
+- Environmental reaction: wind effect, light changes, ambient motion
+- Emotional beats: expressions shifting, gestures completing
+
+MOTION TIMING:
+- Slow/Deliberate: 0.25-0.5x speed for luxury, elegance
+- Natural: 1x speed for authentic moments
+- Dynamic: 1.5-2x implied energy for action
+
+═══════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════
 
 Return JSON:
 {
-  "prompt": "VEO video prompt (100-150 words) with camera movement and subject motion...",
+  "prompt": "Narrative description (120-150 words) of how the scene unfolds over time. Start from the first frame state, describe the motion trajectory, camera movement, and how the scene evolves. Include timing cues and motion qualities (smooth, sudden, gradual).",
   "promptType": "video",
-  "styleNotes": "Motion style and camera technique used",
+  "styleNotes": "Motion design philosophy: camera technique chosen, motion quality, pacing rhythm",
   "technicalSpecs": {
     "duration": {{duration}},
     "frameRate": 24
   },
-  "consistencyMarkers": ["visual elements preserved from image"]
+  "consistencyMarkers": ["Visual anchors that MUST remain constant: lighting direction, color temperature, subject proportions, background elements, atmospheric density"]
 }`,
 
-      background: `Create a background prompt:
+      background: `Create a cinematic background prompt for product/subject compositing.
 
-SUBJECT: {{subject}}
+═══════════════════════════════════════════════════════════════════
+INPUT CONTEXT
+═══════════════════════════════════════════════════════════════════
+
+SUBJECT TO BE COMPOSITED: {{subject}}
 STYLE: {{style}}
 MOOD: {{mood}}
 
-The background should:
-- Complement the subject without competing
-- Match the overall color palette and mood
-- Provide depth without distraction
-- Support the narrative
+═══════════════════════════════════════════════════════════════════
+BACKGROUND DESIGN PRINCIPLES
+═══════════════════════════════════════════════════════════════════
+
+COMPOSITIONAL HIERARCHY:
+- Background SUPPORTS, never COMPETES with the subject
+- Create visual "breathing room" for the subject
+- Guide viewer's eye toward where subject will be placed
+
+DEPTH & DIMENSION:
+- Foreground elements: subtle blur, frame edges
+- Midground: where subject will be placed (keep clear)
+- Background: environmental context, slightly soft
+
+LIGHTING COHERENCE:
+- Establish clear light direction for subject matching
+- Include subtle highlights/shadows for depth
+- Match the mood's color temperature
+
+COMPOSITING-READY FEATURES:
+- Clean area for subject placement
+- Consistent lighting across the frame
+- No competing focal points in subject zone
+
+═══════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════
 
 Return JSON:
 {
-  "prompt": "FLUX background prompt optimized for compositing...",
+  "prompt": "Narrative description (80-120 words) of an atmospheric background. Describe lighting direction, depth layers, color palette, and mood. Leave clear space for subject compositing. Include camera/lens reference for consistent look.",
   "promptType": "background",
-  "styleNotes": "How background supports the subject",
+  "styleNotes": "Compositing guidance: subject placement zone, lighting direction, color temperature, depth of field",
   "technicalSpecs": {
     "aspectRatio": "9:16"
   },
-  "consistencyMarkers": ["colors", "lighting", "atmosphere"]
+  "consistencyMarkers": ["primary light direction", "color temperature (warm/cool)", "atmospheric density", "depth layers", "ambient light quality"]
 }`,
 
-      sceneWithPlaceholder: `Modify a scene prompt to use a PLACEHOLDER instead of the specific product:
+      sceneWithPlaceholder: `Transform scene prompt for two-step product composition workflow.
+
+═══════════════════════════════════════════════════════════════════
+INPUT CONTEXT
+═══════════════════════════════════════════════════════════════════
 
 ORIGINAL SCENE DESCRIPTION:
 {{sceneDescription}}
 
-PRODUCT TYPE (what the placeholder should look like):
+PRODUCT TYPE (placeholder shape/size reference):
 {{productDescription}}
 
 HAND POSE: {{handPose}}
 STYLE: {{style}}
 ASPECT RATIO: {{aspectRatio}}
 
-CRITICAL RULES:
-1. Keep 95% of the original prompt UNCHANGED
-2. ONLY replace the specific product with a generic white/neutral placeholder
-3. Maintain ALL scene elements: people, location, actions, mood, lighting
-4. The placeholder must be clearly visible and well-lit for compositing
-5. Output must describe ONE SINGLE coherent image - NOT a collage
-6. REMOVE any scene transitions - focus on ONE person, ONE moment
-7. Pick the FIRST/MAIN scene only if original has multiple scenes
+═══════════════════════════════════════════════════════════════════
+TWO-STEP COMPOSITION STRATEGY
+═══════════════════════════════════════════════════════════════════
+
+OBJECTIVE: Generate a scene with a NEUTRAL PLACEHOLDER object
+that will be replaced by the actual product in step 2.
+
+PLACEHOLDER DESIGN PRINCIPLES:
+- Shape: Match the product's general form (bottle, box, tube, etc.)
+- Color: Neutral white/light gray - easy to mask and replace
+- Material: Matte, non-reflective surface for clean edges
+- Size: Proportional to how hands would naturally hold it
+- Lighting: Well-lit from the scene's primary light source
+
+SCENE PRESERVATION (CRITICAL):
+✓ KEEP: All human elements (person, hands, pose, expression)
+✓ KEEP: Environment and background exactly as described
+✓ KEEP: Lighting setup, mood, atmosphere
+✓ KEEP: Camera angle and composition
+✗ CHANGE: Only the specific product → generic placeholder
+
+SINGLE FRAME RULE:
+- Output must describe ONE moment, ONE frame
+- If original has multiple scenes, select the MAIN/FIRST scene only
+- No transitions, no "then", no sequence descriptions
+
+COMPOSITING-READY REQUIREMENTS:
+1. Placeholder clearly visible and in sharp focus
+2. Hands naturally gripping the placeholder
+3. Clear separation between placeholder and background
+4. Consistent lighting on placeholder for later matching
+
+═══════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════
 
 Return JSON:
 {
-  "prompt": "Modified scene prompt with generic placeholder instead of specific product...",
+  "prompt": "Narrative paragraph (120-150 words) describing the scene with a neutral placeholder object. Maintain all cinematographic details from original. Specify: 'holding a smooth, matte white [shape] placeholder object' where the product would be. Include lighting direction hitting the placeholder.",
   "promptType": "sceneWithPlaceholder",
-  "styleNotes": "Key elements preserved for later product compositing",
+  "styleNotes": "Compositing preparation notes: placeholder position, lighting angle, shadow direction, grip style",
   "technicalSpecs": {
     "aspectRatio": "{{aspectRatio}}"
   },
-  "consistencyMarkers": ["scene elements", "lighting direction", "hand position", "camera angle"]
+  "consistencyMarkers": ["hand grip position", "lighting direction (clock face: e.g., 2 o'clock)", "shadow angle", "camera distance", "background elements", "color temperature"]
 }`,
 
-      composite: `Create compositing instructions for seamlessly placing a product into a scene:
+      composite: `Create precise compositing instructions for seamless product integration.
+
+═══════════════════════════════════════════════════════════════════
+INPUT CONTEXT
+═══════════════════════════════════════════════════════════════════
 
 SCENE DESCRIPTION: {{sceneDescription}}
 PRODUCT DESCRIPTION: {{productDescription}}
-PLACEMENT: {{placementHint}}
+PLACEMENT GUIDANCE: {{placementHint}}
 
-The AI will receive:
-1. A SCENE IMAGE showing hands holding a placeholder object
-2. A PRODUCT IMAGE showing the actual product
+═══════════════════════════════════════════════════════════════════
+COMPOSITING WORKFLOW
+═══════════════════════════════════════════════════════════════════
 
-Your instructions must ensure:
-1. The product EXACTLY replaces the placeholder - same position, same angle
-2. Lighting on the product matches the scene's lighting direction and intensity
-3. Shadows are consistent with the scene
-4. The product appears naturally held by the hands
-5. Scale is appropriate - the product fits naturally in the hands
-6. The product's original appearance is PRESERVED - only lighting/shadows are adjusted
+The AI will receive TWO images:
+1. SCENE IMAGE: Hands holding a neutral placeholder object
+2. PRODUCT IMAGE: The actual product to be composited
+
+PLACEMENT PRECISION:
+- Position: Product EXACTLY replaces placeholder location
+- Angle: Match the placeholder's rotation and tilt
+- Scale: Product fits naturally within the hand grip
+- Perspective: Maintain consistent camera angle
+
+LIGHTING INTEGRATION:
+- Direction: Match scene's primary light source
+- Intensity: Adjust product highlights to scene brightness
+- Color temperature: Harmonize with scene's ambient light
+- Reflections: Add appropriate specular highlights
+
+SHADOW INTEGRATION:
+- Contact shadows: Where product meets hands
+- Cast shadows: Matching scene's shadow direction
+- Ambient occlusion: Subtle darkening at contact points
+
+EDGE TREATMENT:
+- Clean masking: No visible edges or halos
+- Natural falloff: Smooth transition to scene
+- Depth matching: Consistent focus/blur with scene
+
+PRESERVATION RULES:
+✓ PRESERVE: Product's brand identity, colors, design
+✓ PRESERVE: Scene's overall lighting and mood
+✗ AVOID: Distorting product proportions
+✗ AVOID: Mismatched lighting direction
+
+═══════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════════
 
 Return JSON:
 {
-  "prompt": "Precise compositing instructions for seamless product placement...",
+  "prompt": "Step-by-step compositing instructions (100-150 words). Be specific: 'Position the product at [exact location], rotate [degrees] to match hand angle. Apply lighting from [direction] at [intensity]. Add contact shadow beneath [area]. Adjust color temperature to [warm/cool] to match scene ambient.'",
   "promptType": "composite",
-  "styleNotes": "Lighting matching and shadow integration guidelines",
+  "styleNotes": "Technical compositing notes: exact lighting angle (clock face), shadow opacity percentage, color temperature adjustment, scale ratio",
   "technicalSpecs": {
     "aspectRatio": "9:16"
   },
-  "consistencyMarkers": ["lighting direction", "shadow angle", "scale ratio", "color temperature"]
+  "consistencyMarkers": ["lighting direction (e.g., 10 o'clock)", "shadow angle", "scale ratio (e.g., 1:1.2)", "color temperature (K value if relevant)", "grip contact points"]
 }`,
     },
   },

@@ -49,13 +49,23 @@ class ImageProcessor:
         self,
         image_path: str,
         aspect_ratio: str,
-        output_path: str = None
-    ) -> str:
+        output_path: str = None,
+        fallback_to_black: bool = False
+    ) -> str | None:
         """
         Resize and crop image for target aspect ratio.
         Uses GPU when available for faster processing.
-        Returns path to processed image.
-        If image is invalid/corrupted, creates a black screen instead.
+        Returns path to processed image, or None if image is invalid.
+
+        Args:
+            image_path: Path to the source image
+            aspect_ratio: Target aspect ratio ("9:16", "16:9", "1:1")
+            output_path: Path to save processed image (auto-generated if None)
+            fallback_to_black: If True, create black screen for invalid images.
+                               If False (default), return None for invalid images.
+
+        Returns:
+            Path to processed image, or None if invalid and fallback_to_black=False
         """
         ratios = {
             "9:16": (1080, 1920),
@@ -68,15 +78,20 @@ class ImageProcessor:
             base, ext = os.path.splitext(image_path)
             output_path = f"{base}_processed{ext}"
 
-        # Try to open image, fall back to black screen on error
+        # Try to open image
         try:
             img = Image.open(image_path)
             img.verify()  # Verify it is a valid image
             # Re-open after verify (verify consumes the file)
             img = Image.open(image_path)
         except Exception as e:
-            print(f"[ImageProcessor] Invalid image, using black screen: {image_path} - {e}")
-            return self.create_black_image(aspect_ratio, output_path)
+            print(f"[ImageProcessor] Invalid image: {image_path} - {e}")
+            if fallback_to_black:
+                print(f"[ImageProcessor] Creating black screen fallback")
+                return self.create_black_image(aspect_ratio, output_path)
+            else:
+                print(f"[ImageProcessor] Skipping invalid image (no fallback)")
+                return None
 
         # Convert to RGB if necessary (handles RGBA, P, L, LA, 1, etc.)
         if img.mode != "RGB":

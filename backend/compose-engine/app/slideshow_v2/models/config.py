@@ -302,8 +302,8 @@ PRESET_CONFIGS: Dict[StylePreset, SlideshowConfig] = {
             color_grade_intensity=0.8,
             vignette=True,
             vignette_intensity=0.25,
-            film_grain=True,
-            film_grain_intensity=0.02,
+            film_grain=False,
+            film_grain_intensity=0.0,
         ),
     ),
 
@@ -378,8 +378,8 @@ PRESET_CONFIGS: Dict[StylePreset, SlideshowConfig] = {
         ),
         effects=EffectsConfig(
             color_grade=ColorGrade.VINTAGE,
-            film_grain=True,
-            film_grain_intensity=0.08,
+            film_grain=False,
+            film_grain_intensity=0.0,
             chromatic_aberration=True,
             chromatic_intensity=0.01,
         ),

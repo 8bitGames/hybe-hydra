@@ -510,14 +510,23 @@ export default function PublishPage() {
         // Mark session as completed
         try {
           // Get current activeSession from store (avoids stale closure)
-          const currentActiveSession = useSessionStore.getState().activeSession;
+          let currentActiveSession = useSessionStore.getState().activeSession;
           // Ensure session is loaded before completing (handles fast-cut flow)
           if (!currentActiveSession && sessionIdFromUrl) {
             console.log("[Publish] Loading session before completing:", sessionIdFromUrl);
             await loadSession(sessionIdFromUrl);
+            // Re-check activeSession after loading
+            currentActiveSession = useSessionStore.getState().activeSession;
           }
-          await completeSession();
-          console.log("[Publish] Session marked as completed");
+
+          if (currentActiveSession) {
+            await completeSession();
+            console.log("[Publish] Session marked as completed:", currentActiveSession.id);
+            // Refresh session list to reflect the change
+            await useSessionStore.getState().fetchSessions();
+          } else {
+            console.warn("[Publish] No active session to complete. sessionIdFromUrl:", sessionIdFromUrl);
+          }
         } catch (err) {
           console.error("[Publish] Failed to mark session as completed:", err);
         }
@@ -587,6 +596,9 @@ export default function PublishPage() {
   // Success dialog handlers
   const handleViewSchedule = useCallback(() => {
     setShowSuccessDialog(false);
+    // Clear all session states for clean slate
+    useProcessingSessionStore.getState().clearSession();
+    useSessionStore.getState().clearActiveSession();
     resetWorkflow();
     router.push("/publishing");
   }, [resetWorkflow, router]);
@@ -603,6 +615,9 @@ export default function PublishPage() {
   // Handle success dialog close (when user closes dialog without selecting an option)
   const handleSuccessDialogClose = useCallback(() => {
     setShowSuccessDialog(false);
+    // Clear all session states for fresh start
+    useProcessingSessionStore.getState().clearSession();
+    useSessionStore.getState().clearActiveSession();
     resetWorkflow();
     router.push("/start");
   }, [resetWorkflow, router]);

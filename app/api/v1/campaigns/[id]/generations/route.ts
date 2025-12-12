@@ -11,6 +11,7 @@ import {
   type VideoGenerationSettings,
   type ImageToVideoSettings,
   type VideoAspectRatio,
+  type AudioOverlaySettings,
 } from "@/lib/batch/ai-client";
 import { getPresignedUrlFromS3Url } from "@/lib/storage";
 
@@ -76,6 +77,17 @@ async function submitToAWSBatch(
 
     let submitResult;
 
+    // Build audio overlay settings if audio URL is provided
+    const audioOverlaySettings: AudioOverlaySettings | undefined = params.audioUrl ? {
+      audio_url: params.audioUrl,
+      audio_start_time: 0,
+      audio_volume: 1.0,
+      fade_in: 0.3,
+      fade_out: 0.3,
+      mix_original_audio: false,  // Replace original audio with new audio
+      original_audio_volume: 0.3,
+    } : undefined;
+
     if (hasReferenceImage) {
       // I2V Mode: Image-to-Video with reference image
       const i2vSettings: ImageToVideoSettings = {
@@ -84,8 +96,9 @@ async function submitToAWSBatch(
         aspect_ratio: aspectRatio,
         duration_seconds: (params.durationSeconds || 8) as 4 | 6 | 8,
         person_generation: "allow_adult",
-        generate_audio: true,
+        generate_audio: !params.audioUrl,  // Don't generate AI audio if we have custom audio
         reference_image_url: params.previewImageUrl || params.referenceImageUrl || "",
+        audio_overlay: audioOverlaySettings,  // Add audio overlay settings
       };
 
       console.log(`[Generation ${generationId}] I2V Settings:`, {
@@ -93,6 +106,7 @@ async function submitToAWSBatch(
         aspect_ratio: i2vSettings.aspect_ratio,
         duration: i2vSettings.duration_seconds,
         reference_image: i2vSettings.reference_image_url.slice(0, 60) + "...",
+        audio_overlay: audioOverlaySettings ? "enabled" : "none",
       });
 
       submitResult = await submitImageToVideo(
@@ -103,7 +117,6 @@ async function submitToAWSBatch(
           campaign_id: campaignId,
           image_description: params.imageDescription,
           style: params.style,
-          audio_url: params.audioUrl,
         }
       );
     } else {
@@ -114,13 +127,15 @@ async function submitToAWSBatch(
         aspect_ratio: aspectRatio,
         duration_seconds: (params.durationSeconds || 8) as 4 | 6 | 8,
         person_generation: "allow_adult",
-        generate_audio: true,
+        generate_audio: !params.audioUrl,  // Don't generate AI audio if we have custom audio
+        audio_overlay: audioOverlaySettings,  // Add audio overlay settings
       };
 
       console.log(`[Generation ${generationId}] T2V Settings:`, {
         prompt: videoSettings.prompt.slice(0, 80) + "...",
         aspect_ratio: videoSettings.aspect_ratio,
         duration: videoSettings.duration_seconds,
+        audio_overlay: audioOverlaySettings ? "enabled" : "none",
       });
 
       submitResult = await submitVideoGeneration(
@@ -131,7 +146,6 @@ async function submitToAWSBatch(
           campaign_id: campaignId,
           image_description: params.imageDescription,
           style: params.style,
-          audio_url: params.audioUrl,
         }
       );
     }

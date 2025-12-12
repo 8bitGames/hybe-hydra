@@ -28,7 +28,7 @@ export const VIRAL_TIKTOK: FastCutStyleSet = {
     effectPreset: 'zoom_beat',
     transitions: ['zoom', 'glitch', 'slide'],
     motions: ['shake', 'zoom_in', 'pulse'],
-    filters: ['sharpen', 'contrast_boost'],
+    filters: [],
   },
 
   text: {
@@ -70,7 +70,7 @@ export const CINEMATIC_MOOD: FastCutStyleSet = {
     effectPreset: 'crossfade',
     transitions: ['fade', 'dissolve', 'crossfade'],
     motions: ['parallax', 'slow_zoom'],
-    filters: ['film_grain', 'letterbox'],
+    filters: [],
   },
 
   text: {
@@ -112,7 +112,7 @@ export const CLEAN_MINIMAL: FastCutStyleSet = {
     effectPreset: 'minimal',
     transitions: ['cut', 'fade'],
     motions: ['none', 'subtle_zoom'],
-    filters: ['natural'],
+    filters: [],
   },
 
   text: {
@@ -154,7 +154,7 @@ export const ENERGETIC_BEAT: FastCutStyleSet = {
     effectPreset: 'zoom_beat',
     transitions: ['zoom', 'wipe', 'flash'],
     motions: ['shake', 'pulse', 'zoom_in'],
-    filters: ['contrast_boost', 'saturation'],
+    filters: [],
   },
 
   text: {
@@ -196,7 +196,7 @@ export const RETRO_AESTHETIC: FastCutStyleSet = {
     effectPreset: 'crossfade',
     transitions: ['fade', 'dissolve', 'vhs'],
     motions: ['subtle_zoom', 'scan_lines'],
-    filters: ['film_grain', 'vhs', 'sepia_light'],
+    filters: [],
   },
 
   text: {
@@ -238,7 +238,7 @@ export const PROFESSIONAL_CORP: FastCutStyleSet = {
     effectPreset: 'minimal',
     transitions: ['fade', 'slide', 'wipe'],
     motions: ['subtle_zoom', 'parallax'],
-    filters: ['sharpen', 'clarity'],
+    filters: [],
   },
 
   text: {
@@ -280,7 +280,7 @@ export const DREAMY_SOFT: FastCutStyleSet = {
     effectPreset: 'crossfade',
     transitions: ['fade', 'dissolve', 'blur'],
     motions: ['slow_zoom', 'float'],
-    filters: ['soft_glow', 'pastel', 'bloom'],
+    filters: [],
   },
 
   text: {
@@ -322,7 +322,7 @@ export const BOLD_IMPACT: FastCutStyleSet = {
     effectPreset: 'zoom_beat',
     transitions: ['zoom', 'flash', 'slam'],
     motions: ['zoom_in', 'shake', 'punch'],
-    filters: ['high_contrast', 'sharpen'],
+    filters: [],
   },
 
   text: {

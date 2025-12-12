@@ -503,10 +503,14 @@ class VideoRenderer:
         aspect_ratio: str,
         job_id: str
     ) -> List[str]:
-        """Process images in parallel using thread pool."""
+        """Process images in parallel using thread pool.
+
+        Invalid images are filtered out (not replaced with black screens).
+        This ensures only valid images are used in the video loop.
+        """
         loop = asyncio.get_event_loop()
 
-        async def process_one(i: int, img_path: str) -> str:
+        async def process_one(i: int, img_path: str) -> Optional[str]:
             output_path = self.temp.get_path(job_id, f"processed_{i}.jpg")
             return await loop.run_in_executor(
                 get_cpu_executor(),
@@ -518,7 +522,18 @@ class VideoRenderer:
             for i, img_path in enumerate(image_paths)
         ]
 
-        return await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
+
+        # Filter out None results (invalid images)
+        valid_paths = [p for p in results if p is not None]
+
+        if len(valid_paths) < len(results):
+            logger.warning(f"[{job_id}] Filtered out {len(results) - len(valid_paths)} invalid images")
+
+        if len(valid_paths) < 1:
+            raise ValueError("No valid images could be processed")
+
+        return valid_paths
 
     async def _create_clips_parallel(
         self,

@@ -324,10 +324,21 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
         },
 
         clearSession: () => {
+          // Clear in-memory state
           set({
             session: null,
             hasActiveSession: false,
           });
+
+          // Also explicitly clear localStorage to ensure no stale data persists
+          try {
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("hydra-processing-session");
+              console.log("[ProcessingSessionStore] Cleared localStorage");
+            }
+          } catch (err) {
+            console.error("[ProcessingSessionStore] Failed to clear localStorage:", err);
+          }
         },
 
         // State transitions

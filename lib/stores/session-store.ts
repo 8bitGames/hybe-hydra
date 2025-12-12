@@ -32,6 +32,21 @@ const clearFastCutStorage = () => {
 };
 
 /**
+ * Clear processing session localStorage.
+ * This is a standalone function to avoid circular dependency with processing-session-store.ts
+ */
+const clearProcessingSessionStorage = () => {
+  try {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("hydra-processing-session");
+      console.log("[SessionStore] Cleared processing-session localStorage");
+    }
+  } catch (err) {
+    console.error("[SessionStore] Failed to clear processing-session localStorage:", err);
+  }
+};
+
+/**
  * Clear all session-related storage when starting a new session.
  * This prevents stale data from previous sessions from persisting.
  * Exported for use in components that need to ensure clean state.
@@ -50,6 +65,9 @@ export const clearAllSessionStorage = () => {
 
   // 2. Clear fast-cut sessionStorage
   clearFastCutStorage();
+
+  // 3. Clear processing-session localStorage
+  clearProcessingSessionStorage();
 };
 
 // ============================================
