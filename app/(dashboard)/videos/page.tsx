@@ -152,30 +152,17 @@ export default function AllVideosPage() {
     cancel: language === "ko" ? "취소" : "Cancel",
   };
 
-  const handleDownload = async (url: string, filename: string) => {
+  const handleDownload = (url: string, filename: string) => {
     try {
-      // Get a fresh presigned URL from the download API to avoid expiration issues
-      const downloadApiResponse = await fetch(
-        `/api/v1/assets/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`
-      );
+      // Use server-side streaming to avoid CORS issues with S3
+      const downloadUrl = `/api/v1/assets/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}&stream=true`;
 
-      if (!downloadApiResponse.ok) {
-        throw new Error("Failed to get download URL");
-      }
-
-      const { downloadUrl } = await downloadApiResponse.json();
-
-      // Fetch the video using the fresh presigned URL
-      const response = await fetch(downloadUrl);
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = blobUrl;
+      link.href = downloadUrl;
       link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.error('Download failed:', error);
       // Fallback: open in new tab

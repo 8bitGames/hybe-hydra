@@ -4,8 +4,9 @@ import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { Prisma } from "@prisma/client";
 import { searchImagesMultiQuery, isGoogleSearchConfigured } from "@/lib/google-search";
-import { submitBatchRenderToModal, ModalRenderRequest } from "@/lib/modal/client";
+import { submitRenderToModal, ModalRenderRequest, getComposeEngineMode } from "@/lib/modal/client";
 import { getSettingsFromStylePresets, getStyleSetById } from "@/lib/constants/style-presets";
+import { getBatchJobStatus } from "@/lib/batch/client";
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
@@ -29,6 +30,7 @@ const DEFAULT_TEXT_STYLES = ["bold_pop"];
 const DEFAULT_VIBE_PRESETS = ["Pop"];
 
 // Get keywords from metadata or extract from prompt as fallback
+// Prioritizes nouns (visual subjects) over adjectives for better image search
 function getVariationKeywords(
   metadata: Record<string, unknown> | null,
   prompt: string
@@ -44,7 +46,8 @@ function getVariationKeywords(
     return composeData.searchKeywords.slice(0, 3);
   }
 
-  // Fallback: extract from prompt using stop words
+  // Fallback: extract NOUNS from prompt (for visual image search)
+  // Stop words include common function words
   const stopWords = new Set([
     "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
     "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
@@ -52,8 +55,43 @@ function getVariationKeywords(
     "should", "may", "might", "must", "shall", "can", "need", "video", "image",
     "photo", "picture", "style", "aesthetic", "vibe", "mood", "feeling",
     "generation", "create", "make", "show", "display", "featuring",
-    "compose", "variation", "composed", "slideshow",
+    "compose", "variation", "composed", "slideshow", "this", "that", "these",
+    "those", "it", "its", "they", "them", "their", "there", "here", "where",
+    "when", "what", "which", "who", "how", "why", "very", "really", "just",
+    "about", "into", "over", "under", "through", "between", "being", "while",
   ]);
+
+  // Common adjective patterns to filter out (not useful for image search)
+  const adjectivePatterns = [
+    /ing$/, // emphasizing, featuring, stunning
+    /ous$/, // adventurous, gorgeous, luxurious
+    /ive$/, // creative, attractive, impressive
+    /ent$/, // reminiscent, elegant, vibrant
+    /ant$/, // elegant, vibrant, dominant
+    /ful$/, // beautiful, powerful, colorful
+    /less$/, // endless, timeless
+    /able$/, // remarkable, incredible
+    /ible$/, // visible, accessible
+    /tic$/, // dramatic, cinematic, aesthetic
+    /ial$/, // aerial, special
+    /ical$/, // magical, classical
+    /ed$/, // inspired, detailed (when used as adj)
+    /ly$/, // slowly, quickly (adverbs)
+  ];
+
+  // Common adjectives that might not match patterns
+  const commonAdjectives = new Set([
+    "good", "great", "best", "new", "old", "big", "small", "high", "low",
+    "long", "short", "fast", "slow", "hot", "cold", "warm", "cool", "dark",
+    "light", "bright", "soft", "hard", "deep", "wide", "rich", "bold", "epic",
+    "wild", "free", "pure", "raw", "real", "true", "full", "open", "fresh",
+    "clean", "clear", "sharp", "smooth", "rough", "sweet", "strong", "young",
+  ]);
+
+  const isLikelyAdjective = (word: string): boolean => {
+    if (commonAdjectives.has(word)) return true;
+    return adjectivePatterns.some(pattern => pattern.test(word));
+  };
 
   const words = prompt
     .toLowerCase()
@@ -61,14 +99,39 @@ function getVariationKeywords(
     .split(/\s+/)
     .filter(word => word.length > 2 && !stopWords.has(word));
 
-  const uniqueWords = [...new Set(words)]
-    .sort((a, b) => b.length - a.length);
+  // Separate nouns from adjectives
+  const nouns: string[] = [];
+  const adjectives: string[] = [];
 
-  const extracted = uniqueWords.slice(0, 3);
+  for (const word of words) {
+    if (isLikelyAdjective(word)) {
+      adjectives.push(word);
+    } else {
+      nouns.push(word);
+    }
+  }
 
-  // If extraction failed (no meaningful words), use default creative tags
+  // Prioritize nouns (visual subjects good for image search)
+  const uniqueNouns = [...new Set(nouns)];
+  const uniqueAdjectives = [...new Set(adjectives)];
+
+  // Take nouns first, then adjectives if needed
+  const candidates = [...uniqueNouns, ...uniqueAdjectives];
+
+  // Sort by relevance: prefer medium-length words (4-10 chars) as they're often specific nouns
+  const scored = candidates.map(word => ({
+    word,
+    score: word.length >= 4 && word.length <= 10 ? 10 : (word.length > 10 ? 5 : 3),
+  }));
+  scored.sort((a, b) => b.score - a.score || a.word.length - b.word.length);
+
+  const extracted = scored.slice(0, 3).map(s => s.word);
+
+  console.log(`[getVariationKeywords] Extracted: ${extracted.join(", ")} from nouns: [${uniqueNouns.slice(0, 5).join(", ")}], adjectives: [${uniqueAdjectives.slice(0, 5).join(", ")}]`);
+
+  // If extraction failed, use generic terms
   if (extracted.length === 0) {
-    return ["creative", "aesthetic"];
+    return ["landscape", "scene"];
   }
 
   return extracted;
@@ -380,52 +443,72 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       };
     });
 
-    console.log(`[Compose Variations] Submitting ${modalRequests.length} jobs to Modal batch endpoint`);
+    console.log(`[Compose Variations] Submitting ${modalRequests.length} jobs individually (AWS Batch/Modal/Local based on COMPOSE_ENGINE_MODE)`);
 
-    // Submit all jobs in a single batch request (parallel processing on Modal)
+    // Submit each job individually (supports AWS Batch, Modal, or Local based on env)
     try {
-      const batchResponse = await submitBatchRenderToModal(modalRequests);
-
-      console.log(`[Compose Variations] Batch response:`, {
-        batch_id: batchResponse.batch_id,
-        total_jobs: batchResponse.total_jobs,
-        status: batchResponse.status,
-      });
-
-      // Update all generations with their modalCallIds
-      await Promise.all(
-        batchResponse.call_ids.map(async ({ job_id, call_id }) => {
-          const genData = createdGenerations.find(g => g.generation.id === job_id);
-          if (!genData) return;
-
-          await prisma.videoGeneration.update({
-            where: { id: job_id },
-            data: {
-              status: "PROCESSING",
-              qualityMetadata: {
-                batchId,
-                modalBatchId: batchResponse.batch_id,
-                seedGenerationId,
-                variationType: "compose_variation",
-                modalCallId: call_id,
-                createdAt: new Date().toISOString(),
-                settings: {
-                  effectPreset: genData.settings.effectPreset,
-                  colorGrade: genData.settings.colorGrade,
-                  textStyle: genData.settings.textStyle,
-                  vibe: genData.settings.vibe,
-                  stylePresetId: genData.settings.stylePresetId || null,
-                },
-              } as Prisma.InputJsonValue,
-            },
-          });
-
-          console.log(`[Compose Variations] Started ${job_id} with call_id: ${call_id}`);
+      const submitResults = await Promise.all(
+        modalRequests.map(async (request, index) => {
+          const genData = createdGenerations[index];
+          try {
+            const response = await submitRenderToModal(request);
+            console.log(`[Compose Variations] Submitted ${request.job_id} with call_id: ${response.call_id}`);
+            return { success: true, job_id: request.job_id, call_id: response.call_id, genData };
+          } catch (err) {
+            console.error(`[Compose Variations] Failed to submit ${request.job_id}:`, err);
+            return { success: false, job_id: request.job_id, error: err, genData };
+          }
         })
       );
+
+      // Update all generations with their call_ids
+      await Promise.all(
+        submitResults.map(async (result) => {
+          if (result.success && result.call_id) {
+            await prisma.videoGeneration.update({
+              where: { id: result.job_id },
+              data: {
+                status: "PROCESSING",
+                qualityMetadata: {
+                  batchId,
+                  seedGenerationId,
+                  variationType: "compose_variation",
+                  modalCallId: result.call_id,
+                  createdAt: new Date().toISOString(),
+                  settings: {
+                    effectPreset: result.genData.settings.effectPreset,
+                    colorGrade: result.genData.settings.colorGrade,
+                    textStyle: result.genData.settings.textStyle,
+                    vibe: result.genData.settings.vibe,
+                    stylePresetId: result.genData.settings.stylePresetId || null,
+                  },
+                } as Prisma.InputJsonValue,
+              },
+            });
+          } else {
+            // Mark failed submissions
+            await prisma.videoGeneration.update({
+              where: { id: result.job_id },
+              data: {
+                status: "FAILED",
+                progress: 100,
+                errorMessage: result.error instanceof Error ? result.error.message : "Failed to submit render job",
+              },
+            });
+          }
+        })
+      );
+
+      const successCount = submitResults.filter(r => r.success).length;
+      const failCount = submitResults.filter(r => !r.success).length;
+      console.log(`[Compose Variations] Submitted ${successCount} jobs successfully, ${failCount} failed`);
+
+      if (successCount === 0) {
+        throw new Error("All render job submissions failed");
+      }
     } catch (error) {
-      console.error(`[Compose Variations] Batch submit failed:`, error);
-      // Mark all as failed
+      console.error(`[Compose Variations] Submit failed:`, error);
+      // Mark all as failed if not already updated
       await Promise.all(
         createdGenerations.map(({ generation }) =>
           prisma.videoGeneration.update({
@@ -433,9 +516,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             data: {
               status: "FAILED",
               progress: 100,
-              errorMessage: error instanceof Error ? error.message : "Failed to start Modal batch render",
+              errorMessage: error instanceof Error ? error.message : "Failed to start render",
             },
-          })
+          }).catch(() => {}) // Ignore if already updated
         )
       );
       throw error;
@@ -534,8 +617,72 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Compose variation batch not found" }, { status: 404 });
     }
 
+    // Check AWS Batch status for PROCESSING jobs to update progress
+    const composeMode = getComposeEngineMode();
+    const updatedGenerations = await Promise.all(
+      generations.map(async (gen) => {
+        // If already completed or failed, return as-is
+        if (gen.status === "COMPLETED" || gen.status === "FAILED") {
+          return gen;
+        }
+
+        const metadata = gen.qualityMetadata as Record<string, unknown> | null;
+        const callId = metadata?.modalCallId as string | undefined;
+
+        // For AWS Batch mode, check actual job status
+        if (composeMode === "batch" && callId && gen.status === "PROCESSING") {
+          try {
+            const batchStatus = await getBatchJobStatus(callId);
+            console.log(`[Compose Variations] AWS Batch status for ${gen.id}: ${batchStatus.status}`);
+
+            // Map AWS Batch status to progress
+            let newProgress = gen.progress;
+            if (batchStatus.status === "running") {
+              newProgress = 50; // Running = 50%
+            } else if (batchStatus.status === "starting") {
+              newProgress = 30; // Starting = 30%
+            } else if (batchStatus.status === "runnable") {
+              newProgress = 20; // Queued = 20%
+            } else if (batchStatus.status === "pending") {
+              newProgress = 10; // Pending = 10%
+            }
+
+            // Update DB if progress changed
+            if (newProgress !== gen.progress) {
+              await prisma.videoGeneration.update({
+                where: { id: gen.id },
+                data: { progress: newProgress },
+              });
+              return { ...gen, progress: newProgress };
+            }
+
+            // Check if AWS Batch says it's completed/failed (callback might be delayed)
+            if (batchStatus.mappedStatus === "completed") {
+              // Don't update here - let callback handle it with output_url
+              return { ...gen, progress: 90 }; // Show 90% while waiting for callback
+            } else if (batchStatus.mappedStatus === "failed") {
+              await prisma.videoGeneration.update({
+                where: { id: gen.id },
+                data: {
+                  status: "FAILED",
+                  progress: 100,
+                  errorMessage: batchStatus.statusReason || "AWS Batch job failed",
+                },
+              });
+              return { ...gen, status: "FAILED", progress: 100, errorMessage: batchStatus.statusReason || "AWS Batch job failed" };
+            }
+          } catch (err) {
+            console.error(`[Compose Variations] Failed to check AWS Batch status for ${gen.id}:`, err);
+            // Continue with DB values on error
+          }
+        }
+
+        return gen;
+      })
+    );
+
     // Calculate batch status
-    const statuses = generations.map((g) => g.status);
+    const statuses = updatedGenerations.map((g) => g.status);
     let batchStatus: "pending" | "processing" | "completed" | "partial_failure" = "processing";
     if (statuses.every((s) => s === "COMPLETED")) {
       batchStatus = "completed";
@@ -550,11 +697,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const completedCount = statuses.filter((s) => s === "COMPLETED").length;
     const failedCount = statuses.filter((s) => s === "FAILED").length;
     const overallProgress = Math.round(
-      generations.reduce((sum, g) => sum + g.progress, 0) / generations.length
+      updatedGenerations.reduce((sum, g) => sum + g.progress, 0) / updatedGenerations.length
     );
 
     // Format response to match VariationsBatchStatus interface
-    const variations = generations.map((gen) => {
+    const variations = updatedGenerations.map((gen) => {
       const metadata = gen.qualityMetadata as Record<string, unknown> | null;
       return {
         id: gen.id,

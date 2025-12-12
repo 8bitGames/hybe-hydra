@@ -185,50 +185,31 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
   // Download state
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // Handle download - fetch as blob to trigger actual download (not navigation)
+  // Handle download - use server-side streaming to avoid CORS issues
   const handleDownload = useCallback(async () => {
     if (!originalVideo?.outputUrl || isDownloading) return;
 
     setIsDownloading(true);
     try {
-      // Get a fresh presigned URL from the download API
+      // Use server-side streaming to download the file
+      // This avoids CORS issues by having the server fetch and stream the file
       const filename = `video-${session?.id || "output"}.mp4`;
-      const apiResponse = await fetch(
-        `/api/v1/assets/download?url=${encodeURIComponent(originalVideo.outputUrl)}&filename=${encodeURIComponent(filename)}`
-      );
+      const downloadUrl = `/api/v1/assets/download?url=${encodeURIComponent(originalVideo.outputUrl)}&filename=${encodeURIComponent(filename)}&stream=true`;
 
-      if (!apiResponse.ok) {
-        throw new Error("Failed to get download URL");
-      }
-
-      const { downloadUrl, filename: responseFilename } = await apiResponse.json();
-
-      // Fetch the video as blob to enable actual download (not navigation)
-      // This is necessary because download attribute doesn't work for cross-origin URLs
-      const videoResponse = await fetch(downloadUrl);
-      if (!videoResponse.ok) {
-        throw new Error("Failed to fetch video");
-      }
-
-      const blob = await videoResponse.blob();
-      const blobUrl = URL.createObjectURL(blob);
-
-      // Trigger download with blob URL
+      // Create a hidden link and trigger download
       const link = document.createElement("a");
-      link.href = blobUrl;
-      link.download = responseFilename || filename;
+      link.href = downloadUrl;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
-      // Clean up blob URL after a short delay
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
     } catch (error) {
       console.error("Download failed:", error);
       // Fallback: open in new tab
       window.open(originalVideo.outputUrl, "_blank");
     } finally {
-      setIsDownloading(false);
+      // Small delay before resetting to show feedback
+      setTimeout(() => setIsDownloading(false), 1000);
     }
   }, [originalVideo?.outputUrl, session?.id, isDownloading]);
 

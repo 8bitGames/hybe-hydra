@@ -98,27 +98,45 @@ export function getProxiedImageUrl(url: string | null | undefined): string | nul
 
 /**
  * Download file from URL (handles cross-origin like S3)
- * Fetches the file as blob and triggers browser download
+ * Uses server-side streaming for S3 URLs to avoid CORS issues
  */
 export async function downloadFile(url: string, filename?: string): Promise<void> {
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch: ${response.status}`);
+    const finalFilename = filename || getFilenameFromUrl(url) || 'download';
+
+    // Check if it's an S3 URL - use server-side streaming to avoid CORS
+    const isS3Url = url.includes('.s3.') && url.includes('.amazonaws.com');
+
+    if (isS3Url) {
+      // Use server-side streaming for S3 URLs
+      const downloadUrl = `/api/v1/assets/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(finalFilename)}&stream=true`;
+
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = finalFilename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      // For non-S3 URLs, try direct fetch
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = finalFilename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Cleanup blob URL after a short delay
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
     }
-
-    const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = filename || getFilenameFromUrl(url) || 'download';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // Cleanup blob URL after a short delay
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
   } catch (error) {
     console.error('Download failed:', error);
     // Fallback: open in new tab

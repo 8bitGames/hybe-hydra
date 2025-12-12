@@ -184,7 +184,8 @@ export async function getPresignedUrlFromS3Url(
   expiresIn = 86400
 ): Promise<string> {
   // Parse S3 URL: https://BUCKET.s3.REGION.amazonaws.com/KEY
-  const match = s3Url.match(/https:\/\/([^.]+)\.s3\.([^.]+)\.amazonaws\.com\/(.+)/);
+  // Use [^?]+ to stop at query string (handles already-presigned URLs)
+  const match = s3Url.match(/https:\/\/([^.]+)\.s3\.([^.]+)\.amazonaws\.com\/([^?]+)/);
 
   if (!match) {
     // Not a valid S3 URL, return as-is
@@ -192,7 +193,10 @@ export async function getPresignedUrlFromS3Url(
     return s3Url;
   }
 
-  const [, bucket, region, key] = match;
+  const [, bucket, region, rawKey] = match;
+
+  // Decode the key in case it was URL-encoded (handles double-encoding issues)
+  const key = decodeURIComponent(rawKey);
 
   // Create a new S3 client for this specific bucket/region
   const accessKey = process.env.AWS_ACCESS_KEY_ID;

@@ -43,6 +43,7 @@ async function submitToAWSBatch(
     referenceImageUrl?: string;  // User's reference photo (REQUIRED for I2V)
     style?: string;
     audioUrl?: string;  // Audio URL for composition (optional)
+    audioStartTime?: number;  // Start time in audio file (seconds)
     // MANDATORY I2V parameters
     imageDescription: string;  // How the image should be used in video (required)
     // Pre-generated preview image (from two-step workflow)
@@ -80,7 +81,7 @@ async function submitToAWSBatch(
     // Build audio overlay settings if audio URL is provided
     const audioOverlaySettings: AudioOverlaySettings | undefined = params.audioUrl ? {
       audio_url: params.audioUrl,
-      audio_start_time: 0,
+      audio_start_time: params.audioStartTime || 0,
       audio_volume: 1.0,
       fade_in: 0.3,
       fade_out: 0.3,
@@ -386,6 +387,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       reference_image_id,
       reference_style,
       audio_asset_id,  // Required: audio track for composition
+      audio_start_time = 0,  // Start time in audio file (seconds)
       // I2V parameters - MANDATORY: image generation happens before video
       image_description,  // string: how the image should look/be used in video
       // Preview image (pre-generated from two-step workflow)
@@ -459,6 +461,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         referenceImageId: reference_image_id || null,
         referenceStyle: reference_style || null,
         audioAssetId: audio_asset_id,  // Required audio track
+        audioStartTime: audio_start_time,  // Start time in audio file (seconds)
         status: "PENDING",
         progress: 0,
         createdBy: user.id,
@@ -549,6 +552,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       referenceImageUrl,
       style: reference_style,
       audioUrl: audioPresignedUrl,  // Use fresh presigned URL instead of potentially expired s3Url
+      audioStartTime: audio_start_time,  // Start time in audio file (seconds)
       // I2V is MANDATORY - always generate image first
       imageDescription: image_description || prompt,  // Use prompt as fallback description
       // Pre-generated preview image (skip AI image generation step if provided)
