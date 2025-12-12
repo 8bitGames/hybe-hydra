@@ -221,11 +221,13 @@ RUN echo "=== Verifying PyOpenGL + OSMesa ===" \
 RUN pip3 install --no-cache-dir \
     google-generativeai==0.8.3
 
-# GCP Workload Identity Federation (WIF) for Vertex AI
+# GCP Workload Identity Federation (WIF) and Service Account for Vertex AI
 RUN pip3 install --no-cache-dir \
     google-auth>=2.36.0 \
     google-auth-httplib2>=0.2.0 \
-    requests>=2.31.0
+    requests>=2.31.0 \
+    PyJWT>=2.8.0 \
+    cryptography>=42.0.0
 
 # =============================================================================
 # STEP 5: Verify all installations work together

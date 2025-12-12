@@ -61,7 +61,7 @@ export interface PreviewImageResult {
 
 const AWS_S3_BUCKET = process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
 const POLL_INTERVAL_MS = 3000; // 3 seconds
-const MAX_WAIT_TIME_MS = 180000; // 3 minutes
+const MAX_WAIT_TIME_MS = 300000; // 5 minutes
 
 interface BatchImageGenerationResult {
   success: boolean;

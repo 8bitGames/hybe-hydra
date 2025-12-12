@@ -21,13 +21,17 @@ Legacy WIF Environment Variables (if not using service account JSON):
 import os
 import json
 import logging
+import time
 from typing import Optional
 from pathlib import Path
+import urllib.request
+import urllib.parse
 
 import google.auth
 from google.auth import impersonated_credentials
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
+import jwt  # PyJWT for signing
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +156,108 @@ class GCPAuthManager:
                 raise RuntimeError(f"Service account authentication failed: {e}")
 
         return self._sa_credentials
+
+    def _create_self_signed_jwt(self) -> str:
+        """
+        Create a self-signed JWT for direct use as Bearer token.
+
+        For Google Cloud APIs, self-signed JWTs with scopes in the 'aud' claim
+        can be used directly without token exchange. This is more reliable than
+        the OAuth2 token exchange which sometimes returns id_token instead of access_token.
+
+        Returns:
+            str: Self-signed JWT usable as Bearer token
+        """
+        if not self._service_account_json:
+            raise RuntimeError("Service account JSON required for JWT creation")
+
+        sa_info = json.loads(self._service_account_json)
+
+        # Create JWT for direct API access (self-signed JWT)
+        # For Vertex AI, the audience is the API endpoint
+        now = int(time.time())
+        jwt_payload = {
+            "iss": sa_info["client_email"],
+            "sub": sa_info["client_email"],
+            "aud": "https://aiplatform.googleapis.com/",  # Vertex AI audience
+            "iat": now,
+            "exp": now + 3600,  # 1 hour
+        }
+
+        # Sign the JWT with the private key
+        private_key = sa_info["private_key"]
+        signed_jwt = jwt.encode(
+            jwt_payload,
+            private_key,
+            algorithm="RS256",
+        )
+
+        logger.info("Self-signed JWT created for Vertex AI")
+        return signed_jwt
+
+    def _exchange_jwt_for_access_token(self) -> str:
+        """
+        Exchange a signed JWT for an OAuth2 access token.
+
+        If the exchange returns an id_token instead of access_token,
+        returns the id_token as it can be used as a bearer token for Google Cloud APIs.
+
+        Returns:
+            str: Access token or id_token usable as Bearer token
+        """
+        if not self._service_account_json:
+            raise RuntimeError("Service account JSON required for JWT exchange")
+
+        sa_info = json.loads(self._service_account_json)
+
+        # Create JWT for OAuth2 token exchange
+        now = int(time.time())
+        jwt_payload = {
+            "iss": sa_info["client_email"],
+            "sub": sa_info["client_email"],
+            "aud": "https://oauth2.googleapis.com/token",
+            "iat": now,
+            "exp": now + 3600,  # 1 hour
+            "scope": " ".join(self.scopes),
+        }
+
+        # Sign the JWT with the private key
+        private_key = sa_info["private_key"]
+        signed_jwt = jwt.encode(
+            jwt_payload,
+            private_key,
+            algorithm="RS256",
+        )
+
+        # Exchange JWT for access token
+        token_url = "https://oauth2.googleapis.com/token"
+        data = urllib.parse.urlencode({
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion": signed_jwt,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(token_url, data=data, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                result = json.loads(response.read().decode("utf-8"))
+
+                # Only access_token is valid for Vertex AI - id_token will not work
+                access_token = result.get("access_token")
+                if access_token:
+                    logger.info("Access token obtained via JWT exchange")
+                    return access_token
+
+                # id_token is NOT valid for Vertex AI, must use access_token
+                id_token = result.get("id_token")
+                if id_token and not access_token:
+                    logger.warning("OAuth2 returned id_token instead of access_token - this won't work for Vertex AI")
+                    raise RuntimeError("OAuth2 returned id_token instead of access_token")
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8")
+            logger.error(f"JWT exchange failed: {e.code} - {error_body}")
+            raise RuntimeError(f"JWT exchange failed: {error_body}")
 
     def _get_wif_credentials(self):
         """
@@ -295,23 +401,54 @@ class GCPAuthManager:
         """
         Get a valid access token for Vertex AI API calls.
 
+        For Service Account JSON authentication, uses self-signed JWT directly
+        as the Bearer token (most reliable method for Vertex AI).
+
         Args:
             force_refresh: Force token refresh even if not expired
 
         Returns:
-            str: Valid access token
+            str: Valid access token or self-signed JWT
         """
+        # For service account JSON, use self-signed JWT directly (most reliable)
+        # Self-signed JWT can be used directly as Bearer token for Google Cloud APIs
+        if self._use_service_account:
+            logger.info("Using self-signed JWT for Vertex AI authentication")
+            try:
+                # Self-signed JWT is the most reliable method
+                # It bypasses OAuth2 token exchange which sometimes returns id_token
+                jwt_token = self._create_self_signed_jwt()
+                logger.info("Self-signed JWT created successfully")
+                return jwt_token
+            except Exception as e:
+                logger.warning(f"Self-signed JWT creation failed: {e}")
+                logger.info("Falling back to OAuth2 token exchange...")
+
+                # Fallback 1: Try OAuth2 JWT exchange
+                try:
+                    return self._exchange_jwt_for_access_token()
+                except Exception as e2:
+                    logger.warning(f"OAuth2 JWT exchange failed: {e2}")
+                    logger.info("Falling back to library refresh...")
+                    # Fall through to library-based refresh
+
         credentials = self.get_credentials()
 
         # Check if refresh is needed
         if force_refresh or not credentials.valid:
             logger.info("Refreshing access token...")
             request = Request()
-            credentials.refresh(request)
-            logger.info("Access token refreshed successfully")
+            try:
+                credentials.refresh(request)
+                logger.info("Access token refreshed successfully")
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"Credentials refresh failed: {error_msg}")
+                # Re-raise to let caller handle
+                raise RuntimeError(f"Failed to refresh credentials: {error_msg}")
 
         if not credentials.token:
-            raise RuntimeError("Failed to obtain access token")
+            raise RuntimeError("Failed to obtain access token - no token after refresh")
 
         return credentials.token
 
