@@ -121,8 +121,8 @@ def build_image_to_video_filter(
     scaled_h = int(h * input_scale_factor)
 
     filters = [
-        # Scale input image to have room for motion
-        f"scale={scaled_w}:{scaled_h}:force_original_aspect_ratio=increase",
+        # Scale input image to have room for motion using high-quality Lanczos algorithm
+        f"scale={scaled_w}:{scaled_h}:force_original_aspect_ratio=increase:flags=lanczos",
         # Crop to exact dimensions (centered)
         f"crop={scaled_w}:{scaled_h}",
         # Apply Ken Burns motion

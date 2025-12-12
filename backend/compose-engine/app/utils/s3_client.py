@@ -1,6 +1,6 @@
 """AWS S3 client for file operations with optimized parallel downloads.
 
-Last update: 2025-12-03 12:55 - Added image validation for hotlink protection.
+Last update: 2025-12-12 - Added 403 fallback with placeholder image generation.
 """
 
 import boto3
@@ -9,12 +9,24 @@ import aiofiles
 import httpx
 import asyncio
 import os
+import logging
 from typing import Optional, List, Tuple
 from concurrent.futures import ThreadPoolExecutor
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import io
 
 from ..config import get_settings
+
+logger = logging.getLogger(__name__)
+
+# User-Agent rotation for bypassing hotlink protection
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Googlebot-Image/1.0",  # Some sites allow Googlebot
+    "facebookexternalhit/1.1",  # Facebook crawler - often allowed
+]
 
 
 def is_valid_image(data: bytes) -> bool:
@@ -35,6 +47,73 @@ def is_html_response(data: bytes) -> bool:
         return '<html' in text or '<!doctype' in text or '<head' in text
     except Exception:
         return False
+
+
+def create_placeholder_image(
+    local_path: str,
+    width: int = 1080,
+    height: int = 1920,
+    message: str = "Image Unavailable",
+) -> str:
+    """Create a placeholder image when download fails.
+
+    Args:
+        local_path: Path to save the placeholder image
+        width: Image width
+        height: Image height
+        message: Text to display on placeholder
+
+    Returns:
+        Path to the created placeholder image
+    """
+    # Create a dark gradient background
+    img = Image.new("RGB", (width, height), (30, 30, 40))
+    draw = ImageDraw.Draw(img)
+
+    # Add subtle gradient effect
+    for y in range(height):
+        # Gradient from top (darker) to bottom (slightly lighter)
+        shade = int(30 + (y / height) * 20)
+        for x in range(width):
+            # Add some noise for texture
+            noise = (x + y) % 5
+            draw.point((x, y), fill=(shade + noise, shade + noise, shade + noise + 5))
+
+    # Try to load a font, fallback to default
+    font = None
+    font_size = max(32, int(height * 0.025))
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ]
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+                break
+            except Exception:
+                continue
+
+    if font is None:
+        font = ImageFont.load_default()
+
+    # Draw centered text
+    bbox = draw.textbbox((0, 0), message, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    x = (width - text_width) // 2
+    y = (height - text_height) // 2
+
+    # Draw text shadow
+    draw.text((x + 2, y + 2), message, font=font, fill=(0, 0, 0, 128))
+    # Draw main text
+    draw.text((x, y), message, font=font, fill=(150, 150, 160))
+
+    # Save as JPEG
+    img.save(local_path, "JPEG", quality=85)
+    logger.info(f"[S3Client] Created placeholder image: {local_path}")
+    return local_path
 
 # Shared thread pool for S3 operations (connection pooling)
 _s3_executor: Optional[ThreadPoolExecutor] = None

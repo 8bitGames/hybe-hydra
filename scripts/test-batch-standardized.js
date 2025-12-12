@@ -189,6 +189,7 @@ async function submitRender(token, testCase, assets, generationId) {
   logInfo('Generation ID', generationId);
   logInfo('Test Case', testCase.id);
   logInfo('Description', testCase.description);
+  logInfo('Style', testCase.styleSetId || 'clean_minimal');
   logInfo('Images', imagePayload.length);
   logInfo('Target Duration', `${testCase.targetDuration}s`);
   logInfo('Expected BPM', testCase.musicBpm);
@@ -200,7 +201,7 @@ async function submitRender(token, testCase, assets, generationId) {
     audioAssetId: '', // Would need to upload audio and get asset ID
     images: imagePayload,
     script: { lines: testCase.script.lines },
-    styleSetId: 'clean_minimal', // Using minimal style for testing
+    styleSetId: testCase.styleSetId || 'clean_minimal',
     aspectRatio: '9:16',
     targetDuration: testCase.targetDuration,
     audioStartTime: 0,

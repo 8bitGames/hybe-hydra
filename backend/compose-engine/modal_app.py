@@ -143,6 +143,8 @@ def render_video(request_data: dict) -> dict:
     print(f"[{job_id}] Vibe: {request.settings.vibe.value}")
     print(f"[{job_id}] Aspect Ratio: {request.settings.aspect_ratio.value}")
     print(f"[{job_id}] Target Duration: {request.settings.target_duration}s")
+    print(f"[{job_id}] Script: {request.script}")
+    print(f"[{job_id}] Script lines: {len(request.script.lines) if request.script and request.script.lines else 0}")
     print(f"[{job_id}] Callback: {'enabled' if callback_url else 'disabled'}")
 
     try:
