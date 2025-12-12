@@ -193,12 +193,18 @@ export default function PublishPage() {
           console.log("[Publish] Loading session from URL:", sessionIdFromUrl);
           await loadSession(sessionIdFromUrl);
         } catch (error) {
-          console.error("[Publish] Failed to load session from URL:", error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error("[Publish] Failed to load session from URL:", sessionIdFromUrl, errorMessage);
+          // If session doesn't exist, redirect to start page
+          if (errorMessage.includes("not found") || errorMessage.includes("PGRST116")) {
+            console.log("[Publish] Session not found, redirecting to start");
+            router.push("/start");
+          }
         }
       }
     };
     loadSessionFromUrl();
-  }, [activeSession, sessionIdFromUrl, loadSession]);
+  }, [activeSession, sessionIdFromUrl, loadSession, router]);
 
   // Clean up stale selections on mount
   // This handles the case where localStorage has stale IDs that don't match current videos

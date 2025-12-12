@@ -117,6 +117,7 @@ export interface VideoGenerationStats {
 export interface CreateVideoGenerationRequest {
   prompt: string;
   audio_asset_id?: string;  // Optional: audio track for composition
+  audio_start_time?: number;  // Start time in audio file (seconds)
   negative_prompt?: string;
   duration_seconds?: number;
   aspect_ratio?: string;

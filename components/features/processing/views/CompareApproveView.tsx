@@ -172,7 +172,7 @@ export function CompareApproveView({
   }
 
   return (
-    <div className={cn("flex flex-col h-full", className)}>
+    <div className={cn("flex flex-col h-full px-[7%] py-6", className)}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4 shrink-0">
         <Button

@@ -1657,6 +1657,7 @@ export default function CreatePage() {
         const response = await videoApi.create(selectedCampaignId, {
           prompt,
           audio_asset_id: audioAsset?.id,
+          audio_start_time: audioStartTime,  // Pass audio start time from AI analysis
           aspect_ratio: metadata.aspectRatio,
           duration_seconds: parseInt(metadata.duration) || 5,
           reference_style: metadata.style || undefined,

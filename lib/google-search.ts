@@ -187,13 +187,23 @@ export async function searchImagesMultiQuery(
 
     for (const result of results) {
       if (!seenUrls.has(result.link) && allResults.length < totalMaxResults) {
-        // Filter out unsupported image formats (AVIF, WebP may have issues)
         const url = result.link.toLowerCase();
+
+        // Filter out unsupported image formats (AVIF, WebP may have issues)
         if (url.endsWith('.avif') || url.includes('.avif?') ||
             url.includes('/avif/') || url.includes('format=avif')) {
           console.log(`[Google CSE] Skipping AVIF image: ${result.link.slice(0, 50)}...`);
           continue;
         }
+
+        // Filter out domains that block hotlinking (return 403 Forbidden)
+        // Wikipedia Commons, Wikimedia, and similar sites block server-side image downloads
+        if (url.includes('wikimedia.org') || url.includes('wikipedia.org') ||
+            url.includes('wiki.') || url.includes('/wiki/')) {
+          console.log(`[Google CSE] Skipping Wikipedia/Wikimedia image: ${result.link.slice(0, 60)}...`);
+          continue;
+        }
+
         seenUrls.add(result.link);
         allResults.push(result);
       }

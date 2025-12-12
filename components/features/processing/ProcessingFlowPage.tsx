@@ -208,9 +208,12 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
           console.log("[ProcessingFlowPage] AI Video variation status:", status);
 
           // Update each variation's progress in the store
+          // CRITICAL: Get current variations from store directly, not from React state
+          // React state `variations` may be stale during polling due to closure capture timing
+          const currentAIVariations = useProcessingSessionStore.getState().session?.variations || [];
           status.variations.forEach((apiVar) => {
             // Find matching variation in store by ID
-            const storeVar = variations.find((v) => v.id === apiVar.id);
+            const storeVar = currentAIVariations.find((v) => v.id === apiVar.id);
             if (!storeVar) return;
 
             // AI Video API returns status as lowercase
@@ -247,9 +250,12 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
           console.log("[ProcessingFlowPage] Compose variation status:", status);
 
           // Update each variation's progress in the store
+          // CRITICAL: Get current variations from store directly, not from React state
+          // React state `variations` may be stale during polling due to closure capture timing
+          const currentComposeVars = useProcessingSessionStore.getState().session?.variations || [];
           status.variations.forEach((apiVar) => {
             // Find matching variation in store by ID
-            const storeVar = variations.find((v) => v.id === apiVar.id);
+            const storeVar = currentComposeVars.find((v) => v.id === apiVar.id);
             if (!storeVar) return;
 
             if (apiVar.status === "COMPLETED" && apiVar.output_url) {

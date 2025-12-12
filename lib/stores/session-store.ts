@@ -715,8 +715,21 @@ export const useSessionStore = create<SessionStore>()(
             .eq("id", sessionId)
             .single();
 
-          if (error) throw error;
-          if (!data) throw new Error("Session not found");
+          if (error) {
+            // Provide better error message for common Supabase errors
+            const errorMessage = error.message || error.code || JSON.stringify(error);
+            console.error("[SessionStore] Supabase error loading session:", {
+              sessionId,
+              code: error.code,
+              message: error.message,
+              details: error.details,
+              hint: error.hint,
+            });
+            throw new Error(`Failed to load session: ${errorMessage}`);
+          }
+          if (!data) {
+            throw new Error(`Session not found: ${sessionId}`);
+          }
 
           session = dbRowToSession(data);
 
