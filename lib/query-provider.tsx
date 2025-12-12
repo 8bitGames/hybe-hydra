@@ -1,7 +1,11 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import {
+  PersistQueryClientProvider,
+  type Persister,
+  type PersistedClient as TanstackPersistedClient,
+} from "@tanstack/react-query-persist-client";
 import { useState, useEffect } from "react";
 import { get, set, del } from "idb-keyval";
 
@@ -10,36 +14,36 @@ import { get, set, del } from "idb-keyval";
 const CACHE_KEY = "hydra-query-cache";
 const CACHE_VERSION = 1;
 
-interface PersistedClient {
+interface CachedClient {
   timestamp: number;
   version: number;
-  clientState: unknown;
+  clientState: TanstackPersistedClient;
 }
 
-function createIDBPersister() {
+function createIDBPersister(): Persister {
   return {
-    persistClient: async (client: unknown) => {
+    persistClient: async (client: TanstackPersistedClient) => {
       try {
-        const persistedClient: PersistedClient = {
+        const cachedClient: CachedClient = {
           timestamp: Date.now(),
           version: CACHE_VERSION,
           clientState: client,
         };
-        await set(CACHE_KEY, persistedClient);
+        await set(CACHE_KEY, cachedClient);
       } catch (error) {
         console.warn("[QueryPersist] Failed to persist:", error);
       }
     },
-    restoreClient: async () => {
+    restoreClient: async (): Promise<TanstackPersistedClient | undefined> => {
       try {
-        const persistedClient = await get<PersistedClient>(CACHE_KEY);
+        const cachedClient = await get<CachedClient>(CACHE_KEY);
 
-        if (!persistedClient) {
+        if (!cachedClient) {
           return undefined;
         }
 
         // Check version - invalidate if version changed
-        if (persistedClient.version !== CACHE_VERSION) {
+        if (cachedClient.version !== CACHE_VERSION) {
           console.log("[QueryPersist] Cache version mismatch, clearing");
           await del(CACHE_KEY);
           return undefined;
@@ -47,14 +51,14 @@ function createIDBPersister() {
 
         // Check max age (24 hours)
         const maxAge = 24 * 60 * 60 * 1000;
-        if (Date.now() - persistedClient.timestamp > maxAge) {
+        if (Date.now() - cachedClient.timestamp > maxAge) {
           console.log("[QueryPersist] Cache expired, clearing");
           await del(CACHE_KEY);
           return undefined;
         }
 
-        console.log("[QueryPersist] Restored cache from", new Date(persistedClient.timestamp).toLocaleString());
-        return persistedClient.clientState;
+        console.log("[QueryPersist] Restored cache from", new Date(cachedClient.timestamp).toLocaleString());
+        return cachedClient.clientState;
       } catch (error) {
         console.warn("[QueryPersist] Failed to restore:", error);
         return undefined;

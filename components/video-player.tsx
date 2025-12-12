@@ -30,7 +30,7 @@ export function VideoPlayer({ src, className, aspectRatio = "16:9" }: VideoPlaye
   const [showControls, setShowControls] = useState(true);
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const controlsTimeoutRef = useRef<NodeJS.Timeout>();
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Format time as mm:ss
   const formatTime = (time: number) => {

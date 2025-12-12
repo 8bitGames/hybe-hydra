@@ -37,7 +37,7 @@ export function ModalVideoPlayer({
   const [hasError, setHasError] = useState(false);
   const [showControls, setShowControls] = useState(true);
 
-  const controlsTimeoutRef = useRef<NodeJS.Timeout>();
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const isPortrait = aspectRatio === "9:16";
 
   console.log("[ModalVideoPlayer] Render:", { src: src?.substring(0, 60), aspectRatio, isPortrait });
