@@ -1,13 +1,25 @@
-"""Text overlay effects via FFmpeg drawtext filter.
+"""Text overlay effects via Pillow + FFmpeg overlay filter.
 
-Replaces MoviePy's TextClip with native FFmpeg drawtext filter.
-This is much faster as it processes in a single FFmpeg pass.
+This module renders text using Pillow (PIL) and composites it onto video
+using FFmpeg's overlay filter. This approach avoids the drawtext filter
+which requires FFmpeg to be compiled with --enable-libfreetype.
+
+The workflow:
+1. Render each text overlay as a transparent PNG using Pillow
+2. Use FFmpeg's overlay filter to composite the images onto the video
 """
 
+import asyncio
+import logging
 import os
+import subprocess
 import textwrap
 from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple
+
+from PIL import Image, ImageDraw, ImageFont
+
+logger = logging.getLogger(__name__)
 
 # Font path (same as text_overlay.py)
 FONTS_DIR = os.path.join(
@@ -281,6 +293,282 @@ def build_drawtext_filter(
     ])
 
     return ":".join(filter_parts)
+
+
+# =============================================================================
+# PILLOW-BASED TEXT OVERLAY (Alternative to drawtext filter)
+# =============================================================================
+
+
+def get_pillow_font(size: int) -> ImageFont.FreeTypeFont:
+    """Get a Pillow-compatible font.
+
+    Args:
+        size: Font size in pixels
+
+    Returns:
+        ImageFont object
+    """
+    # Try fonts in order of preference
+    font_candidates = [
+        # CJK fonts (support Korean/Chinese/Japanese)
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Bold.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        # Regular Noto Sans
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        # DejaVu (common fallback)
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        # Liberation fonts
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        # macOS fonts
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ]
+
+    for font_path in font_candidates:
+        if os.path.exists(font_path):
+            try:
+                return ImageFont.truetype(font_path, size)
+            except Exception as e:
+                logger.debug(f"Could not load font {font_path}: {e}")
+                continue
+
+    # Fallback to default font
+    logger.warning("No TrueType fonts found, using default font")
+    return ImageFont.load_default()
+
+
+def render_text_image(
+    text: str,
+    video_size: Tuple[int, int],
+    font_size: Optional[int] = None,
+    style: str = "minimal",
+) -> Image.Image:
+    """Render text to a transparent PNG image using Pillow.
+
+    Args:
+        text: Text to render
+        video_size: (width, height) of the video
+        font_size: Font size (auto-calculated if None)
+        style: Style name from STYLE_CONFIGS
+
+    Returns:
+        PIL Image with transparent background and rendered text
+    """
+    width, height = video_size
+
+    # Font size: 2.8% of height (matching original)
+    if font_size is None:
+        font_size = max(28, int(height * 0.028))
+
+    # Get style config
+    config = STYLE_CONFIGS.get(style, STYLE_CONFIGS["minimal"])
+
+    # Parse colors
+    text_color = config.get("fontcolor", "white")
+    border_color = config.get("bordercolor", "black")
+    border_width = config.get("borderw", 2)
+
+    # Convert color names to RGBA
+    color_map = {
+        "white": (255, 255, 255, 255),
+        "black": (0, 0, 0, 255),
+        "red": (255, 0, 0, 255),
+        "yellow": (255, 255, 0, 255),
+    }
+    text_rgba = color_map.get(text_color, (255, 255, 255, 255))
+    border_rgba = color_map.get(border_color, (0, 0, 0, 255))
+
+    # Create transparent image
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # Get font
+    font = get_pillow_font(font_size)
+
+    # Auto line wrap
+    max_chars = 16 if width < height else 30
+    wrapped_text = "\n".join(textwrap.wrap(text, width=max_chars))
+
+    # Limit to 2 lines
+    lines = wrapped_text.split("\n")
+    if len(lines) > 2:
+        wrapped_text = "\n".join(lines[:2])
+        if len(lines) > 2:
+            wrapped_text = wrapped_text.rstrip() + "..."
+
+    # Calculate text bounding box
+    bbox = draw.textbbox((0, 0), wrapped_text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+
+    # Center text
+    x = (width - text_width) // 2
+    y = (height - text_height) // 2
+
+    # Draw border/stroke (draw text multiple times offset in each direction)
+    if border_width > 0:
+        for dx in range(-border_width, border_width + 1):
+            for dy in range(-border_width, border_width + 1):
+                if dx != 0 or dy != 0:
+                    draw.text((x + dx, y + dy), wrapped_text, font=font, fill=border_rgba)
+
+    # Draw main text
+    draw.text((x, y), wrapped_text, font=font, fill=text_rgba)
+
+    return img
+
+
+async def apply_text_overlays_pillow(
+    input_video: str,
+    output_video: str,
+    overlays: List["TextOverlaySpec"],
+    video_size: Tuple[int, int],
+    job_id: str = "",
+    ffmpeg_path: str = "ffmpeg",
+) -> bool:
+    """Apply text overlays using Pillow + FFmpeg overlay filter.
+
+    This is an alternative to drawtext that doesn't require libfreetype.
+
+    Args:
+        input_video: Path to input video
+        output_video: Path to output video
+        overlays: List of TextOverlaySpec objects
+        video_size: (width, height) tuple
+        job_id: Job ID for logging
+        ffmpeg_path: Path to FFmpeg binary
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not overlays:
+        logger.info(f"[{job_id}] No text overlays to apply")
+        # Just copy input to output
+        import shutil
+        shutil.copy(input_video, output_video)
+        return True
+
+    # Create temp directory for text images
+    temp_dir = os.path.dirname(output_video)
+    text_images = []
+
+    try:
+        # Render each text overlay to a PNG image
+        for i, spec in enumerate(overlays):
+            img = render_text_image(
+                text=spec.text,
+                video_size=video_size,
+                style=spec.style,
+            )
+            img_path = os.path.join(temp_dir, f"text_overlay_{i:03d}.png")
+            img.save(img_path, "PNG")
+            text_images.append({
+                "path": img_path,
+                "start": spec.start_time,
+                "end": spec.start_time + spec.duration,
+                "fade_in": ANIMATION_REGISTRY.get(spec.animation or "fade", {}).get("in_duration", 0.3),
+                "fade_out": ANIMATION_REGISTRY.get(spec.animation or "fade", {}).get("out_duration", 0.3),
+            })
+            logger.debug(f"[{job_id}] Rendered text image {i}: '{spec.text[:30]}...'")
+
+        # Build FFmpeg command with overlay filters
+        # We need to chain multiple overlays
+        inputs = ["-i", input_video]
+        for img in text_images:
+            inputs.extend(["-i", img["path"]])
+
+        # Build filter complex
+        filter_parts = []
+        current_input = "0:v"
+
+        for i, img in enumerate(text_images):
+            input_idx = i + 1  # Image inputs start at index 1
+            output_label = f"v{i+1}"
+
+            # Calculate enable expression for timing
+            start = img["start"]
+            end = img["end"]
+            fade_in = img["fade_in"]
+            fade_out = img["fade_out"]
+
+            # Alpha expression for fade in/out
+            # Use geq filter to apply alpha based on time
+            fade_in_end = start + fade_in
+            fade_out_start = end - fade_out
+
+            # Build alpha expression for overlay's format filter
+            # This creates smooth fade in/out
+            alpha_expr = (
+                f"if(lt(t\\,{start})\\,0\\,"
+                f"if(lt(t\\,{fade_in_end})\\,(t-{start})/{fade_in}\\,"
+                f"if(gt(t\\,{fade_out_start})\\,({end}-t)/{fade_out}\\,"
+                f"if(gt(t\\,{end})\\,0\\,1))))"
+            )
+
+            # Format the image input with alpha expression
+            filter_parts.append(
+                f"[{input_idx}:v]format=rgba,colorchannelmixer=aa='{alpha_expr}'[txt{i}]"
+            )
+
+            # Overlay filter
+            filter_parts.append(
+                f"[{current_input}][txt{i}]overlay=0:0:enable='between(t\\,{start}\\,{end})'[{output_label}]"
+            )
+            current_input = output_label
+
+        # Final output mapping
+        filter_complex = ";".join(filter_parts)
+
+        # Build FFmpeg command
+        cmd = [
+            ffmpeg_path, "-y",
+            *inputs,
+            "-filter_complex", filter_complex,
+            "-map", f"[{current_input}]",
+            "-map", "0:a?",  # Copy audio if present
+            "-c:v", "libx264",  # Use CPU encoder for compatibility
+            "-preset", "fast",
+            "-crf", "18",
+            "-c:a", "copy",
+            output_video,
+        ]
+
+        logger.info(f"[{job_id}] Applying {len(overlays)} text overlays with Pillow+overlay method")
+        logger.debug(f"[{job_id}] FFmpeg command: {' '.join(cmd[:10])}...")
+
+        # Run FFmpeg
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            logger.error(f"[{job_id}] FFmpeg overlay failed: {stderr.decode()[-500:]}")
+            return False
+
+        logger.info(f"[{job_id}] Text overlays applied successfully")
+        return True
+
+    except Exception as e:
+        logger.error(f"[{job_id}] Text overlay error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
+    finally:
+        # Cleanup temp images
+        for img in text_images:
+            try:
+                if os.path.exists(img["path"]):
+                    os.remove(img["path"])
+            except:
+                pass
 
 
 def build_text_overlay_chain(

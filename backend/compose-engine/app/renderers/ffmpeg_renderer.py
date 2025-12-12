@@ -41,7 +41,7 @@ from .ffmpeg_pipeline import (
 from .filters.ken_burns import get_diverse_motion_styles
 from .filters.color_grading import build_color_grade_filter, combine_filters
 from .filters.overlay_effects import build_overlay_chain
-from .filters.text_overlay import TextOverlaySpec, build_text_overlay_chain
+from .filters.text_overlay import TextOverlaySpec, build_text_overlay_chain, apply_text_overlays_pillow
 from .audio.audio_processor import AudioProcessor, AudioSettings
 from .utils.ffprobe import get_duration, get_video_info
 
@@ -376,11 +376,13 @@ class FFmpegRenderer:
                 logger.info(f"[{job_id}] [STEP 8/11] No effects to apply (skipped)")
 
             # =================================================================
-            # STEP 9: TEXT OVERLAYS (FFmpeg drawtext)
+            # STEP 9: TEXT OVERLAYS (Pillow + FFmpeg overlay filter)
             # =================================================================
+            # NOTE: Using Pillow-based rendering instead of FFmpeg drawtext
+            # because drawtext requires libfreetype which may not be compiled in
             step_start = time.time()
             await self._update_progress(progress_callback, job_id, 80, "Adding text overlays")
-            logger.info(f"[{job_id}] [STEP 9/11] Adding text overlays...")
+            logger.info(f"[{job_id}] [STEP 9/11] Adding text overlays (Pillow method)...")
 
             video_info = await get_video_info(video_path)
             video_duration = video_info["duration"]
@@ -414,22 +416,22 @@ class FFmpegRenderer:
                     text_specs.append(spec)
                     logger.debug(f"[{job_id}] [STEP 9/11] Text {i+1}: '{line.text[:30]}...' @ {line.timing:.1f}s for {line.duration:.1f}s")
 
-                text_filter = build_text_overlay_chain(text_specs, output_size)
-                if text_filter:
-                    logger.info(f"[{job_id}] [STEP 9/11] Applying {len(text_specs)} text overlays with style={request.settings.text_style.value}")
-                    success = await apply_filter_to_video(
-                        input_path=video_path,
-                        output_path=text_output,
-                        filter_str=text_filter,
-                        use_gpu=is_nvenc_available(),
-                        job_id=job_id,
-                    )
-                    step_time = time.time() - step_start
-                    if success:
-                        video_path = text_output
-                        logger.info(f"[{job_id}] [STEP 9/11] Text overlays applied in {step_time:.1f}s")
-                    else:
-                        logger.warning(f"[{job_id}] [STEP 9/11] Text overlay failed, continuing without text")
+                # Use Pillow-based text overlay (no drawtext filter needed)
+                logger.info(f"[{job_id}] [STEP 9/11] Applying {len(text_specs)} text overlays with Pillow+overlay method")
+                success = await apply_text_overlays_pillow(
+                    input_video=video_path,
+                    output_video=text_output,
+                    overlays=text_specs,
+                    video_size=output_size,
+                    job_id=job_id,
+                    ffmpeg_path=self.ffmpeg,
+                )
+                step_time = time.time() - step_start
+                if success:
+                    video_path = text_output
+                    logger.info(f"[{job_id}] [STEP 9/11] Text overlays applied in {step_time:.1f}s")
+                else:
+                    logger.warning(f"[{job_id}] [STEP 9/11] Text overlay failed, continuing without text")
             else:
                 logger.info(f"[{job_id}] [STEP 9/11] No script text (skipped)")
 
@@ -551,25 +553,76 @@ class FFmpegRenderer:
         audio: Optional[AudioData],
         job_dir: str,
     ) -> Tuple[List[str], Optional[str]]:
-        """Download all assets in parallel."""
+        """Download all assets in parallel with fallback for failed images.
+
+        If an image fails to download (403, etc.), it will be replaced with
+        a duplicate of another successfully downloaded image.
+        """
         # Sort images by order
         sorted_images = sorted(images, key=lambda x: x.order)
 
-        # Download images
-        image_tasks = []
-        for i, img in enumerate(sorted_images):
-            path = os.path.join(job_dir, f"image_{i:03d}.jpg")
-            image_tasks.append(self.s3.download_file(img.url, path))
+        # Download images with error handling
+        image_paths = []
+        failed_indices = []
 
-        image_paths = await asyncio.gather(*image_tasks)
+        async def download_with_fallback(idx: int, img: ImageData) -> Tuple[int, Optional[str], Optional[Exception]]:
+            """Download single image, return (index, path, error)."""
+            path = os.path.join(job_dir, f"image_{idx:03d}.jpg")
+            try:
+                await self.s3.download_file(img.url, path)
+                return (idx, path, None)
+            except Exception as e:
+                logger.warning(f"[download] Failed to download image {idx}: {img.url[:60]}... - {e}")
+                return (idx, None, e)
+
+        # Download all images in parallel
+        tasks = [download_with_fallback(i, img) for i, img in enumerate(sorted_images)]
+        results = await asyncio.gather(*tasks)
+
+        # Separate successful and failed downloads
+        successful_paths = {}
+        for idx, path, error in results:
+            if path and not error:
+                successful_paths[idx] = path
+            else:
+                failed_indices.append(idx)
+
+        # Handle failed downloads - use duplicates of successful images
+        if failed_indices:
+            if not successful_paths:
+                # All images failed - this is fatal
+                raise ValueError(f"All {len(sorted_images)} images failed to download")
+
+            logger.warning(f"[download] {len(failed_indices)} images failed, using duplicates from successful downloads")
+
+            # Get list of successful paths to use as fallbacks
+            fallback_paths = list(successful_paths.values())
+
+            for failed_idx in failed_indices:
+                # Use a successful image as fallback (cycle through them)
+                fallback_src = fallback_paths[failed_idx % len(fallback_paths)]
+                fallback_dst = os.path.join(job_dir, f"image_{failed_idx:03d}.jpg")
+
+                # Copy the successful image to the failed slot
+                import shutil
+                shutil.copy(fallback_src, fallback_dst)
+                successful_paths[failed_idx] = fallback_dst
+                logger.info(f"[download] Image {failed_idx} replaced with duplicate of {os.path.basename(fallback_src)}")
+
+        # Build final ordered list
+        image_paths = [successful_paths[i] for i in range(len(sorted_images))]
 
         # Download audio if provided
         audio_path = None
         if audio and audio.url:
             audio_path = os.path.join(job_dir, "audio.mp3")
-            await self.s3.download_file(audio.url, audio_path)
+            try:
+                await self.s3.download_file(audio.url, audio_path)
+            except Exception as e:
+                logger.warning(f"[download] Audio download failed: {e}")
+                audio_path = None
 
-        return list(image_paths), audio_path
+        return image_paths, audio_path
 
     async def _get_audio_analysis(
         self,
@@ -688,18 +741,21 @@ class FFmpegRenderer:
         if settings.ai_effects:
             return settings.ai_effects
 
+        # SelectionConfig only controls number of effects to select
         config = SelectionConfig(
-            vibe=settings.vibe.value,
-            ai_prompt=settings.ai_prompt,
-            num_images=num_images,
-            bpm=bpm,
+            num_transitions=min(num_images, 5),
+            num_motions=3,
+            num_filters=2,
+            num_text_animations=2,
+            num_overlays=2,
         )
 
         try:
             # EffectSelector.select() is sync - need PromptAnalysis first
             from ..effects.analyzer import PromptAnalyzer
             analyzer = PromptAnalyzer()
-            analysis = analyzer.analyze(config.ai_prompt or config.vibe)
+            # Use vibe or ai_prompt for analysis
+            analysis = analyzer.analyze(settings.ai_prompt or settings.vibe.value)
 
             # Run sync selection in executor
             loop = asyncio.get_event_loop()

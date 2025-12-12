@@ -60,8 +60,16 @@ ENV PATH=/usr/local/cuda/bin:${PATH}
 # Note: --enable-nvenc/nvdec only need nv-codec-headers at build time
 # The actual encoding uses libnvidia-encode.so at runtime on GPU instances
 # IMPORTANT: drawtext filter requires libfreetype AND libfontconfig
+# We explicitly enable the drawtext filter to ensure it's compiled in
+# Cache bust: v2 - added drawtext debug
 RUN git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg \
     && cd /tmp/ffmpeg \
+    && echo "=== Checking freetype2 pkg-config ===" \
+    && pkg-config --modversion freetype2 || echo "freetype2 not found via pkg-config" \
+    && pkg-config --cflags freetype2 || echo "freetype2 cflags not found" \
+    && echo "=== Checking fontconfig pkg-config ===" \
+    && pkg-config --modversion fontconfig || echo "fontconfig not found via pkg-config" \
+    && echo "=== Starting FFmpeg configure ===" \
     && ./configure \
         --prefix=/usr/local \
         --enable-gpl \
@@ -80,6 +88,8 @@ RUN git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git /tmp/ffm
         --enable-libfontconfig \
         --enable-libfribidi \
         --enable-openssl \
+    && echo "=== Checking ffbuild/config.mak for drawtext ===" \
+    && grep -i "drawtext\|freetype" ffbuild/config.mak || echo "No drawtext/freetype in config.mak" \
     && make -j$(nproc) \
     && make install \
     && ldconfig \
@@ -97,16 +107,18 @@ ENV PATH=/usr/local/nvidia/bin:/usr/local/bin:/usr/bin:/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
 ENV NVIDIA_VISIBLE_DEVICES=all
 
-# Verify FFmpeg is correctly installed with NVENC and drawtext
+# Verify FFmpeg is correctly installed with NVENC
+# NOTE: Text overlays now use Pillow + overlay filter instead of drawtext
+# This avoids needing libfreetype compiled into FFmpeg
 RUN echo "=== FFmpeg NVENC Verification ===" \
     && which ffmpeg \
     && ffmpeg -version | head -5 \
     && echo "=== Checking for NVENC encoders ===" \
     && ffmpeg -encoders 2>&1 | grep -i nvenc \
     && echo "=== NVENC encoders found ===" \
-    && echo "=== Checking for drawtext filter ===" \
-    && ffmpeg -filters 2>&1 | grep drawtext \
-    && echo "=== drawtext filter found ==="
+    && echo "=== Checking for overlay filter ===" \
+    && ffmpeg -filters 2>&1 | grep overlay \
+    && echo "=== overlay filter found (used for text overlays) ==="
 
 # =============================================================================
 # STEP 2: Install Python 3.11
