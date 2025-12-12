@@ -41,7 +41,7 @@ from .ffmpeg_pipeline import (
 from .filters.ken_burns import get_diverse_motion_styles
 from .filters.color_grading import build_color_grade_filter, combine_filters
 from .filters.overlay_effects import build_overlay_chain
-from .filters.text_overlay import TextOverlaySpec, build_text_overlay_chain, apply_text_overlays_pillow
+from .filters.text_overlay import TextOverlaySpec, build_text_overlay_chain, apply_text_overlays_pillow, apply_text_overlays_ass
 from .audio.audio_processor import AudioProcessor, AudioSettings
 from .utils.ffprobe import get_duration, get_video_info
 
@@ -388,19 +388,41 @@ class FFmpegRenderer:
             video_duration = video_info["duration"]
             logger.info(f"[{job_id}] [STEP 9/11] Video info: {video_info['width']}x{video_info['height']}, {video_duration:.1f}s, {video_info['fps']:.0f}fps")
 
-            # DEBUG: Log script data before conditional
-            logger.info(f"[{job_id}] [STEP 9/11] DEBUG: request.script = {request.script}")
-            logger.info(f"[{job_id}] [STEP 9/11] DEBUG: request.script truthy = {bool(request.script)}")
+            # ============ TEXT OVERLAY DEBUG LOGGING ============
+            logger.info(f"[{job_id}] [STEP 9/11] === TEXT OVERLAY INPUT DEBUG ===")
+            logger.info(f"[{job_id}] [STEP 9/11] Video duration: {video_duration:.2f}s")
+            logger.info(f"[{job_id}] [STEP 9/11] Video size: {output_size}")
+            logger.info(f"[{job_id}] [STEP 9/11] Input video path: {video_path}")
+            logger.info(f"[{job_id}] [STEP 9/11] request.script exists: {request.script is not None}")
+            logger.info(f"[{job_id}] [STEP 9/11] request.script type: {type(request.script)}")
+
             if request.script:
-                logger.info(f"[{job_id}] [STEP 9/11] DEBUG: request.script.lines = {request.script.lines}")
-                logger.info(f"[{job_id}] [STEP 9/11] DEBUG: request.script.lines truthy = {bool(request.script.lines)}")
-                logger.info(f"[{job_id}] [STEP 9/11] DEBUG: len(request.script.lines) = {len(request.script.lines)}")
+                logger.info(f"[{job_id}] [STEP 9/11] request.script.lines exists: {request.script.lines is not None}")
+                logger.info(f"[{job_id}] [STEP 9/11] request.script.lines type: {type(request.script.lines)}")
+                if request.script.lines:
+                    logger.info(f"[{job_id}] [STEP 9/11] Number of script lines: {len(request.script.lines)}")
+                    for idx, line in enumerate(request.script.lines):
+                        logger.info(f"[{job_id}] [STEP 9/11] Line {idx+1}: text='{line.text}', timing={line.timing}s, duration={line.duration}s")
+                else:
+                    logger.info(f"[{job_id}] [STEP 9/11] request.script.lines is empty or None")
+            else:
+                logger.info(f"[{job_id}] [STEP 9/11] request.script is None")
 
             if request.script and request.script.lines:
-                logger.info(f"[{job_id}] [STEP 9/11] Script has {len(request.script.lines)} text lines")
+                logger.info(f"[{job_id}] [STEP 9/11] === PROCESSING {len(request.script.lines)} TEXT LINES ===")
                 text_output = os.path.join(job_dir, f"{job_id}_text.mp4")
+                logger.info(f"[{job_id}] [STEP 9/11] Text output path: {text_output}")
+
+                # Adjust timings to fit video duration
+                logger.info(f"[{job_id}] [STEP 9/11] Adjusting script timings to fit video duration {video_duration:.2f}s...")
                 adjusted_script = self._adjust_script_timings(request.script, video_duration, job_id)
+                logger.info(f"[{job_id}] [STEP 9/11] Adjusted script has {len(adjusted_script.lines)} lines (may be fewer if some exceeded video duration)")
+
+                for idx, line in enumerate(adjusted_script.lines):
+                    logger.info(f"[{job_id}] [STEP 9/11] Adjusted line {idx+1}: text='{line.text}', timing={line.timing:.2f}s, duration={line.duration:.2f}s, end={line.timing + line.duration:.2f}s")
+
                 text_animations = ai_effects.text_animations if ai_effects else None
+                logger.info(f"[{job_id}] [STEP 9/11] Text animations: {text_animations}")
 
                 # Build text overlay specs
                 text_specs = []
@@ -414,11 +436,16 @@ class FFmpegRenderer:
                         animation=anim,
                     )
                     text_specs.append(spec)
-                    logger.debug(f"[{job_id}] [STEP 9/11] Text {i+1}: '{line.text[:30]}...' @ {line.timing:.1f}s for {line.duration:.1f}s")
+                    logger.info(f"[{job_id}] [STEP 9/11] TextOverlaySpec {i+1}: text='{line.text}', start={line.timing:.2f}s, dur={line.duration:.2f}s, end={line.timing + line.duration:.2f}s, style={request.settings.text_style.value}, anim={anim}")
 
-                # Use Pillow-based text overlay (no drawtext filter needed)
-                logger.info(f"[{job_id}] [STEP 9/11] Applying {len(text_specs)} text overlays with Pillow+overlay method")
-                success = await apply_text_overlays_pillow(
+                # Use ASS subtitles - simpler and more reliable than Pillow overlay
+                logger.info(f"[{job_id}] [STEP 9/11] === APPLYING ASS SUBTITLES ===")
+                logger.info(f"[{job_id}] [STEP 9/11] Method: ASS subtitles (libass)")
+                logger.info(f"[{job_id}] [STEP 9/11] Input: {video_path}")
+                logger.info(f"[{job_id}] [STEP 9/11] Output: {text_output}")
+                logger.info(f"[{job_id}] [STEP 9/11] Overlays count: {len(text_specs)}")
+
+                success = await apply_text_overlays_ass(
                     input_video=video_path,
                     output_video=text_output,
                     overlays=text_specs,
@@ -427,13 +454,16 @@ class FFmpegRenderer:
                     ffmpeg_path=self.ffmpeg,
                 )
                 step_time = time.time() - step_start
+
                 if success:
                     video_path = text_output
-                    logger.info(f"[{job_id}] [STEP 9/11] Text overlays applied in {step_time:.1f}s")
+                    logger.info(f"[{job_id}] [STEP 9/11] ✓ Text overlays applied successfully in {step_time:.1f}s")
+                    logger.info(f"[{job_id}] [STEP 9/11] Output video: {video_path}")
                 else:
-                    logger.warning(f"[{job_id}] [STEP 9/11] Text overlay failed, continuing without text")
+                    logger.error(f"[{job_id}] [STEP 9/11] ✗ Text overlay FAILED after {step_time:.1f}s")
+                    logger.warning(f"[{job_id}] [STEP 9/11] Continuing without text overlays")
             else:
-                logger.info(f"[{job_id}] [STEP 9/11] No script text (skipped)")
+                logger.info(f"[{job_id}] [STEP 9/11] No script text to apply (skipped)")
 
             # =================================================================
             # STEP 10: ADD AUDIO (FFmpeg)

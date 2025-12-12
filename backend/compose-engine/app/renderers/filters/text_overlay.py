@@ -497,17 +497,44 @@ async def apply_text_overlays_pillow(
 
             # Alpha expression for fade in/out
             # Use geq filter to apply alpha based on time
-            fade_in_end = start + fade_in
-            fade_out_start = end - fade_out
+            duration = end - start
 
-            # Build alpha expression for overlay's format filter
-            # This creates smooth fade in/out
-            alpha_expr = (
-                f"if(lt(t\\,{start})\\,0\\,"
-                f"if(lt(t\\,{fade_in_end})\\,(t-{start})/{fade_in}\\,"
-                f"if(gt(t\\,{fade_out_start})\\,({end}-t)/{fade_out}\\,"
-                f"if(gt(t\\,{end})\\,0\\,1))))"
-            )
+            # Handle edge case: if duration is too short for fades, scale them down
+            min_duration_for_fades = fade_in + fade_out
+            if duration <= 0.1:
+                # Duration too short, skip fades entirely - just show at full alpha
+                logger.warning(f"[text_overlay] Text {i} duration {duration:.2f}s too short, using constant alpha")
+                alpha_expr = f"if(between(t\\,{start}\\,{end})\\,1\\,0)"
+            elif duration < min_duration_for_fades:
+                # Scale fades proportionally to fit within duration
+                scale = duration / min_duration_for_fades * 0.9  # Leave 10% at full alpha
+                fade_in = fade_in * scale
+                fade_out = fade_out * scale
+                logger.info(f"[text_overlay] Text {i} scaled fades to {fade_in:.2f}/{fade_out:.2f}s for {duration:.2f}s duration")
+
+                fade_in_end = start + fade_in
+                fade_out_start = end - fade_out
+
+                # Build alpha expression with scaled fades
+                alpha_expr = (
+                    f"if(lt(t\\,{start})\\,0\\,"
+                    f"if(lt(t\\,{fade_in_end})\\,(t-{start})/{fade_in}\\,"
+                    f"if(gt(t\\,{fade_out_start})\\,({end}-t)/{fade_out}\\,"
+                    f"if(gt(t\\,{end})\\,0\\,1))))"
+                )
+            else:
+                # Normal case: duration is long enough for standard fades
+                fade_in_end = start + fade_in
+                fade_out_start = end - fade_out
+
+                # Build alpha expression for overlay's format filter
+                # This creates smooth fade in/out
+                alpha_expr = (
+                    f"if(lt(t\\,{start})\\,0\\,"
+                    f"if(lt(t\\,{fade_in_end})\\,(t-{start})/{fade_in}\\,"
+                    f"if(gt(t\\,{fade_out_start})\\,({end}-t)/{fade_out}\\,"
+                    f"if(gt(t\\,{end})\\,0\\,1))))"
+                )
 
             # Format the image input with alpha expression
             filter_parts.append(
@@ -569,6 +596,228 @@ async def apply_text_overlays_pillow(
                     os.remove(img["path"])
             except:
                 pass
+
+
+async def apply_text_overlays_ass(
+    input_video: str,
+    output_video: str,
+    overlays: List["TextOverlaySpec"],
+    video_size: Tuple[int, int],
+    job_id: str = "",
+    ffmpeg_path: str = "ffmpeg",
+) -> bool:
+    """Apply text overlays using ASS subtitles - simpler and more reliable.
+
+    ASS format has native support for fades via \\fad(fade_in_ms, fade_out_ms).
+    This is much more reliable than complex FFmpeg filter expressions.
+
+    Args:
+        input_video: Path to input video
+        output_video: Path to output video
+        overlays: List of TextOverlaySpec objects
+        video_size: (width, height) tuple
+        job_id: Job ID for logging
+        ffmpeg_path: Path to FFmpeg binary
+
+    Returns:
+        True if successful, False otherwise
+    """
+    logger.info(f"[{job_id}] [ASS] === ASS SUBTITLE OVERLAY START ===")
+    logger.info(f"[{job_id}] [ASS] Input video: {input_video}")
+    logger.info(f"[{job_id}] [ASS] Output video: {output_video}")
+    logger.info(f"[{job_id}] [ASS] Video size: {video_size}")
+    logger.info(f"[{job_id}] [ASS] Number of overlays: {len(overlays)}")
+    logger.info(f"[{job_id}] [ASS] FFmpeg path: {ffmpeg_path}")
+
+    if not overlays:
+        logger.info(f"[{job_id}] [ASS] No text overlays to apply - returning True")
+        return True
+
+    # Log each overlay detail
+    for i, overlay in enumerate(overlays):
+        logger.info(f"[{job_id}] [ASS] Overlay {i+1}: text='{overlay.text}', start={overlay.start_time:.2f}s, duration={overlay.duration:.2f}s, end={overlay.start_time + overlay.duration:.2f}s, style={overlay.style}, animation={overlay.animation}")
+
+    width, height = video_size
+    job_dir = os.path.dirname(output_video)
+    ass_path = os.path.join(job_dir, f"{job_id}_subtitles.ass")
+    logger.info(f"[{job_id}] [ASS] ASS file path: {ass_path}")
+    logger.info(f"[{job_id}] [ASS] Job directory: {job_dir}")
+
+    try:
+        # Generate ASS subtitle file
+        logger.info(f"[{job_id}] [ASS] Generating ASS subtitle file...")
+        ass_content = _generate_ass_file(overlays, width, height, job_id)
+        logger.info(f"[{job_id}] [ASS] ASS content length: {len(ass_content)} bytes")
+        logger.info(f"[{job_id}] [ASS] ASS content preview:\n{ass_content[:1000]}...")
+
+        with open(ass_path, "w", encoding="utf-8") as f:
+            f.write(ass_content)
+        logger.info(f"[{job_id}] [ASS] Written ASS file to: {ass_path}")
+
+        # Verify file was written
+        if os.path.exists(ass_path):
+            file_size = os.path.getsize(ass_path)
+            logger.info(f"[{job_id}] [ASS] ASS file size: {file_size} bytes")
+        else:
+            logger.error(f"[{job_id}] [ASS] ERROR: ASS file was not created!")
+            return False
+
+        # Build FFmpeg command with ASS filter
+        # Note: ass filter path needs escaping for Windows compatibility
+        escaped_ass_path = ass_path.replace("\\", "/").replace(":", "\\:")
+        logger.info(f"[{job_id}] [ASS] Escaped ASS path: {escaped_ass_path}")
+
+        cmd = [
+            ffmpeg_path, "-y",
+            "-i", input_video,
+            "-vf", f"ass='{escaped_ass_path}'",
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "18",
+            "-c:a", "copy",
+            output_video,
+        ]
+
+        logger.info(f"[{job_id}] [ASS] FFmpeg command: {' '.join(cmd)}")
+
+        # Run FFmpeg
+        logger.info(f"[{job_id}] [ASS] Executing FFmpeg...")
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+
+        logger.info(f"[{job_id}] [ASS] FFmpeg return code: {process.returncode}")
+
+        if stdout:
+            logger.info(f"[{job_id}] [ASS] FFmpeg stdout: {stdout.decode()[:500]}")
+        if stderr:
+            stderr_text = stderr.decode()
+            # Log last 1000 chars of stderr (most relevant part)
+            logger.info(f"[{job_id}] [ASS] FFmpeg stderr (last 1000 chars): {stderr_text[-1000:]}")
+
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "Unknown error"
+            logger.error(f"[{job_id}] [ASS] ✗ FFmpeg FAILED with return code {process.returncode}")
+            logger.error(f"[{job_id}] [ASS] Full error: {error_msg}")
+            return False
+
+        # Verify output file
+        if os.path.exists(output_video):
+            output_size = os.path.getsize(output_video)
+            logger.info(f"[{job_id}] [ASS] ✓ Output video created: {output_video} ({output_size} bytes)")
+        else:
+            logger.error(f"[{job_id}] [ASS] ✗ Output video was NOT created!")
+            return False
+
+        logger.info(f"[{job_id}] [ASS] === ASS SUBTITLE OVERLAY COMPLETE ===")
+        return True
+
+    except Exception as e:
+        logger.error(f"[{job_id}] [ASS] ✗ Exception: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"[{job_id}] [ASS] Traceback: {traceback.format_exc()}")
+        return False
+
+    finally:
+        # Cleanup ASS file
+        try:
+            if os.path.exists(ass_path):
+                os.remove(ass_path)
+                logger.info(f"[{job_id}] [ASS] Cleaned up ASS file: {ass_path}")
+        except Exception as cleanup_error:
+            logger.warning(f"[{job_id}] [ASS] Failed to cleanup ASS file: {cleanup_error}")
+
+
+def _generate_ass_file(
+    overlays: List["TextOverlaySpec"],
+    width: int,
+    height: int,
+    job_id: str = "",
+) -> str:
+    """Generate ASS subtitle file content.
+
+    Args:
+        overlays: List of TextOverlaySpec objects
+        width: Video width
+        height: Video height
+        job_id: Job ID for logging
+
+    Returns:
+        ASS file content as string
+    """
+    # ASS header with style definition
+    # PlayResX/Y define the coordinate system
+    # Style: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour,
+    #        Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle,
+    #        BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+
+    # Calculate font size relative to video height (roughly 5% of height)
+    font_size = max(36, int(height * 0.05))
+
+    # ASS Alignment uses numpad layout:
+    # 7=top-left,    8=top-center,    9=top-right
+    # 4=middle-left, 5=middle-center, 6=middle-right
+    # 1=bottom-left, 2=bottom-center, 3=bottom-right
+    # We use 5 for center of screen (both horizontal and vertical)
+    alignment = 5  # Middle-center
+
+    ass_header = f"""[Script Info]
+Title: Text Overlays
+ScriptType: v4.00+
+PlayResX: {width}
+PlayResY: {height}
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Noto Sans CJK KR,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,{alignment},0,0,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    # Generate dialogue lines
+    dialogue_lines = []
+    for i, overlay in enumerate(overlays):
+        start_time = _seconds_to_ass_time(overlay.start_time)
+        end_time = _seconds_to_ass_time(overlay.start_time + overlay.duration)
+
+        # Get fade durations (default 300ms)
+        fade_in_ms = int(ANIMATION_REGISTRY.get(overlay.animation or "fade", {}).get("in_duration", 0.3) * 1000)
+        fade_out_ms = int(ANIMATION_REGISTRY.get(overlay.animation or "fade", {}).get("out_duration", 0.3) * 1000)
+
+        # Escape special ASS characters and add fade effect
+        text = overlay.text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+
+        # Add fade effect: \fad(fade_in_ms, fade_out_ms)
+        text_with_fade = f"{{\\fad({fade_in_ms},{fade_out_ms})}}{text}"
+
+        dialogue_lines.append(
+            f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text_with_fade}"
+        )
+
+        logger.debug(f"[{job_id}] ASS line {i}: '{overlay.text[:30]}...' @ {start_time}->{end_time}")
+
+    return ass_header + "\n".join(dialogue_lines) + "\n"
+
+
+def _seconds_to_ass_time(seconds: float) -> str:
+    """Convert seconds to ASS time format (H:MM:SS.cc).
+
+    Args:
+        seconds: Time in seconds
+
+    Returns:
+        ASS time string (e.g., "0:00:05.50")
+    """
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    centisecs = int((seconds % 1) * 100)
+    return f"{hours}:{minutes:02d}:{secs:02d}.{centisecs:02d}"
 
 
 def build_text_overlay_chain(
