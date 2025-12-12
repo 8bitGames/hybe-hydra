@@ -125,7 +125,7 @@ export default function PublishPage() {
 
   // Sync workflow stage
   useWorkflowSync("publish");
-  const { goToProcessing, resetWorkflow } = useWorkflowNavigation();
+  const { goToProcessing } = useWorkflowNavigation();
 
   // Session sync for persisted state management
   const sessionIdFromUrl = searchParams.get("sessionId") || searchParams.get("session");
@@ -596,31 +596,28 @@ export default function PublishPage() {
   // Success dialog handlers
   const handleViewSchedule = useCallback(() => {
     setShowSuccessDialog(false);
-    // Clear all session states for clean slate
-    useProcessingSessionStore.getState().clearSession();
-    useSessionStore.getState().clearActiveSession();
-    resetWorkflow();
+    // Use clearActiveSessionKeepStorage to avoid race condition with Zustand hydration
+    // This clears in-memory state but keeps localStorage intact
+    useSessionStore.getState().clearActiveSessionKeepStorage();
     router.push("/publishing");
-  }, [resetWorkflow, router]);
+  }, [router]);
 
   const handleStartNew = useCallback(() => {
     setShowSuccessDialog(false);
-    // Clear all session states for fresh start
-    useProcessingSessionStore.getState().clearSession();
-    useSessionStore.getState().clearActiveSession();
-    resetWorkflow();
+    // Use clearActiveSessionKeepStorage to avoid race condition with Zustand hydration
+    // This clears in-memory state but keeps localStorage intact
+    // The new session will naturally overwrite localStorage when created
+    useSessionStore.getState().clearActiveSessionKeepStorage();
     router.push("/start");
-  }, [resetWorkflow, router]);
+  }, [router]);
 
   // Handle success dialog close (when user closes dialog without selecting an option)
   const handleSuccessDialogClose = useCallback(() => {
     setShowSuccessDialog(false);
-    // Clear all session states for fresh start
-    useProcessingSessionStore.getState().clearSession();
-    useSessionStore.getState().clearActiveSession();
-    resetWorkflow();
+    // Use clearActiveSessionKeepStorage to avoid race condition with Zustand hydration
+    useSessionStore.getState().clearActiveSessionKeepStorage();
     router.push("/start");
-  }, [resetWorkflow, router]);
+  }, [router]);
 
   // Convert currentVideo to VideoGeneration format for VariationModal
   const seedGeneration: VideoGeneration | null = currentVideo ? {

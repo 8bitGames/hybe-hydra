@@ -88,6 +88,37 @@ function getVariationKeywords(
     "clean", "clear", "sharp", "smooth", "rough", "sweet", "strong", "young",
   ]);
 
+  // Low priority: body parts and ambiguous words that need context
+  const lowPriorityWords = new Set([
+    "mane", "ears", "eyes", "face", "hair", "head", "hand", "hands", "arm",
+    "legs", "foot", "feet", "body", "skin", "nose", "mouth", "tail", "wing",
+    "view", "scene", "shot", "angle", "look", "part", "side", "top", "bottom",
+    "front", "back", "left", "right", "center", "middle", "edge", "corner",
+    "time", "moment", "hour", "day", "night", "morning", "evening", "hue",
+    "hues", "color", "colors", "tone", "tones", "texture", "textures",
+    "first", "person", "pov", "perspective", "frame", "footage", "clip",
+  ]);
+
+  // High priority: concrete visual subjects good for image search
+  const highPriorityWords = new Set([
+    // Animals
+    "horse", "horses", "horseback", "dog", "cat", "bird", "lion", "tiger",
+    "elephant", "bear", "wolf", "deer", "eagle", "dolphin", "whale", "dragon",
+    // Landscapes/Places
+    "mountain", "mountains", "ocean", "beach", "forest", "desert", "canyon",
+    "valley", "river", "lake", "waterfall", "island", "cliff", "cave", "volcano",
+    "city", "street", "building", "bridge", "tower", "castle", "palace", "temple",
+    // People/Characters
+    "cowboy", "rider", "dancer", "singer", "warrior", "knight", "samurai",
+    "astronaut", "pilot", "soldier", "chef", "artist", "musician", "woman", "man",
+    // Vehicles/Objects
+    "car", "motorcycle", "airplane", "ship", "boat", "train", "bicycle",
+    "guitar", "piano", "sword", "crown", "flower", "tree", "rose", "camera",
+    // Nature elements
+    "sky", "clouds", "stars", "moon", "sun", "rain", "snow", "storm",
+    "lightning", "rainbow", "aurora", "galaxy", "space", "sunset", "sunrise",
+  ]);
+
   const isLikelyAdjective = (word: string): boolean => {
     if (commonAdjectives.has(word)) return true;
     return adjectivePatterns.some(pattern => pattern.test(word));
@@ -118,16 +149,24 @@ function getVariationKeywords(
   // Take nouns first, then adjectives if needed
   const candidates = [...uniqueNouns, ...uniqueAdjectives];
 
-  // Sort by relevance: prefer medium-length words (4-10 chars) as they're often specific nouns
-  const scored = candidates.map(word => ({
-    word,
-    score: word.length >= 4 && word.length <= 10 ? 10 : (word.length > 10 ? 5 : 3),
-  }));
-  scored.sort((a, b) => b.score - a.score || a.word.length - b.word.length);
+  // Score words by priority and relevance
+  const scored = candidates.map(word => {
+    let score = 0;
+    // High priority subjects get +20
+    if (highPriorityWords.has(word)) score += 20;
+    // Low priority/ambiguous words get -10
+    if (lowPriorityWords.has(word)) score -= 10;
+    // Medium-length words (4-10 chars) get +5
+    if (word.length >= 4 && word.length <= 10) score += 5;
+    // Very long words get +2
+    else if (word.length > 10) score += 2;
+    return { word, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
 
   const extracted = scored.slice(0, 3).map(s => s.word);
 
-  console.log(`[getVariationKeywords] Extracted: ${extracted.join(", ")} from nouns: [${uniqueNouns.slice(0, 5).join(", ")}], adjectives: [${uniqueAdjectives.slice(0, 5).join(", ")}]`);
+  console.log(`[getVariationKeywords] Extracted: ${extracted.join(", ")} (scores: ${scored.slice(0, 5).map(s => `${s.word}:${s.score}`).join(", ")})`);
 
   // If extraction failed, use generic terms
   if (extracted.length === 0) {

@@ -187,6 +187,13 @@ export async function searchImagesMultiQuery(
 
     for (const result of results) {
       if (!seenUrls.has(result.link) && allResults.length < totalMaxResults) {
+        // Filter out unsupported image formats (AVIF, WebP may have issues)
+        const url = result.link.toLowerCase();
+        if (url.endsWith('.avif') || url.includes('.avif?') ||
+            url.includes('/avif/') || url.includes('format=avif')) {
+          console.log(`[Google CSE] Skipping AVIF image: ${result.link.slice(0, 50)}...`);
+          continue;
+        }
         seenUrls.add(result.link);
         allResults.push(result);
       }

@@ -577,16 +577,18 @@ export default function AllVideosPage() {
                 {/* Video Preview */}
                 <div className="flex justify-center">
                   <div className={cn(
-                    "relative bg-muted rounded-lg overflow-hidden",
+                    "relative bg-black rounded-lg overflow-hidden",
                     isPortraitVideo(selectedVideo)
-                      ? "w-[280px] aspect-[9/16]"
-                      : "w-full aspect-video"
+                      ? "w-[360px] aspect-[9/16]"
+                      : "w-full max-w-3xl aspect-video"
                   )}>
                     {getDetailVideoUrl(selectedVideo) ? (
                       <video
+                        key={selectedVideo.id}
                         src={getDetailVideoUrl(selectedVideo)!}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                         controls
+                        autoPlay
                         playsInline
                       />
                     ) : (

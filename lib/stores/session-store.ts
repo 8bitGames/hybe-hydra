@@ -266,6 +266,7 @@ interface SessionActions {
 
   // Reset
   clearActiveSession: () => void;
+  clearActiveSessionKeepStorage: () => void;
   reset: () => void;
 }
 
@@ -1209,6 +1210,38 @@ export const useSessionStore = create<SessionStore>()(
       console.log("[SessionStore] Cleared active session and all related storage");
     },
 
+    /**
+     * Clear active session WITHOUT clearing localStorage.
+     * Use this when starting a new project to avoid race conditions
+     * with Zustand persist hydration.
+     *
+     * The issue: clearing localStorage while hasHydrated() remains true
+     * causes a desync where the UI thinks it's hydrated but data is empty.
+     * By keeping localStorage intact, the new session will naturally overwrite it.
+     */
+    clearActiveSessionKeepStorage: () => {
+      // Only clear in-memory state, NOT localStorage
+      // This prevents race conditions with Zustand persist hydration
+
+      // Clear fast-cut sessionStorage (this is fine - it's session-scoped)
+      clearFastCutStorage();
+
+      // Clear processing session localStorage
+      clearProcessingSessionStorage();
+
+      // Reset workflow store in-memory state only (don't touch localStorage)
+      const workflowStore = useWorkflowStore.getState();
+      workflowStore.resetWorkflow();
+
+      set({
+        activeSession: null,
+        lastSavedAt: null,
+        saveError: null,
+      });
+
+      console.log("[SessionStore] Cleared active session (kept localStorage for hydration sync)");
+    },
+
     reset: () => {
       // Clear all session-related storage on full reset
       clearAllSessionStorage();
@@ -1299,4 +1332,5 @@ export const useSessionActions = () =>
     recoverFromLocal: state.recoverFromLocal,
     discardLocalRecovery: state.discardLocalRecovery,
     clearActiveSession: state.clearActiveSession,
+    clearActiveSessionKeepStorage: state.clearActiveSessionKeepStorage,
   }));

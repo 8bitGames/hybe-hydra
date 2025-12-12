@@ -386,8 +386,11 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
         variationBatchIdRef.current = response.data.batch_id;
 
         // Map API response to store variations (update IDs to match API)
+        // CRITICAL: Get current variations from store directly, not from React state
+        // React state `variations` may still have old value due to async state update timing
+        const currentVariations = useProcessingSessionStore.getState().session?.variations || [];
         response.data.variations.forEach((apiVar, index) => {
-          const storeVariation = variations[index];
+          const storeVariation = currentVariations[index];
           if (storeVariation) {
             updateVariation(storeVariation.id, {
               id: apiVar.id, // Update to API's ID for tracking
@@ -419,8 +422,11 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
         variationBatchIdRef.current = response.batch_id;
 
         // Map API response to store variations (update IDs to match API)
+        // CRITICAL: Get current variations from store directly, not from React state
+        // React state `variations` may still have old value due to async state update timing
+        const currentComposeVariations = useProcessingSessionStore.getState().session?.variations || [];
         response.variations.forEach((apiVar, index) => {
-          const storeVariation = variations[index];
+          const storeVariation = currentComposeVariations[index];
           if (storeVariation) {
             updateVariation(storeVariation.id, {
               id: apiVar.id, // Update to API's ID for tracking
