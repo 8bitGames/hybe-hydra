@@ -4,6 +4,7 @@
  * Handles authentication with Google Cloud Platform for Vertex AI API calls.
  *
  * Supports:
+ * - Service Account Key File (via GCP_SERVICE_ACCOUNT_KEY_FILE env var - recommended)
  * - Service Account JSON (via GOOGLE_SERVICE_ACCOUNT_JSON env var)
  * - Application Default Credentials (for local development with gcloud)
  * - Workload Identity Federation (for AWS environments)
@@ -12,7 +13,9 @@
  * Service Account JSON → OAuth2 Token → Vertex AI API
  */
 
-import { GoogleAuth, JWT, OAuth2Client } from 'google-auth-library';
+import { GoogleAuth } from 'google-auth-library';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Default configuration
 const DEFAULT_GCP_LOCATION = 'us-central1';
@@ -25,6 +28,7 @@ export interface GCPAuthConfig {
   projectId?: string;
   location?: string;
   serviceAccountJson?: string;
+  serviceAccountKeyFile?: string;
 }
 
 export interface AuthValidationResult {
@@ -54,17 +58,51 @@ export class GCPAuthManager {
     this.projectId = config.projectId || process.env.GCP_PROJECT_ID || 'hyb-hydra-dev';
     this.location = config.location || process.env.GCP_LOCATION || DEFAULT_GCP_LOCATION;
 
-    this.initializeAuth(config.serviceAccountJson);
+    this.initializeAuth({
+      serviceAccountJson: config.serviceAccountJson,
+      serviceAccountKeyFile: config.serviceAccountKeyFile,
+    });
   }
 
   /**
    * Initialize Google Auth client
    */
-  private initializeAuth(serviceAccountJson?: string): void {
-    const saJson = serviceAccountJson || process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  private initializeAuth(config: { serviceAccountJson?: string; serviceAccountKeyFile?: string } = {}): void {
+    // Priority: 1. Key File Path → 2. JSON String → 3. ADC
+    const keyFilePath = config.serviceAccountKeyFile || process.env.GCP_SERVICE_ACCOUNT_KEY_FILE;
+    const saJson = config.serviceAccountJson || process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
+    // 1. Try service account key file first (recommended)
+    if (keyFilePath) {
+      try {
+        const resolvedPath = path.resolve(keyFilePath);
+        if (fs.existsSync(resolvedPath)) {
+          const fileContent = fs.readFileSync(resolvedPath, 'utf-8');
+          const credentials = JSON.parse(fileContent);
+
+          // Override projectId from credentials if not set
+          if (!this.projectId || this.projectId === 'hyb-hydra-dev') {
+            this.projectId = credentials.project_id || this.projectId;
+          }
+
+          this.auth = new GoogleAuth({
+            credentials,
+            scopes: VERTEX_AI_SCOPES,
+            projectId: this.projectId,
+          });
+          console.log(`[GCPAuth] Initialized with service account key file: ${resolvedPath}`);
+          console.log(`[GCPAuth] Project: ${this.projectId}, Service Account: ${credentials.client_email}`);
+          return;
+        } else {
+          console.warn(`[GCPAuth] Key file not found: ${resolvedPath}`);
+        }
+      } catch (error) {
+        console.error('[GCPAuth] Failed to load service account key file:', error);
+      }
+    }
+
+    // 2. Try JSON string from environment variable
     if (saJson) {
-      // Parse service account JSON from environment variable
       try {
         const credentials = JSON.parse(saJson);
         this.auth = new GoogleAuth({
@@ -73,18 +111,19 @@ export class GCPAuthManager {
           projectId: this.projectId,
         });
         console.log('[GCPAuth] Initialized with service account JSON');
+        return;
       } catch (error) {
         console.error('[GCPAuth] Failed to parse service account JSON:', error);
         throw new Error('Invalid GOOGLE_SERVICE_ACCOUNT_JSON format');
       }
-    } else {
-      // Use Application Default Credentials
-      this.auth = new GoogleAuth({
-        scopes: VERTEX_AI_SCOPES,
-        projectId: this.projectId,
-      });
-      console.log('[GCPAuth] Initialized with Application Default Credentials');
     }
+
+    // 3. Fall back to Application Default Credentials
+    this.auth = new GoogleAuth({
+      scopes: VERTEX_AI_SCOPES,
+      projectId: this.projectId,
+    });
+    console.log('[GCPAuth] Initialized with Application Default Credentials');
   }
 
   /**

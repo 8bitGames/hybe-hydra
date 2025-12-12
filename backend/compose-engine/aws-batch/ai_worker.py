@@ -83,19 +83,35 @@ def load_secrets_from_aws():
     except ClientError as e:
         logger.warning(f"Could not load secrets from AWS Secrets Manager: {e}")
 
-    # Load GCP-specific config
+    # Load GCP Service Account JSON from Secrets Manager (preferred method)
     try:
-        gcp_secret_name = os.environ.get("GCP_SECRETS_NAME", "hydra/gcp-config")
-        response = client.get_secret_value(SecretId=gcp_secret_name)
-        gcp_config = json.loads(response["SecretString"])
+        gcp_sa_secret_name = os.environ.get("GCP_SERVICE_ACCOUNT_SECRET", "hydra/gcp-service-account")
+        response = client.get_secret_value(SecretId=gcp_sa_secret_name)
+        gcp_sa_config = json.loads(response["SecretString"])
 
-        for key, value in gcp_config.items():
-            if value:
-                os.environ[key] = value
-                logger.info(f"  Loaded GCP: {key}")
+        # Set GOOGLE_SERVICE_ACCOUNT_JSON from the secret
+        if "GOOGLE_SERVICE_ACCOUNT_JSON" in gcp_sa_config:
+            sa_json = gcp_sa_config["GOOGLE_SERVICE_ACCOUNT_JSON"]
+            if sa_json and sa_json != "REPLACE_ME_WITH_SERVICE_ACCOUNT_JSON":
+                os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = sa_json
+                logger.info("  Loaded GCP: GOOGLE_SERVICE_ACCOUNT_JSON (service account)")
 
-    except ClientError:
-        logger.info("GCP secrets not found, using defaults")
+    except ClientError as e:
+        logger.info(f"GCP service account secret not found ({gcp_sa_secret_name}), trying legacy config...")
+
+        # Fall back to legacy GCP config
+        try:
+            gcp_secret_name = os.environ.get("GCP_SECRETS_NAME", "hydra/gcp-config")
+            response = client.get_secret_value(SecretId=gcp_secret_name)
+            gcp_config = json.loads(response["SecretString"])
+
+            for key, value in gcp_config.items():
+                if value:
+                    os.environ[key] = value
+                    logger.info(f"  Loaded GCP (legacy): {key}")
+
+        except ClientError:
+            logger.info("GCP secrets not found, using WIF defaults")
 
 
 def setup_gcp_credentials():

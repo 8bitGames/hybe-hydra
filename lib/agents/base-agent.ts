@@ -1041,34 +1041,58 @@ export abstract class BaseAgent<TInput, TOutput> {
       }
     };
 
-    // Try direct JSON parse first
-    const directResult = tryParseJSON(content, 'Direct');
+    // Helper to try parsing with optional balancing
+    const tryParseWithBalance = (jsonStr: string, source: string): unknown | null => {
+      // Try direct first
+      const direct = tryParseJSON(jsonStr, source);
+      if (direct !== null) return direct;
+
+      // Try with balancing
+      const balanced = this.balanceJSON(jsonStr);
+      if (balanced !== jsonStr) {
+        const balancedResult = tryParseJSON(balanced, `${source} (balanced)`);
+        if (balancedResult !== null) return balancedResult;
+      }
+
+      return null;
+    };
+
+    // Step 1: Strip markdown code fences FIRST if present
+    // This handles: ```json ... ```, ``` ... ```, ```javascript ... ```
+    const codeBlockMatch = content.match(/^```(?:\w*)?\s*\n?([\s\S]*?)\n?```\s*$/);
+    if (codeBlockMatch) {
+      content = codeBlockMatch[1].trim();
+      console.log(`[${this.config.id}] Stripped markdown code fence`);
+    }
+
+    // Step 2: Try direct JSON parse
+    const directResult = tryParseWithBalance(content, 'Direct');
     if (directResult !== null) return directResult;
 
-    // Extract JSON from markdown code blocks: ```json ... ``` or ``` ... ```
+    // Step 3: Try to extract JSON from markdown code blocks embedded in text
     const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (jsonBlockMatch) {
       const extracted = jsonBlockMatch[1].trim();
-      const blockResult = tryParseJSON(extracted, 'Code block');
+      const blockResult = tryParseWithBalance(extracted, 'Code block');
       if (blockResult !== null) return blockResult;
     }
 
-    // Try to find JSON object in the content (starts with { and ends with })
-    const jsonObjectMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonObjectMatch) {
-      const objectResult = tryParseJSON(jsonObjectMatch[0], 'Extracted object');
+    // Step 4: Try to find JSON object using balanced extraction
+    const jsonObjectExtracted = this.extractBalancedJSON(content, '{', '}');
+    if (jsonObjectExtracted) {
+      const objectResult = tryParseWithBalance(jsonObjectExtracted, 'Extracted object');
       if (objectResult !== null) return objectResult;
     }
 
-    // Try to find JSON array in the content (starts with [ and ends with ])
-    const jsonArrayMatch = content.match(/\[[\s\S]*\]/);
-    if (jsonArrayMatch) {
-      const arrayResult = tryParseJSON(jsonArrayMatch[0], 'Extracted array');
+    // Step 5: Try to find JSON array using balanced extraction
+    const jsonArrayExtracted = this.extractBalancedJSON(content, '[', ']');
+    if (jsonArrayExtracted) {
+      const arrayResult = tryParseWithBalance(jsonArrayExtracted, 'Extracted array');
       if (arrayResult !== null) return arrayResult;
     }
 
-    // Try to fix common JSON issues and retry
-    console.log(`[${this.config.id}] Attempting JSON repair...`);
+    // Step 6: Try full repair pipeline
+    console.log(`[${this.config.id}] Attempting full JSON repair...`);
     const repairedContent = this.repairJSON(content);
     if (repairedContent !== content) {
       const repairedResult = tryParseJSON(repairedContent, 'Repaired');
@@ -1079,6 +1103,58 @@ export abstract class BaseAgent<TInput, TOutput> {
     // Don't return raw string as it will cause Zod validation to fail with confusing error
     console.error(`[${this.config.id}] All JSON parsing attempts failed. Full response (last 500 chars):\n${content.slice(-500)}`);
     throw new Error(`Failed to parse AI response as JSON. Response starts with: "${content.substring(0, 100)}..."`);
+  }
+
+  /**
+   * Extract balanced JSON from content using proper brace/bracket matching
+   * This is more accurate than greedy regex matching
+   */
+  private extractBalancedJSON(content: string, openChar: '{' | '[', closeChar: '}' | ']'): string | null {
+    const startIndex = content.indexOf(openChar);
+    if (startIndex === -1) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escapeNext = false;
+    let endIndex = -1;
+
+    for (let i = startIndex; i < content.length; i++) {
+      const char = content[i];
+
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === '\\' && inString) {
+        escapeNext = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === openChar) {
+          depth++;
+        } else if (char === closeChar) {
+          depth--;
+          if (depth === 0) {
+            endIndex = i;
+            break;
+          }
+        }
+      }
+    }
+
+    if (endIndex === -1) {
+      // JSON is truncated or malformed - return from start to end for repair
+      return content.substring(startIndex);
+    }
+
+    return content.substring(startIndex, endIndex + 1);
   }
 
   /**
@@ -1118,23 +1194,27 @@ export abstract class BaseAgent<TInput, TOutput> {
     // Fix missing commas after string values
     repaired = repaired.replace(/"(\s*)\n(\s*)"/g, '",\n$2"');
 
-    // Attempt to close truncated JSON (AI response cut off mid-way)
-    repaired = this.closeTruncatedJSON(repaired);
+    // Balance JSON braces/brackets (handles both excess and missing)
+    repaired = this.balanceJSON(repaired);
 
     return repaired;
   }
 
   /**
-   * Attempt to close truncated JSON by balancing braces/brackets
+   * Balance JSON by closing unclosed braces/brackets or removing excess ones
    */
-  private closeTruncatedJSON(content: string): string {
+  private balanceJSON(content: string): string {
     let result = content;
 
-    // Count open braces/brackets
+    // Count open braces/brackets while tracking positions
     let braceCount = 0;
     let bracketCount = 0;
     let inString = false;
     let escapeNext = false;
+
+    // Track positions of closing braces/brackets for removal if excess
+    const closingBracePositions: number[] = [];
+    const closingBracketPositions: number[] = [];
 
     for (let i = 0; i < result.length; i++) {
       const char = result[i];
@@ -1155,10 +1235,19 @@ export abstract class BaseAgent<TInput, TOutput> {
       }
 
       if (!inString) {
-        if (char === '{') braceCount++;
-        else if (char === '}') braceCount--;
-        else if (char === '[') bracketCount++;
-        else if (char === ']') bracketCount--;
+        if (char === '{') {
+          braceCount++;
+          closingBracePositions.length = 0; // Reset - only track consecutive closings at the end
+        } else if (char === '}') {
+          braceCount--;
+          closingBracePositions.push(i);
+        } else if (char === '[') {
+          bracketCount++;
+          closingBracketPositions.length = 0;
+        } else if (char === ']') {
+          bracketCount--;
+          closingBracketPositions.push(i);
+        }
       }
     }
 
@@ -1172,15 +1261,64 @@ export abstract class BaseAgent<TInput, TOutput> {
         if (!afterQuote.includes('"')) {
           // Truncate and close the string
           result = result.substring(0, lastQuote + 1) + '"';
-          console.log(`[repairJSON] Closed truncated string at position ${lastQuote}`);
+          console.log(`[balanceJSON] Closed truncated string at position ${lastQuote}`);
+          // Re-run balance after closing string
+          return this.balanceJSON(result);
         }
       }
     }
 
-    // Close any remaining open brackets/braces
-    // First close arrays, then objects (inner-to-outer order assumed)
+    // Handle EXCESS closing braces/brackets (negative count means excess)
+    if (braceCount < 0 || bracketCount < 0) {
+      console.log(`[balanceJSON] Removing excess: ${Math.abs(braceCount)} braces, ${Math.abs(bracketCount)} brackets`);
+
+      // Build list of positions to remove (from the end)
+      const positionsToRemove = new Set<number>();
+
+      // Remove excess closing braces from the end
+      let bracesToRemove = Math.abs(Math.min(0, braceCount));
+      for (let i = closingBracePositions.length - 1; i >= 0 && bracesToRemove > 0; i--) {
+        positionsToRemove.add(closingBracePositions[i]);
+        bracesToRemove--;
+      }
+
+      // Remove excess closing brackets from the end
+      let bracketsToRemove = Math.abs(Math.min(0, bracketCount));
+      for (let i = closingBracketPositions.length - 1; i >= 0 && bracketsToRemove > 0; i--) {
+        positionsToRemove.add(closingBracketPositions[i]);
+        bracketsToRemove--;
+      }
+
+      // Rebuild string without excess characters
+      if (positionsToRemove.size > 0) {
+        result = result
+          .split('')
+          .filter((_, i) => !positionsToRemove.has(i))
+          .join('');
+      }
+
+      // Recalculate counts after removal
+      braceCount = 0;
+      bracketCount = 0;
+      inString = false;
+      escapeNext = false;
+
+      for (const char of result) {
+        if (escapeNext) { escapeNext = false; continue; }
+        if (char === '\\') { escapeNext = true; continue; }
+        if (char === '"') { inString = !inString; continue; }
+        if (!inString) {
+          if (char === '{') braceCount++;
+          else if (char === '}') braceCount--;
+          else if (char === '[') bracketCount++;
+          else if (char === ']') bracketCount--;
+        }
+      }
+    }
+
+    // Handle UNCLOSED braces/brackets (positive count means unclosed)
     if (bracketCount > 0 || braceCount > 0) {
-      console.log(`[repairJSON] Closing ${bracketCount} brackets and ${braceCount} braces`);
+      console.log(`[balanceJSON] Closing ${bracketCount} brackets and ${braceCount} braces`);
 
       // Remove trailing comma if present (would be invalid before closing)
       result = result.replace(/,\s*$/, '');

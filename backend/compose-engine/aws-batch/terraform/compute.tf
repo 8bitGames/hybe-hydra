@@ -392,13 +392,10 @@ resource "aws_batch_job_definition" "ai_generation" {
     environment = [
       { name = "AWS_REGION", value = var.aws_region },
       { name = "SECRETS_NAME", value = "hydra/compose-engine" },
-      { name = "GCP_SECRETS_NAME", value = "hydra/gcp-config" },
+      { name = "GCP_SERVICE_ACCOUNT_SECRET", value = "hydra/gcp-service-account" },
       { name = "GCP_PROJECT_ID", value = var.gcp_project_id },
-      { name = "GCP_LOCATION", value = var.gcp_location },
-      { name = "GOOGLE_APPLICATION_CREDENTIALS", value = "/root/clientLibraryConfig.json" },
-      # WIF 1-hop authentication: WIF → Central SA (code-based impersonation)
-      { name = "GCP_CENTRAL_SERVICE_ACCOUNT", value = "sa-wif-aws-batch@${var.gcp_project_id}.iam.gserviceaccount.com" },
-      { name = "GCP_TARGET_SERVICE_ACCOUNT", value = "skip" }
+      { name = "GCP_LOCATION", value = var.gcp_location }
+      # Service Account JSON is loaded at runtime from AWS Secrets Manager
     ]
 
     logConfiguration = {

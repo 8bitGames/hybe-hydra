@@ -41,6 +41,29 @@ resource "aws_secretsmanager_secret_version" "compose_engine" {
   }
 }
 
+# GCP Service Account for Vertex AI (Veo 3.1, Imagen 3)
+resource "aws_secretsmanager_secret" "gcp_service_account" {
+  name        = "${var.project_name}/gcp-service-account"
+  description = "GCP Service Account JSON for Vertex AI authentication"
+
+  tags = {
+    Name        = "${var.project_name}-gcp-service-account"
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "gcp_service_account" {
+  secret_id = aws_secretsmanager_secret.gcp_service_account.id
+  secret_string = jsonencode({
+    GOOGLE_SERVICE_ACCOUNT_JSON = "REPLACE_ME_WITH_SERVICE_ACCOUNT_JSON"
+  })
+
+  lifecycle {
+    ignore_changes = [secret_string]  # Don't overwrite after initial creation
+  }
+}
+
 # S3 bucket configuration (non-sensitive, but grouped here)
 resource "aws_secretsmanager_secret" "s3_config" {
   name        = "${var.project_name}/s3-config"
@@ -86,7 +109,8 @@ resource "aws_iam_role_policy" "batch_job_secrets" {
         ]
         Resource = [
           aws_secretsmanager_secret.compose_engine.arn,
-          aws_secretsmanager_secret.s3_config.arn
+          aws_secretsmanager_secret.s3_config.arn,
+          aws_secretsmanager_secret.gcp_service_account.arn
         ]
       }
     ]
@@ -105,4 +129,14 @@ output "secrets_arn" {
 output "secrets_name" {
   description = "Name of the compose engine secrets"
   value       = aws_secretsmanager_secret.compose_engine.name
+}
+
+output "gcp_service_account_secret_arn" {
+  description = "ARN of the GCP service account secret"
+  value       = aws_secretsmanager_secret.gcp_service_account.arn
+}
+
+output "gcp_service_account_secret_name" {
+  description = "Name of the GCP service account secret"
+  value       = aws_secretsmanager_secret.gcp_service_account.name
 }

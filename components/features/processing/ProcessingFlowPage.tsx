@@ -53,6 +53,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
   const startVariationGeneration = useProcessingSessionStore((state) => state.startVariationGeneration);
   const cancelVariationGeneration = useProcessingSessionStore((state) => state.cancelVariationGeneration);
   const updateVariation = useProcessingSessionStore((state) => state.updateVariation);
+  const addVariation = useProcessingSessionStore((state) => state.addVariation);
   const setVariationCompleted = useProcessingSessionStore((state) => state.setVariationCompleted);
   const setVariationFailed = useProcessingSessionStore((state) => state.setVariationFailed);
   const selectedStyles = useProcessingSessionStore(selectSelectedStyles);
@@ -70,6 +71,9 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
   // Local state for initialization
   const [isInitializing, setIsInitializing] = useState(true);
+
+  // State to trigger polling start (used with batch ID ref)
+  const [variationBatchId, setVariationBatchId] = useState<string | null>(null);
 
   // Polling ref to track interval
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -176,7 +180,8 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
   // Poll for variation generation status when isGeneratingVariations is true
   useEffect(() => {
     // Only poll when generating variations and we have a batch ID
-    if (!isGeneratingVariations || !variationBatchIdRef.current || !originalVideo?.id) {
+    // Use variationBatchId state (not just ref) to trigger this effect when batch ID is set
+    if (!isGeneratingVariations || !variationBatchId || !originalVideo?.id) {
       // Clear any existing polling
       if (variationPollingRef.current) {
         clearInterval(variationPollingRef.current);
@@ -189,7 +194,8 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     const isAIVideo = contentType === "ai_video";
 
     const pollVariationStatus = async () => {
-      const batchId = variationBatchIdRef.current;
+      // Use state value (already checked above, but double-check for safety)
+      const batchId = variationBatchId;
       const seedId = originalVideo?.id;
 
       if (!batchId || !seedId) return;
@@ -243,6 +249,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
               variationPollingRef.current = null;
             }
             variationBatchIdRef.current = null;
+            setVariationBatchId(null);
           }
         } else {
           // Poll Compose variations API (uses /compose-variations endpoint)
@@ -281,6 +288,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
               variationPollingRef.current = null;
             }
             variationBatchIdRef.current = null;
+            setVariationBatchId(null);
           }
         }
       } catch (error) {
@@ -302,7 +310,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
         variationPollingRef.current = null;
       }
     };
-  }, [isGeneratingVariations, originalVideo?.id, session?.contentType, variations, updateVariation, setVariationCompleted, setVariationFailed]);
+  }, [isGeneratingVariations, variationBatchId, originalVideo?.id, session?.contentType, variations, updateVariation, setVariationCompleted, setVariationFailed]);
 
   // Navigation handlers
   const handleBack = useCallback(() => {
@@ -339,9 +347,6 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
   }, [setState]);
 
   const handleStartGeneration = useCallback(async () => {
-    // First update store to show generating UI with pending variations
-    startVariationGeneration();
-
     // Get the original video ID (seed generation) for API call
     const seedGenerationId = originalVideo?.id;
     if (!seedGenerationId) {
@@ -355,58 +360,80 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     try {
       if (isAIVideo) {
         // AI Video (VEO) variation generation
+        // NOTE: For AI Video, we call API FIRST, then create store variations from response
+        // This is because the API creates COMBINATIONS of presets, not 1:1 style mappings
         console.log("[ProcessingFlowPage] Starting AI Video variations for:", seedGenerationId);
 
         // Map selected styles to style_categories for AI Video API
-        // Style Sets map to style_categories: viral_tiktok -> tiktok, cinematic_mood -> cinematic, etc.
         const styleCategoryMap: Record<string, string> = {
           viral_tiktok: "tiktok",
           cinematic_mood: "cinematic",
-          dynamic_energy: "dynamic",
-          minimal_clean: "minimal",
-          retro_aesthetic: "retro",
-          premium_brand: "premium",
-          experimental_art: "experimental",
-          emotional_story: "emotional",
+          clean_minimal: "minimal",
+          energetic_beat: "dynamic",
         };
 
         const styleCategories = selectedStyles.map(
           (styleId) => styleCategoryMap[styleId] || styleId
         );
 
-        // Call AI Video variations API
+        // Call AI Video variations API FIRST
         const response = await variationsApi.create(seedGenerationId, {
-          style_categories: styleCategories.length > 0 ? styleCategories : ["tiktok"], // Default to tiktok
-          enable_prompt_variation: true,
-          prompt_variation_types: ["camera", "expression"],
+          style_categories: styleCategories.length > 0 ? styleCategories : ["tiktok"],
+          enable_prompt_variation: false, // Disable prompt variations for simpler mapping
           max_variations: selectedStyles.length || 4,
         });
 
-        if (!response.data) {
-          throw new Error("Failed to create AI Video variations");
+        if (!response.data || !response.data.variations || response.data.variations.length === 0) {
+          console.error("[ProcessingFlowPage] AI Video API returned no variations:", response);
+          throw new Error("Failed to create AI Video variations - no variations returned");
         }
 
         console.log("[ProcessingFlowPage] AI Video variations started:", response.data);
 
-        // Store the batch ID for polling
-        variationBatchIdRef.current = response.data.batch_id;
+        // CRITICAL: Store batch ID temporarily but don't set it yet
+        // This prevents polling from starting before ID updates are complete
+        const batchId = response.data.batch_id;
 
-        // Map API response to store variations (update IDs to match API)
-        // CRITICAL: Get current variations from store directly, not from React state
-        // React state `variations` may still have old value due to async state update timing
+        // Create store variations from selected styles first
+        // (startVariationGeneration creates variations and sets isGenerating = true)
+        startVariationGeneration();
+
+        // Update each store variation with API data (replace placeholder IDs with real UUIDs)
         const currentVariations = useProcessingSessionStore.getState().session?.variations || [];
         response.data.variations.forEach((apiVar, index) => {
-          const storeVariation = currentVariations[index];
-          if (storeVariation) {
-            updateVariation(storeVariation.id, {
-              id: apiVar.id, // Update to API's ID for tracking
+          if (index < currentVariations.length) {
+            // Update existing store variation with API data
+            updateVariation(currentVariations[index].id, {
+              id: apiVar.id, // Use API's UUID - replaces var-xxx placeholder
+              styleName: apiVar.variation_label || `Variation ${index + 1}`,
+              styleNameKo: apiVar.variation_label || `변형 ${index + 1}`,
               status: "generating",
               progress: 0,
               currentStep: "Starting...",
             });
+          } else {
+            // Add new variation if API returned more than store has
+            addVariation({
+              id: apiVar.id,
+              styleId: apiVar.id, // Use API ID as styleId for dynamically added variations
+              styleName: apiVar.variation_label || `Variation ${index + 1}`,
+              styleNameKo: apiVar.variation_label || `변형 ${index + 1}`,
+              status: "generating",
+              progress: 0,
+              approval: "pending",
+              currentStep: "Starting...",
+            });
           }
         });
+
+        // NOW set the batch ID - this triggers polling useEffect via state change
+        // At this point, all store variations have been updated with correct API UUIDs
+        variationBatchIdRef.current = batchId;
+        setVariationBatchId(batchId); // State change triggers useEffect
+        console.log("[ProcessingFlowPage] AI Video batch ID set, polling will start:", batchId);
       } else {
+        // Compose (Fast Cut) - create store variations first, then call API
+        startVariationGeneration();
         // Compose (Fast Cut) variation generation
         // Check if this is a compose video (required for compose-variations API)
         if (!seedGenerationId.startsWith("compose-")) {
@@ -424,8 +451,9 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
         console.log("[ProcessingFlowPage] Compose variations started:", response);
 
-        // Store the batch ID for polling
+        // Store the batch ID for polling (both ref and state)
         variationBatchIdRef.current = response.batch_id;
+        setVariationBatchId(response.batch_id);
 
         // Map API response to store variations (update IDs to match API)
         // CRITICAL: Get current variations from store directly, not from React state
@@ -448,11 +476,12 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
       // Mark all variations as failed
       cancelVariationGeneration();
     }
-  }, [startVariationGeneration, originalVideo?.id, session?.contentType, selectedStyles, variations, updateVariation, cancelVariationGeneration]);
+  }, [startVariationGeneration, originalVideo?.id, session?.contentType, selectedStyles, variations, updateVariation, addVariation, cancelVariationGeneration]);
 
   const handleCancelGeneration = useCallback(() => {
     // Clear batch ID to stop polling
     variationBatchIdRef.current = null;
+    setVariationBatchId(null);
     if (variationPollingRef.current) {
       clearInterval(variationPollingRef.current);
       variationPollingRef.current = null;
@@ -470,6 +499,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     // Cancel any pending generations and go back to config
     // Clear batch ID to stop polling
     variationBatchIdRef.current = null;
+    setVariationBatchId(null);
     if (variationPollingRef.current) {
       clearInterval(variationPollingRef.current);
       variationPollingRef.current = null;

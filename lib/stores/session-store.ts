@@ -551,6 +551,19 @@ const saveFastCutStateToSessionStorage = (state: Record<string, unknown>): void 
 let saveTimeout: NodeJS.Timeout | null = null;
 const DEBOUNCE_MS = 3000;
 
+/**
+ * Cancel any pending debounced save operation.
+ * CRITICAL: This must be called when clearing sessions to prevent
+ * stale data from being saved after the session has been cleared.
+ */
+export const cancelPendingSave = () => {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+    console.log("[SessionStore] Cancelled pending debounced save");
+  }
+};
+
 const debouncedSave = (saveFn: () => Promise<void>) => {
   if (saveTimeout) {
     clearTimeout(saveTimeout);
@@ -1207,6 +1220,10 @@ export const useSessionStore = create<SessionStore>()(
     // ==========================================
 
     clearActiveSession: () => {
+      // CRITICAL: Cancel any pending debounced save FIRST
+      // This prevents stale session data from being saved after clearing
+      cancelPendingSave();
+
       // Clear all session-related storage when clearing active session
       clearAllSessionStorage();
 
@@ -1233,6 +1250,12 @@ export const useSessionStore = create<SessionStore>()(
      * By keeping localStorage intact, the new session will naturally overwrite it.
      */
     clearActiveSessionKeepStorage: () => {
+      // CRITICAL: Cancel any pending debounced save FIRST
+      // This is the PRIMARY fix for the bug where old session data reappears
+      // after clicking "New Project" - the 3-second debounced save would execute
+      // and persist stale data even after the session was "cleared"
+      cancelPendingSave();
+
       // Only clear in-memory state, NOT localStorage
       // This prevents race conditions with Zustand persist hydration
 
@@ -1256,6 +1279,9 @@ export const useSessionStore = create<SessionStore>()(
     },
 
     reset: () => {
+      // CRITICAL: Cancel any pending debounced save FIRST
+      cancelPendingSave();
+
       // Clear all session-related storage on full reset
       clearAllSessionStorage();
 

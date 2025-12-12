@@ -209,6 +209,42 @@ force_new_image() {
         --timeout "attemptDurationSeconds=1800" \
         --region ${AWS_REGION} > /dev/null
 
+    # Update AI GPU Worker job definition (for Veo 3 / Imagen 3)
+    log_info "Registering new AI GPU Worker job definition..."
+    aws batch register-job-definition \
+        --job-definition-name "${PROJECT_NAME}-ai-gpu-worker" \
+        --type container \
+        --platform-capabilities EC2 \
+        --container-properties "{
+            \"image\": \"${IMAGE_WITH_DIGEST}\",
+            \"resourceRequirements\": [
+                {\"type\": \"VCPU\", \"value\": \"4\"},
+                {\"type\": \"MEMORY\", \"value\": \"14000\"},
+                {\"type\": \"GPU\", \"value\": \"1\"}
+            ],
+            \"jobRoleArn\": \"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}-batch-job-role\",
+            \"executionRoleArn\": \"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}-ecs-execution-role\",
+            \"environment\": [
+                {\"name\": \"AWS_REGION\", \"value\": \"${AWS_REGION}\"},
+                {\"name\": \"SECRETS_NAME\", \"value\": \"hydra/compose-engine\"},
+                {\"name\": \"GCP_SERVICE_ACCOUNT_SECRET\", \"value\": \"hydra/gcp-service-account\"},
+                {\"name\": \"GCP_PROJECT_ID\", \"value\": \"hyb-hydra-dev\"},
+                {\"name\": \"GCP_LOCATION\", \"value\": \"us-central1\"}
+            ],
+            \"logConfiguration\": {
+                \"logDriver\": \"awslogs\",
+                \"options\": {
+                    \"awslogs-group\": \"/aws/batch/${PROJECT_NAME}-compose-engine\",
+                    \"awslogs-region\": \"${AWS_REGION}\",
+                    \"awslogs-stream-prefix\": \"ai-generation\"
+                }
+            },
+            \"command\": [\"python3\", \"/root/ai_worker.py\"]
+        }" \
+        --retry-strategy "attempts=2,evaluateOnExit=[{onStatusReason=Host EC2*,action=RETRY},{onReason=CannotInspectContainerError*,action=RETRY}]" \
+        --timeout "attemptDurationSeconds=900" \
+        --region ${AWS_REGION} > /dev/null
+
     # Terminate running instances to force fresh pull
     log_info "Terminating GPU spot instances to force fresh image pull..."
     INSTANCE_IDS=$(aws ec2 describe-instances \
@@ -250,6 +286,20 @@ force_new_image() {
         --output text)
 
     for arn in $OLD_CPU_REVISIONS; do
+        if [ -n "$arn" ] && [ "$arn" != "None" ]; then
+            aws batch deregister-job-definition --job-definition "$arn" --region ${AWS_REGION} 2>/dev/null || true
+        fi
+    done
+
+    # AI GPU Worker - keep only the latest
+    OLD_AI_REVISIONS=$(aws batch describe-job-definitions \
+        --job-definition-name "${PROJECT_NAME}-ai-gpu-worker" \
+        --status ACTIVE \
+        --region ${AWS_REGION} \
+        --query 'jobDefinitions[?revision!=`'$(aws batch describe-job-definitions --job-definition-name "${PROJECT_NAME}-ai-gpu-worker" --status ACTIVE --region ${AWS_REGION} --query 'max(jobDefinitions[].revision)' --output text)'`].jobDefinitionArn' \
+        --output text)
+
+    for arn in $OLD_AI_REVISIONS; do
         if [ -n "$arn" ] && [ "$arn" != "None" ]; then
             aws batch deregister-job-definition --job-definition "$arn" --region ${AWS_REGION} 2>/dev/null || true
         fi

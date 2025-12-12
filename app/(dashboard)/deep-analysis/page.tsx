@@ -443,6 +443,12 @@ const translations = {
       maxScore: "해당 계정 평균 대비 가장 높은 성과를 낸 영상의 상대 점수입니다.",
       minScore: "해당 계정 평균 대비 가장 낮은 성과를 낸 영상의 상대 점수입니다.",
       consistency: "최고 성과 - 최저 성과의 차이입니다. 작을수록 일관된 성과를 냅니다.",
+      // Individual Analysis - Charts
+      performanceDistChart: "영상들의 성과 점수(평균 대비) 분포를 보여줍니다. 100%가 평균이며, 좌측은 평균 이하, 우측은 평균 이상입니다.",
+      contentTypePerformance: "콘텐츠 유형별 평균 성과입니다. 100%가 계정 평균이며, 각 유형의 상대적 성과를 비교할 수 있습니다.",
+      performanceFactors: "영상 성과에 영향을 미치는 주요 요인들입니다. 각 요인별로 가장 높은 성과를 보인 조건을 분석합니다.",
+      durationByPerformance: "영상 길이(초)에 따른 평균 성과입니다. 어떤 길이의 영상이 가장 좋은 반응을 얻는지 확인할 수 있습니다.",
+      musicByPerformance: "자체 음악과 트렌딩 음악 사용 시 성과 비교입니다. 어떤 음악 선택이 더 높은 참여율을 이끄는지 보여줍니다.",
     },
   },
   en: {
@@ -644,6 +650,12 @@ const translations = {
       maxScore: "Highest performing video's relative score vs account average.",
       minScore: "Lowest performing video's relative score vs account average.",
       consistency: "Difference between max and min scores. Lower = more consistent performance.",
+      // Individual Analysis - Charts
+      performanceDistChart: "Shows distribution of video performance scores (vs average). 100% = average, left = below average, right = above average.",
+      contentTypePerformance: "Average performance by content type. 100% = account average. Compare relative performance across types.",
+      performanceFactors: "Key factors affecting video performance. Analyzes which conditions produce the highest performance.",
+      durationByPerformance: "Average performance by video duration (seconds). See which video lengths get the best engagement.",
+      musicByPerformance: "Performance comparison: original music vs trending music. Shows which music choice drives higher engagement.",
     },
   },
 };
@@ -1065,6 +1077,7 @@ function PerformanceDistributionChart({
       <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
         <TrendingUp className="h-4 w-4 text-muted-foreground" />
         {t.performanceDistChart}
+        <InfoTooltip text={t.tooltips.performanceDistChart} />
       </h4>
       <div className="h-32 flex items-end gap-1">
         {bins.map((bin) => (
@@ -1150,6 +1163,7 @@ function ContentTypePerformanceChart({
       <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
         <Play className="h-4 w-4 text-muted-foreground" />
         {t.contentTypePerformance}
+        <InfoTooltip text={t.tooltips.contentTypePerformance} />
       </h4>
       <div className="space-y-2">
         {sortedTypes.map(([type, stats]) => {
@@ -1340,6 +1354,7 @@ function PerformanceFactorsSection({
       <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
         <Target className="h-4 w-4 text-muted-foreground" />
         {t.performanceFactors}
+        <InfoTooltip text={t.tooltips.performanceFactors} />
       </h4>
       <div className="space-y-3">
         {factors.map((factor, index) => (
@@ -1377,7 +1392,10 @@ function PerformanceFactorsSection({
       {/* Duration chart */}
       {durationStats.length > 1 && (
         <div className="mt-4 p-3 bg-muted/30 rounded-lg">
-          <h5 className="text-xs font-medium mb-2">{t.durationByPerformance}</h5>
+          <h5 className="text-xs font-medium mb-2 flex items-center gap-2">
+            {t.durationByPerformance}
+            <InfoTooltip text={t.tooltips.durationByPerformance} />
+          </h5>
           <div className="space-y-1">
             {durationStats.map((stat) => {
               const isAboveAverage = stat.avgScore >= 100;
@@ -1409,7 +1427,10 @@ function PerformanceFactorsSection({
       {/* Music comparison */}
       {ownMusicVideos.length > 0 && otherMusicVideos.length > 0 && (
         <div className="mt-3 p-3 bg-muted/30 rounded-lg">
-          <h5 className="text-xs font-medium mb-2">{t.musicByPerformance}</h5>
+          <h5 className="text-xs font-medium mb-2 flex items-center gap-2">
+            {t.musicByPerformance}
+            <InfoTooltip text={t.tooltips.musicByPerformance} />
+          </h5>
           <div className="grid grid-cols-2 gap-3">
             <div className={cn(
               "p-2 rounded border text-center",

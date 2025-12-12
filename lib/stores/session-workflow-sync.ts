@@ -181,12 +181,33 @@ export function syncSessionToWorkflow(session: CreationSession): void {
  *
  * IMPORTANT: This function now also syncs currentStage and completedStages
  * to ensure session progress is properly persisted.
+ *
+ * @param expectedSessionId - Optional session ID to validate against.
+ *   If provided and doesn't match the active session, sync is skipped.
+ *   This prevents stale data from being synced to wrong sessions.
  */
-export function syncWorkflowToSession(): void {
+export function syncWorkflowToSession(expectedSessionId?: string): void {
   const workflowState = useWorkflowStore.getState();
   const sessionStore = useSessionStore.getState();
 
-  if (!sessionStore.activeSession) return;
+  if (!sessionStore.activeSession) {
+    console.log("[SyncWorkflowToSession] No active session, skipping sync");
+    return;
+  }
+
+  // CRITICAL: Validate session ID if expected ID is provided
+  // This prevents race conditions where old sync operations could
+  // write data to a newly created session after "New Project" click
+  if (expectedSessionId && sessionStore.activeSession.id !== expectedSessionId) {
+    console.log(
+      "[SyncWorkflowToSession] Session ID mismatch - expected:",
+      expectedSessionId,
+      "actual:",
+      sessionStore.activeSession.id,
+      "- skipping sync to prevent data corruption"
+    );
+    return;
+  }
 
   const workflowCurrentStage = workflowState.currentStage;
   const sessionCurrentStage = sessionStore.activeSession.currentStage;
@@ -394,20 +415,39 @@ export function useSessionWorkflowSync(stage: WorkflowStage) {
   }, [sessionId, stage, proceedToStage]);
 
   // Periodic sync: workflow → session (every 30 seconds)
+  // CRITICAL: Track the session ID to detect changes and prevent stale syncs
   useEffect(() => {
+    // Capture the session ID at the time the interval is set up
+    const intervalSessionId = sessionId;
+
     const interval = setInterval(() => {
-      if (activeSessionRef.current) {
-        syncWorkflowToSession();
+      // Check if session is still active and matches the expected ID
+      const currentSession = useSessionStore.getState().activeSession;
+      if (currentSession && currentSession.id === intervalSessionId) {
+        // Pass the expected session ID for additional validation
+        syncWorkflowToSession(intervalSessionId);
         saveSessionRef.current();
+      } else if (intervalSessionId && (!currentSession || currentSession.id !== intervalSessionId)) {
+        // Session changed or cleared - log and skip
+        console.log(
+          "[useSessionWorkflowSync] 30s interval: session changed from",
+          intervalSessionId,
+          "to",
+          currentSession?.id ?? "null",
+          "- skipping sync"
+        );
       }
     }, 30000);
 
     return () => clearInterval(interval);
-  }, []); // Empty deps - uses refs
+  }, [sessionId]); // Re-create interval when session ID changes
 
   // Sync on unmount (stage exit)
+  // CRITICAL: Capture session ID at mount time to validate on unmount
   useEffect(() => {
     isMountedRef.current = true;
+    // Capture the session ID when this effect runs
+    const mountSessionId = useSessionStore.getState().activeSession?.id;
 
     return () => {
       isMountedRef.current = false;
@@ -417,17 +457,30 @@ export function useSessionWorkflowSync(stage: WorkflowStage) {
       // The ref may not be updated yet due to React's async update cycle,
       // causing stale session data to be synced and persisted.
       const currentActiveSession = useSessionStore.getState().activeSession;
-      if (currentActiveSession) {
-        syncWorkflowToSession();
+
+      // Additional validation: Only sync if the session ID matches what we mounted with
+      // This prevents syncing stale data to a different session that might have been
+      // created after clearActiveSession was called
+      if (currentActiveSession && mountSessionId && currentActiveSession.id === mountSessionId) {
+        syncWorkflowToSession(mountSessionId);
         useSessionStore.getState().saveSession();
+      } else if (mountSessionId && (!currentActiveSession || currentActiveSession.id !== mountSessionId)) {
+        console.log(
+          "[useSessionWorkflowSync] Unmount: session changed from",
+          mountSessionId,
+          "to",
+          currentActiveSession?.id ?? "null",
+          "- skipping sync"
+        );
       }
     };
   }, []); // Empty deps - checks store directly on cleanup
 
-  // Manual sync function
+  // Manual sync function - validates session ID before syncing
   const syncNow = useCallback(() => {
-    if (activeSessionRef.current) {
-      syncWorkflowToSession();
+    const currentSessionId = activeSessionRef.current?.id;
+    if (currentSessionId) {
+      syncWorkflowToSession(currentSessionId);
       saveSessionRef.current();
     }
   }, []); // Empty deps - uses refs
@@ -463,8 +516,9 @@ export function useCompleteStage() {
 
   return useCallback(
     (stage: WorkflowStage) => {
-      if (activeSessionRef.current) {
-        syncWorkflowToSession();
+      const currentSessionId = activeSessionRef.current?.id;
+      if (currentSessionId) {
+        syncWorkflowToSession(currentSessionId);
         markStageCompletedRef.current(stage);
         saveSessionRef.current();
       }

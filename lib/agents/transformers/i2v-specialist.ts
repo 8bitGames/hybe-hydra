@@ -16,6 +16,50 @@
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
 import type { AgentConfig, AgentContext } from '../types';
+import type { ModelResponse } from '../../models';
+
+// Valid motionQuality values
+const VALID_MOTION_QUALITIES = ['smooth', 'dynamic', 'subtle', 'fluid', 'dramatic'] as const;
+type MotionQuality = typeof VALID_MOTION_QUALITIES[number];
+
+// Mapping for similar/incorrect values to valid motionQuality
+const MOTION_QUALITY_MAPPINGS: Record<string, MotionQuality> = {
+  // Direct matches (lowercase)
+  'smooth': 'smooth',
+  'dynamic': 'dynamic',
+  'subtle': 'subtle',
+  'fluid': 'fluid',
+  'dramatic': 'dramatic',
+  // Similar terms → smooth
+  'graceful': 'smooth',
+  'elegant': 'smooth',
+  'silky': 'smooth',
+  // Similar terms → subtle
+  'gentle': 'subtle',
+  'soft': 'subtle',
+  'slow': 'subtle',
+  'calm': 'subtle',
+  'minimal': 'subtle',
+  // Similar terms → fluid
+  'natural': 'fluid',
+  'flowing': 'fluid',
+  'organic': 'fluid',
+  'seamless': 'fluid',
+  // Similar terms → dynamic
+  'energetic': 'dynamic',
+  'fast': 'dynamic',
+  'powerful': 'dynamic',
+  'active': 'dynamic',
+  'lively': 'dynamic',
+  // Similar terms → dramatic
+  'bold': 'dramatic',
+  'cinematic': 'dramatic',
+  'impactful': 'dramatic',
+  'intense': 'dramatic',
+  'striking': 'dramatic',
+  // AI might return the example format literally
+  'smooth|dynamic|subtle|fluid|dramatic': 'smooth',
+};
 
 // Input Schema
 export const I2VSpecialistInputSchema = z.object({
@@ -284,8 +328,16 @@ Return JSON:
     "music": "music style to match visual mood",
     "soundEffects": "anticipated sound effects for motion"
   },
-  "motionQuality": "smooth|dynamic|subtle|fluid|dramatic"
+  "motionQuality": "smooth"
 }
+
+⚠️ CRITICAL: "motionQuality" MUST be exactly ONE of these 5 values (lowercase only):
+   - "smooth" - fluid, graceful movement
+   - "dynamic" - energetic, impactful motion
+   - "subtle" - gentle micro-movements
+   - "fluid" - natural, flowing transitions
+   - "dramatic" - bold, cinematic motion
+   Do NOT combine values or use any other words.
 
 QUALITY CHECKLIST (Verify before output):
 ☐ Is it a flowing narrative paragraph, not a keyword list?
@@ -385,8 +437,16 @@ Return JSON:
     "speaker": "who speaks",
     "tone": "emotional delivery"
   },
-  "motionQuality": "smooth|dynamic|subtle|fluid|dramatic"
+  "motionQuality": "dynamic"
 }
+
+⚠️ CRITICAL: "motionQuality" MUST be exactly ONE of these 5 values (lowercase only):
+   - "smooth" - fluid, graceful movement
+   - "dynamic" - energetic, impactful motion
+   - "subtle" - gentle micro-movements
+   - "fluid" - natural, flowing transitions
+   - "dramatic" - bold, cinematic motion
+   Do NOT combine values or use any other words.
 
 QUALITY CHECKLIST:
 ☐ Prompt is 100-150 words (Veo 3 optimal)
@@ -580,6 +640,71 @@ Return JSON:
 export class I2VSpecialistAgent extends BaseAgent<I2VSpecialistInput, I2VSpecialistOutput> {
   constructor() {
     super(I2VSpecialistConfig);
+  }
+
+  /**
+   * Normalize motionQuality value to one of the valid enum values
+   */
+  private normalizeMotionQuality(value: unknown): MotionQuality {
+    if (typeof value !== 'string') {
+      console.warn(`[i2v-specialist] motionQuality is not a string: ${typeof value}, defaulting to 'smooth'`);
+      return 'smooth';
+    }
+
+    const normalized = value.toLowerCase().trim();
+
+    // Check direct mapping
+    if (normalized in MOTION_QUALITY_MAPPINGS) {
+      const mapped = MOTION_QUALITY_MAPPINGS[normalized];
+      if (mapped !== normalized) {
+        console.log(`[i2v-specialist] Mapped motionQuality '${value}' → '${mapped}'`);
+      }
+      return mapped;
+    }
+
+    // Check if it's already a valid value (shouldn't reach here, but safety check)
+    if (VALID_MOTION_QUALITIES.includes(normalized as MotionQuality)) {
+      return normalized as MotionQuality;
+    }
+
+    // Fallback: try to find partial match
+    for (const [key, mapped] of Object.entries(MOTION_QUALITY_MAPPINGS)) {
+      if (normalized.includes(key) || key.includes(normalized)) {
+        console.log(`[i2v-specialist] Partial match motionQuality '${value}' → '${mapped}'`);
+        return mapped;
+      }
+    }
+
+    // Ultimate fallback
+    console.warn(`[i2v-specialist] Unknown motionQuality '${value}', defaulting to 'smooth'`);
+    return 'smooth';
+  }
+
+  /**
+   * Normalize output object before validation
+   */
+  private normalizeOutput(output: unknown): unknown {
+    if (!output || typeof output !== 'object') return output;
+
+    const obj = output as Record<string, unknown>;
+
+    // Normalize motionQuality if present
+    if ('motionQuality' in obj && obj.motionQuality !== undefined) {
+      obj.motionQuality = this.normalizeMotionQuality(obj.motionQuality);
+    }
+
+    return obj;
+  }
+
+  /**
+   * Override parseResponse to normalize output before validation
+   */
+  protected parseResponse(response: ModelResponse): unknown {
+    // Call parent's parseResponse to get the parsed object
+    const parsed = super.parseResponse(response);
+
+    // Normalize the output (especially motionQuality)
+    return this.normalizeOutput(parsed);
   }
 
   protected buildPrompt(input: I2VSpecialistInput, context: AgentContext): string {

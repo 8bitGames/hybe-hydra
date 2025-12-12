@@ -1,23 +1,21 @@
 """
-GCP Workload Identity Federation (WIF) Authentication Module.
+GCP Authentication Module for Vertex AI.
 
-Enables AWS Batch workers to authenticate with GCP Vertex AI using:
-1. AWS IAM Role credentials (from IMDSv2)
-2. GCP Security Token Service (STS) token exchange
-3. 2-hop Service Account impersonation (Central SA → Target SA) via CODE
-
-Authentication Flow (2-hop, all in code):
-AWS Batch (IAM Role) → GCP WIF (STS only) → Central SA (code impersonation) → Target SA (code impersonation) → Vertex AI
-
-The WIF config should NOT include service_account_impersonation_url (use wif-only config).
-Both Central SA and Target SA impersonation are done in code for full control.
+Supports multiple authentication methods:
+1. Service Account JSON (recommended for production)
+   - GOOGLE_SERVICE_ACCOUNT_JSON: JSON string of service account credentials
+2. Workload Identity Federation (WIF) - legacy
+   - GOOGLE_APPLICATION_CREDENTIALS: Path to WIF credential config JSON
 
 Required Environment Variables:
-- GOOGLE_APPLICATION_CREDENTIALS: Path to WIF credential config JSON (NO SA impersonation in config)
-- GCP_CENTRAL_SERVICE_ACCOUNT: Central SA for 1st hop (e.g., sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com)
-- GCP_TARGET_SERVICE_ACCOUNT: Target SA for 2nd hop (e.g., sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com)
+- GOOGLE_SERVICE_ACCOUNT_JSON: Service account JSON string (preferred)
 - GCP_PROJECT_ID: GCP project ID for Vertex AI
 - GCP_LOCATION: GCP region (default: us-central1)
+
+Legacy WIF Environment Variables (if not using service account JSON):
+- GOOGLE_APPLICATION_CREDENTIALS: Path to WIF credential config JSON
+- GCP_CENTRAL_SERVICE_ACCOUNT: Central SA for 1st hop
+- GCP_TARGET_SERVICE_ACCOUNT: Target SA for 2nd hop
 """
 
 import os
@@ -48,25 +46,21 @@ VERTEX_AI_SCOPES = [
 
 class GCPAuthManager:
     """
-    Manages GCP authentication using Workload Identity Federation with 2-hop impersonation.
+    Manages GCP authentication for Vertex AI.
+
+    Supports:
+    1. Service Account JSON (recommended) - via GOOGLE_SERVICE_ACCOUNT_JSON env var
+    2. Workload Identity Federation (WIF) - legacy, via GOOGLE_APPLICATION_CREDENTIALS
 
     Usage:
         auth_manager = GCPAuthManager()
         credentials = auth_manager.get_credentials()
         access_token = auth_manager.get_access_token()
-
-    2-hop WIF Authentication Flow (all in code):
-        1. AWS Batch (IAM Role) → GCP WIF → STS Token (pure WIF, no SA in config)
-        2. WIF Token → Central SA (hyb-mgmt-prod) [code impersonation - 1st hop]
-        3. Central SA → Target SA (hyb-hydra-dev) [code impersonation - 2nd hop] → Vertex AI
-
-    Use WIF-only config (no service_account_impersonation_url).
-    GCP_CENTRAL_SERVICE_ACCOUNT specifies the Central SA for the 1st hop.
-    GCP_TARGET_SERVICE_ACCOUNT specifies the Target SA for the 2nd hop.
     """
 
     def __init__(
         self,
+        service_account_json: Optional[str] = None,
         central_service_account: Optional[str] = None,
         target_service_account: Optional[str] = None,
         project_id: Optional[str] = None,
@@ -74,24 +68,29 @@ class GCPAuthManager:
         scopes: Optional[list[str]] = None,
     ):
         """
-        Initialize GCP Auth Manager for 2-hop impersonation (all in code).
+        Initialize GCP Auth Manager.
 
         Args:
-            central_service_account: Central SA for 1st hop impersonation
-                                     (e.g., sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com)
-            target_service_account: Target SA for 2nd hop impersonation
-                                    (e.g., sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com)
-                                    Set to empty string or "skip" to use Central SA credentials only (1-hop)
+            service_account_json: Service account JSON string (preferred method)
+            central_service_account: Central SA for WIF 1st hop impersonation (legacy)
+            target_service_account: Target SA for WIF 2nd hop impersonation (legacy)
             project_id: GCP project ID for Vertex AI
             location: GCP region for Vertex AI
             scopes: OAuth scopes (defaults to Vertex AI scopes)
         """
-        # Central SA for 1st hop (WIF → Central SA)
+        self.project_id = project_id or os.environ.get("GCP_PROJECT_ID", "hyb-hydra-dev")
+        self.location = location or os.environ.get("GCP_LOCATION", DEFAULT_GCP_LOCATION)
+        self.scopes = scopes or VERTEX_AI_SCOPES
+
+        # Check for service account JSON first (preferred method)
+        self._service_account_json = service_account_json or os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+        self._use_service_account = bool(self._service_account_json)
+
+        # WIF-related settings (legacy)
         env_central_sa = os.environ.get("GCP_CENTRAL_SERVICE_ACCOUNT", "")
         self.central_service_account = central_service_account or env_central_sa or \
             "sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com"
 
-        # Target SA for 2nd hop (Central SA → Target SA)
         env_target_sa = os.environ.get("GCP_TARGET_SERVICE_ACCOUNT", "")
         if env_target_sa.lower() in ("", "skip", "none"):
             self.target_service_account = None
@@ -100,10 +99,8 @@ class GCPAuthManager:
             self.target_service_account = target_service_account or env_target_sa
             self._enable_2hop = True
 
-        self.project_id = project_id or os.environ.get("GCP_PROJECT_ID", "hyb-hydra-dev")
-        self.location = location or os.environ.get("GCP_LOCATION", DEFAULT_GCP_LOCATION)
-        self.scopes = scopes or VERTEX_AI_SCOPES
-
+        # Credentials cache
+        self._sa_credentials = None       # Service Account credentials
         self._wif_credentials = None      # Pure WIF credentials (no impersonation)
         self._central_credentials = None  # Central SA credentials (1st hop)
         self._target_credentials = None   # Target SA credentials (2nd hop)
@@ -111,13 +108,50 @@ class GCPAuthManager:
         self._token_expiry = None
 
         logger.info(f"GCPAuthManager initialized for project: {self.project_id}")
-        logger.info(f"Central SA (1st hop): {self.central_service_account}")
-        logger.info(f"2-hop impersonation: {'ENABLED' if self._enable_2hop else 'DISABLED'}")
-        if self._enable_2hop:
-            logger.info(f"Target SA (2nd hop): {self.target_service_account}")
+        if self._use_service_account:
+            logger.info("Auth method: Service Account JSON (direct)")
         else:
-            logger.info("Using Central SA credentials only (1-hop)")
+            logger.info("Auth method: Workload Identity Federation (WIF)")
+            logger.info(f"Central SA (1st hop): {self.central_service_account}")
+            logger.info(f"2-hop impersonation: {'ENABLED' if self._enable_2hop else 'DISABLED'}")
+            if self._enable_2hop:
+                logger.info(f"Target SA (2nd hop): {self.target_service_account}")
         logger.info(f"Location: {self.location}")
+
+    def _get_sa_credentials(self):
+        """
+        Get credentials from Service Account JSON.
+
+        Returns:
+            Credentials: Service Account credentials
+        """
+        if self._sa_credentials is None:
+            logger.info("Loading Service Account credentials from JSON...")
+
+            try:
+                sa_info = json.loads(self._service_account_json)
+
+                # Override project_id from service account if not explicitly set
+                if sa_info.get("project_id"):
+                    self.project_id = sa_info["project_id"]
+                    logger.info(f"Project ID from SA: {self.project_id}")
+
+                self._sa_credentials = service_account.Credentials.from_service_account_info(
+                    sa_info,
+                    scopes=self.scopes,
+                )
+
+                logger.info(f"Service Account: {sa_info.get('client_email', 'unknown')}")
+                logger.info("Service Account credentials loaded successfully")
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse service account JSON: {e}")
+                raise RuntimeError(f"Invalid service account JSON: {e}")
+            except Exception as e:
+                logger.error(f"Failed to load service account credentials: {e}")
+                raise RuntimeError(f"Service account authentication failed: {e}")
+
+        return self._sa_credentials
 
     def _get_wif_credentials(self):
         """
@@ -235,13 +269,19 @@ class GCPAuthManager:
         """
         Get authenticated credentials for GCP API calls.
 
-        Code-based 2-hop impersonation flow:
-        - 2-hop enabled: WIF → Central SA (code) → Target SA (code) → Vertex AI
-        - 2-hop disabled: WIF → Central SA (code) only
+        Priority:
+        1. Service Account JSON (if GOOGLE_SERVICE_ACCOUNT_JSON is set)
+        2. WIF with impersonation (legacy)
 
         Returns:
             google.auth.credentials.Credentials: Authenticated credentials
         """
+        # Use Service Account JSON if available (preferred)
+        if self._use_service_account:
+            logger.info("Using Service Account JSON authentication (direct)")
+            return self._get_sa_credentials()
+
+        # Fall back to WIF (legacy)
         if self._enable_2hop:
             # 2-hop: WIF → Central SA → Target SA (all in code)
             logger.info("Using 2-hop authentication (code-based): WIF → Central SA → Target SA")
@@ -312,13 +352,22 @@ class GCPAuthManager:
         Returns:
             dict: Validation result with status and details
         """
+        # Determine auth mode string
+        if self._use_service_account:
+            auth_mode = "Service Account JSON (direct)"
+        elif self._enable_2hop:
+            auth_mode = "2-hop (WIF → Central SA → Target SA)"
+        else:
+            auth_mode = "1-hop (WIF → Central SA)"
+
         result = {
             "valid": False,
             "project_id": self.project_id,
-            "target_sa": self.target_service_account or "(1-hop only, no Target SA)",
+            "target_sa": self.target_service_account or "(direct SA, no impersonation)" if self._use_service_account else "(1-hop only)",
             "location": self.location,
+            "use_service_account": self._use_service_account,
             "enable_2hop": self._enable_2hop,
-            "auth_mode": "2-hop (WIF → Central SA → Target SA)" if self._enable_2hop else "1-hop (WIF → Central SA)",
+            "auth_mode": auth_mode,
             "error": None,
         }
 
