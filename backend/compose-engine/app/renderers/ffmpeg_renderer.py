@@ -113,6 +113,11 @@ class FFmpegRenderer:
             logger.info(f"[{job_id}] Vibe: {request.settings.vibe.value}")
             logger.info(f"[{job_id}] Aspect: {request.settings.aspect_ratio.value}")
             logger.info(f"[{job_id}] Target duration: {request.settings.target_duration}s")
+            logger.info(f"[{job_id}] Script: {request.script}")
+            logger.info(f"[{job_id}] Script lines count: {len(request.script.lines) if request.script and request.script.lines else 0}")
+            if request.script and request.script.lines:
+                for i, line in enumerate(request.script.lines[:3]):  # Log first 3 lines
+                    logger.info(f"[{job_id}]   Script line {i}: text='{line.text[:50]}...' timing={line.timing} duration={line.duration}")
             logger.info(f"[{job_id}] Output key: {request.output.s3_key}")
             logger.info(f"[{job_id}] Job dir: {job_dir}")
             logger.info(f"[{job_id}] GPU encoding: {is_nvenc_available()}")
@@ -344,26 +349,13 @@ class FFmpegRenderer:
             await self._update_progress(progress_callback, job_id, 70, "Applying effects")
             logger.info(f"[{job_id}] [STEP 8/11] Applying color grading and overlay effects...")
 
-            # Build combined filter chain
+            # OVERRIDE: Disable all filters to prevent grainy/pixelated images
+            # No color grading, no overlay effects, no film grain
             effect_filters = []
-
-            # Color grading
-            color_grade = preset.color_grade
-            if color_grade and color_grade != "natural":
-                grade_filter = build_color_grade_filter(color_grade)
-                if grade_filter:
-                    effect_filters.append(grade_filter)
-                    logger.info(f"[{job_id}] [STEP 8/11] Color grade: {color_grade}")
-
-            # Overlay effects from preset
-            if preset.effects:
-                overlay_chain = build_overlay_chain(preset.effects)
-                if overlay_chain:
-                    effect_filters.append(overlay_chain)
-                    logger.info(f"[{job_id}] [STEP 8/11] Overlay effects: {preset.effects}")
+            logger.info(f"[{job_id}] [STEP 8/11] All filters disabled (no color grading, no overlays, no grain)")
 
             # Apply all effects in one pass
-            if effect_filters:
+            if False and effect_filters:
                 combined_filter = ",".join(effect_filters)
                 logger.info(f"[{job_id}] [STEP 8/11] Combined filter chain: {combined_filter[:100]}{'...' if len(combined_filter) > 100 else ''}")
                 effects_output = os.path.join(job_dir, f"{job_id}_effects.mp4")
@@ -393,6 +385,14 @@ class FFmpegRenderer:
             video_info = await get_video_info(video_path)
             video_duration = video_info["duration"]
             logger.info(f"[{job_id}] [STEP 9/11] Video info: {video_info['width']}x{video_info['height']}, {video_duration:.1f}s, {video_info['fps']:.0f}fps")
+
+            # DEBUG: Log script data before conditional
+            logger.info(f"[{job_id}] [STEP 9/11] DEBUG: request.script = {request.script}")
+            logger.info(f"[{job_id}] [STEP 9/11] DEBUG: request.script truthy = {bool(request.script)}")
+            if request.script:
+                logger.info(f"[{job_id}] [STEP 9/11] DEBUG: request.script.lines = {request.script.lines}")
+                logger.info(f"[{job_id}] [STEP 9/11] DEBUG: request.script.lines truthy = {bool(request.script.lines)}")
+                logger.info(f"[{job_id}] [STEP 9/11] DEBUG: len(request.script.lines) = {len(request.script.lines)}")
 
             if request.script and request.script.lines:
                 logger.info(f"[{job_id}] [STEP 9/11] Script has {len(request.script.lines)} text lines")
