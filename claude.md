@@ -1,194 +1,219 @@
 # Claude Rules
 
-  ## Response Style
-  - ALWAYS think through problems step-by-step before providing answers
-  - Break down complex tasks into smaller, manageable steps
-  - Explain your reasoning process clearly at each stage
+---
 
-  ## General Restrictions
-  - Do NOT run `npm run dev` or `npm run build` without explicit user permission
-  - Do NOT create README or markdown files unless explicitly told to
-  - Do NOT change AI models (e.g., Gemini model versions) without explicit user permission
+## 🚨 CRITICAL AI USAGE RULES - 절대 위반 금지
 
-  ## Database Operations
-  - ALWAYS use Supabase MCP tools (`mcp__supabase__*`) for database migrations and schema lookups instead of raw SQL
-  files or Drizzle CLI
-  ## Documentation
-  - ALWAYS check with Context7 MCP tool (`mcp__context7__*`) for library documentation before implementing code
+> **이 규칙은 모든 상황에서 반드시 지켜야 합니다. 예외 없음.**
 
-  ## AI Integration - MUST USE AGENT SYSTEM
+### 1. 이미지/동영상 AI → Vertex AI 필수
 
-  **CRITICAL**: All AI usage in this project MUST go through the Agent System at `lib/agents/`.
-  Do NOT use direct AI API calls (GoogleGenAI, OpenAI SDK, etc.) outside of the agent system.       
+```
+🔴 이미지 생성, 이미지 분석, 동영상 생성/분석 = Vertex AI ONLY
+```
 
-  ### Why Agent System?
-  - Centralized prompt management (database-driven prompts)
-  - Execution logging and metrics tracking
-  - Input/output validation with Zod schemas
-  - Model client abstraction (Gemini/OpenAI)
-  - Consistent error handling
+- **필수 사용**: `@google-cloud/vertexai` 패키지
+- **필수 인증**: GCP 서비스 계정 (JSON 키 파일)
+- **금지**: `@google/genai` 패키지로 이미지/동영상 처리
 
-  ### Agent System Architecture (`lib/agents/`)
+```typescript
+// ✅ 올바른 방법: Vertex AI for Image/Video
+import { VertexAI } from '@google-cloud/vertexai';
 
-  ```
-  lib/agents/
-  ├── base-agent.ts      # Abstract base class for all agents
-  ├── types.ts           # Type definitions
-  ├── orchestrator.ts    # Workflow orchestrator
-  ├── prompt-loader.ts   # Database prompt loading
-  ├── evaluation-service.ts # Execution logging
-  ├── analyzers/         # Vision, Text Pattern, Visual Trend, Strategy
-  ├── creators/          # Creative Director, Script Writer
-  ├── transformers/      # Prompt Engineer, I2V Specialist
-  ├── publishers/        # Publish Optimizer, Copywriter
-  └── compose/           # Compose-specific agents
-  ```
+const vertexAI = new VertexAI({
+  project: process.env.GCP_PROJECT_ID,
+  location: process.env.GCP_LOCATION,
+});
+```
 
-  ### Model Assignments
-  - **Gemini 2.5 Flash**: Analyzers, Transformers (fast analysis)
-  - **Gemini 3 Pro**: Creative Director (deep reasoning)
-  - **GPT-5.1**: Publishers (copywriting)
+```typescript
+// ❌ 금지: 이미지/동영상에 Google AI Studio API 사용
+import { GoogleGenAI } from '@google/genai';
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY });
+// 이미지/동영상 처리 금지!
+```
 
-  ### How to Add New AI Functionality
+### 2. LLM (텍스트) AI → GOOGLE_AI_API_KEY 필수
 
-  1. **Create a new agent** extending `BaseAgent`:
-  ```typescript
-  import { BaseAgent } from '@/lib/agents/base-agent';
-  import { z } from 'zod';
-  import type { AgentContext } from '@/lib/agents/types';
+```
+🔴 텍스트 생성, 텍스트 분석 = GOOGLE_AI_API_KEY ONLY
+```
 
-  // Define input/output schemas
-  export const MyAgentInputSchema = z.object({ /* your fields */ });
-  export const MyAgentOutputSchema = z.object({ /* your fields */ });
-  export type MyAgentInput = z.infer<typeof MyAgentInputSchema>;
-  export type MyAgentOutput = z.infer<typeof MyAgentOutputSchema>;
+- **필수 사용**: `@google/genai` 패키지
+- **필수 환경변수**: `GOOGLE_AI_API_KEY`
+- **금지**: Vertex AI로 일반 텍스트 LLM 처리
 
-  export class MyAgent extends BaseAgent<MyAgentInput, MyAgentOutput> {
-    constructor() {
-      super({
-        id: 'my-agent',
-        name: 'My Agent',
-        description: 'Agent description',
-        category: 'analyzer', // or 'creator', 'transformer', 'publisher'
-        model: {
-          provider: 'gemini',
-          name: 'gemini-2.5-flash',
-          options: { temperature: 0.7 }
-        },
-        prompts: {
-          system: 'Your system prompt...',
-          templates: {}
-        },
-        inputSchema: MyAgentInputSchema,
-        outputSchema: MyAgentOutputSchema,
-      });
-    }
+```typescript
+// ✅ 올바른 방법: Google AI Studio for LLM
+import { GoogleGenAI } from '@google/genai';
 
-    protected buildPrompt(input: MyAgentInput, context: AgentContext): string {
-      return `Your prompt with ${JSON.stringify(input)}`;
-    }
-  }
+const ai = new GoogleGenAI({
+  apiKey: process.env.GOOGLE_AI_API_KEY, // 반드시 이 키 사용!
+});
+```
 
-  export function createMyAgent(): MyAgent {
-    return new MyAgent();
-  }
-  ```
+### 요약 표
 
-  2. **Use the agent**:
-  ```typescript
-  import { createMyAgent } from '@/lib/agents/my-agent';
+| 작업 유형 | 사용할 서비스 | 패키지 | API 키/인증 |
+|----------|-------------|--------|------------|
+| 이미지 생성 | Vertex AI | `@google-cloud/vertexai` | GCP 서비스 계정 |
+| 이미지 분석 | Vertex AI | `@google-cloud/vertexai` | GCP 서비스 계정 |
+| 동영상 생성/분석 | Vertex AI | `@google-cloud/vertexai` | GCP 서비스 계정 |
+| 텍스트 생성 (LLM) | Google AI Studio | `@google/genai` | `GOOGLE_AI_API_KEY` |
+| 텍스트 분석 (LLM) | Google AI Studio | `@google/genai` | `GOOGLE_AI_API_KEY` |
 
-  const agent = createMyAgent();
-  const result = await agent.execute(input, context);
+---
 
-  if (result.success) {
-    console.log(result.data);
-  } else {
-    console.error(result.error);
-  }
-  ```
+## Response Style
 
-  3. **Or use existing agents via factories**:
-  ```typescript
-  import { AgentFactories, createOrchestrator } from '@/lib/agents';
+- ALWAYS think through problems step-by-step before providing answers
+- Break down complex tasks into smaller, manageable steps
+- Explain your reasoning process clearly at each stage
 
-  // Single agent
-  const visionAgent = await AgentFactories.visionAnalyzer();
-  const result = await visionAgent.executeWithImages(input, context, images);
+## General Restrictions
 
-  // Orchestrated workflow
-  const orchestrator = createOrchestrator('Artist', 'tiktok', 'ko');
-  const result = await orchestrator.runWorkflow('analyze', input);
-  ```
+- Do NOT run `npm run dev` or `npm run build` without explicit user permission
+- Do NOT create README or markdown files unless explicitly told to
+- Do NOT change AI models (e.g., Gemini model versions) without explicit user permission
+- Use only muted colors like black, grey, and white. Never use colors unless explicitly told to for design.
 
-  ### FORBIDDEN - Do NOT do this:
-  ```typescript
-  // ❌ WRONG: Direct API calls outside agent system
-  import { GoogleGenAI } from '@google/genai';
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const response = await ai.models.generateContent(...);
+## Database Operations
 
-  // ❌ WRONG: Direct OpenAI calls outside agent system
-  import OpenAI from 'openai';
-  const openai = new OpenAI();
-  const response = await openai.chat.completions.create(...);
-  ```
+- ALWAYS use Supabase MCP tools (`mcp__supabase__*`) for database migrations and schema lookups instead of raw SQL files or Drizzle CLI
 
-  ### Model Selection (for reference only - use via Agent System)
-  - For image generation: use gemini-3-pro-image-preview
-  - For text generation: use gemini-2.5-flash or gemini-flash-lite-latest
+## Documentation
 
-  ### Model Clients (internal use in Agent System only)
-  If you need to create a new agent, use the model clients from `lib/models/`:
-  - `GeminiClient` - for Gemini models
-  - `OpenAIClient` - for OpenAI models
+- ALWAYS check with Context7 MCP tool (`mcp__context7__*`) for library documentation before implementing code
 
-  These are already integrated into `BaseAgent` and should not be used directly outside agents.
+---
 
-- use only muted colors like black, grey, and white. never use colors unless i tell you to for design.
+## AI Integration - MUST USE AGENT SYSTEM
 
-  ## Gemini AI Integration
-  When using Gemini AI, follow these requirements:
+**CRITICAL**: All AI usage in this project MUST go through the Agent System at `lib/agents/`.
+Do NOT use direct AI API calls outside of the agent system.
 
-  ### Dependencies
-  ```bash
-  npm install @google/genai mime
-  npm install -D @types/node
-  ```
+### Why Agent System?
 
-  ### Model Selection
-  - For image generation: use gemini-3-pro-image-preview
-  - For text generation: use gemini-flash-lite-latest
+- Centralized prompt management (database-driven prompts)
+- Execution logging and metrics tracking
+- Input/output validation with Zod schemas
+- Model client abstraction (Gemini/OpenAI)
+- Consistent error handling
 
-  ### Required Code Pattern
-  ```typescript
-  import { GoogleGenAI } from '@google/genai';
+### Agent System Architecture (`lib/agents/`)
 
-  const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-  });
+```
+lib/agents/
+├── base-agent.ts      # Abstract base class for all agents
+├── types.ts           # Type definitions
+├── orchestrator.ts    # Workflow orchestrator
+├── prompt-loader.ts   # Database prompt loading
+├── evaluation-service.ts # Execution logging
+├── analyzers/         # Vision, Text Pattern, Visual Trend, Strategy
+├── creators/          # Creative Director, Script Writer
+├── transformers/      # Prompt Engineer, I2V Specialist
+├── publishers/        # Publish Optimizer, Copywriter
+└── compose/           # Compose-specific agents
+```
 
-  const tools = [{ googleSearch: {} }];
+### Model Assignments
 
-  const config = {
-    thinkingConfig: {
-      thinkingLevel: 'HIGH',
-    },
-    tools,
-  };
+- **Gemini 2.5 Flash**: Analyzers, Transformers (fast analysis) - via `GOOGLE_AI_API_KEY`
+- **Gemini 3 Pro**: Creative Director (deep reasoning) - via `GOOGLE_AI_API_KEY`
+- **Vertex AI**: Image/Video generation and analysis - via GCP 서비스 계정
+- **GPT-5.1**: Publishers (copywriting)
 
-  const response = await ai.models.generateContentStream({
-    model: 'gemini-flash-lite-latest', // or gemini-3-pro-image-preview for images
-    config,
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: 'your prompt here' }],
+### How to Add New AI Functionality
+
+1. **Create a new agent** extending `BaseAgent`:
+
+```typescript
+import { BaseAgent } from '@/lib/agents/base-agent';
+import { z } from 'zod';
+import type { AgentContext } from '@/lib/agents/types';
+
+export const MyAgentInputSchema = z.object({ /* your fields */ });
+export const MyAgentOutputSchema = z.object({ /* your fields */ });
+export type MyAgentInput = z.infer<typeof MyAgentInputSchema>;
+export type MyAgentOutput = z.infer<typeof MyAgentOutputSchema>;
+
+export class MyAgent extends BaseAgent<MyAgentInput, MyAgentOutput> {
+  constructor() {
+    super({
+      id: 'my-agent',
+      name: 'My Agent',
+      description: 'Agent description',
+      category: 'analyzer',
+      model: {
+        provider: 'gemini',
+        name: 'gemini-2.5-flash',
+        options: { temperature: 0.7 }
       },
-    ],
-  });
-
-  for await (const chunk of response) {
-    console.log(chunk.text);
+      prompts: {
+        system: 'Your system prompt...',
+        templates: {}
+      },
+      inputSchema: MyAgentInputSchema,
+      outputSchema: MyAgentOutputSchema,
+    });
   }
-  ```
+
+  protected buildPrompt(input: MyAgentInput, context: AgentContext): string {
+    return `Your prompt with ${JSON.stringify(input)}`;
+  }
+}
+```
+
+2. **Use the agent**:
+
+```typescript
+import { createMyAgent } from '@/lib/agents/my-agent';
+
+const agent = createMyAgent();
+const result = await agent.execute(input, context);
+
+if (result.success) {
+  console.log(result.data);
+} else {
+  console.error(result.error);
+}
+```
+
+### FORBIDDEN - Do NOT do this:
+
+```typescript
+// ❌ WRONG: Direct API calls outside agent system
+import { GoogleGenAI } from '@google/genai';
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY });
+const response = await ai.models.generateContent(...);
+
+// ❌ WRONG: Using Google AI API for image/video (must use Vertex AI)
+import { GoogleGenAI } from '@google/genai';
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY });
+// 이미지/동영상 처리 금지!
+
+// ❌ WRONG: Using Vertex AI for text LLM (must use GOOGLE_AI_API_KEY)
+import { VertexAI } from '@google-cloud/vertexai';
+const vertexAI = new VertexAI({ project, location });
+const model = vertexAI.getGenerativeModel({ model: 'gemini-pro' });
+await model.generateContent('text prompt'); // LLM은 금지!
+```
+
+### Model Clients (internal use in Agent System only)
+
+- `GeminiClient` - for LLM text generation (uses `GOOGLE_AI_API_KEY`)
+- `VertexAIClient` - for image/video generation and analysis (uses GCP 서비스 계정)
+
+---
+
+## Environment Variables
+
+```bash
+# LLM (텍스트) - Google AI Studio
+GOOGLE_AI_API_KEY=your-google-ai-api-key
+
+# Image/Video - Vertex AI
+GCP_PROJECT_ID=your-gcp-project-id
+GCP_LOCATION=us-central1
+GOOGLE_APPLICATION_CREDENTIALS=./path-to-service-account.json
+```

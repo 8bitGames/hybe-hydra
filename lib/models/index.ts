@@ -4,7 +4,7 @@
  * Unified model client exports for Agent system
  *
  * Text Generation:
- * - GeminiClient: Google AI API (via @google/genai) - uses GEMINI_API_KEY
+ * - GeminiClient: Google AI API (via @google/genai) - uses GOOGLE_AI_API_KEY
  * - OpenAIClient: OpenAI API - uses OPENAI_API_KEY
  *
  * Media Generation:

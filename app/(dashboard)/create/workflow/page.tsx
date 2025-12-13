@@ -1100,6 +1100,7 @@ function InlinePromptPersonalizer({
         composition_mode: "direct",
         hand_pose: "elegantly holding",
         campaign_id: campaignId,  // Link generated image to the selected campaign
+        gemini_image_prompt: imagePrompt || undefined,  // 이미 생성된 프롬프트 재사용 (I2V Agent 건너뜀)
       });
 
       if (response.error || !response.data) {

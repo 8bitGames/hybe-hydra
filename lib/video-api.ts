@@ -346,6 +346,7 @@ export interface PreviewImageRequest {
   composition_mode?: "direct" | "two_step";  // "two_step" generates scene first, then composites product
   hand_pose?: string;  // Description of how hands should hold the product (for two_step mode)
   campaign_id?: string;  // Optional: link this image to a specific campaign
+  gemini_image_prompt?: string;  // Pre-generated image prompt (skips I2V Agent if provided)
 }
 
 export interface PreviewImageResponse {

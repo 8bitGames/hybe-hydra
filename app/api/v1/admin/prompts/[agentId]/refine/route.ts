@@ -124,10 +124,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body: RefineRequest = await request.json();
     const { action, message, history = [], currentPrompt, testInput } = body;
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
+    const apiKey = process.env.GOOGLE_AI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'API key not configured' },
+        { error: 'GOOGLE_AI_API_KEY not configured' },
         { status: 500 }
       );
     }

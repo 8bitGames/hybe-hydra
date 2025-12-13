@@ -313,8 +313,8 @@ class VertexAIClient:
             headers = self.auth.get_auth_headers()
 
             # Build endpoint URL for Gemini 3 Pro Image Preview
-            # Use "global" location for this model
-            endpoint = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/us-central1/publishers/google/models/{self.IMAGE_MODEL}:generateContent"
+            # Use "global" location for this model (NOT regional endpoint)
+            endpoint = f"https://aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/global/publishers/google/models/{self.IMAGE_MODEL}:generateContent"
 
             logger.info(f"Calling Gemini Image endpoint: {endpoint}")
 

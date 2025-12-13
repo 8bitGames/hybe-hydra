@@ -18,6 +18,7 @@ import { generatePreviewImage, PreviewImageInput } from "@/lib/preview-image";
  * - composition_mode?: "direct" | "two_step" (default: "two_step" when product_image_url provided)
  * - hand_pose?: Description of how hands should hold the product (for two_step mode)
  * - campaign_id?: Optional campaign ID to link this image to a specific campaign
+ * - gemini_image_prompt?: Pre-generated image prompt (skips I2V Agent if provided)
  *
  * Response:
  * - preview_id: Unique ID for this preview
@@ -47,6 +48,7 @@ export async function POST(request: NextRequest) {
       composition_mode,
       hand_pose,
       campaign_id,
+      gemini_image_prompt, // 이미 생성된 이미지 프롬프트가 있으면 재사용
     } = body;
 
     if (!video_prompt) {
@@ -68,6 +70,7 @@ export async function POST(request: NextRequest) {
       product_image_url,
       composition_mode,
       hand_pose,
+      gemini_image_prompt, // 이미 생성된 프롬프트 전달 (있으면 I2V Agent 건너뜀)
     };
 
     const result = await generatePreviewImage(

@@ -24,6 +24,7 @@ interface RouteParams {
  *   - "direct": Edit existing product image background
  *   - "two_step": Generate scene with placeholder, then composite product into it
  * - hand_pose?: Description of how hands should hold the product (for two_step mode)
+ * - gemini_image_prompt?: Pre-generated image prompt (skips I2V Agent if provided)
  *
  * Response:
  * - preview_id: Unique ID for this preview
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       product_image_url,
       composition_mode,
       hand_pose = "elegantly holding",
+      gemini_image_prompt, // 이미 생성된 이미지 프롬프트가 있으면 재사용
     } = body;
 
     if (!video_prompt) {
@@ -91,6 +93,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       product_image_url,
       composition_mode,
       hand_pose,
+      gemini_image_prompt, // 이미 생성된 프롬프트 전달 (있으면 I2V Agent 건너뜀)
     };
 
     const result = await generatePreviewImage(

@@ -35,6 +35,7 @@ export interface PreviewImageInput {
   product_image_url?: string;
   composition_mode?: "direct" | "two_step";
   hand_pose?: string;
+  gemini_image_prompt?: string;  // Pre-generated image prompt (skips I2V Agent if provided)
 }
 
 export interface PreviewImageResult {
@@ -243,77 +244,86 @@ export async function generateDirectPreviewImage(
     style,
     negative_prompt,
     product_image_url,
+    gemini_image_prompt: existingImagePrompt,
   } = input;
 
   const previewId = uuidv4();
 
   console.log(`${logPrefix} Using DIRECT mode`);
 
-  // Create I2V Specialist Agent and context
-  const i2vAgent = createI2VSpecialistAgent();
-  const agentContext: AgentContext = {
-    workflow: {
-      artistName: "Brand",
-      platform: "tiktok",
-      language: "ko",
-      sessionId: `preview-${Date.now()}`,
-    },
-  };
-
-  // Step 1: Generate appropriate prompt based on whether we have a reference image
+  // Step 1: Use existing prompt or generate new one
   let geminiImagePrompt: string;
 
-  if (product_image_url) {
-    // Reference image provided → generate BACKGROUND-ONLY prompt
-    console.log(`${logPrefix} Step 1: Generating BACKGROUND-ONLY prompt (reference image mode)...`);
-    const backgroundPromptResult = await i2vAgent.generateBackgroundForEditing(
-      video_prompt,
-      image_description,
-      agentContext,
-      { style, aspectRatio: aspect_ratio }
-    );
-
-    if (!backgroundPromptResult.success || !backgroundPromptResult.data?.prompt) {
-      console.error(`${logPrefix} Background prompt generation failed: ${backgroundPromptResult.error}`);
-      return {
-        success: false,
-        preview_id: previewId,
-        image_url: "",
-        image_base64: "",
-        gemini_image_prompt: "",
-        aspect_ratio,
-        composition_mode: "direct",
-        error: `Failed to generate background prompt: ${backgroundPromptResult.error}`,
-      };
-    }
-
-    geminiImagePrompt = backgroundPromptResult.data.prompt;
-    console.log(`${logPrefix} Background-only prompt: ${geminiImagePrompt.slice(0, 150)}...`);
+  // If pre-generated prompt is provided, skip I2V Agent
+  if (existingImagePrompt) {
+    console.log(`${logPrefix} Step 1: Using pre-generated image prompt (skipping I2V Agent)`);
+    geminiImagePrompt = existingImagePrompt;
+    console.log(`${logPrefix} Pre-generated prompt: ${geminiImagePrompt.slice(0, 150)}...`);
   } else {
-    // No reference image → generate full prompt with product description
-    console.log(`${logPrefix} Step 1: Generating full image prompt (no reference image)...`);
-    const imagePromptResult = await i2vAgent.generateImagePrompt(
-      `${video_prompt}. ${image_description}`,
-      agentContext,
-      { style }
-    );
+    // Create I2V Specialist Agent and context
+    const i2vAgent = createI2VSpecialistAgent();
+    const agentContext: AgentContext = {
+      workflow: {
+        artistName: "Brand",
+        platform: "tiktok",
+        language: "ko",
+        sessionId: `preview-${Date.now()}`,
+      },
+    };
 
-    if (!imagePromptResult.success || !imagePromptResult.data?.prompt) {
-      console.error(`${logPrefix} Image prompt generation failed: ${imagePromptResult.error}`);
-      return {
-        success: false,
-        preview_id: previewId,
-        image_url: "",
-        image_base64: "",
-        gemini_image_prompt: "",
-        aspect_ratio,
-        composition_mode: "direct",
-        error: `Failed to generate image prompt: ${imagePromptResult.error}`,
-      };
+    // Generate appropriate prompt based on whether we have a reference image
+    if (product_image_url) {
+      // Reference image provided → generate BACKGROUND-ONLY prompt
+      console.log(`${logPrefix} Step 1: Generating BACKGROUND-ONLY prompt (reference image mode)...`);
+      const backgroundPromptResult = await i2vAgent.generateBackgroundForEditing(
+        video_prompt,
+        image_description,
+        agentContext,
+        { style, aspectRatio: aspect_ratio }
+      );
+
+      if (!backgroundPromptResult.success || !backgroundPromptResult.data?.prompt) {
+        console.error(`${logPrefix} Background prompt generation failed: ${backgroundPromptResult.error}`);
+        return {
+          success: false,
+          preview_id: previewId,
+          image_url: "",
+          image_base64: "",
+          gemini_image_prompt: "",
+          aspect_ratio,
+          composition_mode: "direct",
+          error: `Failed to generate background prompt: ${backgroundPromptResult.error}`,
+        };
+      }
+
+      geminiImagePrompt = backgroundPromptResult.data.prompt;
+      console.log(`${logPrefix} Background-only prompt: ${geminiImagePrompt.slice(0, 150)}...`);
+    } else {
+      // No reference image → generate full prompt with product description
+      console.log(`${logPrefix} Step 1: Generating full image prompt (no reference image)...`);
+      const imagePromptResult = await i2vAgent.generateImagePrompt(
+        `${video_prompt}. ${image_description}`,
+        agentContext,
+        { style }
+      );
+
+      if (!imagePromptResult.success || !imagePromptResult.data?.prompt) {
+        console.error(`${logPrefix} Image prompt generation failed: ${imagePromptResult.error}`);
+        return {
+          success: false,
+          preview_id: previewId,
+          image_url: "",
+          image_base64: "",
+          gemini_image_prompt: "",
+          aspect_ratio,
+          composition_mode: "direct",
+          error: `Failed to generate image prompt: ${imagePromptResult.error}`,
+        };
+      }
+
+      geminiImagePrompt = imagePromptResult.data.prompt;
+      console.log(`${logPrefix} Full image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
     }
-
-    geminiImagePrompt = imagePromptResult.data.prompt;
-    console.log(`${logPrefix} Full image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
   }
 
   // Step 2: Generate image via AWS Batch backend (Vertex AI)
