@@ -1,19 +1,13 @@
 /**
  * Veo 3 Video Generation Service
- * Uses Google Gen AI SDK for video generation via Gemini API
+ * Uses Vertex AI exclusively for video generation.
+ *
+ * NOTE: Google AI API (GOOGLE_AI_API_KEY) is NOT used for video generation.
+ * All video generation goes through Vertex AI for consistency and cost management.
  */
 
-import { GoogleGenAI } from "@google/genai";
 import { uploadVideoFromBase64, uploadVideoFromUrl } from "./storage";
-
-// Initialize Google Gen AI client
-const getClient = () => {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GOOGLE_AI_API_KEY is not configured");
-  }
-  return new GoogleGenAI({ apiKey });
-};
+import { isVertexAIAvailable, getVertexAIMediaClient, type VideoDuration, type VideoAspectRatio } from "@/lib/models";
 
 // Model options
 export type VeoModel = "veo-3.1-fast-generate-preview" | "veo-3.1-generate-preview" | "veo-2.0-generate-001";
@@ -118,13 +112,15 @@ export interface VeoJobStatus {
   error?: string;
 }
 
-// Mock mode check (uses new config system)
+// Mock mode check - only uses VEO_MODE env var
 const isMockMode = () => {
-  return isVeoSampleMode() || !process.env.GOOGLE_AI_API_KEY;
+  return isVeoSampleMode();
 };
 
 /**
- * Generate video using Veo 3 through Google AI API
+ * Generate video using Veo 3.1 through Vertex AI
+ *
+ * NOTE: Only Vertex AI is supported. Google AI API is not used.
  */
 export async function generateVideo(
   params: VeoGenerationParams,
@@ -132,66 +128,43 @@ export async function generateVideo(
 ): Promise<VeoGenerationResult> {
   const veoConfig = getVeoConfig();
 
-  // Use sample mode if configured or API key missing
-  if (veoConfig.isSampleMode || !process.env.GOOGLE_AI_API_KEY) {
+  // Use sample mode if configured
+  if (veoConfig.isSampleMode) {
     console.log(`[VEO] Running in ${veoConfig.mode} mode (${veoConfig.description})`);
     return generateMockVideo(params);
   }
 
-  try {
-    const ai = getClient();
-    // Use model from params if specified, otherwise use config model
-    const model = params.model || veoConfig.model;
+  // Only Vertex AI is supported
+  if (!isVertexAIAvailable()) {
+    console.error("[VEO] Vertex AI is not available. Video generation requires Vertex AI.");
+    return {
+      success: false,
+      error: "Vertex AI is not configured. Please set up GCP credentials for video generation.",
+    };
+  }
 
-    console.log(`[VEO] Starting video generation with model: ${model}`);
+  try {
+    const client = getVertexAIMediaClient();
+
+    console.log(`[VEO] Starting video generation with Vertex AI (Veo 3.1)`);
     console.log(`[VEO] Prompt: ${params.prompt.slice(0, 100)}...`);
 
-    // Build configuration
-    const config: Record<string, unknown> = {};
+    // Build the prompt
+    const fullPrompt = buildVideoPrompt(params);
 
-    if (params.negativePrompt) {
-      config.negativePrompt = params.negativePrompt;
-    }
+    // Determine reference image for I2V mode
+    let referenceImageBase64: string | undefined;
 
-    if (params.aspectRatio) {
-      config.aspectRatio = params.aspectRatio;
-    }
-
-    if (params.resolution) {
-      config.resolution = params.resolution;
-    }
-
-    if (params.sampleCount) {
-      config.sampleCount = params.sampleCount;
-    }
-
-    if (params.seed !== undefined) {
-      config.seed = params.seed;
-    }
-
-    // Handle reference image if provided (I2V mode)
-    let imageInput: { imageBytes: string; mimeType: string } | undefined;
-
-    // First, check for direct Base64
     if (params.referenceImageBase64) {
       console.log("[VEO] Using reference image (Base64 provided) - I2V mode activated");
-      imageInput = {
-        imageBytes: params.referenceImageBase64,
-        mimeType: "image/png",
-      };
-    }
-    // Otherwise, fetch from URL and convert to Base64
-    else if (params.referenceImageUrl) {
+      referenceImageBase64 = params.referenceImageBase64;
+    } else if (params.referenceImageUrl) {
       console.log(`[VEO] Fetching reference image from URL: ${params.referenceImageUrl}`);
       try {
         const imageBase64 = await fetchImageAsBase64(params.referenceImageUrl);
         if (imageBase64) {
           console.log("[VEO] Reference image fetched successfully - I2V mode activated");
-          const mimeType = detectImageMimeType(params.referenceImageUrl);
-          imageInput = {
-            imageBytes: imageBase64,
-            mimeType,
-          };
+          referenceImageBase64 = imageBase64;
         }
       } catch (imageError) {
         console.error("[VEO] Failed to fetch reference image, falling back to T2V mode:", imageError);
@@ -200,121 +173,60 @@ export async function generateVideo(
       console.log("[VEO] No reference image provided - T2V mode");
     }
 
-    // Start video generation
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const generateOptions: any = {
-      model,
-      prompt: buildVideoPrompt(params),
-      config: {
-        ...config,
-        numberOfVideos: 1,
-        // Note: personGeneration options ("allow_all", "allow_adult") are not supported in current API
-        // Omitting this parameter to use default behavior
-      },
-    };
-
-    if (imageInput) {
-      generateOptions.image = imageInput;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let operation = await (ai.models as any).generateVideos(generateOptions);
-
-    console.log(`[VEO] Operation started: ${operation.name || "unknown"}`);
-    console.log("[VEO] Initial operation details:", JSON.stringify(operation, null, 2));
-
-    // Poll for completion (with timeout)
-    const maxWaitTime = 10 * 60 * 1000; // 10 minutes max
-    const pollInterval = 10 * 1000; // 10 seconds
-    const startTime = Date.now();
-
-    while (!operation.done) {
-      if (Date.now() - startTime > maxWaitTime) {
-        throw new Error("Video generation timed out after 10 minutes");
-      }
-
-      console.log("[VEO] Waiting for video generation to complete...");
-      await sleep(pollInterval);
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      operation = await (ai.operations as any).getVideosOperation({
-        operation,
-      });
-
-      console.log("[VEO] Operation status:", {
-        done: operation.done,
-        hasResponse: !!operation.response,
-        hasError: !!operation.error,
-        metadata: operation.metadata,
-      });
-    }
-
-    console.log("[VEO] Final operation response:", JSON.stringify(operation.response, null, 2));
-
-    // Check for RAI (Responsible AI) filtering
-    if (operation.response?.raiMediaFilteredCount > 0) {
-      const reasons = operation.response.raiMediaFilteredReasons || [];
-      console.error("[VEO] Content filtered by Responsible AI:", reasons);
-      throw new Error(`Content blocked by Google's safety filters: ${reasons.join(", ")}`);
-    }
-
-    // Check for errors
-    if (operation.error) {
-      console.error("[VEO] Operation error:", operation.error);
-      throw new Error(operation.error.message || "Video generation failed");
-    }
-
-    // Get generated video
-    const generatedVideos = operation.response?.generatedVideos;
-    if (!generatedVideos || generatedVideos.length === 0) {
-      console.error("[VEO] No videos in response. Full response:", operation.response);
-      throw new Error(
-        "No video generated. Possible causes: API key lacks Veo access, content filtered, or API error. Check logs above."
-      );
-    }
-
-    const video = generatedVideos[0];
-    let videoUrl: string;
-
-    // If we have video bytes, upload to S3
-    if (video.video?.videoBytes && campaignId) {
-      console.log("[VEO] Uploading video bytes to S3...");
-      const uploadResult = await uploadVideoFromBase64(
-        video.video.videoBytes,
-        campaignId,
-        video.video.mimeType || "video/mp4"
-      );
-
-      if (!uploadResult.success) {
-        throw new Error(`Failed to upload video: ${uploadResult.error}`);
-      }
-
-      videoUrl = uploadResult.url!;
-    } else if (video.video?.uri && campaignId) {
-      // Download from URI and upload to S3 for persistent storage
-      console.log("[VEO] Downloading video from URI and uploading to S3...");
-      console.log(`[VEO] Source URI: ${video.video.uri}`);
-
-      // Download with API key authentication
-      const apiKey = process.env.GOOGLE_AI_API_KEY;
-      const downloadUrl = video.video.uri.includes("?")
-        ? `${video.video.uri}&key=${apiKey}`
-        : `${video.video.uri}?key=${apiKey}`;
-
-      const uploadResult = await uploadVideoFromUrl(downloadUrl, campaignId);
-
-      if (!uploadResult.success) {
-        console.warn(`[VEO] S3 upload failed, using direct URI: ${uploadResult.error}`);
-        videoUrl = video.video.uri;
+    // Validate and convert duration to supported values (4, 6, or 8 seconds)
+    let durationSeconds: VideoDuration = 8;
+    if (params.durationSeconds) {
+      if (params.durationSeconds <= 4) {
+        durationSeconds = 4;
+      } else if (params.durationSeconds <= 6) {
+        durationSeconds = 6;
       } else {
-        videoUrl = uploadResult.url!;
-        console.log(`[VEO] Video uploaded to S3: ${videoUrl}`);
+        durationSeconds = 8;
       }
-    } else if (video.video?.uri) {
-      // No campaignId provided, use URI directly
-      videoUrl = video.video.uri;
-    } else {
-      throw new Error("No video data or URI in response");
+    }
+
+    // Build GCS output URI for video storage
+    const outputGcsUri = campaignId
+      ? `gs://${process.env.GCS_BUCKET_NAME || "hybe-hydra-videos"}/campaigns/${campaignId}/`
+      : `gs://${process.env.GCS_BUCKET_NAME || "hybe-hydra-videos"}/temp/`;
+
+    // Generate video using Vertex AI
+    const result = await client.generateVideo(
+      {
+        prompt: fullPrompt,
+        negativePrompt: params.negativePrompt,
+        aspectRatio: params.aspectRatio as VideoAspectRatio,
+        durationSeconds,
+        personGeneration: "allow_adult",
+        generateAudio: true,
+        seed: params.seed,
+        referenceImageBase64,
+      },
+      outputGcsUri
+    );
+
+    if (!result.success) {
+      console.error(`[VEO] Vertex AI video generation failed: ${result.error}`);
+
+      // Only fallback to mock if explicitly enabled
+      if (process.env.VEO_FALLBACK_TO_MOCK === "true") {
+        console.log("[VEO] Falling back to mock mode (VEO_FALLBACK_TO_MOCK=true)");
+        return generateMockVideo(params);
+      }
+
+      return {
+        success: false,
+        error: result.error || "Vertex AI video generation failed",
+      };
+    }
+
+    let videoUrl = result.videoUri || "";
+
+    // If video is in GCS and we have a campaign, optionally upload to S3
+    if (videoUrl.startsWith("gs://") && campaignId && process.env.UPLOAD_TO_S3 === "true") {
+      console.log(`[VEO] Video stored at GCS: ${videoUrl}`);
+      // GCS URI can be used directly or converted to signed URL
+      // For now, we keep the GCS URI - the application can handle conversion as needed
     }
 
     console.log(`[VEO] Video generation completed: ${videoUrl}`);
@@ -322,18 +234,18 @@ export async function generateVideo(
     return {
       success: true,
       videoUrl,
-      operationName: operation.name,
+      operationName: result.operationName,
       metadata: {
-        duration: params.durationSeconds || 8,
+        duration: durationSeconds,
         resolution: params.resolution || "720p",
         format: "mp4",
-        model,
+        model: "veo-3.1-generate-001",
       },
     };
   } catch (error) {
     console.error("[VEO] Generation error:", error instanceof Error ? error.message : String(error));
 
-    // Only fallback to mock if explicitly enabled via environment variable
+    // Only fallback to mock if explicitly enabled
     if (process.env.VEO_FALLBACK_TO_MOCK === "true") {
       console.log("[VEO] Falling back to mock mode (VEO_FALLBACK_TO_MOCK=true)");
       return generateMockVideo(params);
@@ -342,147 +254,6 @@ export async function generateVideo(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Video generation failed",
-    };
-  }
-}
-
-/**
- * Generate video using Vertex AI (alternative method for enterprise)
- */
-export async function generateVideoWithVertexAI(
-  params: VeoGenerationParams,
-  campaignId?: string
-): Promise<VeoGenerationResult> {
-  try {
-    const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-    const location = process.env.VERTEX_AI_LOCATION || "us-central1";
-    const accessToken = process.env.GOOGLE_ACCESS_TOKEN;
-
-    if (!projectId || !accessToken) {
-      throw new Error("GOOGLE_CLOUD_PROJECT and GOOGLE_ACCESS_TOKEN are required for Vertex AI");
-    }
-
-    const modelId = params.model || "veo-3.1-generate-preview";
-    const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${modelId}:predictLongRunning`;
-
-    // Build request body
-    const requestBody = {
-      instances: [
-        {
-          prompt: buildVideoPrompt(params),
-          ...(params.referenceImageBase64 && {
-            referenceImages: [
-              {
-                image: {
-                  bytesBase64Encoded: params.referenceImageBase64,
-                  mimeType: "image/png",
-                },
-                referenceType: "asset",
-              },
-            ],
-          }),
-        },
-      ],
-      parameters: {
-        durationSeconds: params.durationSeconds || 8,
-        aspectRatio: params.aspectRatio || "16:9",
-        ...(params.negativePrompt && { negativePrompt: params.negativePrompt }),
-        ...(params.resolution && { resolution: params.resolution }),
-        ...(params.sampleCount && { sampleCount: params.sampleCount }),
-        ...(params.seed !== undefined && { seed: params.seed }),
-        personGeneration: "allow_adult",
-      },
-    };
-
-    console.log(`[VEO-VERTEX] Starting generation with endpoint: ${endpoint}`);
-
-    // Start long-running operation
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Vertex AI error: ${response.status} - ${errorText}`);
-    }
-
-    const operationData = await response.json();
-    const operationName = operationData.name;
-
-    console.log(`[VEO-VERTEX] Operation started: ${operationName}`);
-
-    // Poll for completion
-    const maxWaitTime = 10 * 60 * 1000;
-    const pollInterval = 10 * 1000;
-    const startTime = Date.now();
-
-    let operationResult;
-    while (true) {
-      if (Date.now() - startTime > maxWaitTime) {
-        throw new Error("Video generation timed out");
-      }
-
-      await sleep(pollInterval);
-
-      const statusResponse = await fetch(
-        `https://${location}-aiplatform.googleapis.com/v1/${operationName}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      operationResult = await statusResponse.json();
-
-      if (operationResult.done) {
-        break;
-      }
-
-      console.log("[VEO-VERTEX] Still processing...");
-    }
-
-    // Check for errors
-    if (operationResult.error) {
-      throw new Error(operationResult.error.message);
-    }
-
-    // Extract video URL
-    const videos = operationResult.response?.videos;
-    if (!videos || videos.length === 0) {
-      throw new Error("No video in response");
-    }
-
-    const gcsUri = videos[0].gcsUri;
-
-    // If it's a GCS URI and we have a campaign, download and re-upload to our S3
-    if (gcsUri.startsWith("gs://") && campaignId) {
-      // For GCS URIs, we'd need to download via GCS API
-      // For now, return the GCS URI directly (requires proper permissions)
-      console.log(`[VEO-VERTEX] Video stored at: ${gcsUri}`);
-    }
-
-    return {
-      success: true,
-      videoUrl: gcsUri,
-      operationName,
-      metadata: {
-        duration: params.durationSeconds || 8,
-        resolution: params.resolution || "720p",
-        format: "mp4",
-        model: modelId,
-      },
-    };
-  } catch (error) {
-    console.error("[VEO-VERTEX] Generation error:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Vertex AI generation failed",
     };
   }
 }
@@ -543,6 +314,7 @@ function generateMockVideo(params: VeoGenerationParams): VeoGenerationResult {
 
 /**
  * Check video generation status (for async operations)
+ * Uses Vertex AI operation status API
  */
 export async function checkGenerationStatus(operationName: string): Promise<VeoJobStatus> {
   if (isMockMode()) {
@@ -553,32 +325,49 @@ export async function checkGenerationStatus(operationName: string): Promise<VeoJ
     };
   }
 
+  if (!isVertexAIAvailable()) {
+    return {
+      status: "failed",
+      progress: 0,
+      error: "Vertex AI is not available",
+    };
+  }
+
   try {
-    const ai = getClient();
+    const client = getVertexAIMediaClient();
+    const operationStatus = await client.checkOperationStatus(operationName);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const operation = await (ai.operations as any).get({ name: operationName });
-
-    if (operation.done) {
-      if (operation.error) {
+    // Check if operation is done
+    if (operationStatus.done) {
+      // Check for errors
+      if (operationStatus.error) {
+        const errorObj = operationStatus.error as { message?: string };
         return {
           status: "failed",
           progress: 100,
-          error: operation.error.message,
+          error: errorObj.message || "Operation failed",
         };
       }
 
-      const video = operation.response?.generatedVideos?.[0];
+      // Extract video URL from response
+      const response = operationStatus.response as {
+        videos?: Array<{ gcsUri?: string; uri?: string }>;
+      };
+      const videos = response?.videos || [];
+      const videoUrl = videos[0]?.gcsUri || videos[0]?.uri;
+
       return {
         status: "completed",
         progress: 100,
-        videoUrl: video?.video?.uri,
+        videoUrl,
       };
     }
 
+    // Operation still in progress
+    const metadata = operationStatus.metadata as { progressPercentage?: number };
     return {
       status: "processing",
-      progress: 50,
+      progress: metadata?.progressPercentage || 50,
     };
   } catch (error) {
     console.error("[VEO] Status check error:", error);

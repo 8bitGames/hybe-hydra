@@ -2,23 +2,13 @@
  * Image Generation Service
  *
  * Generates images for I2V video generation.
- * Uses Gemini 3 Pro Image model via Vertex AI or Google AI API.
+ * Uses Vertex AI exclusively (Imagen 3.0 or via AWS Batch).
  *
- * - Production: Uses Vertex AI with Gemini 3 Pro Image (gemini-3-pro-image-preview)
- * - Fallback: Uses Google AI API with Gemini (gemini-3-pro-image-preview)
+ * NOTE: Google AI API (GOOGLE_AI_API_KEY) is NOT used for image generation.
+ * All image generation goes through Vertex AI for consistency and cost management.
  */
 
-import { GoogleGenAI } from "@google/genai";
 import { isVertexAIAvailable, getVertexAIMediaClient } from "@/lib/models";
-
-// Initialize Google Gen AI client
-const getClient = () => {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GOOGLE_AI_API_KEY is not configured");
-  }
-  return new GoogleGenAI({ apiKey });
-};
 
 export interface ImageGenerationParams {
   prompt: string;
@@ -37,9 +27,9 @@ export interface ImageGenerationResult {
   error?: string;
 }
 
-// Mock mode check
+// Mock mode check - only uses explicit env var, not API key presence
 const isMockMode = () => {
-  return process.env.IMAGEN_MOCK_MODE === "true" || !process.env.GOOGLE_AI_API_KEY;
+  return process.env.IMAGEN_MOCK_MODE === "true";
 };
 
 /**
@@ -68,12 +58,11 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; m
 }
 
 /**
- * Generate an image using Vertex AI Gemini 3 Pro Image or Google AI Studio
+ * Generate an image using Vertex AI (Imagen 3.0)
  * This image will be used as the starting point for I2V video generation
  *
- * Provider selection via AI_IMAGE_PROVIDER env variable:
- * - "google_ai": Force use Google AI Studio (gemini-3-pro-image-preview)
- * - "vertex" (default): Use Vertex AI if available, fallback to Google AI
+ * NOTE: Only Vertex AI is supported. Google AI API is not used.
+ * For production, images are generated via AWS Batch backend.
  *
  * When a reference image (product image) is provided, the model will incorporate
  * that actual product into the generated scene.
@@ -86,28 +75,21 @@ export async function generateImage(
     return generateMockImage(params);
   }
 
-  // Check AI_IMAGE_PROVIDER env variable
-  const provider = process.env.AI_IMAGE_PROVIDER || "vertex";
-
-  // If explicitly set to google_ai, use Google AI Studio directly
-  if (provider === "google_ai") {
-    console.log("[IMAGE-GEN] Using Google AI Studio (forced by AI_IMAGE_PROVIDER=google_ai)");
-    return generateImageWithGemini(params);
+  // Only Vertex AI is supported
+  if (!isVertexAIAvailable()) {
+    console.error("[IMAGE-GEN] Vertex AI is not available. Image generation requires Vertex AI.");
+    return {
+      success: false,
+      error: "Vertex AI is not configured. Please set up GCP credentials for image generation.",
+    };
   }
 
-  // Default behavior: Use Vertex AI if available, fallback to Google AI
-  if (isVertexAIAvailable()) {
-    console.log("[IMAGE-GEN] Using Vertex AI Gemini 3 Pro Image (production mode)");
-    return generateImageWithVertexAI(params);
-  }
-
-  // Fallback to Google AI Gemini API
-  console.log("[IMAGE-GEN] Vertex AI not available, falling back to Gemini API");
-  return generateImageWithGemini(params);
+  console.log("[IMAGE-GEN] Using Vertex AI Imagen 3.0");
+  return generateImageWithVertexAI(params);
 }
 
 /**
- * Generate image using Vertex AI Gemini 3 Pro Image
+ * Generate image using Vertex AI Imagen 3.0
  */
 async function generateImageWithVertexAI(
   params: ImageGenerationParams
@@ -115,7 +97,7 @@ async function generateImageWithVertexAI(
   try {
     const client = getVertexAIMediaClient();
 
-    console.log(`[VERTEX-IMAGE] Starting image generation with Gemini 3 Pro Image`);
+    console.log(`[VERTEX-IMAGE] Starting image generation with Imagen 3.0`);
     console.log(`[VERTEX-IMAGE] Prompt: ${params.prompt.slice(0, 100)}...`);
 
     // Build prompt with style
@@ -143,164 +125,18 @@ async function generateImageWithVertexAI(
       };
     }
 
-    // If Vertex AI fails, try Gemini as fallback
-    console.warn(`[VERTEX-IMAGE] Failed: ${result.error}, trying Gemini fallback...`);
-    return generateImageWithGemini(params);
+    // No fallback - return error
+    console.error(`[VERTEX-IMAGE] Failed: ${result.error}`);
+    return {
+      success: false,
+      error: result.error || "Vertex AI image generation failed",
+    };
 
   } catch (error) {
     console.error("[VERTEX-IMAGE] Error:", error);
-    // Fallback to Gemini on error
-    console.log("[VERTEX-IMAGE] Falling back to Gemini API due to error");
-    return generateImageWithGemini(params);
-  }
-}
-
-/**
- * Generate image using Google AI Gemini API (fallback)
- */
-async function generateImageWithGemini(
-  params: ImageGenerationParams
-): Promise<ImageGenerationResult> {
-  try {
-    const ai = getClient();
-    const model = "gemini-3-pro-image-preview"; // Gemini 3 Pro image generation model
-
-    console.log(`[GEMINI-IMAGE] Starting image generation with model: ${model}`);
-    console.log(`[GEMINI-IMAGE] Prompt: ${params.prompt.slice(0, 100)}...`);
-
-    // Build the prompt with style if provided
-    let fullPrompt = params.prompt;
-    if (params.style) {
-      fullPrompt = `[Style: ${params.style}] ${fullPrompt}`;
-    }
-
-    // Add quality modifiers for better I2V results
-    fullPrompt += ". High quality, detailed, sharp focus, professional photography, suitable for video animation.";
-
-    // Add aspect ratio hint to the prompt
-    if (params.aspectRatio) {
-      const aspectHint = params.aspectRatio === "16:9"
-        ? "horizontal/landscape format"
-        : params.aspectRatio === "9:16"
-          ? "vertical/portrait format"
-          : "square format";
-      fullPrompt += ` Image should be in ${aspectHint}.`;
-    }
-
-    // Prepare contents array - can include both text and reference image
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const contents: any[] = [];
-
-    // Get reference image if provided
-    let referenceImageData: { base64: string; mimeType: string } | null = null;
-
-    if (params.referenceImageBase64) {
-      // Use provided base64 directly
-      referenceImageData = {
-        base64: params.referenceImageBase64,
-        mimeType: "image/jpeg", // Assume JPEG if not specified
-      };
-      console.log("[GEMINI-IMAGE] Using provided base64 reference image");
-    } else if (params.referenceImageUrl) {
-      // Fetch image from URL
-      referenceImageData = await fetchImageAsBase64(params.referenceImageUrl);
-    }
-
-    // If we have a reference image, add it to contents with modified prompt
-    if (referenceImageData) {
-      console.log("[GEMINI-IMAGE] Including reference image in generation request");
-
-      // Use image EDITING approach - keep the product exactly as is, only change background
-      const promptWithReference = `Edit this image: Change ONLY the background to show: ${fullPrompt}.
-
-CRITICAL RULES:
-1. DO NOT modify, redraw, or change the product/object in ANY way
-2. Keep the EXACT original product - same pixels, same appearance, same details
-3. Only replace/extend the background around the product
-4. The product must remain IDENTICAL to the input image
-5. This is an IMAGE EDITING task, not image generation - preserve the original product exactly`;
-
-      contents.push({
-        inlineData: {
-          mimeType: referenceImageData.mimeType,
-          data: referenceImageData.base64,
-        },
-      });
-      contents.push({ text: promptWithReference });
-    } else {
-      // No reference image, use text-only prompt
-      contents.push({ text: fullPrompt });
-    }
-
-    // Generate image using Gemini generateContent with image response
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await (ai.models as any).generateContent({
-      model,
-      contents,
-      config: {
-        responseModalities: ["TEXT", "IMAGE"],
-      },
-    });
-
-    console.log("[GEMINI-IMAGE] Generation response received");
-
-    // Check for blocked content
-    if (response.promptFeedback?.blockReason) {
-      console.error("[GEMINI-IMAGE] Content blocked:", response.promptFeedback.blockReason);
-      return {
-        success: false,
-        error: `Image blocked by safety filter: ${response.promptFeedback.blockReason}`,
-      };
-    }
-
-    // Extract image from response parts
-     
-    const candidates = response.candidates || [];
-    for (const candidate of candidates) {
-       
-      const parts = candidate.content?.parts || [];
-      for (const part of parts) {
-        // Check for inline data (image)
-        if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith("image/")) {
-          console.log("[GEMINI-IMAGE] Image generated successfully");
-          return {
-            success: true,
-            imageBase64: part.inlineData.data,
-            mimeType: part.inlineData.mimeType,
-          };
-        }
-      }
-    }
-
-    // Alternative: Check response.parts directly (newer SDK structure)
-     
-    const parts = response.parts || [];
-    for (const part of parts) {
-      if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith("image/")) {
-        console.log("[GEMINI-IMAGE] Image generated successfully (from parts)");
-        return {
-          success: true,
-          imageBase64: part.inlineData.data,
-          mimeType: part.inlineData.mimeType,
-        };
-      }
-    }
-
-    console.error("[GEMINI-IMAGE] No image data found in response");
-    console.log("[GEMINI-IMAGE] Response structure:", JSON.stringify(response, null, 2).slice(0, 500));
     return {
       success: false,
-      error: "No image data in response",
-    };
-  } catch (error) {
-    console.error("[GEMINI-IMAGE] Generation error:", error);
-
-    // Check if it's a specific API error
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    return {
-      success: false,
-      error: errorMessage,
+      error: error instanceof Error ? error.message : "Vertex AI image generation error",
     };
   }
 }
@@ -382,18 +218,17 @@ export interface TwoStepCompositionResult {
  * 1. Generate a scene image showing hands holding a placeholder
  * 2. Composite the actual product image into the scene
  *
- * This approach ensures the product image is preserved exactly while
- * creating a realistic scene around it.
+ * NOTE: This feature is currently NOT SUPPORTED as it requires Google AI API
+ * which has been removed. Vertex AI does not support multi-image composition.
+ * Use "direct" composition mode instead.
  *
- * Note: This function always uses Google AI Studio as Vertex AI
- * does not support multi-image composition workflows.
- * AI_IMAGE_PROVIDER setting is logged but composition always uses Google AI.
+ * @deprecated Use direct mode instead - two-step composition is not supported with Vertex AI only
  */
 export async function generateTwoStepComposition(
   params: TwoStepCompositionParams
 ): Promise<TwoStepCompositionResult> {
   if (isMockMode()) {
-    console.log("[GEMINI-IMAGE] Running in mock mode - Two-step composition");
+    console.log("[IMAGE-GEN] Running in mock mode - Two-step composition");
     return {
       success: true,
       sceneImageBase64: "MOCK_SCENE_IMAGE_BASE64",
@@ -402,212 +237,12 @@ export async function generateTwoStepComposition(
     };
   }
 
-  // Log provider setting (two-step composition always uses Google AI)
-  const provider = process.env.AI_IMAGE_PROVIDER || "vertex";
-  console.log(`[GEMINI-IMAGE] Two-step composition using Google AI Studio (AI_IMAGE_PROVIDER=${provider}, but composition requires Google AI)`);
+  // Two-step composition is not supported with Vertex AI only
+  console.error("[IMAGE-GEN] Two-step composition is not supported. Vertex AI does not support multi-image composition workflows.");
+  console.error("[IMAGE-GEN] Please use 'direct' composition mode instead.");
 
-  try {
-    const ai = getClient();
-    const model = "gemini-3-pro-image-preview";  // Gemini 3 Pro image generation model
-
-    // ============ STEP 1: Generate scene with placeholder ============
-    console.log(`[GEMINI-IMAGE] Step 1: Generating scene with placeholder using model: ${model}...`);
-    console.log(`[GEMINI-IMAGE] Scene prompt: ${params.scenePrompt.slice(0, 100)}...`);
-
-    let scenePrompt = params.scenePrompt;
-    if (params.style) {
-      scenePrompt = `[Style: ${params.style}] ${scenePrompt}`;
-    }
-
-    // CRITICAL: Ensure single image output, not collage
-    scenePrompt = `Generate ONE SINGLE coherent image (NOT a collage, NOT multiple images, NOT split screen): ${scenePrompt}`;
-    scenePrompt += ". High quality, detailed, sharp focus, professional photography. Single unified composition.";
-
-    if (params.aspectRatio) {
-      const aspectHint = params.aspectRatio === "16:9"
-        ? "horizontal/landscape format"
-        : params.aspectRatio === "9:16"
-          ? "vertical/portrait format"
-          : "square format";
-      scenePrompt += ` Image should be in ${aspectHint}.`;
-    }
-
-    // Generate scene image (text-only, no reference)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sceneResponse = await (ai.models as any).generateContent({
-      model,
-      contents: [{ text: scenePrompt }],
-      config: {
-        responseModalities: ["TEXT", "IMAGE"],
-      },
-    });
-
-    // Extract scene image
-    let sceneImageBase64: string | undefined;
-    let sceneMimeType: string = "image/png";
-
-    const sceneCandidates = sceneResponse.candidates || [];
-    for (const candidate of sceneCandidates) {
-      const parts = candidate.content?.parts || [];
-      for (const part of parts) {
-        if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith("image/")) {
-          sceneImageBase64 = part.inlineData.data;
-          sceneMimeType = part.inlineData.mimeType;
-          break;
-        }
-      }
-      if (sceneImageBase64) break;
-    }
-
-    // Also check response.parts
-    if (!sceneImageBase64) {
-      const parts = sceneResponse.parts || [];
-      for (const part of parts) {
-        if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith("image/")) {
-          sceneImageBase64 = part.inlineData.data;
-          sceneMimeType = part.inlineData.mimeType;
-          break;
-        }
-      }
-    }
-
-    if (!sceneImageBase64) {
-      console.error("[GEMINI-IMAGE] Step 1 failed: No scene image generated");
-      return {
-        success: false,
-        error: "Failed to generate scene image with placeholder",
-      };
-    }
-
-    console.log("[GEMINI-IMAGE] Step 1 complete: Scene image generated");
-
-    // ============ STEP 2: Composite product into scene ============
-    console.log("[GEMINI-IMAGE] Step 2: Compositing product into scene...");
-
-    // Get product image
-    let productImageData: { base64: string; mimeType: string } | null = null;
-
-    if (params.productImageBase64) {
-      productImageData = {
-        base64: params.productImageBase64,
-        mimeType: "image/jpeg",
-      };
-      console.log("[GEMINI-IMAGE] Using provided base64 product image");
-    } else if (params.productImageUrl) {
-      productImageData = await fetchImageAsBase64(params.productImageUrl);
-    }
-
-    if (!productImageData) {
-      console.error("[GEMINI-IMAGE] Step 2 failed: No product image available");
-      return {
-        success: false,
-        sceneImageBase64,
-        error: "Product image is required for composition",
-      };
-    }
-
-    // Create composition prompt with both images
-    const compositionInstructions = `${params.compositePrompt}
-
-TASK: You have two images:
-1. SCENE IMAGE (first image): Shows hands holding a placeholder object in a beautiful scene
-2. PRODUCT IMAGE (second image): The actual product that should replace the placeholder
-
-CRITICAL REQUIREMENTS:
-1. Replace the placeholder object with the EXACT product from the second image
-2. The product must be the IDENTICAL to the second image - same appearance, same details
-3. Adjust ONLY the product's:
-   - Position (to replace placeholder exactly)
-   - Scale (to fit naturally in hands)
-   - Lighting (to match scene lighting)
-   - Shadows (to integrate realistically)
-4. DO NOT modify the product's design, colors, logos, or any visual characteristics
-5. The final result should look like a professional product photo where the product was naturally photographed in this scene
-
-Output only the final composited image.`;
-
-    // Send both images + instructions
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const compositeContents: any[] = [
-      {
-        inlineData: {
-          mimeType: sceneMimeType,
-          data: sceneImageBase64,
-        },
-      },
-      {
-        inlineData: {
-          mimeType: productImageData.mimeType,
-          data: productImageData.base64,
-        },
-      },
-      { text: compositionInstructions },
-    ];
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const compositeResponse = await (ai.models as any).generateContent({
-      model,
-      contents: compositeContents,
-      config: {
-        responseModalities: ["TEXT", "IMAGE"],
-      },
-    });
-
-    // Extract final composited image
-    let finalImageBase64: string | undefined;
-    let finalMimeType: string = "image/png";
-
-    const compositeCandidates = compositeResponse.candidates || [];
-    for (const candidate of compositeCandidates) {
-      const parts = candidate.content?.parts || [];
-      for (const part of parts) {
-        if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith("image/")) {
-          finalImageBase64 = part.inlineData.data;
-          finalMimeType = part.inlineData.mimeType;
-          break;
-        }
-      }
-      if (finalImageBase64) break;
-    }
-
-    // Also check response.parts
-    if (!finalImageBase64) {
-      const parts = compositeResponse.parts || [];
-      for (const part of parts) {
-        if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith("image/")) {
-          finalImageBase64 = part.inlineData.data;
-          finalMimeType = part.inlineData.mimeType;
-          break;
-        }
-      }
-    }
-
-    if (!finalImageBase64) {
-      console.error("[GEMINI-IMAGE] Step 2 failed: No composited image generated");
-      console.log("[GEMINI-IMAGE] Returning scene image as fallback");
-      return {
-        success: true,
-        sceneImageBase64,
-        finalImageBase64: sceneImageBase64,  // Fallback to scene image
-        mimeType: sceneMimeType,
-      };
-    }
-
-    console.log("[GEMINI-IMAGE] Step 2 complete: Product composited into scene");
-
-    return {
-      success: true,
-      sceneImageBase64,
-      finalImageBase64,
-      mimeType: finalMimeType,
-    };
-
-  } catch (error) {
-    console.error("[GEMINI-IMAGE] Two-step composition error:", error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return {
-      success: false,
-      error: errorMessage,
-    };
-  }
+  return {
+    success: false,
+    error: "Two-step composition is not supported. Please use 'direct' composition mode instead. Vertex AI does not support multi-image composition workflows.",
+  };
 }

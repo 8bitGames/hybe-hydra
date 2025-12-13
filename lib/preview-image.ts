@@ -10,7 +10,7 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
-import { convertAspectRatioForGeminiImage, generateTwoStepComposition, generateImage } from "@/lib/imagen";
+import { convertAspectRatioForGeminiImage, generateTwoStepComposition } from "@/lib/imagen";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import type { AgentContext } from "@/lib/agents/types";
 import { uploadToS3, downloadFromS3AsBase64, getPresignedUrl } from "@/lib/storage";
@@ -316,75 +316,38 @@ export async function generateDirectPreviewImage(
     console.log(`${logPrefix} Full image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
   }
 
-  // Step 2: Generate image
-  // Check AI_IMAGE_PROVIDER: "google_ai" uses Google AI Studio directly, "vertex" (default) uses AWS Batch
-  const aiImageProvider = process.env.AI_IMAGE_PROVIDER || "vertex";
+  // Step 2: Generate image via AWS Batch backend (Vertex AI)
+  // NOTE: Only Vertex AI is supported. Google AI API is not used.
+  console.log(`${logPrefix} Step 2: Generating image via AWS Batch backend (Vertex AI)...`);
 
-  let imageResult: { success: boolean; imageBase64?: string; imageUrl?: string; s3Key?: string; error?: string };
-
-  if (aiImageProvider === "google_ai") {
-    // Use Google AI Studio directly (no AWS Batch)
-    console.log(`${logPrefix} Step 2: Generating image via Google AI Studio (AI_IMAGE_PROVIDER=google_ai)...`);
-
-    const geminiResult = await generateImage({
-      prompt: geminiImagePrompt,
-      aspectRatio: convertAspectRatioForGeminiImage(aspect_ratio),
-      negativePrompt: negative_prompt,
-      referenceImageUrl: product_image_url,
-    });
-
-    if (!geminiResult.success || !geminiResult.imageBase64) {
-      console.error(`${logPrefix} Google AI Studio image generation failed: ${geminiResult.error}`);
-      return {
-        success: false,
-        preview_id: previewId,
-        image_url: "",
-        image_base64: "",
-        gemini_image_prompt: geminiImagePrompt,
-        aspect_ratio,
-        composition_mode: "direct",
-        error: `Image generation failed: ${geminiResult.error}`,
-      };
-    }
-
-    imageResult = {
-      success: true,
-      imageBase64: geminiResult.imageBase64,
-    };
-    console.log(`${logPrefix} Image generated successfully via Google AI Studio!`);
-  } else {
-    // Use AWS Batch backend (Vertex AI Gemini 3 Pro Image)
-    console.log(`${logPrefix} Step 2: Generating image via AWS Batch backend (Vertex AI)...`);
-
-    // Note: product_image_url (reference image) is not yet supported in batch mode
-    // TODO: Add reference image support to AWS Batch ai_worker.py
-    if (product_image_url) {
-      console.warn(`${logPrefix} Warning: Reference image (product_image_url) is not yet supported in batch mode. Generating without reference.`);
-    }
-
-    imageResult = await generateImageViaBatch(
-      geminiImagePrompt,
-      aspect_ratio,
-      negative_prompt,
-      logPrefix
-    );
-
-    if (!imageResult.success || !imageResult.imageBase64) {
-      console.error(`${logPrefix} AWS Batch image generation failed: ${imageResult.error}`);
-      return {
-        success: false,
-        preview_id: previewId,
-        image_url: "",
-        image_base64: "",
-        gemini_image_prompt: geminiImagePrompt,
-        aspect_ratio,
-        composition_mode: "direct",
-        error: `Image generation failed: ${imageResult.error}`,
-      };
-    }
-
-    console.log(`${logPrefix} Image generated successfully via AWS Batch!`);
+  // Note: product_image_url (reference image) is not yet supported in batch mode
+  // TODO: Add reference image support to AWS Batch ai_worker.py
+  if (product_image_url) {
+    console.warn(`${logPrefix} Warning: Reference image (product_image_url) is not yet supported in batch mode. Generating without reference.`);
   }
+
+  const imageResult = await generateImageViaBatch(
+    geminiImagePrompt,
+    aspect_ratio,
+    negative_prompt,
+    logPrefix
+  );
+
+  if (!imageResult.success || !imageResult.imageBase64) {
+    console.error(`${logPrefix} AWS Batch image generation failed: ${imageResult.error}`);
+    return {
+      success: false,
+      preview_id: previewId,
+      image_url: "",
+      image_base64: "",
+      gemini_image_prompt: geminiImagePrompt,
+      aspect_ratio,
+      composition_mode: "direct",
+      error: `Image generation failed: ${imageResult.error}`,
+    };
+  }
+
+  console.log(`${logPrefix} Image generated successfully via AWS Batch!`);
 
   // Step 3: Upload to S3
   const filename = `preview-${previewId}.png`;

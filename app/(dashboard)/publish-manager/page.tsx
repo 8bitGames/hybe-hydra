@@ -58,6 +58,8 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
+  Wand2,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -104,16 +106,23 @@ const sanitizeFilename = (str: string): string => {
     .substring(0, 100);
 };
 
-// Generate filename with description and tags
+// Get description for publishing (not prompt)
+const getVideoDescription = (video: VideoItem): string => {
+  return video.tiktokSeo?.description || "";
+};
+
+// Generate filename from description
 const generateFilename = (video: VideoItem): string => {
-  const description = video.tiktokSeo?.description || video.prompt || "video";
-  const tags = getVideoTags(video);
+  const description = getVideoDescription(video);
 
-  const descPart = sanitizeFilename(description.substring(0, 50));
-  const tagsPart = tags.slice(0, 5).map(t => t.replace(/^#/, "")).join("_");
+  // If no description, use video id
+  if (!description) {
+    return `video_${video.id.substring(0, 8)}.mp4`;
+  }
 
-  const filename = tagsPart ? `${descPart}_${tagsPart}` : descPart;
-  return `${sanitizeFilename(filename)}.mp4`;
+  // Use description as filename (max 100 chars)
+  const filename = sanitizeFilename(description.substring(0, 100));
+  return `${filename}.mp4`;
 };
 
 // Download video with custom filename
@@ -172,6 +181,9 @@ export default function PublishManagerPage() {
 
   // Preview modal state
   const [previewVideo, setPreviewVideo] = useState<VideoItem | null>(null);
+
+  // Generating description state
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (accessToken) {
@@ -264,7 +276,7 @@ export default function PublishManagerPage() {
   // Handle edit
   const handleEdit = (video: VideoItem) => {
     setEditingVideo(video);
-    setEditDescription(video.tiktokSeo?.description || video.prompt || "");
+    setEditDescription(getVideoDescription(video));
     setEditTags(getVideoTags(video).join(", "));
   };
 
@@ -317,12 +329,14 @@ export default function PublishManagerPage() {
 
   // Copy all info to clipboard
   const handleCopyInfo = async (video: VideoItem) => {
-    const description = video.tiktokSeo?.description || video.prompt || "";
+    const description = getVideoDescription(video);
     const hashtags = getVideoTags(video)
       .map(t => `#${t.replace(/^#/, "")}`)
       .join(" ");
 
-    const text = `${description}\n\n${hashtags}`;
+    const text = description && hashtags
+      ? `${description}\n\n${hashtags}`
+      : description || hashtags || "";
     const success = await copyToClipboard(text);
 
     if (success) {
@@ -330,6 +344,72 @@ export default function PublishManagerPage() {
         isKorean ? "복사됨" : "Copied",
         isKorean ? "발행 정보가 클립보드에 복사되었습니다" : "Publishing info copied to clipboard"
       );
+    }
+  };
+
+  // Generate TikTok description using AI
+  const handleGenerateDescription = async (video: VideoItem) => {
+    if (!video.prompt) {
+      toast.error(
+        isKorean ? "오류" : "Error",
+        isKorean ? "프롬프트가 없어 설명을 생성할 수 없습니다" : "Cannot generate description without prompt"
+      );
+      return;
+    }
+
+    setGeneratingId(video.id);
+    try {
+      const response = await api.post<{
+        success: boolean;
+        description: string;
+        hashtags: string[];
+      }>("/api/v1/ai/generate-tiktok-description", {
+        prompt: video.prompt,
+        campaignName: video.campaignName,
+        trendKeywords: video.trendKeywords,
+        language: isKorean ? "ko" : "en",
+      });
+
+      if (response.data?.success && response.data.description) {
+        // Update the video's tiktok_seo via PATCH
+        const updateResponse = await api.patch(`/api/v1/generations/${video.id}`, {
+          tiktok_seo: {
+            description: response.data.description,
+            hashtags: response.data.hashtags,
+          },
+          tags: response.data.hashtags,
+        });
+
+        if (updateResponse.status === 200) {
+          // Update local state
+          setVideos((prev) =>
+            prev.map((v) =>
+              v.id === video.id
+                ? {
+                    ...v,
+                    tiktokSeo: {
+                      description: response.data.description,
+                      hashtags: response.data.hashtags,
+                    },
+                    tags: response.data.hashtags,
+                  }
+                : v
+            )
+          );
+          toast.success(
+            isKorean ? "생성 완료" : "Generated",
+            isKorean ? "발행 설명이 생성되었습니다" : "Publishing description generated"
+          );
+        }
+      }
+    } catch (err) {
+      console.error("Failed to generate description:", err);
+      toast.error(
+        isKorean ? "오류" : "Error",
+        isKorean ? "설명 생성에 실패했습니다" : "Failed to generate description"
+      );
+    } finally {
+      setGeneratingId(null);
     }
   };
 
@@ -504,9 +584,31 @@ export default function PublishManagerPage() {
                         </button>
                       </TableCell>
                       <TableCell>
-                        <p className="text-sm line-clamp-2">
-                          {video.tiktokSeo?.description || video.prompt || "-"}
-                        </p>
+                        {getVideoDescription(video) ? (
+                          <p className="text-sm line-clamp-2">
+                            {getVideoDescription(video)}
+                          </p>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground italic">
+                              {isKorean ? "미설정" : "Not set"}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => handleGenerateDescription(video)}
+                              disabled={generatingId === video.id}
+                            >
+                              {generatingId === video.id ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : (
+                                <Wand2 className="h-3 w-3 mr-1" />
+                              )}
+                              {isKorean ? "AI 생성" : "Generate"}
+                            </Button>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
@@ -605,9 +707,30 @@ export default function PublishManagerPage() {
                     </Badge>
                   </div>
                   <CardContent className="p-3">
-                    <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-                      {video.tiktokSeo?.description || video.prompt || "-"}
-                    </p>
+                    {getVideoDescription(video) ? (
+                      <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                        {getVideoDescription(video)}
+                      </p>
+                    ) : (
+                      <div className="flex items-center gap-1 mb-2">
+                        <span className="text-xs text-muted-foreground italic">
+                          {isKorean ? "미설정" : "Not set"}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-5 text-[10px] px-1.5"
+                          onClick={() => handleGenerateDescription(video)}
+                          disabled={generatingId === video.id}
+                        >
+                          {generatingId === video.id ? (
+                            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                          ) : (
+                            <Wand2 className="h-2.5 w-2.5" />
+                          )}
+                        </Button>
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-1 mb-3">
                       {getVideoTags(video).slice(0, 2).map((tag, i) => (
                         <Badge key={i} variant="outline" className="text-[10px]">
