@@ -371,16 +371,19 @@ export default function PublishManagerPage() {
       });
 
       if (response.data?.success && response.data.description) {
+        const generatedDescription = response.data.description;
+        const generatedHashtags = response.data.hashtags;
+
         // Update the video's tiktok_seo via PATCH
         const updateResponse = await api.patch(`/api/v1/generations/${video.id}`, {
           tiktok_seo: {
-            description: response.data.description,
-            hashtags: response.data.hashtags,
+            description: generatedDescription,
+            hashtags: generatedHashtags,
           },
-          tags: response.data.hashtags,
+          tags: generatedHashtags,
         });
 
-        if (updateResponse.status === 200) {
+        if (updateResponse.data && !updateResponse.error) {
           // Update local state
           setVideos((prev) =>
             prev.map((v) =>
@@ -388,10 +391,10 @@ export default function PublishManagerPage() {
                 ? {
                     ...v,
                     tiktokSeo: {
-                      description: response.data.description,
-                      hashtags: response.data.hashtags,
+                      description: generatedDescription,
+                      hashtags: generatedHashtags,
                     },
-                    tags: response.data.hashtags,
+                    tags: generatedHashtags,
                   }
                 : v
             )
