@@ -299,14 +299,34 @@ export const assetsApi = {
 
       const presignData = await presignResponse.json();
 
-      // Step 2: Upload directly to S3 using presigned URL
-      const uploadResponse = await fetch(presignData.upload_url, {
-        method: "PUT",
-        headers: {
-          "Content-Type": file.type,
-        },
-        body: file,
+      console.log("[Upload Debug] Presign response:", {
+        upload_url: presignData.upload_url?.substring(0, 150) + "...",
+        s3_key: presignData.s3_key,
+        content_type: file.type,
+        file_size: file.size,
       });
+
+      // Step 2: Upload directly to S3 using presigned URL
+      let uploadResponse: Response;
+      try {
+        uploadResponse = await fetch(presignData.upload_url, {
+          method: "PUT",
+          headers: {
+            "Content-Type": file.type,
+          },
+          body: file,
+          mode: "cors",
+        });
+      } catch (fetchError) {
+        const err = fetchError as Error;
+        console.error("[Upload Debug] S3 fetch failed:");
+        console.error("  Error name:", err?.name);
+        console.error("  Error message:", err?.message);
+        console.error("  Full URL:", presignData.upload_url);
+        console.error("  File type:", file.type);
+        console.error("  File size:", file.size);
+        throw fetchError;
+      }
 
       if (!uploadResponse.ok) {
         return {

@@ -7,7 +7,7 @@ import {
   composeVideoWithAudioModal,
   getMediaDurationFromModal,
   AudioComposeRequest,
-} from "./modal/client";
+} from "./compose/client";
 
 // Environment flag to use Modal for FFmpeg operations
 const USE_MODAL_FFMPEG = process.env.USE_MODAL_FFMPEG !== 'false'; // Default: true

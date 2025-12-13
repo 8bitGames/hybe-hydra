@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
-import { getModalRenderStatus } from '@/lib/modal/client';
+import { getModalRenderStatus } from '@/lib/compose/client';
 import { getPresignedUrlFromS3Url } from '@/lib/storage';
 
 interface RouteContext {

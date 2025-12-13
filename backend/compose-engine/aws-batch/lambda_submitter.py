@@ -11,8 +11,8 @@ import uuid
 import boto3
 from datetime import datetime
 
-batch_client = boto3.client("batch", region_name=os.environ.get("AWS_REGION", "ap-southeast-2"))
-dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "ap-southeast-2"))
+batch_client = boto3.client("batch", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
+dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
 
 JOB_QUEUE = os.environ.get("BATCH_JOB_QUEUE", "hydra-compose-queue")
 JOB_DEFINITION = os.environ.get("BATCH_JOB_DEFINITION", "hydra-compose-engine")

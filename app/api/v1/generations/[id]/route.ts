@@ -160,7 +160,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { status, progress, error_message, output_url, quality_score, quality_metadata } = body;
+    const {
+      status,
+      progress,
+      error_message,
+      output_url,
+      quality_score,
+      quality_metadata,
+      tiktok_seo,
+      tags,
+      is_favorite,
+    } = body;
 
     const generation = await prisma.videoGeneration.update({
       where: { id },
@@ -171,6 +181,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         ...(output_url && { outputUrl: output_url }),
         ...(quality_score !== undefined && { qualityScore: quality_score }),
         ...(quality_metadata && { qualityMetadata: quality_metadata }),
+        ...(tiktok_seo !== undefined && { tiktokSEO: tiktok_seo }),
+        ...(tags !== undefined && { tags }),
+        ...(is_favorite !== undefined && { isFavorite: is_favorite }),
       },
       include: {
         referenceImage: {

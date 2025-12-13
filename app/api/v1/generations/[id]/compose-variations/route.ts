@@ -4,7 +4,7 @@ import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { Prisma } from "@prisma/client";
 import { searchImagesMultiQuery, isGoogleSearchConfigured } from "@/lib/google-search";
-import { submitRenderToModal, ModalRenderRequest, getComposeEngineMode } from "@/lib/modal/client";
+import { submitRenderToModal, ModalRenderRequest, getComposeEngineMode } from "@/lib/compose/client";
 import { getSettingsFromStylePresets, getStyleSetById } from "@/lib/constants/style-presets";
 import { getBatchJobStatus } from "@/lib/batch/client";
 

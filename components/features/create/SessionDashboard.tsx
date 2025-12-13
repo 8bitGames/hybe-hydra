@@ -258,11 +258,18 @@ function SessionCard({
         {/* Progress Stages */}
         <div className="flex items-center gap-1 mb-3">
           {stages.map((stage, index) => {
+            // CRITICAL FIX: Improved stage completion logic
             // A stage is completed if:
-            // 1. It's explicitly in completedStages, OR
-            // 2. Its index is less than the current stage index (already passed)
-            const isCompleted = (session.completedStages as string[]).includes(stage) || index < currentStageIndex;
-            const isCurrent = stage === session.currentStage;
+            // 1. Session status is "completed" (all stages done), OR
+            // 2. It's explicitly in completedStages, OR
+            // 3. Its index is less than the current stage index (already passed)
+            const isSessionCompleted = session.status === "completed";
+            const isInCompletedStages = (session.completedStages as string[]).includes(stage);
+            const isBeforeCurrentStage = index < currentStageIndex;
+            const isCompleted = isSessionCompleted || isInCompletedStages || isBeforeCurrentStage;
+
+            // Current stage: only show as current if session is not completed
+            const isCurrent = !isSessionCompleted && stage === session.currentStage;
 
             return (
               <div key={stage} className="flex items-center">
@@ -293,9 +300,13 @@ function SessionCard({
         {/* Stage Labels */}
         <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-3">
           <span>Start</span>
-          <span className="font-medium text-neutral-600">
-            {session.currentStage.charAt(0).toUpperCase() +
-              session.currentStage.slice(1)}
+          <span className={cn(
+            "font-medium",
+            session.status === "completed" ? "text-green-600" : "text-neutral-600"
+          )}>
+            {session.status === "completed"
+              ? (language === "ko" ? "완료됨" : "Completed")
+              : (session.currentStage.charAt(0).toUpperCase() + session.currentStage.slice(1))}
           </span>
           <span>Publish</span>
         </div>

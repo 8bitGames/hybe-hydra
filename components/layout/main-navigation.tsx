@@ -32,6 +32,7 @@ import {
   ArrowRight,
   Loader2,
   Calendar,
+  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -130,6 +131,12 @@ const secondaryItems: NavItem[] = [
         href: "/publishing",
         icon: Calendar,
         description: { ko: "예약 및 발행된 게시물", en: "Scheduled & published posts" },
+      },
+      {
+        name: { ko: "발행 준비", en: "Publish Prep" },
+        href: "/publish-manager",
+        icon: Download,
+        description: { ko: "영상 다운로드 및 발행 정보 관리", en: "Download videos & manage publish info" },
       },
     ],
   },

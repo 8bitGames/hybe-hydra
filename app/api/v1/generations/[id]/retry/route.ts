@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
-import { submitRenderToModal, ModalRenderRequest } from '@/lib/modal/client';
+import { submitRenderToModal, ModalRenderRequest } from '@/lib/compose/client';
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 

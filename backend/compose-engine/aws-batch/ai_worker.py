@@ -203,7 +203,8 @@ async def upload_gcs_to_s3(
 
     # Download from GCS using REST API
     gcs_url = f"https://storage.googleapis.com/storage/v1/b/{gcs_bucket}/o/{gcs_object.replace('/', '%2F')}?alt=media"
-    headers = auth_manager.get_auth_headers()
+    # Use GCS-specific auth headers (different audience from Vertex AI)
+    headers = auth_manager.get_gcs_auth_headers()
 
     async with httpx.AsyncClient(timeout=300.0) as client:
         response = await client.get(gcs_url, headers=headers)
@@ -298,7 +299,7 @@ async def process_video_generation(
     job_id = request.job_id
 
     # Build GCS output URI
-    gcs_bucket = request.output.gcs_bucket or os.environ.get("GCS_BUCKET", "poised-time-480910-r2-ai-output")
+    gcs_bucket = request.output.gcs_bucket or os.environ.get("GCS_BUCKET", "hyb-hydra-dev-ai-output")
     gcs_key = f"veo/{job_id}/output.mp4"
     gcs_uri = f"gs://{gcs_bucket}/{gcs_key}"
 
@@ -367,7 +368,8 @@ async def process_video_generation(
         gcs_object = "/".join(gcs_path.split("/")[1:])
 
         gcs_url = f"https://storage.googleapis.com/storage/v1/b/{gcs_bucket_name}/o/{gcs_object.replace('/', '%2F')}?alt=media"
-        headers = auth_manager.get_auth_headers()
+        # Use GCS-specific auth headers (different audience from Vertex AI)
+        headers = auth_manager.get_gcs_auth_headers()
 
         async with httpx.AsyncClient(timeout=300.0) as http_client:
             response = await http_client.get(gcs_url, headers=headers)
@@ -451,7 +453,7 @@ async def process_image_generation(
         )
 
     # Build GCS output URI (optional for Imagen)
-    gcs_bucket = request.output.gcs_bucket or os.environ.get("GCS_BUCKET", "poised-time-480910-r2-ai-output")
+    gcs_bucket = request.output.gcs_bucket or os.environ.get("GCS_BUCKET", "hyb-hydra-dev-ai-output")
     gcs_key = f"imagen/{request.job_id}/output.png"
     gcs_uri = f"gs://{gcs_bucket}/{gcs_key}"
 

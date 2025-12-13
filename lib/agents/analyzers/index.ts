@@ -94,3 +94,15 @@ export {
   type TikTokVisionInput,
   type TikTokVisionOutput,
 } from './tiktok-vision';
+
+// Lyrics Extractor - Audio lyrics extraction with timing
+export {
+  LyricsExtractorAgent,
+  createLyricsExtractorAgent,
+  LyricsExtractorInputSchema,
+  LyricsExtractorOutputSchema,
+  toLyricsData,
+  type LyricsExtractorInput,
+  type LyricsExtractorOutput,
+  type AudioMimeType,
+} from './lyrics-extractor';

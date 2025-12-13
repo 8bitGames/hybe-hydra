@@ -88,11 +88,32 @@ export default function StartPage() {
 
   // Session sync for persisted state management
   const sessionId = searchParams.get("session");
+  const isNewProject = searchParams.get("new") === "true";
   const { activeSession, syncNow } = useSessionWorkflowSync("start");
 
   const [ideaInput, setIdeaInput] = useState("");
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // CRITICAL: Handle new project initialization
+  // When ?new=true, clear any stale data that might have been hydrated
+  useEffect(() => {
+    if (isNewProject && hydrated && !isInitialized) {
+      console.log("[StartPage] New project detected, ensuring clean state");
+      // Clear workflow start data to ensure fresh state
+      const workflowStore = useWorkflowStore.getState();
+      workflowStore.clearStartData();
+      setIsInitialized(true);
+
+      // Remove the ?new=true from URL to prevent re-clearing on refresh
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete("new");
+      router.replace(newUrl.pathname + newUrl.search, { scroll: false });
+    } else if (!isNewProject && hydrated) {
+      setIsInitialized(true);
+    }
+  }, [isNewProject, hydrated, isInitialized, router]);
 
   const {
     start,
@@ -624,7 +645,8 @@ export default function StartPage() {
     return date.toLocaleDateString(language === "ko" ? "ko-KR" : "en-US");
   };
 
-  if (!hydrated) {
+  // Show loading state while hydrating or initializing new project
+  if (!hydrated || !isInitialized) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="animate-pulse text-muted-foreground">

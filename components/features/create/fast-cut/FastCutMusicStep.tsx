@@ -29,6 +29,9 @@ import {
   HelpCircle,
   Upload,
   Loader2,
+  Subtitles,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import {
@@ -36,6 +39,7 @@ import {
   AudioMatch,
   AudioAnalysisResponse,
 } from "@/lib/fast-cut-api";
+import type { LyricsData } from "@/lib/subtitle-styles";
 
 interface FastCutMusicStepProps {
   scriptData: ScriptGenerationResponse | null;
@@ -76,6 +80,9 @@ export function FastCutMusicStep({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Lyrics preview state
+  const [lyricsExpanded, setLyricsExpanded] = useState(true);
 
   // Handle file upload
   const handleFileUpload = useCallback(async (file: File) => {
@@ -258,6 +265,28 @@ export function FastCutMusicStep({
   const campaignAudioAssets = useMemo(() => {
     return audioAssetsData?.items || [];
   }, [audioAssetsData]);
+
+  // Get lyrics data from selected audio asset's metadata
+  const selectedAudioLyrics = useMemo((): LyricsData | null => {
+    if (!selectedAudio) return null;
+
+    // Find the full asset from campaign assets
+    const fullAsset = campaignAudioAssets.find(
+      (asset) => asset.id === selectedAudio.id
+    );
+
+    if (!fullAsset?.metadata) return null;
+
+    const metadata = fullAsset.metadata as Record<string, unknown>;
+    const lyrics = metadata.lyrics as LyricsData | undefined;
+
+    // Validate lyrics structure
+    if (lyrics && Array.isArray(lyrics.segments) && lyrics.segments.length > 0) {
+      return lyrics;
+    }
+
+    return null;
+  }, [selectedAudio, campaignAudioAssets]);
 
   // Format duration
   const formatDuration = (seconds: number): string => {
@@ -603,6 +632,127 @@ export function FastCutMusicStep({
                   {language === "ko" ? "추천 시작 시간 사용" : "Use Suggested Time"}
                 </Button>
               )}
+            </div>
+          )}
+
+          {/* Lyrics Subtitle Preview */}
+          {selectedAudioLyrics && (
+            <div className="border border-neutral-200 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setLyricsExpanded(!lyricsExpanded)}
+                className="w-full p-3 bg-neutral-50 flex items-center justify-between hover:bg-neutral-100 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Subtitles className="h-4 w-4 text-neutral-600" />
+                  <span className="text-sm font-medium text-neutral-800">
+                    {language === "ko" ? "가사 자막 미리보기" : "Lyrics Subtitle Preview"}
+                  </span>
+                  <Badge variant="outline" className="text-xs border-neutral-300">
+                    {selectedAudioLyrics.segments.length}{" "}
+                    {language === "ko" ? "개 구간" : "segments"}
+                  </Badge>
+                  {selectedAudioLyrics.language && (
+                    <Badge variant="outline" className="text-xs border-neutral-300 uppercase">
+                      {selectedAudioLyrics.language}
+                    </Badge>
+                  )}
+                </div>
+                {lyricsExpanded ? (
+                  <ChevronUp className="h-4 w-4 text-neutral-500" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-neutral-500" />
+                )}
+              </button>
+
+              {lyricsExpanded && (
+                <div className="p-3 space-y-3">
+                  {/* Lyrics info */}
+                  <div className="flex items-center gap-2 text-xs text-neutral-500">
+                    <span>
+                      {language === "ko"
+                        ? "영상에 아래와 같이 자막이 표시됩니다"
+                        : "Subtitles will appear as shown below"}
+                    </span>
+                    {selectedAudioLyrics.confidence && (
+                      <Badge variant="outline" className="text-xs border-neutral-200">
+                        {Math.round(selectedAudioLyrics.confidence * 100)}%{" "}
+                        {language === "ko" ? "정확도" : "accuracy"}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Lyrics segments */}
+                  <ScrollArea className="h-[180px] pr-2">
+                    <div className="space-y-1">
+                      {selectedAudioLyrics.segments.map((segment, idx) => {
+                        // Calculate if this segment falls within the selected audio range
+                        const videoDuration = scriptData?.script?.totalDuration || 30;
+                        const segmentInRange =
+                          segment.start >= audioStartTime &&
+                          segment.start < audioStartTime + videoDuration;
+
+                        return (
+                          <div
+                            key={idx}
+                            className={cn(
+                              "flex items-start gap-3 p-2 rounded text-sm transition-colors",
+                              segmentInRange
+                                ? "bg-neutral-100 border border-neutral-200"
+                                : "bg-neutral-50 opacity-50"
+                            )}
+                          >
+                            <div className="flex-shrink-0 w-20 text-xs text-neutral-500 font-mono pt-0.5">
+                              {formatDuration(segment.start)} - {formatDuration(segment.end)}
+                            </div>
+                            <div
+                              className={cn(
+                                "flex-1 leading-relaxed",
+                                segmentInRange ? "text-neutral-900" : "text-neutral-500"
+                              )}
+                            >
+                              {segment.text}
+                            </div>
+                            {segmentInRange && (
+                              <Badge
+                                variant="outline"
+                                className="flex-shrink-0 text-xs border-neutral-300 bg-white"
+                              >
+                                {language === "ko" ? "표시됨" : "visible"}
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+
+                  {/* Hint about subtitle style */}
+                  <p className="text-xs text-neutral-400 pt-2 border-t border-neutral-100">
+                    {language === "ko"
+                      ? "자막 스타일은 다음 단계에서 선택할 수 있습니다"
+                      : "Subtitle style can be selected in the next step"}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* No lyrics available hint */}
+          {!selectedAudioLyrics && selectedAudio && !analyzingAudio && (
+            <div className="p-3 bg-neutral-50 rounded-lg border border-dashed border-neutral-200">
+              <div className="flex items-center gap-2 text-sm text-neutral-500">
+                <Subtitles className="h-4 w-4 text-neutral-400" />
+                <span>
+                  {language === "ko"
+                    ? "이 음원에는 추출된 가사가 없습니다"
+                    : "No lyrics extracted for this audio"}
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400 mt-1 ml-6">
+                {language === "ko"
+                  ? "에셋 관리에서 가사를 추출하면 자막으로 표시됩니다"
+                  : "Extract lyrics in asset management to display as subtitles"}
+              </p>
             </div>
           )}
         </div>

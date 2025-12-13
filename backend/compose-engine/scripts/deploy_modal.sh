@@ -35,8 +35,8 @@ else
     read -p "AWS_ACCESS_KEY_ID: " AWS_KEY
     read -sp "AWS_SECRET_ACCESS_KEY: " AWS_SECRET
     echo ""
-    read -p "AWS_REGION [ap-southeast-2]: " AWS_REGION
-    AWS_REGION=${AWS_REGION:-ap-southeast-2}
+    read -p "AWS_REGION [ap-northeast-2]: " AWS_REGION
+    AWS_REGION=${AWS_REGION:-ap-northeast-2}
     read -p "AWS_S3_BUCKET [hydra-assets-hybe]: " AWS_BUCKET
     AWS_BUCKET=${AWS_BUCKET:-hydra-assets-hybe}
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { getUserFromHeader } from '@/lib/auth';
-import { getModalRenderStatus } from '@/lib/modal/client';
+import { getModalRenderStatus } from '@/lib/compose/client';
 
 interface RouteParams {
   params: Promise<{ id: string }>;

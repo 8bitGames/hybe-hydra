@@ -421,12 +421,17 @@ export function useSessionWorkflowSync(stage: WorkflowStage) {
     const intervalSessionId = sessionId;
 
     const interval = setInterval(() => {
-      // Check if session is still active and matches the expected ID
-      const currentSession = useSessionStore.getState().activeSession;
+      // CRITICAL FIX: Always check store state directly to avoid stale refs
+      // This prevents race conditions where the ref might not be updated yet
+      const sessionStore = useSessionStore.getState();
+      const currentSession = sessionStore.activeSession;
+
       if (currentSession && currentSession.id === intervalSessionId) {
         // Pass the expected session ID for additional validation
         syncWorkflowToSession(intervalSessionId);
-        saveSessionRef.current();
+        // CRITICAL: Call saveSession from store directly, not via ref
+        // This ensures we use the latest function reference
+        sessionStore.saveSession();
       } else if (intervalSessionId && (!currentSession || currentSession.id !== intervalSessionId)) {
         // Session changed or cleared - log and skip
         console.log(
@@ -477,13 +482,16 @@ export function useSessionWorkflowSync(stage: WorkflowStage) {
   }, []); // Empty deps - checks store directly on cleanup
 
   // Manual sync function - validates session ID before syncing
+  // CRITICAL FIX: Check store state directly instead of using refs
+  // This prevents race conditions where refs might be stale
   const syncNow = useCallback(() => {
-    const currentSessionId = activeSessionRef.current?.id;
-    if (currentSessionId) {
-      syncWorkflowToSession(currentSessionId);
-      saveSessionRef.current();
+    const sessionStore = useSessionStore.getState();
+    const currentSession = sessionStore.activeSession;
+    if (currentSession) {
+      syncWorkflowToSession(currentSession.id);
+      sessionStore.saveSession();
     }
-  }, []); // Empty deps - uses refs
+  }, []); // Empty deps - checks store directly
 
   return {
     activeSession,
@@ -493,36 +501,22 @@ export function useSessionWorkflowSync(stage: WorkflowStage) {
 
 /**
  * Mark stage as completed
+ * CRITICAL FIX: Uses store state directly instead of refs to prevent race conditions
  */
 export function useCompleteStage() {
-  const { activeSession, markStageCompleted, saveSession } = useSessionStore(
-    useShallow((state) => ({
-      activeSession: state.activeSession,
-      markStageCompleted: state.markStageCompleted,
-      saveSession: state.saveSession,
-    }))
-  );
-
-  // Use refs to avoid unnecessary re-renders in callback
-  const activeSessionRef = useRef(activeSession);
-  const markStageCompletedRef = useRef(markStageCompleted);
-  const saveSessionRef = useRef(saveSession);
-
-  useEffect(() => {
-    activeSessionRef.current = activeSession;
-    markStageCompletedRef.current = markStageCompleted;
-    saveSessionRef.current = saveSession;
-  }, [activeSession, markStageCompleted, saveSession]);
-
   return useCallback(
     (stage: WorkflowStage) => {
-      const currentSessionId = activeSessionRef.current?.id;
-      if (currentSessionId) {
-        syncWorkflowToSession(currentSessionId);
-        markStageCompletedRef.current(stage);
-        saveSessionRef.current();
+      // CRITICAL: Check store state directly instead of using refs
+      // This prevents race conditions where refs might be stale
+      const sessionStore = useSessionStore.getState();
+      const currentSession = sessionStore.activeSession;
+
+      if (currentSession) {
+        syncWorkflowToSession(currentSession.id);
+        sessionStore.markStageCompleted(stage);
+        sessionStore.saveSession();
       }
     },
-    [] // Empty deps - uses refs
+    [] // Empty deps - checks store directly
   );
 }

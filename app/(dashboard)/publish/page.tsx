@@ -602,27 +602,28 @@ export default function PublishPage() {
   // Success dialog handlers
   const handleViewSchedule = useCallback(() => {
     setShowSuccessDialog(false);
-    // Use clearActiveSessionKeepStorage to avoid race condition with Zustand hydration
-    // This clears in-memory state but keeps localStorage intact
-    useSessionStore.getState().clearActiveSessionKeepStorage();
+    // CRITICAL: Use clearActiveSession to fully clear all storage
+    // The session has already been completed in handlePublish, so no need to keep localStorage
+    // This prevents stale data from appearing when user later starts a new project
+    useSessionStore.getState().clearActiveSession();
     router.push("/publishing");
   }, [router]);
 
   const handleStartNew = useCallback(() => {
     setShowSuccessDialog(false);
-    // Use clearActiveSessionKeepStorage to avoid race condition with Zustand hydration
-    // This clears in-memory state but keeps localStorage intact
-    // The new session will naturally overwrite localStorage when created
-    useSessionStore.getState().clearActiveSessionKeepStorage();
-    router.push("/start");
+    // CRITICAL: Use clearActiveSession to fully clear all storage
+    // This ensures no stale data persists when starting a new project
+    // The ?new=true parameter tells /start page to skip hydration wait
+    useSessionStore.getState().clearActiveSession();
+    router.push("/start?new=true");
   }, [router]);
 
   // Handle success dialog close (when user closes dialog without selecting an option)
   const handleSuccessDialogClose = useCallback(() => {
     setShowSuccessDialog(false);
-    // Use clearActiveSessionKeepStorage to avoid race condition with Zustand hydration
-    useSessionStore.getState().clearActiveSessionKeepStorage();
-    router.push("/start");
+    // CRITICAL: Use clearActiveSession to fully clear all storage
+    useSessionStore.getState().clearActiveSession();
+    router.push("/start?new=true");
   }, [router]);
 
   // Convert currentVideo to VideoGeneration format for VariationModal

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
-import { submitRenderToModal, ModalRenderRequest, isLocalMode, isBatchMode } from '@/lib/modal/client';
+import { submitRenderToModal, ModalRenderRequest, isLocalMode, isBatchMode } from '@/lib/compose/client';
 import { getStyleSetById, styleSetToRenderSettings } from '@/lib/fast-cut/style-sets';
+import { getScriptFromAssetLyrics } from '@/lib/subtitle-styles/lyrics-converter';
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
@@ -83,6 +84,8 @@ interface RenderRequest {
   useAiEffects?: boolean;
   aiPrompt?: string;
   aiEffects?: AIEffectSelection;
+  // Lyrics/Subtitle options
+  useAudioLyrics?: boolean;  // Auto-load lyrics from audio asset for subtitles
 }
 
 export async function POST(request: NextRequest) {
@@ -111,7 +114,7 @@ export async function POST(request: NextRequest) {
       campaignId: rawCampaignId,
       audioAssetId,
       images,
-      script,
+      script: providedScript,
       styleSetId,
       aspectRatio,
       targetDuration,
@@ -119,6 +122,7 @@ export async function POST(request: NextRequest) {
       prompt = 'Fast cut video generation',
       searchKeywords = [],
       tiktokSEO,
+      useAudioLyrics = false,
     } = body;
 
     console.log(`${LOG_PREFIX} Request body parsed:`, {
@@ -126,8 +130,8 @@ export async function POST(request: NextRequest) {
       campaignId: rawCampaignId || '(empty - test mode)',
       audioAssetId: audioAssetId || '(empty)',
       imageCount: images?.length || 0,
-      hasScript: !!(script?.lines?.length),
-      scriptLinesCount: script?.lines?.length || 0,
+      hasScript: !!(providedScript?.lines?.length),
+      scriptLinesCount: providedScript?.lines?.length || 0,
       styleSetId: styleSetId || '(none)',
       aspectRatio,
       targetDuration,
@@ -135,6 +139,7 @@ export async function POST(request: NextRequest) {
       prompt: prompt?.substring(0, 100) || '(none)',
       searchKeywordsCount: searchKeywords?.length || 0,
       hasTiktokSEO: !!tiktokSEO,
+      useAudioLyrics,
     });
 
     // Convert empty campaignId and audioAssetId to null (for test mode)
@@ -214,12 +219,12 @@ export async function POST(request: NextRequest) {
     // Get audio asset URL (optional - audio is no longer required)
     console.log(`${LOG_PREFIX} Audio asset lookup...`);
     const audioLookupStartTime = Date.now();
-    let audioAsset = null;
+    let audioAsset: { s3Url: string | null; metadata: unknown } | null = null;
     if (audioAssetIdClean) {
       console.log(`${LOG_PREFIX} Looking up audio asset: ${audioAssetIdClean}`);
       audioAsset = await prisma.asset.findUnique({
         where: { id: audioAssetIdClean },
-        select: { s3Url: true }
+        select: { s3Url: true, metadata: true }
       });
 
       if (!audioAsset) {
@@ -233,11 +238,34 @@ export async function POST(request: NextRequest) {
         id: audioAssetIdClean,
         s3UrlLength: audioAsset.s3Url?.length || 0,
         s3UrlPreview: audioAsset.s3Url?.substring(0, 80) + '...',
+        hasMetadata: !!audioAsset.metadata,
       });
     } else {
       console.log(`${LOG_PREFIX} No audio asset specified - rendering without audio`);
     }
-    console.log(`${LOG_PREFIX} Audio lookup took ${Date.now() - audioLookupStartTime}ms`)
+    console.log(`${LOG_PREFIX} Audio lookup took ${Date.now() - audioLookupStartTime}ms`);
+
+    // Resolve script - either from provided script or from audio asset lyrics
+    let script = providedScript;
+    if (useAudioLyrics && !providedScript?.lines?.length && audioAsset?.metadata) {
+      console.log(`${LOG_PREFIX} useAudioLyrics enabled - loading lyrics from audio asset`);
+      const lyricsScript = getScriptFromAssetLyrics(
+        audioAsset.metadata as Record<string, unknown>,
+        {
+          audioStartTime,
+          videoDuration: targetDuration,
+        }
+      );
+      if (lyricsScript && lyricsScript.lines.length > 0) {
+        script = lyricsScript;
+        console.log(`${LOG_PREFIX} Lyrics loaded from audio asset:`, {
+          linesCount: lyricsScript.lines.length,
+          firstLine: lyricsScript.lines[0]?.text?.substring(0, 30) + '...',
+        });
+      } else {
+        console.log(`${LOG_PREFIX} No lyrics found in audio asset metadata`);
+      }
+    }
 
     // Build fastCutData to store all fast cut settings for variations
     // Use JSON.parse(JSON.stringify()) to ensure Prisma JSON compatibility
@@ -360,9 +388,9 @@ export async function POST(request: NextRequest) {
     const modalRequest: ModalRenderRequest = {
       job_id: generationId,
       images: cleanedImages,
-      // Audio is optional - only include if provided
+      // Audio is optional - only include if provided and has URL
       // Clean audio URL as well (remove pre-signed query params)
-      audio: audioAsset ? {
+      audio: audioAsset?.s3Url ? {
         url: cleanS3Url(audioAsset.s3Url),
         start_time: audioStartTime,  // Use analyzed best segment or manual adjustment
         duration: null  // Let backend auto-calculate based on vibe/images

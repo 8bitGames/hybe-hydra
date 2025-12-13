@@ -16,7 +16,7 @@ os.environ["USE_NVENC"] = "0"
 # Set AWS credentials
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "AKIASBF5YXJFHLVFVGQR")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "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")
-os.environ.setdefault("AWS_REGION", "ap-southeast-2")
+os.environ.setdefault("AWS_REGION", "ap-northeast-2")
 os.environ.setdefault("AWS_S3_BUCKET", "hydra-assets-hybe")
 
 

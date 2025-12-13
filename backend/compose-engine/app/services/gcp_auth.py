@@ -158,13 +158,17 @@ class GCPAuthManager:
 
         return self._sa_credentials
 
-    def _create_self_signed_jwt(self) -> str:
+    def _create_self_signed_jwt(self, audience: str = "https://aiplatform.googleapis.com/") -> str:
         """
         Create a self-signed JWT for direct use as Bearer token.
 
         For Google Cloud APIs, self-signed JWTs with scopes in the 'aud' claim
         can be used directly without token exchange. This is more reliable than
         the OAuth2 token exchange which sometimes returns id_token instead of access_token.
+
+        Args:
+            audience: The target API audience. Default is Vertex AI.
+                     Use "https://storage.googleapis.com/" for GCS.
 
         Returns:
             str: Self-signed JWT usable as Bearer token
@@ -175,12 +179,12 @@ class GCPAuthManager:
         sa_info = json.loads(self._service_account_json)
 
         # Create JWT for direct API access (self-signed JWT)
-        # For Vertex AI, the audience is the API endpoint
+        # The audience must match the API being called
         now = int(time.time())
         jwt_payload = {
             "iss": sa_info["client_email"],
             "sub": sa_info["client_email"],
-            "aud": "https://aiplatform.googleapis.com/",  # Vertex AI audience
+            "aud": audience,
             "iat": now,
             "exp": now + 3600,  # 1 hour
         }
@@ -193,7 +197,7 @@ class GCPAuthManager:
             algorithm="RS256",
         )
 
-        logger.info("Self-signed JWT created for Vertex AI")
+        logger.info(f"Self-signed JWT created for {audience}")
         return signed_jwt
 
     def _exchange_jwt_for_access_token(self) -> str:
@@ -458,7 +462,7 @@ class GCPAuthManager:
 
     def get_auth_headers(self) -> dict:
         """
-        Get authorization headers for HTTP requests.
+        Get authorization headers for HTTP requests (Vertex AI).
 
         Returns:
             dict: Headers with Bearer token
@@ -467,6 +471,26 @@ class GCPAuthManager:
         return {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
+        }
+
+    def get_gcs_auth_headers(self) -> dict:
+        """
+        Get authorization headers for GCS API requests.
+
+        Uses a self-signed JWT with GCS-specific audience.
+
+        Returns:
+            dict: Headers with Bearer token for GCS
+        """
+        if self._use_service_account:
+            logger.info("Creating self-signed JWT for GCS authentication")
+            token = self._create_self_signed_jwt(audience="https://storage.googleapis.com/")
+        else:
+            # For WIF, use regular OAuth2 token which works for all Google APIs
+            token = self.get_access_token()
+
+        return {
+            "Authorization": f"Bearer {token}",
         }
 
     def get_vertex_ai_endpoint(self, api_path: str = "") -> str:

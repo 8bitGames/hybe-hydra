@@ -874,10 +874,18 @@ export const useSessionStore = create<SessionStore>()(
       const supabase = createClient();
       const now = new Date();
 
+      // CRITICAL FIX: Add current stage to completedStages if not already there
+      // This ensures the final stage (e.g., "publish") is marked as completed
+      const finalCompletedStages = activeSession.completedStages.includes(activeSession.currentStage)
+        ? activeSession.completedStages
+        : [...activeSession.completedStages, activeSession.currentStage];
+
       const { error } = await supabase
         .from("creation_sessions")
         .update({
           status: "completed",
+          // CRITICAL FIX: Also persist completedStages to DB
+          completed_stages: finalCompletedStages,
           completed_at: now.toISOString(),
           updated_at: now.toISOString(),
         })
@@ -895,13 +903,15 @@ export const useSessionStore = create<SessionStore>()(
         activeSession: {
           ...activeSession,
           status: "completed",
+          // CRITICAL FIX: Update local state with final completedStages
+          completedStages: finalCompletedStages,
           completedAt: now,
           updatedAt: now,
         },
         lastSavedAt: now,
       });
 
-      console.log("[SessionStore] Completed session:", activeSession.id);
+      console.log("[SessionStore] Completed session:", activeSession.id, "with stages:", finalCompletedStages);
     },
 
     deleteSession: async (sessionId: string) => {

@@ -9,16 +9,23 @@ import { v4 as uuidv4 } from "uuid";
 
 // Lazy initialization to ensure environment variables are loaded
 let _s3Client: S3Client | null = null;
+let _s3PresignClient: S3Client | null = null;
+
+function getS3Credentials() {
+  const accessKey = process.env.AWS_ACCESS_KEY_ID;
+  const secretKey = process.env.AWS_SECRET_ACCESS_KEY;
+  const region = (process.env.AWS_REGION || "ap-northeast-2").trim();
+
+  if (!accessKey || !secretKey) {
+    throw new Error("AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.");
+  }
+
+  return { accessKey, secretKey, region };
+}
 
 function getS3Client(): S3Client {
   if (!_s3Client) {
-    const accessKey = process.env.AWS_ACCESS_KEY_ID;
-    const secretKey = process.env.AWS_SECRET_ACCESS_KEY;
-    const region = (process.env.AWS_REGION || "ap-southeast-2").trim();
-
-    if (!accessKey || !secretKey) {
-      throw new Error("AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.");
-    }
+    const { accessKey, secretKey, region } = getS3Credentials();
 
     console.log("AWS S3 Config Debug:", {
       region,
@@ -33,10 +40,28 @@ function getS3Client(): S3Client {
         accessKeyId: accessKey,
         secretAccessKey: secretKey,
       },
-      // No endpoint or forcePathStyle for AWS S3 (uses default virtual-hosted style)
     });
   }
   return _s3Client;
+}
+
+// Separate client for presigning without checksum (for browser uploads)
+function getS3PresignClient(): S3Client {
+  if (!_s3PresignClient) {
+    const { accessKey, secretKey, region } = getS3Credentials();
+
+    _s3PresignClient = new S3Client({
+      region,
+      credentials: {
+        accessKeyId: accessKey,
+        secretAccessKey: secretKey,
+      },
+      // Disable request checksums for browser-compatible presigned URLs
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
+    });
+  }
+  return _s3PresignClient;
 }
 
 function getBucketName(): string {
@@ -278,8 +303,19 @@ export async function getPresignedUploadUrl(
     ContentType: contentType,
   });
 
-  const uploadUrl = await getSignedUrl(getS3Client(), command, { expiresIn });
+  // Use presign client without checksum for browser-compatible URLs
+  const uploadUrl = await getSignedUrl(getS3PresignClient(), command, {
+    expiresIn,
+  });
   const publicUrl = getPublicUrl(key);
+
+  console.log("[S3 Presign Debug]", {
+    bucket: getBucketName(),
+    key,
+    contentType,
+    uploadUrl: uploadUrl.substring(0, 100) + "...",
+    publicUrl,
+  });
 
   return { uploadUrl, publicUrl };
 }

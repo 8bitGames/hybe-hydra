@@ -267,9 +267,15 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
   // This is necessary because sessionStorage is not available during SSR
   // CRITICAL: Re-hydrates when session ID changes to prevent stale data from previous sessions
   useEffect(() => {
-    // CRITICAL FIX: Wait for activeSessionId to be available before hydrating
-    // This prevents loading stale data when the session store hasn't updated yet
+    // CRITICAL FIX: When activeSessionId becomes null and we had a previous session,
+    // reset the state to prevent stale data from flashing when a new session is created
     if (!activeSessionId) {
+      if (hydratedForSessionId !== null) {
+        console.log("[FastCutProvider] Session cleared, resetting state from previous session:", hydratedForSessionId);
+        clearFastCutSessionStorage();
+        setState({ ...initialState, isHydrated: false });
+        setHydratedForSessionId(null);
+      }
       console.log("[FastCutProvider] Waiting for activeSessionId to be available...");
       return;
     }
