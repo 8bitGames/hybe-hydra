@@ -2,7 +2,14 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { createClient } from "@supabase/supabase-js";
 import { api, authApi, usersApi } from "./api";
+
+// Create Supabase client for client-side auth operations
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 interface User {
   id: string;
@@ -26,7 +33,7 @@ interface AuthState {
   // Actions
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
+  logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
   setTokens: (accessToken: string, refreshToken: string) => void;
   setHasHydrated: (state: boolean) => void;
@@ -65,20 +72,40 @@ export const useAuthStore = create<AuthState>()(
         }
 
         if (response.data) {
-          const { access_token, refresh_token } = response.data;
+          const { access_token, refresh_token, user } = response.data;
 
           // Set token in API client
           api.setAccessToken(access_token);
 
-          set({
-            accessToken: access_token,
-            refreshToken: refresh_token,
-            isAuthenticated: true,
-            isLoading: false,
-          });
+          // If user data is included in login response, use it directly
+          if (user) {
+            set({
+              accessToken: access_token,
+              refreshToken: refresh_token,
+              isAuthenticated: true,
+              isLoading: false,
+              user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                role: user.role,
+                label_ids: user.label_ids || [],
+                is_active: true,
+                created_at: "",
+                updated_at: "",
+              },
+            });
+          } else {
+            set({
+              accessToken: access_token,
+              refreshToken: refresh_token,
+              isAuthenticated: true,
+              isLoading: false,
+            });
 
-          // Fetch user info
-          await get().fetchUser();
+            // Fetch user info if not included in response
+            await get().fetchUser();
+          }
 
           return { success: true };
         }
@@ -103,7 +130,14 @@ export const useAuthStore = create<AuthState>()(
         return get().login(email, password);
       },
 
-      logout: () => {
+      logout: async () => {
+        // Sign out from Supabase
+        try {
+          await supabase.auth.signOut();
+        } catch (error) {
+          console.error("[Auth] Supabase signOut error:", error);
+        }
+
         api.setAccessToken(null);
         set({
           user: null,

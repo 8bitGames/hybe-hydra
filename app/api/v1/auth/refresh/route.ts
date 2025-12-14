@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/db/prisma";
-import { verifyToken, generateAccessToken, generateRefreshToken } from "@/lib/auth";
+
+// Create Supabase client for auth operations
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,18 +20,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify refresh token
-    const payload = verifyToken(refresh_token);
-    if (!payload) {
+    // Refresh session with Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.refreshSession({
+      refresh_token,
+    });
+
+    if (authError || !authData.session) {
       return NextResponse.json(
         { detail: "Invalid or expired refresh token" },
         { status: 401 }
       );
     }
 
-    // Get user
+    // Get user profile from our table
     const user = await prisma.user.findUnique({
-      where: { id: payload.userId },
+      where: { email: authData.user?.email || "" },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        labelIds: true,
+        isActive: true,
+      },
     });
 
     if (!user || !user.isActive) {
@@ -35,14 +52,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate new tokens
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-
     return NextResponse.json({
-      access_token: accessToken,
-      refresh_token: refreshToken,
+      access_token: authData.session.access_token,
+      refresh_token: authData.session.refresh_token,
       token_type: "bearer",
+      expires_in: authData.session.expires_in,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        label_ids: user.labelIds,
+      },
     });
   } catch (error) {
     console.error("Token refresh error:", error);
