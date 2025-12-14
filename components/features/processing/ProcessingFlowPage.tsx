@@ -260,12 +260,25 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
           // CRITICAL: Get current variations from store directly, not from React state
           // React state `variations` may be stale during polling due to closure capture timing
           const currentComposeVars = useProcessingSessionStore.getState().session?.variations || [];
+
+          console.log("[ProcessingFlowPage] Polling - Store vs API IDs:", {
+            storeIds: currentComposeVars.map(v => v.id),
+            apiIds: status.variations.map(v => v.id),
+          });
+
           status.variations.forEach((apiVar) => {
             // Find matching variation in store by ID
             const storeVar = currentComposeVars.find((v) => v.id === apiVar.id);
-            if (!storeVar) return;
+
+            if (!storeVar) {
+              console.warn(`[ProcessingFlowPage] No store match for API var ${apiVar.id}! Store IDs: ${currentComposeVars.map(v => v.id).join(', ')}`);
+              return;
+            }
+
+            console.log(`[ProcessingFlowPage] Processing ${apiVar.id}: status=${apiVar.status}, output_url=${apiVar.output_url ? 'present' : 'missing'}`);
 
             if (apiVar.status === "COMPLETED" && apiVar.output_url) {
+              console.log(`[ProcessingFlowPage] Setting COMPLETED for ${apiVar.id} with URL: ${apiVar.output_url.substring(0, 60)}...`);
               setVariationCompleted(apiVar.id, apiVar.output_url, apiVar.thumbnail_url);
             } else if (apiVar.status === "FAILED") {
               setVariationFailed(apiVar.id, apiVar.error_message);
@@ -365,11 +378,13 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
         console.log("[ProcessingFlowPage] Starting AI Video variations for:", seedGenerationId);
 
         // Map selected styles to style_categories for AI Video API
+        // NOTE: Categories must match database StylePreset categories:
+        // contrast, mood, motion, cinematic, aesthetic, kpop, effect, lighting
         const styleCategoryMap: Record<string, string> = {
-          viral_tiktok: "tiktok",
-          cinematic_mood: "cinematic",
-          clean_minimal: "minimal",
-          energetic_beat: "dynamic",
+          viral_tiktok: "aesthetic",  // TikTok styles → aesthetic presets
+          cinematic_mood: "cinematic", // Cinematic → cinematic presets
+          clean_minimal: "mood",       // Minimal → mood presets (soft pastel, etc.)
+          energetic_beat: "motion",    // Energetic → motion presets (dynamic motion)
         };
 
         const styleCategories = selectedStyles.map(
@@ -378,10 +393,16 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
         // Call AI Video variations API FIRST
         const response = await variationsApi.create(seedGenerationId, {
-          style_categories: styleCategories.length > 0 ? styleCategories : ["tiktok"],
+          style_categories: styleCategories.length > 0 ? styleCategories : ["aesthetic"],
           enable_prompt_variation: false, // Disable prompt variations for simpler mapping
           max_variations: selectedStyles.length || 4,
         });
+
+        // Check for API error response
+        if (response.error) {
+          console.error("[ProcessingFlowPage] AI Video API error:", response.error);
+          throw new Error(response.error.message || "Failed to create AI Video variations");
+        }
 
         if (!response.data || !response.data.variations || response.data.variations.length === 0) {
           console.error("[ProcessingFlowPage] AI Video API returned no variations:", response);
@@ -451,25 +472,42 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
         console.log("[ProcessingFlowPage] Compose variations started:", response);
 
-        // Store the batch ID for polling (both ref and state)
-        variationBatchIdRef.current = response.batch_id;
-        setVariationBatchId(response.batch_id);
-
-        // Map API response to store variations (update IDs to match API)
-        // CRITICAL: Get current variations from store directly, not from React state
-        // React state `variations` may still have old value due to async state update timing
+        // Map API response to store variations (update IDs to match API) BEFORE setting batch ID
+        // CRITICAL: The ID updates must complete before polling starts, otherwise polling
+        // will see old IDs and fail to match with API responses
         const currentComposeVariations = useProcessingSessionStore.getState().session?.variations || [];
+
+        console.log("[ProcessingFlowPage] Mapping API variations to store:", {
+          apiCount: response.variations.length,
+          storeCount: currentComposeVariations.length,
+          apiIds: response.variations.map(v => v.id),
+          storeIds: currentComposeVariations.map(v => v.id),
+        });
+
         response.variations.forEach((apiVar, index) => {
           const storeVariation = currentComposeVariations[index];
           if (storeVariation) {
+            console.log(`[ProcessingFlowPage] Updating store variation ${index}: ${storeVariation.id} -> ${apiVar.id}`);
             updateVariation(storeVariation.id, {
               id: apiVar.id, // Update to API's ID for tracking
               status: "generating",
               progress: 0,
               currentStep: "Starting...",
             });
+          } else {
+            console.warn(`[ProcessingFlowPage] No store variation at index ${index} for API var ${apiVar.id}`);
           }
         });
+
+        // Verify IDs were updated
+        const updatedVars = useProcessingSessionStore.getState().session?.variations || [];
+        console.log("[ProcessingFlowPage] After ID update, store IDs:", updatedVars.map(v => v.id));
+
+        // NOW set the batch ID - this triggers polling useEffect via state change
+        // At this point, all store variations have been updated with correct API IDs
+        variationBatchIdRef.current = response.batch_id;
+        setVariationBatchId(response.batch_id);
+        console.log("[ProcessingFlowPage] Compose batch ID set, polling will start:", response.batch_id);
       }
     } catch (error) {
       console.error("[ProcessingFlowPage] Failed to start variations:", error);

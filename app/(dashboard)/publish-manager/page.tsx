@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/auth-store";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useToast } from "@/components/ui/toast";
+import { useFastCutVideos, useAllAIVideos } from "@/lib/queries";
 import {
   Card,
   CardContent,
@@ -164,14 +165,20 @@ export default function PublishManagerPage() {
   const toast = useToast();
   const isKorean = language === "ko";
 
-  const [videos, setVideos] = useState<VideoItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "table">("table");
   const [activeTab, setActiveTab] = useState("all");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const pageSize = 20;
+
+  // Use the same hooks as all videos page
+  const { data: composeData, isLoading: loadingCompose, refetch: refetchCompose } = useFastCutVideos({
+    page,
+    page_size: pageSize,
+  });
+  const { data: aiData, isLoading: loadingAI, refetch: refetchAI } = useAllAIVideos();
+
+  const loading = loadingCompose || loadingAI;
 
   // Edit modal state
   const [editingVideo, setEditingVideo] = useState<VideoItem | null>(null);
@@ -191,61 +198,66 @@ export default function PublishManagerPage() {
     }
   }, [accessToken]);
 
-  const loadVideos = useCallback(async () => {
-    if (!isAuthenticated || !accessToken) return;
+  // Map compose videos to VideoItem format
+  const composeVideos: VideoItem[] = useMemo(() => {
+    return (composeData?.items || []).map((video) => ({
+      id: video.id,
+      campaignId: video.campaign_id,
+      campaignName: video.campaign_name,
+      generationType: "compose",
+      status: video.status,
+      prompt: video.prompt || "",
+      outputUrl: video.output_url || video.composed_output_url,
+      tags: [],
+      tiktokSeo: video.tiktok_seo || null,
+      trendKeywords: [],
+      qualityScore: null,
+      durationSeconds: video.duration_seconds || 0,
+      aspectRatio: video.aspect_ratio || "9:16",
+      createdAt: video.created_at,
+      createdBy: "",
+    }));
+  }, [composeData]);
 
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        page_size: pageSize.toString(),
-        status: "COMPLETED",
-      });
+  // Map AI videos to VideoItem format
+  const aiVideos: VideoItem[] = useMemo(() => {
+    return (aiData?.items || []).map((video) => ({
+      id: video.id,
+      campaignId: video.campaign_id,
+      campaignName: video.campaign_name,
+      generationType: "ai",
+      status: video.status,
+      prompt: video.prompt || "",
+      outputUrl: video.output_url || video.composed_output_url,
+      tags: [],
+      tiktokSeo: video.tiktok_seo || null,
+      trendKeywords: [],
+      qualityScore: video.quality_score,
+      durationSeconds: video.duration_seconds || 0,
+      aspectRatio: video.aspect_ratio || "9:16",
+      createdAt: video.created_at,
+      createdBy: "",
+    }));
+  }, [aiData]);
 
-      const response = await api.get<{
-        items: any[];
-        total: number;
-        page: number;
-        page_size: number;
-        pages: number;
-      }>(`/api/v1/generations?${params}`);
+  // Combine all videos
+  const videos = useMemo(() => {
+    return [...composeVideos, ...aiVideos].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [composeVideos, aiVideos]);
 
-      if (response.data?.items) {
-        const mappedVideos: VideoItem[] = response.data.items.map((item: any) => ({
-          id: item.id,
-          campaignId: item.campaign_id,
-          campaignName: item.campaign_name,
-          generationType: item.generation_type,
-          status: item.status,
-          prompt: item.prompt || "",
-          outputUrl: item.output_url,
-          tags: item.tags || [],
-          tiktokSeo: item.tiktok_seo,
-          trendKeywords: item.trend_keywords || [],
-          qualityScore: item.quality_score,
-          durationSeconds: item.duration_seconds || 0,
-          aspectRatio: item.aspect_ratio || "9:16",
-          createdAt: item.created_at,
-          createdBy: item.created_by,
-        }));
+  // Total counts
+  const totalComposeCount = composeData?.total || 0;
+  const totalAiCount = aiData?.total || 0;
+  const totalCount = totalComposeCount + totalAiCount;
+  const totalPages = composeData?.pages || 1;
 
-        setVideos(mappedVideos);
-        setTotalPages(response.data.pages);
-      }
-    } catch (err) {
-      console.error("Failed to load videos:", err);
-      toast.error(
-        isKorean ? "오류" : "Error",
-        isKorean ? "영상 목록을 불러오는데 실패했습니다" : "Failed to load videos"
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [isAuthenticated, accessToken, page, isKorean, toast]);
-
-  useEffect(() => {
-    loadVideos();
-  }, [loadVideos]);
+  // Refetch function
+  const loadVideos = () => {
+    refetchCompose();
+    refetchAI();
+  };
 
   // Filter videos by search query
   const filteredVideos = useMemo(() => {
@@ -300,16 +312,8 @@ export default function PublishManagerPage() {
         tags: hashtags,
       });
 
-      // Update local state
-      setVideos(prev => prev.map(v =>
-        v.id === editingVideo.id
-          ? {
-              ...v,
-              tiktokSeo: { ...v.tiktokSeo, description: editDescription, hashtags },
-              tags: hashtags,
-            }
-          : v
-      ));
+      // Refetch data to update UI
+      loadVideos();
 
       toast.success(
         isKorean ? "저장 완료" : "Saved",
@@ -384,21 +388,8 @@ export default function PublishManagerPage() {
         });
 
         if (updateResponse.data && !updateResponse.error) {
-          // Update local state
-          setVideos((prev) =>
-            prev.map((v) =>
-              v.id === video.id
-                ? {
-                    ...v,
-                    tiktokSeo: {
-                      description: generatedDescription,
-                      hashtags: generatedHashtags,
-                    },
-                    tags: generatedHashtags,
-                  }
-                : v
-            )
-          );
+          // Refetch data to update UI
+          loadVideos();
           toast.success(
             isKorean ? "생성 완료" : "Generated",
             isKorean ? "발행 설명이 생성되었습니다" : "Publishing description generated"
@@ -512,13 +503,13 @@ export default function PublishManagerPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="all">
-            {isKorean ? "전체" : "All"} ({filteredVideos.length})
+            {isKorean ? "전체" : "All"} ({totalCount})
           </TabsTrigger>
           <TabsTrigger value="ai">
-            AI ({filteredVideos.filter(v => v.generationType === "ai").length})
+            AI ({totalAiCount})
           </TabsTrigger>
           <TabsTrigger value="compose">
-            Compose ({filteredVideos.filter(v => v.generationType === "compose").length})
+            Fast Cut ({totalComposeCount})
           </TabsTrigger>
         </TabsList>
 
@@ -551,7 +542,7 @@ export default function PublishManagerPage() {
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="w-[80px]">{isKorean ? "미리보기" : "Preview"}</TableHead>
-                    <TableHead className="min-w-[200px]">{isKorean ? "설명 / Description" : "Description"}</TableHead>
+                    <TableHead className="min-w-[200px] max-w-[400px]">{isKorean ? "설명 / Description" : "Description"}</TableHead>
                     <TableHead className="min-w-[150px]">{isKorean ? "태그" : "Tags"}</TableHead>
                     <TableHead>{isKorean ? "캠페인" : "Campaign"}</TableHead>
                     <TableHead className="w-[100px]">{isKorean ? "유형" : "Type"}</TableHead>
@@ -586,9 +577,9 @@ export default function PublishManagerPage() {
                           )}
                         </button>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="max-w-[400px]">
                         {getVideoDescription(video) ? (
-                          <p className="text-sm line-clamp-2">
+                          <p className="text-sm line-clamp-3 break-words">
                             {getVideoDescription(video)}
                           </p>
                         ) : (
@@ -634,7 +625,7 @@ export default function PublishManagerPage() {
                       </TableCell>
                       <TableCell>
                         <Badge variant={video.generationType === "ai" ? "default" : "secondary"}>
-                          {video.generationType.toUpperCase()}
+                          {video.generationType === "compose" ? "Fast Cut" : video.generationType.toUpperCase()}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -706,7 +697,7 @@ export default function PublishManagerPage() {
                       className="absolute top-2 left-2 text-[10px]"
                       variant={video.generationType === "ai" ? "default" : "secondary"}
                     >
-                      {video.generationType.toUpperCase()}
+                      {video.generationType === "compose" ? "Fast Cut" : video.generationType.toUpperCase()}
                     </Badge>
                   </div>
                   <CardContent className="p-3">
@@ -934,12 +925,12 @@ export default function PublishManagerPage() {
                       {isKorean ? "태그" : "Tags"}
                     </p>
                     <div className="flex flex-wrap gap-1">
-                      {(previewVideo.tiktokSeo?.hashtags || previewVideo.tags || []).map((tag, i) => (
+                      {toArray(previewVideo.tiktokSeo?.hashtags || previewVideo.tags).map((tag, i) => (
                         <Badge key={i} variant="secondary">
-                          #{tag.replace(/^#/, "")}
+                          #{String(tag).replace(/^#/, "")}
                         </Badge>
                       ))}
-                      {(previewVideo.tiktokSeo?.hashtags || previewVideo.tags || []).length === 0 && (
+                      {toArray(previewVideo.tiktokSeo?.hashtags || previewVideo.tags).length === 0 && (
                         <span className="text-sm text-muted-foreground">-</span>
                       )}
                     </div>
@@ -952,7 +943,7 @@ export default function PublishManagerPage() {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">{isKorean ? "유형" : "Type"}</p>
-                      <Badge>{previewVideo.generationType.toUpperCase()}</Badge>
+                      <Badge>{previewVideo.generationType === "compose" ? "Fast Cut" : previewVideo.generationType.toUpperCase()}</Badge>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">{isKorean ? "길이" : "Duration"}</p>

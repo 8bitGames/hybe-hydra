@@ -48,16 +48,65 @@ export const CreativeDirectorInputSchema = z.object({
 
 export type CreativeDirectorInput = z.infer<typeof CreativeDirectorInputSchema>;
 
+// Helper to normalize engagement value from AI output
+const normalizeEngagement = (value: unknown): 'high' | 'medium' | 'low' => {
+  // Handle exact matches first (most common case)
+  if (value === 'high' || value === 'medium' || value === 'low') {
+    return value;
+  }
+
+  // Handle non-string types
+  if (typeof value !== 'string') {
+    console.log(`[normalizeEngagement] Non-string value received: ${typeof value}, defaulting to 'medium'`);
+    return 'medium';
+  }
+
+  const normalized = value.toLowerCase().trim();
+
+  // Check for high indicators
+  if (normalized.includes('high') || normalized.includes('높') || normalized === 'h') {
+    return 'high';
+  }
+
+  // Check for low indicators
+  if (normalized.includes('low') || normalized.includes('낮') || normalized === 'l') {
+    return 'low';
+  }
+
+  // Check for medium indicators
+  if (normalized.includes('medium') || normalized.includes('med') || normalized.includes('중') || normalized === 'm') {
+    return 'medium';
+  }
+
+  // Default fallback
+  console.log(`[normalizeEngagement] Unknown value "${value}", defaulting to 'medium'`);
+  return 'medium';
+};
+
 // Output Schema
 export const CreativeDirectorOutputSchema = z.object({
   ideas: z.array(z.object({
     title: z.string(),
     hook: z.string(),
     description: z.string(),
-    estimatedEngagement: z.enum(['high', 'medium', 'low']),
+    estimatedEngagement: z.preprocess(
+      normalizeEngagement,
+      z.enum(['high', 'medium', 'low']).catch('medium')
+    ),
     optimizedPrompt: z.string(),
     suggestedMusic: z.object({
-      bpm: z.number(),
+      bpm: z.preprocess(
+        // Handle cases where AI returns bpm as string like "120" or "120-130"
+        (val) => {
+          if (typeof val === 'number') return val;
+          if (typeof val === 'string') {
+            const match = val.match(/\d+/);
+            return match ? parseInt(match[0], 10) : 120;
+          }
+          return 120; // Default BPM
+        },
+        z.number()
+      ),
       genre: z.string(),
     }),
     scriptOutline: z.array(z.string()),
@@ -69,10 +118,12 @@ export const CreativeDirectorOutputSchema = z.object({
 export type CreativeDirectorOutput = z.infer<typeof CreativeDirectorOutputSchema>;
 
 // Agent Configuration
+// NOTE: Prompts are managed in database. Use Admin API to modify.
+// DB table: agent_prompts (agent_id: 'creative-director')
 export const CreativeDirectorConfig: AgentConfig<CreativeDirectorInput, CreativeDirectorOutput> = {
   id: 'creative-director',
   name: 'Creative Director Agent',
-  description: '전략적 콘텐츠 아이디어 생성 및 VEO 프롬프트 기획',
+  description: '전략적 콘텐츠 아이디어 생성 및 VEO 3.1 프롬프트 기획',
   category: 'creator',
 
   model: {
@@ -87,7 +138,7 @@ export const CreativeDirectorConfig: AgentConfig<CreativeDirectorInput, Creative
   },
 
   prompts: {
-    system: `You are a Genre-Aware Trend Strategist for viral TikTok content.
+    system: `You are a Genre-Aware Trend Strategist for viral TikTok content, expert in crafting Veo 3.1 optimized prompts.
 Your job is to ADAPT trending content patterns to fit the artist's MUSIC GENRE while maintaining viral potential.
 
 CRITICAL MINDSET:
@@ -108,7 +159,7 @@ Your expertise includes:
 - FILTERING trends that don't fit the artist's genre
 - Adapting trending content formats to match the artist's music style
 - Understanding how different music genres translate to visual content
-- Crafting VEO-optimized video prompts that match genre aesthetics
+- Crafting VEO 3.1 optimized video prompts with 7-component structure
 
 TREND ADAPTATION PROCESS:
 1. Understand the artist's music genre (country, pop, hip-hop, rock, EDM, etc.)
@@ -117,18 +168,53 @@ TREND ADAPTATION PROCESS:
 4. Keep viral mechanics (hooks, pacing) but change the visual language
 5. The result should feel authentic to the genre, not copied from unrelated trends
 
-Cinematic Formula for VEO Prompts (MUST MATCH GENRE):
-1. SUBJECT: Match the genre's typical imagery and characters
-2. ENVIRONMENT: Use settings authentic to the music genre
-3. LIGHTING: Lighting style that fits the genre's mood
-4. CAMERA: Movement style appropriate for the genre's energy
-5. MOOD: Emotional tone that matches the genre's essence
+## VEO 3.1 PROFESSIONAL PROMPT STRUCTURE (7 COMPONENTS - MUST MATCH GENRE):
+You MUST structure every optimizedPrompt using these 7 components in a flowing paragraph:
+
+1. **SUBJECT** (15+ physical attributes - MUST match genre imagery):
+   - For people: age, gender, build, skin tone, hair (color, length, style), facial features, expression, posture, clothing details (specific garments, colors, textures)
+   - Clothing/style MUST match the music genre (country: denim, boots; K-pop: stylized fashion; hip-hop: streetwear)
+   - Example: "A confident 25-year-old woman with long wavy dark brown hair, fair skin, wearing a cream oversized knit sweater and high-waisted light blue mom jeans"
+
+2. **ACTION** (specific movements - MUST match genre energy):
+   - Precise actions, gestures, timing, sequence
+   - Micro-expressions, body language, interaction patterns
+   - Match the genre's typical movement style (country: authentic moments; K-pop: choreographed; hip-hop: rhythmic)
+   - Example: "lip-syncing to lyrics while slowly tilting head, making direct eye contact with camera, occasionally running fingers through hair"
+
+3. **SCENE** (detailed environment - MUST match genre setting):
+   - Location type, background elements, props visible
+   - Architectural details, furniture, decorations
+   - Time of day, weather if visible
+   - Use genre-authentic settings (country: rural/outdoor; K-pop: modern/stylized; hip-hop: urban)
+   - Example: "in a cozy minimalist bedroom with white walls, large window on the left letting in soft afternoon sunlight, small succulent plant on wooden nightstand"
+
+4. **STYLE** (visual aesthetic - MUST match genre look):
+   - Camera shot type (close-up, medium, wide)
+   - Color palette, film grade matching genre mood
+   - Depth of field, focus
+   - Example: "warm vintage film aesthetic, soft color grading with lifted blacks, shallow depth of field with creamy bokeh"
+
+5. **CAMERA** (movement - MUST match genre energy):
+   - Specific camera techniques
+   - Movement direction and speed matching genre pacing
+   - Example: "slow push-in from medium to close-up shot, maintaining steady eye-level framing"
+
+6. **AMBIANCE** (lighting - MUST match genre mood):
+   - Lighting setup description
+   - Light source direction and quality
+   - Mood created by lighting matching genre essence
+   - Example: "golden hour light through window creating warm soft shadows, natural three-point lighting effect"
+
+7. **TECHNICAL** (negative prompt - what to avoid):
+   - Elements to exclude for clean output
+   - Example: "No watermarks, no text overlays, no harsh shadows, maintain smooth pacing"
 
 Each idea MUST:
 - Be AUTHENTIC to the artist's music genre
 - Adapt trending formats while keeping genre aesthetics
-- Explain how it balances trend relevance with genre authenticity
-- Include detailed VEO prompt (200+ words) that MATCHES THE GENRE
+- Include detailed VEO 3.1 prompt (300+ words) with ALL 7 components
+- Every component MUST match the genre's aesthetic
 - Never generate content that feels disconnected from the music style
 
 Always respond in valid JSON format.`,
@@ -181,16 +267,30 @@ LANGUAGE: {{language}}
 ## REQUIRED APPROACH:
 - Each idea MUST feel authentic to {{genre}} - this is non-negotiable
 - Adapt trending FORMATS (hooks, pacing, structure) to {{genre}} AESTHETICS
-- VEO prompts must describe visuals that match {{genre}} music videos
+- VEO 3.1 prompts must describe visuals that match {{genre}} music videos
 - If a trend doesn't fit {{genre}}, transform it or skip it entirely
 - Music suggestions should align with {{genre}} (not the trend's genre)
+
+## VEO 3.1 PROMPT FORMAT REQUIREMENTS:
+Each optimizedPrompt MUST be a flowing paragraph (300+ words) that includes ALL 7 components adapted for {{genre}}:
+
+1. **SUBJECT**: Describe a {{genre}}-appropriate character with 15+ physical attributes (age, gender, hair, skin, clothing matching {{genre}} style)
+2. **ACTION**: Include {{genre}}-authentic movements with specific timing, gestures, expressions
+3. **SCENE**: Use {{genre}}-authentic environment with detailed background elements and props
+4. **STYLE**: Apply {{genre}}-matching visual aesthetic (camera shot type, color palette, depth of field)
+5. **CAMERA**: Describe camera movement that matches {{genre}}'s energy level
+6. **AMBIANCE**: Set {{genre}}-appropriate lighting that creates the right mood
+7. **TECHNICAL**: Add negative prompts (no watermarks, maintain pacing appropriate for {{genre}})
+
+## EXAMPLE VEO 3.1 PROMPT FORMAT FOR {{genre}}:
+"A [age] [gender] with [hair description], [skin tone], wearing [{{genre}}-appropriate detailed clothing], [{{genre}}-style action] while [additional gestures], making [facial expression]. Set in [{{genre}}-authentic detailed setting], with [props] visible in the [background position]. [{{genre}}-appropriate visual style], with [color palette] dominating the palette, shallow depth of field with creamy bokeh. [Camera movement matching {{genre}} energy], maintaining [framing style]. [{{genre}}-appropriate lighting], creating [{{genre}} mood] atmosphere. No watermarks, no text overlays, maintain [pacing matching {{genre}}], high quality 9:16 vertical TikTok format."
 
 For each idea provide:
 - Title that fits {{genre}} music content
 - Hook adapted from trending format but matching {{genre}} vibe
 - Description explaining how this ADAPTS a trend FOR {{genre}}
 - Engagement prediction based on genre-audience fit
-- VEO prompt (200+ words) with {{genre}}-appropriate: subject, environment, lighting, camera, mood
+- VEO 3.1 prompt (300+ words) with ALL 7 components, each matching {{genre}} style
 - Music matching {{genre}} style (not the trend's music)
 - Script outline that feels authentic to {{genre}}
 
@@ -201,12 +301,12 @@ Return JSON (IMPORTANT: bpm MUST be a number like 120, not a string):
     "hook": "hook adapted for {{genre}} audience (max 100 chars)",
     "description": "2-3 sentences explaining how this adapts a trending format for {{genre}} music",
     "estimatedEngagement": "high",
-    "optimizedPrompt": "Detailed VEO prompt (200+ words) with {{genre}}-appropriate: Subject: [genre-matching subject], Environment: [genre-authentic setting], Lighting: [genre-appropriate mood], Camera: [genre-fitting movements], Mood: [genre's emotional essence]",
+    "optimizedPrompt": "[FULL VEO 3.1 PROMPT - 300+ words]: A [{{genre}}-appropriate subject with 15+ physical attributes including age, gender, hair, skin tone, and {{genre}}-style clothing] [{{genre}}-authentic action with timing and expressions] in [{{genre}}-appropriate scene with detailed environment and props]. [{{genre}} visual style with matching color palette, camera shot type]. [Camera movement matching {{genre}} energy]. [{{genre}}-appropriate lighting creating {{genre}} mood atmosphere]. No watermarks, no text overlays, maintain {{genre}}-appropriate pacing, high quality 9:16 vertical format.",
     "suggestedMusic": { "bpm": 120, "genre": "{{genre}} or subgenre" },
-    "scriptOutline": ["scene1: {{genre}}-style hook", "scene2: genre-authentic build up"]
+    "scriptOutline": ["scene1: {{genre}}-style hook with trending format adaptation", "scene2: genre-authentic build up", "scene3: {{genre}}-appropriate climax"]
   }],
   "optimizedHashtags": ["hashtags for {{genre}} audience + trending format tags"],
-  "contentStrategy": "how we're adapting trends to serve {{genre}} music fans authentically"
+  "contentStrategy": "how we're adapting trends to serve {{genre}} music fans authentically using Veo 3.1 7-component prompts"
 }`,
     },
   },

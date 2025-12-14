@@ -79,6 +79,7 @@ export default function FastCutScriptPage() {
     setGeneratingScript,
     scriptData,
     setScriptData,
+    setVideoDuration,
     tiktokSEO,
     setTiktokSEO,
     campaignId,
@@ -161,6 +162,10 @@ export default function FastCutScriptPage() {
       });
 
       setScriptData(result);
+      // Set videoDuration from script (capped at 30s max)
+      if (result.script?.totalDuration) {
+        setVideoDuration(Math.min(result.script.totalDuration, 30));
+      }
       if (result.tiktokSEO) {
         setTiktokSEO(result.tiktokSEO);
       }

@@ -3,12 +3,8 @@ import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { Prisma } from "@prisma/client";
-import { searchImagesMultiQuery, isGoogleSearchConfigured } from "@/lib/google-search";
-import { submitRenderToModal, ModalRenderRequest, getComposeEngineMode } from "@/lib/compose/client";
+import { submitAutoCompose, AutoComposeRequest, getComposeRenderStatus } from "@/lib/compose/client";
 import { getSettingsFromStylePresets, getStyleSetById } from "@/lib/constants/style-presets";
-import { getBatchJobStatus } from "@/lib/batch/client";
-
-const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -408,91 +404,46 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
     );
 
-    // Check if Google Search is configured for image search
-    if (!isGoogleSearchConfigured()) {
-      console.warn("[Compose Variations] Google Custom Search API not configured");
-      return NextResponse.json(
-        { detail: "Google Custom Search API not configured. Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID." },
-        { status: 500 }
-      );
-    }
-
-    // Search for images once (shared across all variations)
-    console.log(`[Compose Variations] Searching images with tags: ${searchTags.join(", ")}`);
-    const imageResults = await searchImagesMultiQuery(searchTags, {
-      maxResultsPerQuery: 5,
-      totalMaxResults: 15,
-      safeSearch: "medium",
-    });
-
-    if (imageResults.length < 3) {
-      console.error(`[Compose Variations] Not enough images found: ${imageResults.length}`);
-      // Mark all generations as failed
-      await Promise.all(
-        createdGenerations.map(({ generation }) =>
-          prisma.videoGeneration.update({
-            where: { id: generation.id },
-            data: {
-              status: "FAILED",
-              errorMessage: `Not enough images found (${imageResults.length}). Need at least 3 images.`,
-            },
-          })
-        )
-      );
-      return NextResponse.json(
-        { detail: `Not enough images found (${imageResults.length}). Need at least 3.` },
-        { status: 400 }
-      );
-    }
-
-    // Convert search results to image array for Modal
-    const images = imageResults.slice(0, 10).map((result, idx) => ({
-      url: result.link,
-      order: idx,
-    }));
-
-    console.log(`[Compose Variations] Found ${images.length} images for rendering`);
-
-    // Prepare all render requests for batch submission
-    const modalRequests: ModalRenderRequest[] = createdGenerations.map(({ generation, settings }) => {
-      const outputKey = `compose/renders/${generation.id}/output.mp4`;
+    // Prepare auto-compose requests for each variation
+    // Auto-compose handles image search internally based on search_tags
+    // NOTE: Using polling (not callback) to check job status - GET endpoint polls EC2
+    const autoComposeRequests: AutoComposeRequest[] = createdGenerations.map(({ generation, settings }) => {
       return {
         job_id: generation.id,
-        images,
-        audio: {
-          url: seedGeneration.audioAsset?.s3Url || "",
-          start_time: 0,
-          duration: null, // Auto-calculate
-        },
-        script: originalScriptLines && originalScriptLines.length > 0
-          ? { lines: originalScriptLines }
-          : null,
-        settings: {
-          vibe: settings.vibe,
-          effect_preset: settings.effectPreset,
-          aspect_ratio: seedGeneration.aspectRatio,
-          target_duration: seedGeneration.durationSeconds || 0,
-          text_style: settings.textStyle,
-          color_grade: settings.colorGrade,
-        },
-        output: {
-          s3_bucket: S3_BUCKET,
-          s3_key: outputKey,
-        },
+        search_query: seedGeneration.prompt,
+        search_tags: searchTags,
+        audio_url: seedGeneration.audioAsset?.s3Url || null,
+        vibe: settings.vibe,
+        effect_preset: settings.effectPreset,
+        color_grade: settings.colorGrade,
+        text_style: settings.textStyle,
+        aspect_ratio: seedGeneration.aspectRatio,
+        target_duration: seedGeneration.durationSeconds || 15,
+        campaign_id: seedGeneration.campaignId || undefined,
+        // No callback_url - we use polling via GET endpoint instead
+        // Script lines for subtitles (if available from original compose)
+        script_lines: originalScriptLines && originalScriptLines.length > 0
+          ? originalScriptLines.map(line => ({
+              text: line.text,
+              timing: line.timing,
+              duration: line.duration,
+            }))
+          : undefined,
       };
     });
 
-    console.log(`[Compose Variations] Submitting ${modalRequests.length} jobs individually (AWS Batch/Modal/Local based on COMPOSE_ENGINE_MODE)`);
+    console.log(`[Compose Variations] Submitting ${autoComposeRequests.length} jobs to /api/v1/compose/auto`);
+    console.log(`[Compose Variations] Search tags: ${searchTags.join(", ")}`);
 
-    // Submit each job individually (supports AWS Batch, Modal, or Local based on env)
+    // Submit each job to auto-compose endpoint (EC2 handles image search internally)
     try {
       const submitResults = await Promise.all(
-        modalRequests.map(async (request, index) => {
+        autoComposeRequests.map(async (request, index) => {
           const genData = createdGenerations[index];
           try {
-            const response = await submitRenderToModal(request);
-            console.log(`[Compose Variations] Submitted ${request.job_id} with call_id: ${response.call_id}`);
-            return { success: true, job_id: request.job_id, call_id: response.call_id, genData };
+            const response = await submitAutoCompose(request);
+            console.log(`[Compose Variations] Submitted ${request.job_id} to auto-compose: ${response.message}`);
+            return { success: true, job_id: request.job_id, call_id: request.job_id, genData };
           } catch (err) {
             console.error(`[Compose Variations] Failed to submit ${request.job_id}:`, err);
             return { success: false, job_id: request.job_id, error: err, genData };
@@ -500,7 +451,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         })
       );
 
-      // Update all generations with their call_ids
+      // Update all generations with their status
       await Promise.all(
         submitResults.map(async (result) => {
           if (result.success && result.call_id) {
@@ -512,8 +463,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                   batchId,
                   seedGenerationId,
                   variationType: "compose_variation",
-                  modalCallId: result.call_id,
+                  modalCallId: result.call_id, // job_id is used as call_id for auto-compose
                   createdAt: new Date().toISOString(),
+                  searchTags,
                   settings: {
                     effectPreset: result.genData.settings.effectPreset,
                     colorGrade: result.genData.settings.colorGrade,
@@ -531,7 +483,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               data: {
                 status: "FAILED",
                 progress: 100,
-                errorMessage: result.error instanceof Error ? result.error.message : "Failed to submit render job",
+                errorMessage: result.error instanceof Error ? result.error.message : "Failed to submit auto-compose job",
               },
             });
           }
@@ -543,7 +495,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       console.log(`[Compose Variations] Submitted ${successCount} jobs successfully, ${failCount} failed`);
 
       if (successCount === 0) {
-        throw new Error("All render job submissions failed");
+        throw new Error("All auto-compose job submissions failed");
       }
     } catch (error) {
       console.error(`[Compose Variations] Submit failed:`, error);
@@ -555,7 +507,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             data: {
               status: "FAILED",
               progress: 100,
-              errorMessage: error instanceof Error ? error.message : "Failed to start render",
+              errorMessage: error instanceof Error ? error.message : "Failed to start auto-compose",
             },
           }).catch(() => {}) // Ignore if already updated
         )
@@ -656,8 +608,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Compose variation batch not found" }, { status: 404 });
     }
 
-    // Check AWS Batch status for PROCESSING jobs to update progress
-    const composeMode = getComposeEngineMode();
+    // Check EC2 server status for PROCESSING jobs to update progress
+    // This is the polling mechanism - frontend calls GET periodically to check status
     const updatedGenerations = await Promise.all(
       generations.map(async (gen) => {
         // If already completed or failed, return as-is
@@ -668,52 +620,80 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const metadata = gen.qualityMetadata as Record<string, unknown> | null;
         const callId = metadata?.modalCallId as string | undefined;
 
-        // For AWS Batch mode, check actual job status
-        if (composeMode === "batch" && callId && gen.status === "PROCESSING") {
+        // For PROCESSING or PENDING jobs, poll EC2 server for status
+        if (callId && (gen.status === "PROCESSING" || gen.status === "PENDING")) {
           try {
-            const batchStatus = await getBatchJobStatus(callId);
-            console.log(`[Compose Variations] AWS Batch status for ${gen.id}: ${batchStatus.status}`);
+            const serverStatus = await getComposeRenderStatus(callId);
+            console.log(`[Compose Variations] Polling EC2 for ${gen.id}:`, {
+              ec2Status: serverStatus.status,
+              hasResult: !!serverStatus.result,
+              outputUrl: serverStatus.result?.output_url ? 'present' : 'missing',
+              error: serverStatus.error,
+            });
 
-            // Map AWS Batch status to progress
-            let newProgress = gen.progress;
-            if (batchStatus.status === "running") {
-              newProgress = 50; // Running = 50%
-            } else if (batchStatus.status === "starting") {
-              newProgress = 30; // Starting = 30%
-            } else if (batchStatus.status === "runnable") {
-              newProgress = 20; // Queued = 20%
-            } else if (batchStatus.status === "pending") {
-              newProgress = 10; // Pending = 10%
-            }
-
-            // Update DB if progress changed
-            if (newProgress !== gen.progress) {
-              await prisma.videoGeneration.update({
-                where: { id: gen.id },
-                data: { progress: newProgress },
-              });
-              return { ...gen, progress: newProgress };
-            }
-
-            // Check if AWS Batch says it's completed/failed (callback might be delayed)
-            if (batchStatus.mappedStatus === "completed") {
-              // Don't update here - let callback handle it with output_url
-              return { ...gen, progress: 90 }; // Show 90% while waiting for callback
-            } else if (batchStatus.mappedStatus === "failed") {
+            if (serverStatus.status === "completed") {
+              const outputUrl = serverStatus.result?.output_url;
+              if (outputUrl) {
+                // Update to COMPLETED with output URL
+                console.log(`[Compose Variations] Job ${gen.id} COMPLETED with URL: ${outputUrl.substring(0, 80)}...`);
+                await prisma.videoGeneration.update({
+                  where: { id: gen.id },
+                  data: {
+                    status: "COMPLETED",
+                    progress: 100,
+                    composedOutputUrl: outputUrl,
+                    outputUrl: outputUrl,
+                  },
+                });
+                return {
+                  ...gen,
+                  status: "COMPLETED" as const,
+                  progress: 100,
+                  composedOutputUrl: outputUrl,
+                  outputUrl: outputUrl,
+                };
+              } else {
+                // EC2 says completed but no output_url - this is an error state
+                console.error(`[Compose Variations] Job ${gen.id} marked completed but no output_url!`);
+                await prisma.videoGeneration.update({
+                  where: { id: gen.id },
+                  data: {
+                    status: "FAILED",
+                    progress: 100,
+                    errorMessage: "Render completed but no output URL returned",
+                  },
+                });
+                return { ...gen, status: "FAILED" as const, progress: 100, errorMessage: "Render completed but no output URL returned" };
+              }
+            } else if (serverStatus.status === "failed") {
+              const errorMsg = serverStatus.error || serverStatus.result?.error || "Render failed";
+              console.log(`[Compose Variations] Job ${gen.id} FAILED: ${errorMsg}`);
               await prisma.videoGeneration.update({
                 where: { id: gen.id },
                 data: {
                   status: "FAILED",
                   progress: 100,
-                  errorMessage: batchStatus.statusReason || "AWS Batch job failed",
+                  errorMessage: errorMsg,
                 },
               });
-              return { ...gen, status: "FAILED", progress: 100, errorMessage: batchStatus.statusReason || "AWS Batch job failed" };
+              return { ...gen, status: "FAILED" as const, progress: 100, errorMessage: errorMsg };
+            } else if (serverStatus.status === "processing") {
+              // Still processing - update progress to show activity
+              const newProgress = Math.max(gen.progress, 30);
+              if (newProgress !== gen.progress) {
+                await prisma.videoGeneration.update({
+                  where: { id: gen.id },
+                  data: { progress: newProgress, status: "PROCESSING" },
+                });
+                return { ...gen, progress: newProgress, status: "PROCESSING" as const };
+              }
             }
           } catch (err) {
-            console.error(`[Compose Variations] Failed to check AWS Batch status for ${gen.id}:`, err);
-            // Continue with DB values on error
+            console.error(`[Compose Variations] Failed to poll EC2 status for ${gen.id}:`, err);
+            // Continue with DB values on error - don't fail the request
           }
+        } else if (!callId && gen.status === "PROCESSING") {
+          console.warn(`[Compose Variations] Job ${gen.id} is PROCESSING but has no modalCallId - cannot poll EC2`);
         }
 
         return gen;
@@ -742,16 +722,28 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Format response to match VariationsBatchStatus interface
     const variations = updatedGenerations.map((gen) => {
       const metadata = gen.qualityMetadata as Record<string, unknown> | null;
+      const outputUrl = gen.composedOutputUrl || gen.outputUrl || undefined;
+
+      // Debug log for each variation
+      console.log(`[Compose Variations] Response for ${gen.id}:`, {
+        status: gen.status,
+        hasComposedOutputUrl: !!gen.composedOutputUrl,
+        hasOutputUrl: !!gen.outputUrl,
+        finalOutputUrl: outputUrl ? 'present' : 'missing',
+      });
+
       return {
         id: gen.id,
         variation_label: (metadata?.variationLabel as string) || "",
         status: gen.status as "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED",
         progress: gen.progress,
-        output_url: gen.composedOutputUrl || gen.outputUrl || undefined,
+        output_url: outputUrl,
         thumbnail_url: undefined, // Compose videos don't have separate thumbnails
         error_message: gen.errorMessage || undefined,
       };
     });
+
+    console.log(`[Compose Variations] Returning ${variations.length} variations, ${completedCount} completed with URLs`);
 
     return NextResponse.json({
       batch_id: batchId,

@@ -4,8 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || 'http://localhost:8000';
+import { getComposeEngineUrl } from '@/lib/compose/client';
 
 export interface EffectSelectRequest {
   prompt: string;
@@ -37,7 +36,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const url = `${COMPOSE_ENGINE_URL}/api/v1/effects/select`;
+    const url = `${getComposeEngineUrl()}/api/v1/effects/select`;
 
     const response = await fetch(url, {
       method: 'POST',

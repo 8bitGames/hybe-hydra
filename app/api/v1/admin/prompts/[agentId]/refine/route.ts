@@ -53,6 +53,44 @@ Your role is to help users iteratively improve their prompts through conversatio
 - When showing code or prompt changes, use code blocks
 - Focus on: clarity, specificity, consistency, edge cases, output format
 
+## 🚨 CRITICAL: JSON Field Name Preservation Rule 🚨
+When improving prompts that output JSON, you MUST:
+- **NEVER change existing JSON field names** (e.g., do NOT rename "visual_style" to "visual_aesthetic")
+- **NEVER rename keys in the JSON schema** (they are bound to code validation like Zod schemas)
+- **Only improve field descriptions/instructions**, NOT the field names themselves
+- **Preserve the exact JSON structure** including all nested key names
+- If you see issues with field naming, suggest it as a comment but DO NOT change the actual field name
+- Changing field names will break code validation and cause runtime errors
+
+Example of WRONG approach:
+\`\`\`
+"visual_style": "..." -> "visual_aesthetic": "..."  ❌ FORBIDDEN
+\`\`\`
+
+Example of CORRECT approach:
+\`\`\`
+"visual_style": "describe briefly" -> "visual_style": "Describe the overall visual aesthetic in detail with 2-3 sentences..."  ✅ ALLOWED
+\`\`\`
+
+## 📋 Prompt Structure Rule: system_prompt vs templates
+Agent prompts have TWO separate parts that must remain distinct:
+
+1. **system_prompt** (Role Definition):
+   - Short description of the agent's role and personality (3-5 lines)
+   - General instructions about response format (e.g., "Always respond in JSON")
+   - Should NOT contain specific task templates or JSON schemas
+
+2. **templates** (Task-Specific Templates):
+   - Contains detailed task instructions with placeholders like {{description}}, {{hashtags}}
+   - Contains the full JSON output schema with field descriptions
+   - Each template is for a specific task (e.g., "analyzeVideo", "analyzeImage")
+
+When improving prompts:
+- Keep system_prompt SHORT and role-focused
+- Put detailed JSON schemas and task instructions in the appropriate template
+- Do NOT merge templates into system_prompt
+- When showing improvements, clearly label which part (system_prompt or template) you're modifying
+
 ## Response Format:
 - For general chat: Respond naturally in markdown
 - For analysis: Use structured sections (Strengths, Issues, Suggestions)
@@ -80,6 +118,8 @@ Please analyze this prompt and provide:
 3. **Suggestions** - Specific improvements with examples
 4. **Priority** - Which improvements would have the most impact
 
+⚠️ **Important Note**: If the prompt contains JSON output schema, the field names are bound to code validation (Zod schemas). When suggesting improvements, ONLY suggest changes to field descriptions/instructions, NOT to field names themselves.
+
 Be specific and actionable in your feedback.`;
 
 const IMPROVE_PROMPT = `Based on our conversation, generate an improved version of this prompt:
@@ -95,10 +135,25 @@ const IMPROVE_PROMPT = `Based on our conversation, generate an improved version 
 ## Improvement Focus:
 {{focus}}
 
+## ⚠️ CRITICAL CONSTRAINTS:
+
+### 1. JSON Field Name Preservation
+If the prompt contains JSON output schema, you MUST preserve ALL existing JSON field names exactly as they are.
+- Do NOT rename any JSON keys (they are bound to Zod validation schemas in code)
+- Only improve the descriptions/instructions within each field's value
+- Example: Keep "visual_style" as "visual_style", only improve its description text
+
+### 2. system_prompt vs templates Separation
+- **system_prompt**: Keep it SHORT (3-5 lines). Only role description and general instructions.
+- **templates**: Put all detailed task instructions, JSON schemas, and placeholders here.
+- Do NOT merge template content into system_prompt.
+
 Please provide:
-1. The improved system prompt (in a code block)
-2. Improved templates if applicable (in code blocks)
-3. A summary of what changed and why`;
+1. The improved **system_prompt** (in a code block marked "System Prompt") - SHORT, role-focused only
+2. Improved **templates** (in code blocks marked with template name like "Template: analyzeVideo") - with full JSON schemas
+3. A summary of what changed and why
+
+Note: Field name changes are forbidden. Structure separation must be maintained.`;
 
 const TEST_PROMPT = `Test the following prompt with the provided input and show what the expected output behavior would be:
 
@@ -241,6 +296,7 @@ ${Object.entries(currentPrompt.templates)
 /**
  * Extract improved prompts from the response
  * Looks for code blocks that might contain improved prompts
+ * Supports multiple label formats for flexibility
  */
 function extractImprovedPrompts(text: string): {
   systemPrompt?: string;
@@ -249,23 +305,34 @@ function extractImprovedPrompts(text: string): {
   const result: { systemPrompt?: string; templates?: Record<string, string> } = {};
 
   // Look for system prompt in code blocks
-  // Pattern: ```...``` after "improved system prompt" or similar
-  const systemPromptMatch = text.match(
-    /(?:improved|updated|new|revised)\s+(?:system\s+)?prompt[:\s]*\n*```(?:\w+)?\n([\s\S]*?)```/i
-  );
+  // Patterns: "System Prompt:", "improved system prompt", etc.
+  const systemPromptPatterns = [
+    /(?:^|\n)(?:\*\*)?System\s+Prompt(?:\*\*)?[:\s]*\n*```(?:\w+)?\n([\s\S]*?)```/i,
+    /(?:improved|updated|new|revised)\s+(?:\*\*)?system\s*prompt(?:\*\*)?[:\s]*\n*```(?:\w+)?\n([\s\S]*?)```/i,
+  ];
 
-  if (systemPromptMatch) {
-    result.systemPrompt = systemPromptMatch[1].trim();
+  for (const pattern of systemPromptPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      result.systemPrompt = match[1].trim();
+      break;
+    }
   }
 
-  // Look for templates
-  const templateMatches = text.matchAll(
-    /(?:template|###)\s+[`"]?(\w+)[`"]?[:\s]*\n*```(?:\w+)?\n([\s\S]*?)```/gi
-  );
+  // Look for templates with various label formats
+  // Patterns: "Template: analyzeVideo", "### analyzeVideo", "template analyzeVideo"
+  const templatePatterns = [
+    /(?:^|\n)(?:\*\*)?Template[:\s]+[`"]?(\w+)[`"]?(?:\*\*)?[:\s]*\n*```(?:\w+)?\n([\s\S]*?)```/gi,
+    /(?:^|\n)###\s+[`"]?(\w+)[`"]?[:\s]*\n*```(?:\w+)?\n([\s\S]*?)```/gi,
+    /(?:improved|updated)\s+(?:\*\*)?template[:\s]+[`"]?(\w+)[`"]?(?:\*\*)?[:\s]*\n*```(?:\w+)?\n([\s\S]*?)```/gi,
+  ];
 
-  for (const match of templateMatches) {
-    if (!result.templates) result.templates = {};
-    result.templates[match[1]] = match[2].trim();
+  for (const pattern of templatePatterns) {
+    const templateMatches = text.matchAll(pattern);
+    for (const match of templateMatches) {
+      if (!result.templates) result.templates = {};
+      result.templates[match[1]] = match[2].trim();
+    }
   }
 
   return Object.keys(result).length > 0 ? result : null;

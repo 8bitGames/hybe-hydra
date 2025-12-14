@@ -4,9 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-// Compose engine URL (Modal or local)
-const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || 'http://localhost:8000';
+import { getComposeEngineUrl } from '@/lib/compose/client';
 
 /**
  * GET /api/v1/effects - List effects with filtering
@@ -17,7 +15,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const queryString = searchParams.toString();
 
-    const url = `${COMPOSE_ENGINE_URL}/api/v1/effects${queryString ? `?${queryString}` : ''}`;
+    const url = `${getComposeEngineUrl()}/api/v1/effects${queryString ? `?${queryString}` : ''}`;
 
     const response = await fetch(url, {
       method: 'GET',

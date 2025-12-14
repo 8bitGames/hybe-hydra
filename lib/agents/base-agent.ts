@@ -152,9 +152,12 @@ export abstract class BaseAgent<TInput, TOutput> {
   }
 
   /**
-   * Initialize agent with database prompts
-   * Call this before execute() to load prompts from database
-   * Falls back to hardcoded config if database load fails
+   * Initialize agent with database prompts (REQUIRED)
+   * All prompts must be managed in database. Throws error if not found.
+   *
+   * To add prompts for a new agent:
+   * 1. Use Admin API: POST /api/v1/admin/prompts/seed
+   * 2. Or use Supabase MCP: mcp__supabase__execute_sql
    */
   async initializeFromDatabase(): Promise<boolean> {
     if (this.isInitialized) {
@@ -165,15 +168,18 @@ export abstract class BaseAgent<TInput, TOutput> {
       const dbPrompt = await loadPromptFromDatabase(this.config.id);
 
       if (dbPrompt) {
-        // Update config with database values
         this.applyDatabasePrompt(dbPrompt);
         this.usingDatabasePrompts = true;
-        console.log(`[${this.config.id}] Loaded prompts from database (v${dbPrompt.version})`);
+        console.log(`[${this.config.id}] ✓ Loaded prompts from DB (v${dbPrompt.version})`);
       } else {
-        console.log(`[${this.config.id}] Using hardcoded prompts (no DB entry found)`);
+        // DB에 프롬프트가 없으면 경고하고 fallback 사용
+        console.warn(
+          `[${this.config.id}] ⚠️ NO DB PROMPT FOUND - using fallback. ` +
+          `Run 'POST /api/v1/admin/prompts/seed' to initialize database prompts.`
+        );
       }
     } catch (error) {
-      console.warn(`[${this.config.id}] Failed to load DB prompts, using hardcoded:`, error);
+      console.warn(`[${this.config.id}] Failed to load DB prompts, using fallback:`, error);
     }
 
     this.isInitialized = true;
@@ -302,6 +308,11 @@ export abstract class BaseAgent<TInput, TOutput> {
         responseFormat: 'json',
       });
 
+      // Log finish reason for debugging truncated responses
+      if (response.finishReason && response.finishReason !== 'STOP') {
+        console.warn(`[${this.config.id}] ⚠️ Unusual finishReason: ${response.finishReason} (response length: ${response.content.length} chars)`);
+      }
+
       // 6. Parse and validate output
       const parsedOutput = this.parseResponse(response);
       const validatedOutput = this.validateOutput(parsedOutput);
@@ -349,7 +360,7 @@ export abstract class BaseAgent<TInput, TOutput> {
   async executeWithImages(
     input: TInput,
     context: AgentContext,
-    images: Array<{ data: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' }>
+    images: Array<{ data: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | 'video/mp4' | 'video/mpeg' | 'video/webm' | 'video/quicktime' }>
   ): Promise<AgentResult<TOutput>> {
     const startTime = Date.now();
 
@@ -1523,7 +1534,7 @@ export abstract class BaseAgent<TInput, TOutput> {
       }
 
       // Store the feedback
-      await evaluationService.storeFeedback(
+      await evaluationService.saveFeedback(
         executionId,
         this.config.id,
         {
@@ -1535,7 +1546,7 @@ export abstract class BaseAgent<TInput, TOutput> {
             ? `Auto-evaluated: ${latencyMs}ms latency, ${tokenUsage.total} tokens`
             : 'Auto-evaluated: Execution failed',
         },
-        'auto'
+        'automated'
       );
     } catch (error) {
       console.warn(`[${this.config.id}] Failed to store auto-feedback:`, error);

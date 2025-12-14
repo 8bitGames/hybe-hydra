@@ -24,10 +24,21 @@ export interface GenerateOptions {
   responseFormat?: 'text' | 'json';
 }
 
-export interface ImageInput {
+export interface MediaInput {
   data: string; // base64 encoded
-  mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  mimeType:
+    | 'image/png'
+    | 'image/jpeg'
+    | 'image/webp'
+    | 'image/gif'
+    | 'video/mp4'
+    | 'video/mpeg'
+    | 'video/webm'
+    | 'video/quicktime';
 }
+
+// Backward compatibility alias
+export type ImageInput = MediaInput;
 
 export interface StreamChunk {
   content: string;

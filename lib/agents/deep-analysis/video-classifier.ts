@@ -162,28 +162,26 @@ IMPORTANT:
 - If analyzing many videos, prioritize completing all classifications over detailed reasoning`;
 
 // =============================================================================
-// Agent Implementation
+// Agent Configuration (exported for seed API)
 // =============================================================================
 
-export class VideoClassifierAgent extends BaseAgent<VideoClassifierInput, VideoClassifierOutput> {
-  constructor() {
-    super({
-      id: 'video-classifier',
-      name: 'Video Classifier',
-      description: 'Classifies TikTok videos into content categories',
-      category: 'analyzer',
-      model: {
-        provider: 'gemini',
-        name: 'gemini-2.5-flash',
-        options: {
-          temperature: 0.3, // Low temperature for consistent classification
-          maxTokens: 16384, // Increased to handle many video classifications
-        },
-      },
-      prompts: {
-        system: SYSTEM_PROMPT,
-        templates: {
-          classify: `Analyze and classify the following {{videoCount}} videos from @{{uniqueId}} ({{nickname}}).
+export const VideoClassifierConfig = {
+  id: 'video-classifier',
+  name: 'Video Classifier',
+  description: 'TikTok 영상을 콘텐츠 유형별로 분류 및 분석',
+  category: 'analyzer',
+  model: {
+    provider: 'gemini',
+    name: 'gemini-2.5-flash',
+    options: {
+      temperature: 0.3, // Low temperature for consistent classification
+      maxTokens: 16384, // Increased to handle many video classifications
+    },
+  },
+  prompts: {
+    system: SYSTEM_PROMPT,
+    templates: {
+      classify: `Analyze and classify the following {{videoCount}} videos from @{{uniqueId}} ({{nickname}}).
 
 ## Account Context
 - Verified: {{verified}}
@@ -197,11 +195,19 @@ Classify each video and provide overall category/content type distribution with 
 
 **IMPORTANT: You MUST respond entirely in {{language}}.**
 All text fields including reasoning, recommendations, and insights MUST be written in {{language}}.`,
-        },
-      },
-      inputSchema: VideoClassifierInputSchema,
-      outputSchema: VideoClassifierOutputSchema,
-    });
+    },
+  },
+  inputSchema: VideoClassifierInputSchema,
+  outputSchema: VideoClassifierOutputSchema,
+};
+
+// =============================================================================
+// Agent Implementation
+// =============================================================================
+
+export class VideoClassifierAgent extends BaseAgent<VideoClassifierInput, VideoClassifierOutput> {
+  constructor() {
+    super(VideoClassifierConfig as any);
   }
 
   protected buildPrompt(input: VideoClassifierInput, context: AgentContext): string {

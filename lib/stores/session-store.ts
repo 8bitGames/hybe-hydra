@@ -721,12 +721,13 @@ export const useSessionStore = create<SessionStore>()(
 
         if (!session) {
           // Fall back to Supabase
+          // Use maybeSingle() instead of single() to handle "not found" case gracefully
           const supabase = createClient();
           const { data, error } = await supabase
             .from("creation_sessions")
             .select("*")
             .eq("id", sessionId)
-            .single();
+            .maybeSingle();
 
           if (error) {
             // Provide better error message for common Supabase errors
@@ -741,7 +742,10 @@ export const useSessionStore = create<SessionStore>()(
             throw new Error(`Failed to load session: ${errorMessage}`);
           }
           if (!data) {
-            throw new Error(`Session not found: ${sessionId}`);
+            // Session not found in database - clean up from local cache
+            console.warn("[SessionStore] Session not found in database, cleaning up local cache:", sessionId);
+            await deleteFromIDB(sessionId);
+            throw new Error(`Session not found: ${sessionId}. It may have been deleted.`);
           }
 
           session = dbRowToSession(data);

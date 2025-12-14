@@ -68,6 +68,18 @@ export function CompareApproveView({
   // Get completed variations only
   const completedVariations = variations.filter((v) => v.status === "completed" && v.outputUrl);
 
+  // Debug: Log variations state
+  console.log("[CompareApproveView] variations:", {
+    total: variations.length,
+    completed: completedVariations.length,
+    all: variations.map(v => ({
+      id: v.id.substring(0, 30) + '...',
+      status: v.status,
+      hasOutputUrl: !!v.outputUrl,
+      outputUrl: v.outputUrl ? v.outputUrl.substring(0, 50) + '...' : null,
+    })),
+  });
+
   // Total videos (original + completed variations)
   const totalVideos = 1 + completedVariations.length;
 

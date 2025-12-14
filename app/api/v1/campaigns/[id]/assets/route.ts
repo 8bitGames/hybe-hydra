@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { validateFile, generateS3Key, uploadToS3, AssetType as StorageAssetType } from "@/lib/storage";
 import { AssetType, MerchandiseType, Prisma } from "@prisma/client";
+import { getComposeEngineUrl } from "@/lib/compose/client";
 
 interface AudioAnalysisResult {
   bpm: number;
@@ -14,12 +15,7 @@ interface AudioAnalysisResult {
  * Analyze audio file using compose-engine to extract BPM and duration
  */
 async function analyzeAudioFile(s3Url: string): Promise<AudioAnalysisResult | null> {
-  const composeUrl = process.env.MODAL_COMPOSE_URL || process.env.LOCAL_COMPOSE_URL;
-
-  if (!composeUrl) {
-    console.warn('[Asset Upload] No compose engine URL configured, skipping audio analysis');
-    return null;
-  }
+  const composeUrl = getComposeEngineUrl();
 
   try {
     const response = await fetch(`${composeUrl}/audio/analyze`, {

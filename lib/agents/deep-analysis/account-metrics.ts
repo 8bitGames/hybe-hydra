@@ -248,28 +248,26 @@ IMPORTANT:
 - Keep description strings SHORT (1-2 sentences max) to ensure full response completion`;
 
 // =============================================================================
-// Agent Implementation
+// Agent Configuration (exported for seed API)
 // =============================================================================
 
-export class AccountMetricsAgent extends BaseAgent<AccountMetricsInput, AccountMetricsOutput> {
-  constructor() {
-    super({
-      id: 'account-metrics',
-      name: 'Account Metrics Analyzer',
-      description: 'Analyzes TikTok account metrics and generates strategic insights',
-      category: 'analyzer',
-      model: {
-        provider: 'gemini',
-        name: 'gemini-2.5-flash',
-        options: {
-          temperature: 0.5,
-          maxTokens: 12288, // Increased for complete metrics responses
-        },
-      },
-      prompts: {
-        system: SYSTEM_PROMPT,
-        templates: {
-          analyze: `Analyze the following TikTok account metrics and provide strategic insights.
+export const AccountMetricsConfig = {
+  id: 'account-metrics',
+  name: 'Account Metrics Analyzer',
+  description: 'TikTok 계정 지표를 분석하여 전략적 인사이트 생성',
+  category: 'analyzer',
+  model: {
+    provider: 'gemini',
+    name: 'gemini-2.5-flash',
+    options: {
+      temperature: 0.5,
+      maxTokens: 12288, // Increased for complete metrics responses
+    },
+  },
+  prompts: {
+    system: SYSTEM_PROMPT,
+    templates: {
+      analyze: `Analyze the following TikTok account metrics and provide strategic insights.
 
 ## Account Information
 - Username: @{{uniqueId}}
@@ -318,11 +316,19 @@ export class AccountMetricsAgent extends BaseAgent<AccountMetricsInput, AccountM
 
 **IMPORTANT: You MUST respond entirely in {{language}}.**
 All text fields including summary, descriptions, strengths, weaknesses, recommendations, and strategy insights MUST be written in {{language}}.`,
-        },
-      },
-      inputSchema: AccountMetricsInputSchema,
-      outputSchema: AccountMetricsOutputSchema,
-    });
+    },
+  },
+  inputSchema: AccountMetricsInputSchema,
+  outputSchema: AccountMetricsOutputSchema,
+};
+
+// =============================================================================
+// Agent Implementation
+// =============================================================================
+
+export class AccountMetricsAgent extends BaseAgent<AccountMetricsInput, AccountMetricsOutput> {
+  constructor() {
+    super(AccountMetricsConfig as any);
   }
 
   protected buildPrompt(input: AccountMetricsInput, context: AgentContext): string {

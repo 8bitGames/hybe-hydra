@@ -83,7 +83,16 @@ function SessionCard({
   // Use different stage lists based on content type
   // AI Video: start → analyze → create → processing → publish (5 stages)
   // Fast Cut: start → script → images → music → effects → render → publish (7 stages)
-  const isFastCut = session.metadata.contentType === "fast-cut";
+
+  // Infer contentType from currentStage if metadata is missing or inconsistent
+  // This handles cases where sessions were created before contentType was properly tracked
+  const FAST_CUT_ONLY_STAGES = ["script", "images", "music", "effects", "render"];
+  const inferredIsFastCut =
+    session.metadata.contentType === "fast-cut" ||
+    FAST_CUT_ONLY_STAGES.includes(session.currentStage) ||
+    session.completedStages?.some(stage => FAST_CUT_ONLY_STAGES.includes(stage));
+
+  const isFastCut = inferredIsFastCut;
   const stages: readonly string[] = isFastCut
     ? ["start", "script", "images", "music", "effects", "render", "publish"]
     : ["start", "analyze", "create", "processing", "publish"];
@@ -163,9 +172,9 @@ function SessionCard({
   };
 
   const status = statusConfig[session.status];
-  const contentType = session.metadata.contentType
-    ? contentTypeConfig[session.metadata.contentType]
-    : null;
+  // Use inferred contentType for badge display (handles legacy sessions with missing/incorrect metadata)
+  const inferredContentTypeKey = isFastCut ? "fast-cut" : (session.metadata.contentType || "ai_video");
+  const contentType = contentTypeConfig[inferredContentTypeKey] || null;
   const entrySource = session.metadata.entrySource
     ? entrySourceConfig[session.metadata.entrySource]
     : null;

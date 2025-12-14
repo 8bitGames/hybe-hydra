@@ -118,10 +118,9 @@ export default function PublishPage() {
   const getApprovedVideosFromSession = useProcessingSessionStore((state) => state.getApprovedVideos);
 
   // Check if coming from fast-cut flow (sessionId in URL)
-  const isFastCutFlow = useMemo(() => {
-    const sessionIdParam = searchParams.get("sessionId");
-    return !!sessionIdParam && !!processingSession;
-  }, [searchParams, processingSession]);
+  // Use URL parameter as primary indicator since it's immediately available
+  const sessionIdParam = searchParams.get("sessionId");
+  const isFastCutFlow = !!sessionIdParam; // FastCut flow always has sessionId in URL
 
   // Sync workflow stage
   useWorkflowSync("publish");
@@ -608,9 +607,8 @@ export default function PublishPage() {
     setShowSuccessDialog(false);
     // CRITICAL: Use clearActiveSession to fully clear all storage
     // This ensures no stale data persists when starting a new project
-    // The ?new=true parameter tells /start page to skip hydration wait
     useSessionStore.getState().clearActiveSession();
-    router.push("/start?new=true");
+    router.push("/create");
   }, [router]);
 
   // Handle success dialog close (when user closes dialog without selecting an option)
@@ -618,7 +616,7 @@ export default function PublishPage() {
     setShowSuccessDialog(false);
     // CRITICAL: Use clearActiveSession to fully clear all storage
     useSessionStore.getState().clearActiveSession();
-    router.push("/start?new=true");
+    router.push("/create");
   }, [router]);
 
   // Convert currentVideo to VideoGeneration format for VariationModal
@@ -658,6 +656,7 @@ export default function PublishPage() {
       <div className="h-full flex flex-col bg-white">
         <WorkflowHeader
           onBack={goToProcessing}
+          contentType={isFastCutFlow ? "fast-cut" : "ai_video"}
           actionButton={{
             label: isKorean ? "발행하기" : "Publish",
             onClick: handlePublish,
@@ -678,6 +677,7 @@ export default function PublishPage() {
       <div className="h-full flex flex-col bg-white">
         <WorkflowHeader
           onBack={goToProcessing}
+          contentType={isFastCutFlow ? "fast-cut" : "ai_video"}
           actionButton={{
             label: isKorean ? "발행하기" : "Publish",
             onClick: handlePublish,
@@ -709,6 +709,7 @@ export default function PublishPage() {
       {/* Header */}
       <WorkflowHeader
         onBack={goToProcessing}
+        contentType={isFastCutFlow ? "fast-cut" : "ai_video"}
         subtitle={isKorean
           ? `${approvedVideos.length}개 영상${selectedAccount ? ` · @${selectedAccount.account_name}` : ""}`
           : `${approvedVideos.length} videos${selectedAccount ? ` · @${selectedAccount.account_name}` : ""}`}

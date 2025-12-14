@@ -199,6 +199,7 @@ export async function downloadTikTok(url: string): Promise<{
 
 /**
  * Analyze video content using TikTokVisionAgent
+ * Uses Gemini 2.5 Flash with video support via inline base64
  */
 export async function analyzeVideoWithGemini(
   videoUrl: string,
@@ -217,7 +218,9 @@ export async function analyzeVideoWithGemini(
 }> {
   try {
     // Download video and convert to base64
-    console.log("[TIKTOK-VISION] Fetching video for analysis:", videoUrl);
+    console.log("[TIKTOK-VISION] ========================================");
+    console.log("[TIKTOK-VISION] Starting video analysis");
+    console.log("[TIKTOK-VISION] Video URL:", videoUrl?.slice(0, 100));
 
     const videoResponse = await fetch(videoUrl, {
       headers: {
@@ -226,27 +229,43 @@ export async function analyzeVideoWithGemini(
     });
 
     if (!videoResponse.ok) {
-      throw new Error(`Failed to fetch video: ${videoResponse.status}`);
+      console.error("[TIKTOK-VISION] Failed to fetch video:", videoResponse.status, videoResponse.statusText);
+      throw new Error(`Failed to fetch video: ${videoResponse.status} ${videoResponse.statusText}`);
     }
+
+    const contentType = videoResponse.headers.get("content-type") || "video/mp4";
+    console.log("[TIKTOK-VISION] Content-Type:", contentType);
 
     const videoBuffer = await videoResponse.arrayBuffer();
     const videoBase64 = Buffer.from(videoBuffer).toString("base64");
     const videoSize = videoBuffer.byteLength / (1024 * 1024);
 
-    console.log(`[TIKTOK-VISION] Video size: ${videoSize.toFixed(2)} MB`);
+    console.log(`[TIKTOK-VISION] Video downloaded: ${videoSize.toFixed(2)} MB`);
+    console.log(`[TIKTOK-VISION] Base64 length: ${videoBase64.length} characters`);
 
-    // Gemini has file size limits, check if video is too large
-    if (videoSize > 20) {
-      console.log("[TIKTOK-VISION] Video too large, using metadata-only analysis");
+    // Gemini 2.5 Flash supports inline videos up to ~50MB
+    // But for reliability, we'll use 30MB as the limit
+    const MAX_VIDEO_SIZE_MB = 30;
+    if (videoSize > MAX_VIDEO_SIZE_MB) {
+      console.warn(`[TIKTOK-VISION] Video too large (${videoSize.toFixed(2)}MB > ${MAX_VIDEO_SIZE_MB}MB), using metadata-only analysis`);
       return analyzeFromMetadataOnly(metadata);
     }
 
+    // Determine proper MIME type
+    let mimeType = "video/mp4";
+    if (contentType.includes("video/")) {
+      mimeType = contentType.split(";")[0].trim();
+    }
+    console.log("[TIKTOK-VISION] Using MIME type:", mimeType);
+
     // Call the agent
+    console.log("[TIKTOK-VISION] Calling TikTokVisionAgent...");
     const agent = getTikTokVisionAgent();
     const context = createAgentContext();
+
     const result = await agent.analyzeVideo(
       videoBase64,
-      "video/mp4",
+      mimeType,
       {
         mediaType: 'video',
         description: metadata.description,
@@ -257,13 +276,18 @@ export async function analyzeVideoWithGemini(
     );
 
     if (!result.success || !result.data) {
-      console.error("[TIKTOK-VISION] Agent error:", result.error);
+      console.error("[TIKTOK-VISION] ❌ Agent returned error:", result.error);
+      console.error("[TIKTOK-VISION] Full result:", JSON.stringify(result, null, 2).slice(0, 500));
+      console.log("[TIKTOK-VISION] Falling back to metadata-only analysis due to agent error");
       return analyzeFromMetadataOnly(metadata);
     }
 
     const analysis = result.data;
-    console.log("[TIKTOK-VISION] Analysis complete");
-    console.log("[TIKTOK-VISION] suggested_prompt:", analysis.suggested_prompt?.slice(0, 200));
+    console.log("[TIKTOK-VISION] ✅ Analysis successful!");
+    console.log("[TIKTOK-VISION] Main subject:", analysis.content_analysis?.main_subject?.slice(0, 100));
+    console.log("[TIKTOK-VISION] Setting:", analysis.content_analysis?.setting?.slice(0, 100));
+    console.log("[TIKTOK-VISION] Visual style:", analysis.style_analysis?.visual_style?.slice(0, 100));
+    console.log("[TIKTOK-VISION] ========================================");
 
     return {
       success: true,
@@ -273,10 +297,11 @@ export async function analyzeVideoWithGemini(
       prompt_elements: analysis.prompt_elements,
     };
   } catch (error) {
-    console.error("[TIKTOK-VISION] Analysis error:", error);
+    console.error("[TIKTOK-VISION] ❌ Analysis error:", error);
+    console.error("[TIKTOK-VISION] Error stack:", error instanceof Error ? error.stack : "No stack");
 
     // Fallback to metadata-only analysis
-    console.log("[TIKTOK-VISION] Falling back to metadata-only analysis");
+    console.log("[TIKTOK-VISION] Falling back to metadata-only analysis due to exception");
     return analyzeFromMetadataOnly(metadata);
   }
 }
@@ -363,6 +388,7 @@ export async function analyzeImageWithGemini(
 
 /**
  * Fallback analysis using only metadata (no video)
+ * This is used when video/image analysis fails - extracts as much context as possible from text
  */
 function analyzeFromMetadataOnly(metadata: {
   description: string;
@@ -375,57 +401,101 @@ function analyzeFromMetadataOnly(metadata: {
   suggested_prompt?: string;
   prompt_elements?: TikTokAnalysisResult["prompt_elements"];
 } {
-  // Extract style hints from hashtags
+  console.log("[FALLBACK] Using metadata-only analysis - Vision AI analysis failed or unavailable");
+  console.log("[FALLBACK] Description:", metadata.description?.slice(0, 100));
+  console.log("[FALLBACK] Hashtags:", metadata.hashtags.join(", "));
+
   const hashtagsLower = metadata.hashtags.map((h) => h.toLowerCase());
+  const descLower = (metadata.description || "").toLowerCase();
 
   const styleKeywords: string[] = [];
   const moodKeywords: string[] = [];
   const actionKeywords: string[] = [];
+  let visualStyle = "short-form social media content";
+  let mood = "engaging";
+  let setting = "indoor setting (details unavailable - video analysis required)";
+  let mainSubject = "content creator (details unavailable - video analysis required)";
+  let clothingStyle = "casual contemporary style";
 
-  // Style detection from hashtags
-  if (hashtagsLower.some((h) => h.includes("aesthetic") || h.includes("vibe"))) {
-    styleKeywords.push("aesthetic", "stylized");
+  // Enhanced hashtag-based style detection
+  if (hashtagsLower.some((h) => h.includes("aesthetic") || h.includes("vibe") || h.includes("mood"))) {
+    styleKeywords.push("aesthetic", "curated visuals");
+    visualStyle = "curated aesthetic style with intentional color grading";
   }
-  if (hashtagsLower.some((h) => h.includes("cinematic"))) {
-    styleKeywords.push("cinematic", "film-like");
+  if (hashtagsLower.some((h) => h.includes("cinematic") || h.includes("film"))) {
+    styleKeywords.push("cinematic", "film-inspired");
+    visualStyle = "cinematic style with dramatic framing";
   }
-  if (hashtagsLower.some((h) => h.includes("fyp") || h.includes("viral"))) {
-    styleKeywords.push("trending", "eye-catching");
+  if (hashtagsLower.some((h) => h.includes("dance") || h.includes("choreo") || h.includes("moves"))) {
+    actionKeywords.push("dancing", "rhythmic movement", "choreography");
+    moodKeywords.push("energetic", "dynamic");
+    mood = "high-energy and dynamic";
   }
-  if (hashtagsLower.some((h) => h.includes("dance") || h.includes("choreo"))) {
-    actionKeywords.push("dancing", "choreography");
-    moodKeywords.push("energetic");
+  if (hashtagsLower.some((h) => h.includes("country") || h.includes("nashville") || h.includes("western"))) {
+    styleKeywords.push("country aesthetic", "rustic warmth");
+    visualStyle = "warm country aesthetic with natural tones";
+    moodKeywords.push("warm", "authentic");
+    mood = "warm and authentic";
+    setting = "rustic or countryside setting";
+    clothingStyle = "country/western style clothing";
   }
-  if (hashtagsLower.some((h) => h.includes("country") || h.includes("nashville"))) {
-    styleKeywords.push("country style", "authentic");
-    moodKeywords.push("warm");
+  if (hashtagsLower.some((h) => h.includes("makeup") || h.includes("beauty") || h.includes("skincare"))) {
+    actionKeywords.push("beauty demonstration", "close-up shots");
+    styleKeywords.push("beauty content", "well-lit");
+    setting = "well-lit vanity or bathroom setting";
+  }
+  if (hashtagsLower.some((h) => h.includes("cooking") || h.includes("recipe") || h.includes("food"))) {
+    actionKeywords.push("cooking demonstration", "food preparation");
+    styleKeywords.push("food content", "appetizing presentation");
+    setting = "kitchen or dining area";
+  }
+  if (hashtagsLower.some((h) => h.includes("fitness") || h.includes("workout") || h.includes("gym"))) {
+    actionKeywords.push("exercise movements", "workout demonstration");
+    moodKeywords.push("motivational", "energetic");
+    setting = "gym or workout space";
+    clothingStyle = "athletic wear";
+  }
+  if (hashtagsLower.some((h) => h.includes("travel") || h.includes("vacation") || h.includes("explore"))) {
+    styleKeywords.push("travel content", "scenic views");
+    setting = "travel destination or scenic location";
+    moodKeywords.push("adventurous", "wanderlust");
+  }
+  if (hashtagsLower.some((h) => h.includes("comedy") || h.includes("funny") || h.includes("humor"))) {
+    moodKeywords.push("humorous", "lighthearted");
+    mood = "comedic and entertaining";
   }
 
-  // Add defaults if empty
-  if (styleKeywords.length === 0) styleKeywords.push("modern", "social media style");
-  if (moodKeywords.length === 0) moodKeywords.push("engaging");
-  if (actionKeywords.length === 0) actionKeywords.push("expressive movement");
+  // Extract context from description
+  if (descLower.includes("new year") || descLower.includes("happy new year")) {
+    moodKeywords.push("celebratory", "festive");
+    mood = "celebratory and festive";
+  }
 
-  return {
+  // Add defaults if arrays are still empty
+  if (styleKeywords.length === 0) styleKeywords.push("modern social media style", "vertical video format");
+  if (moodKeywords.length === 0) moodKeywords.push("engaging", "attention-grabbing");
+  if (actionKeywords.length === 0) actionKeywords.push("expressive performance", "direct camera engagement");
+
+  const result = {
     success: true,
     style_analysis: {
-      visual_style: "modern social media aesthetic",
-      color_palette: ["vibrant", "high contrast"],
-      lighting: "well-lit",
-      camera_movement: ["dynamic"],
-      transitions: ["quick cuts"],
-      mood: moodKeywords[0] || "engaging",
-      pace: "fast-paced",
-      effects: ["color grading"],
+      visual_style: visualStyle,
+      color_palette: ["vibrant tones", "platform-optimized contrast", "saturated colors"],
+      lighting: "standard ring light or natural window light",
+      camera_movement: ["mostly static with occasional subtle movement"],
+      transitions: ["quick cuts", "beat-synced edits"],
+      mood: mood,
+      pace: "fast-paced with attention to viewer retention",
+      effects: ["standard color grading", "possible text overlays"],
     },
     content_analysis: {
-      main_subject: "person",
+      main_subject: mainSubject,
       actions: actionKeywords,
-      setting: "unspecified",
-      props: [],
-      clothing_style: "trendy",
+      setting: setting,
+      props: ["(props unavailable - video analysis required)"],
+      clothing_style: clothingStyle,
     },
-    suggested_prompt: `A ${styleKeywords.join(", ")} video featuring ${actionKeywords.join(" and ")}. ${metadata.description}`,
+    suggested_prompt: `Create a ${visualStyle} TikTok-style video. ${actionKeywords.join(", ")}. ${mood} mood. Based on: "${metadata.description?.slice(0, 200) || 'short-form social content'}"`,
     prompt_elements: {
       style_keywords: styleKeywords,
       mood_keywords: moodKeywords,
@@ -433,10 +503,19 @@ function analyzeFromMetadataOnly(metadata: {
       technical_suggestions: {
         aspect_ratio: "9:16",
         duration: 8,
-        camera_style: "dynamic handheld",
+        camera_style: "static or subtle handheld movement",
       },
     },
   };
+
+  console.log("[FALLBACK] Generated analysis from metadata:", {
+    visualStyle,
+    mood,
+    mainSubject: mainSubject.slice(0, 50),
+    setting: setting.slice(0, 50),
+  });
+
+  return result;
 }
 
 /**

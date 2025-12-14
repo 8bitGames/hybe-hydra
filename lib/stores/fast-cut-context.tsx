@@ -49,10 +49,12 @@ interface FastCutState {
   audioMatches: AudioMatch[];
   selectedAudio: AudioMatch | null;
   audioStartTime: number;
+  videoDuration: number;  // Video duration in seconds (user-controllable)
   audioAnalysis: AudioAnalysisResponse | null;
   analyzingAudio: boolean;
   musicSkipped: boolean;
   subtitleMode: SubtitleMode;  // 'script' = AI text overlay, 'lyrics' = audio lyrics
+  audioLyricsText: string | null;  // Extracted lyrics text for display in Content Summary
 
   // Effects step
   styleSetId: string;
@@ -97,10 +99,12 @@ interface FastCutActions {
   setAudioMatches: (matches: AudioMatch[]) => void;
   setSelectedAudio: (audio: AudioMatch | null) => void;
   setAudioStartTime: (time: number) => void;
+  setVideoDuration: (duration: number) => void;
   setAudioAnalysis: (analysis: AudioAnalysisResponse | null) => void;
   setAnalyzingAudio: (loading: boolean) => void;
   setMusicSkipped: (skipped: boolean) => void;
   setSubtitleMode: (mode: SubtitleMode) => void;
+  setAudioLyricsText: (text: string | null) => void;
 
   // Effects actions
   setStyleSetId: (id: string) => void;
@@ -139,10 +143,12 @@ const initialState: FastCutState = {
   audioMatches: [],
   selectedAudio: null,
   audioStartTime: 0,
+  videoDuration: 15,  // Default 15 seconds
   audioAnalysis: null,
   analyzingAudio: false,
   musicSkipped: false,
   subtitleMode: "lyrics",  // Default to lyrics when available
+  audioLyricsText: null,  // Extracted lyrics text for display
   styleSetId: "viral_tiktok",
   styleSets: [],
   rendering: false,
@@ -339,6 +345,30 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
     }
   }, [state, hydratedForSessionId, activeSessionId]);
 
+  // Sync prompt from workflow store when it changes (within same session)
+  // This handles the case when start page updates analyze.optimizedPrompt after hydration
+  useEffect(() => {
+    // Only sync if we're already hydrated for this session
+    if (!state.isHydrated || hydratedForSessionId !== activeSessionId) {
+      return;
+    }
+
+    // Get the video concept prompt from workflow store
+    const videoConceptPrompt = analyze.optimizedPrompt || "";
+
+    // Only sync if:
+    // 1. There's a video concept prompt from workflow store
+    // 2. Current prompt is empty or hasn't been set yet
+    // This avoids overwriting user edits
+    if (videoConceptPrompt && !state.prompt) {
+      console.log("[FastCutProvider] Syncing video concept prompt from workflow store:", videoConceptPrompt.substring(0, 50) + "...");
+      setState((prev) => ({
+        ...prev,
+        prompt: videoConceptPrompt,
+      }));
+    }
+  }, [state.isHydrated, state.prompt, hydratedForSessionId, activeSessionId, analyze.optimizedPrompt]);
+
   // Fetch style sets on mount
   useEffect(() => {
     const fetchStyleSets = async () => {
@@ -457,6 +487,10 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
     setState((prev) => ({ ...prev, audioStartTime }));
   }, []);
 
+  const setVideoDuration = useCallback((videoDuration: number) => {
+    setState((prev) => ({ ...prev, videoDuration }));
+  }, []);
+
   const setAudioAnalysis = useCallback((audioAnalysis: AudioAnalysisResponse | null) => {
     setState((prev) => ({ ...prev, audioAnalysis }));
   }, []);
@@ -471,6 +505,10 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
 
   const setSubtitleMode = useCallback((subtitleMode: SubtitleMode) => {
     setState((prev) => ({ ...prev, subtitleMode }));
+  }, []);
+
+  const setAudioLyricsText = useCallback((audioLyricsText: string | null) => {
+    setState((prev) => ({ ...prev, audioLyricsText }));
   }, []);
 
   // Effects actions
@@ -520,10 +558,12 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
     setAudioMatches,
     setSelectedAudio,
     setAudioStartTime,
+    setVideoDuration,
     setAudioAnalysis,
     setAnalyzingAudio,
     setMusicSkipped,
     setSubtitleMode,
+    setAudioLyricsText,
     setStyleSetId,
     setStyleSets,
     setRendering,

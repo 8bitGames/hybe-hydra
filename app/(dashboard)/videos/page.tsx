@@ -68,6 +68,7 @@ function LazyVideo({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -106,36 +107,43 @@ function LazyVideo({
     >
       {isVisible ? (
         <>
-          {!isLoaded && (
+          {!isLoaded && !hasError && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-8 h-8 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
             </div>
           )}
-          <video
-            ref={videoRef}
-            src={src}
-            className={cn("w-full h-full object-cover", !isLoaded && "opacity-0")}
-            muted
-            preload="metadata"
-            onLoadedData={() => setIsLoaded(true)}
-            onMouseOver={(e) => {
-              const videoEl = e.currentTarget;
-              if (soundEnabled) {
-                videoEl.muted = false;
-                videoEl.volume = 0.1;
-              }
-              videoEl.play().catch(() => {
+          {hasError ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
+              <Film className="h-8 w-8 text-zinc-600" />
+            </div>
+          ) : (
+            <video
+              ref={videoRef}
+              src={src}
+              className={cn("w-full h-full object-cover", !isLoaded && "opacity-0")}
+              muted
+              preload="metadata"
+              onLoadedData={() => setIsLoaded(true)}
+              onError={() => setHasError(true)}
+              onMouseOver={(e) => {
+                const videoEl = e.currentTarget;
+                if (soundEnabled) {
+                  videoEl.muted = false;
+                  videoEl.volume = 0.1;
+                }
+                videoEl.play().catch(() => {
+                  videoEl.muted = true;
+                  videoEl.play().catch(() => {});
+                });
+              }}
+              onMouseOut={(e) => {
+                const videoEl = e.currentTarget;
+                videoEl.pause();
+                videoEl.currentTime = 0;
                 videoEl.muted = true;
-                videoEl.play().catch(() => {});
-              });
-            }}
-            onMouseOut={(e) => {
-              const videoEl = e.currentTarget;
-              videoEl.pause();
-              videoEl.currentTime = 0;
-              videoEl.muted = true;
-            }}
-          />
+              }}
+            />
+          )}
         </>
       ) : (
         <div className="w-full h-full bg-zinc-800 animate-pulse" />
@@ -207,10 +215,17 @@ export default function AllVideosPage() {
 
   const composeVideos = composeData?.items || [];
   const aiVideos = aiData?.items || [];
-  const aiTotal = aiData?.total || 0;
-  const composeTotal = composeData?.total || 0;
-  const totalAll = aiTotal + composeTotal;
   const totalPages = composeData?.pages || 1;
+
+  // Helper to check if video is displayable (completed with output URL)
+  // Note: status can be "completed" or "COMPLETED" depending on source
+  const isVideoDisplayable = (video: { status: string; output_url: string | null; composed_output_url: string | null }) =>
+    video.status.toLowerCase() === "completed" && (video.output_url || video.composed_output_url);
+
+  // Calculate totals only for completed videos with URLs
+  const aiTotal = aiVideos.filter(isVideoDisplayable).length;
+  const composeTotal = composeVideos.filter(isVideoDisplayable).length;
+  const totalAll = aiTotal + composeTotal;
 
   // Translations
   const t = {
@@ -286,6 +301,12 @@ export default function AllVideosPage() {
     } else {
       baseVideos = unifiedComposeVideos;
     }
+
+    // Filter out videos that aren't completed or don't have output URLs
+    // Note: status can be "completed" or "COMPLETED" depending on source
+    baseVideos = baseVideos.filter(
+      (video) => video.status.toLowerCase() === "completed" && (video.output_url || video.composed_output_url)
+    );
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase();

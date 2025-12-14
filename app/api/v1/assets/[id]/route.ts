@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { deleteFromS3 } from "@/lib/storage";
+import { getComposeEngineUrl } from "@/lib/compose/client";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -17,12 +18,7 @@ interface AudioAnalysisResult {
  * Analyze audio file using compose-engine to extract BPM and duration
  */
 async function analyzeAudioFile(s3Url: string): Promise<AudioAnalysisResult | null> {
-  const composeUrl = process.env.MODAL_COMPOSE_URL || process.env.LOCAL_COMPOSE_URL;
-
-  if (!composeUrl) {
-    console.warn('[Asset Analyze] No compose engine URL configured');
-    return null;
-  }
+  const composeUrl = getComposeEngineUrl();
 
   try {
     const response = await fetch(`${composeUrl}/audio/analyze`, {

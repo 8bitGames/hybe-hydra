@@ -83,6 +83,9 @@ export interface StyleSetSelectionResult {
   confidence: number;
   reasoning: string;
   alternativeIds?: string[];
+  // Duration recommendation (15-25 seconds)
+  recommendedDuration?: number;
+  durationReasoning?: string;
 }
 
 /**

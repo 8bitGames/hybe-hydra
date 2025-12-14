@@ -69,6 +69,8 @@ export default function FastCutEffectsPage() {
     audioStartTime,
     setError,
     isHydrated,
+    subtitleMode,
+    audioLyricsText,
   } = useFastCut();
 
   // Processing session store
@@ -124,6 +126,7 @@ export default function FastCutEffectsPage() {
         }));
 
       // Start render
+      console.log("[FastCut Effects] 🎤 Subtitle mode:", subtitleMode, "→ useAudioLyrics:", subtitleMode === "lyrics");
       const renderResult = await fastCutApi.startRender({
         generationId,
         campaignId: campaignId || "",
@@ -137,6 +140,7 @@ export default function FastCutEffectsPage() {
         prompt,
         searchKeywords: editableKeywords,
         tiktokSEO: tiktokSEO || undefined,
+        useAudioLyrics: subtitleMode === "lyrics",
       });
 
       toast.success(
@@ -149,11 +153,23 @@ export default function FastCutEffectsPage() {
       console.log("[FastCut Effects] renderResult:", renderResult);
 
       // Initialize the session
+      // Use lyrics text for display when subtitleMode is "lyrics", otherwise use AI script
+      const displayScript = subtitleMode === "lyrics" && audioLyricsText
+        ? audioLyricsText
+        : scriptData.script.lines.map(l => l.text).join("\n");
+
+      console.log("[FastCut Effects] 🎤 initSession script source:", {
+        subtitleMode,
+        hasAudioLyricsText: !!audioLyricsText,
+        usingLyrics: subtitleMode === "lyrics" && !!audioLyricsText,
+        scriptPreview: displayScript.substring(0, 100),
+      });
+
       initSession({
         campaignId: campaignId || "",
         campaignName: "Fast Cut Video",
         content: {
-          script: scriptData.script.lines.map(l => l.text).join("\n"),
+          script: displayScript,
           images: selectedImages
             .filter((img) => imageUrlMap.has(img.id))
             .map((img) => ({

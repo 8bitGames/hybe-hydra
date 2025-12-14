@@ -70,6 +70,10 @@ export interface AgentConfig<TInput = unknown, TOutput = unknown> {
   description: string;
   category: AgentCategory;
   model: ModelConfig;
+  /**
+   * Fallback prompts - used only if database prompts not loaded.
+   * All production prompts should be managed in database via Admin API.
+   */
   prompts: AgentPrompts;
   inputSchema: ZodSchema<TInput>;
   outputSchema: ZodSchema<TOutput>;
@@ -349,7 +353,7 @@ export const CreativeIdeasSchema = z.object({
     title: z.string(),
     hook: z.string(),
     description: z.string(),
-    estimatedEngagement: z.enum(['high', 'medium', 'low']),
+    estimatedEngagement: z.enum(['high', 'medium', 'low']).catch('medium'),
     optimizedPrompt: z.string(),
     suggestedMusic: z.object({
       bpm: z.number(),

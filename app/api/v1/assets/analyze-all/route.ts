@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
+import { getComposeEngineUrl } from "@/lib/compose/client";
 
 interface AudioAnalysisResult {
   bpm: number;
@@ -13,11 +14,7 @@ interface AudioAnalysisResult {
  * Analyze audio file using compose-engine
  */
 async function analyzeAudioFile(s3Url: string, jobId: string): Promise<AudioAnalysisResult | null> {
-  const composeUrl = process.env.MODAL_COMPOSE_URL || process.env.LOCAL_COMPOSE_URL;
-
-  if (!composeUrl) {
-    return null;
-  }
+  const composeUrl = getComposeEngineUrl();
 
   try {
     const response = await fetch(`${composeUrl}/audio/analyze`, {

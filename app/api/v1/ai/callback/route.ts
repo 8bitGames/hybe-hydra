@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { createClient } from '@supabase/supabase-js';
+import { composeVideoWithAudio, type SubtitleEntry } from "@/lib/compose/client";
+import { getPresignedUrlFromS3Url } from "@/lib/storage";
+import type { LyricsData } from "@/lib/subtitle-styles/types";
 
 // Initialize Supabase client for session updates
 const supabase = createClient(
@@ -23,6 +26,151 @@ interface AICallbackPayload {
 
 // Callback secret for authentication
 const AI_CALLBACK_SECRET = process.env.AI_CALLBACK_SECRET || process.env.BATCH_CALLBACK_SECRET || 'hydra-ai-callback-secret';
+
+/**
+ * Process audio and lyrics composition for AI Video
+ * Called after video generation completes if use_audio_lyrics is enabled
+ *
+ * Flow:
+ * 1. Get audio asset URL and lyrics from metadata
+ * 2. Apply audio_start_time offset to lyrics timing
+ * 3. Call EC2 compose-engine to add audio + subtitles
+ * 4. Update composedOutputUrl with final video
+ */
+async function processAudioLyricsComposition(
+  generationId: string,
+  videoUrl: string
+): Promise<{ success: boolean; composedUrl?: string; error?: string }> {
+  try {
+    console.log(`[AI Callback] Starting audio+lyrics composition for ${generationId}`);
+
+    // Fetch generation with audio asset
+    const generation = await prisma.videoGeneration.findUnique({
+      where: { id: generationId },
+      include: {
+        audioAsset: true,
+      },
+    });
+
+    if (!generation) {
+      return { success: false, error: "Generation not found" };
+    }
+
+    if (!generation.audioAssetId || !generation.audioAsset) {
+      return { success: false, error: "No audio asset linked" };
+    }
+
+    const audioAsset = generation.audioAsset;
+    const audioStartTime = generation.audioStartTime || 0;
+
+    // Generate presigned URL for audio
+    let audioUrl: string;
+    try {
+      audioUrl = await getPresignedUrlFromS3Url(audioAsset.s3Url, 3600); // 1 hour expiry
+    } catch (err) {
+      console.error(`[AI Callback] Failed to get audio presigned URL:`, err);
+      return { success: false, error: "Failed to get audio URL" };
+    }
+
+    // Generate presigned URL for video
+    let videoPresignedUrl: string;
+    try {
+      videoPresignedUrl = await getPresignedUrlFromS3Url(videoUrl, 3600);
+    } catch (err) {
+      console.error(`[AI Callback] Failed to get video presigned URL:`, err);
+      // Try using the URL as-is if presigning fails
+      videoPresignedUrl = videoUrl;
+    }
+
+    // Extract lyrics from audio asset metadata and convert to subtitles
+    const subtitles: SubtitleEntry[] = [];
+    const metadata = audioAsset.metadata as Record<string, unknown> | null;
+
+    if (metadata?.lyrics) {
+      const lyricsData = metadata.lyrics as LyricsData;
+
+      if (!lyricsData.isInstrumental && lyricsData.segments?.length > 0) {
+        console.log(`[AI Callback] Found ${lyricsData.segments.length} lyrics segments`);
+
+        // Video duration (AI videos are typically 4-8 seconds)
+        const videoDuration = generation.durationSeconds || 8;
+
+        for (const segment of lyricsData.segments) {
+          // Apply audio_start_time offset
+          // Lyrics timestamps are relative to audio file start
+          // Video playback starts at audioStartTime into the audio
+          // Example: audioStartTime=60, segment.start=65 → video time = 5
+          const adjustedStart = segment.start - audioStartTime;
+          const adjustedEnd = segment.end - audioStartTime;
+
+          // Skip segments outside video boundaries
+          if (adjustedStart >= videoDuration || adjustedEnd <= 0) {
+            continue;
+          }
+
+          // Clamp to video boundaries
+          const clampedStart = Math.max(0, adjustedStart);
+          const clampedEnd = Math.min(videoDuration, adjustedEnd);
+
+          // Skip if too short (< 0.3s)
+          if (clampedEnd - clampedStart < 0.3) {
+            continue;
+          }
+
+          subtitles.push({
+            text: segment.text.trim(),
+            start: clampedStart,
+            end: clampedEnd,
+          });
+        }
+
+        console.log(`[AI Callback] Converted to ${subtitles.length} subtitle entries`);
+      }
+    }
+
+    // Determine output S3 location
+    const s3Bucket = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
+    const s3Key = `videos/ai-composed/${generationId}/output.mp4`;
+
+    console.log(`[AI Callback] Calling EC2 compose-engine for audio+lyrics composition`);
+    console.log(`[AI Callback] Video: ${videoPresignedUrl.slice(0, 60)}...`);
+    console.log(`[AI Callback] Audio: ${audioUrl.slice(0, 60)}...`);
+    console.log(`[AI Callback] Subtitles: ${subtitles.length} entries`);
+
+    // Call EC2 compose-engine
+    const result = await composeVideoWithAudio({
+      job_id: `ai-compose-${generationId}`,
+      video_url: videoPresignedUrl,
+      audio_url: audioUrl,
+      audio_start_time: audioStartTime,
+      audio_volume: 1.0,
+      fade_in: 0.3,
+      fade_out: 0.3,
+      mix_original_audio: false,  // Replace original audio
+      original_audio_volume: 0.0,
+      output_s3_bucket: s3Bucket,
+      output_s3_key: s3Key,
+      subtitles: subtitles.length > 0 ? subtitles : undefined,
+      // Polling options
+      pollInterval: 2000,  // Poll every 2 seconds
+      maxWaitTime: 180000, // 3 minute timeout
+      onProgress: (status) => {
+        console.log(`[AI Callback] Compose progress: ${status.status}`);
+      },
+    });
+
+    if (result.status === "completed" && result.output_url) {
+      console.log(`[AI Callback] ✓ Audio+lyrics composition completed: ${result.output_url}`);
+      return { success: true, composedUrl: result.output_url };
+    } else {
+      console.error(`[AI Callback] Composition failed:`, result.error);
+      return { success: false, error: result.error || "Composition failed" };
+    }
+  } catch (err) {
+    console.error(`[AI Callback] Audio+lyrics composition error:`, err);
+    return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
+  }
+}
 
 /**
  * Update creation_session when AI video generation completes
@@ -205,6 +353,58 @@ export async function POST(request: NextRequest) {
 
       console.log(`[AI Callback] Updated job ${job_id}: status=${prismaStatus}, progress=${progress}%, outputUrl=${updated.outputUrl?.slice(0, 50) || 'none'}`);
 
+      // If video generation completed successfully, check for audio+lyrics composition
+      let composedOutputUrl: string | null = null;
+      if (status === 'completed' && output_url) {
+        const qualityMeta = updated.qualityMetadata as Record<string, unknown> | null;
+        const useAudioLyrics = qualityMeta?.use_audio_lyrics === true;
+
+        if (useAudioLyrics && updated.audioAssetId) {
+          console.log(`[AI Callback] use_audio_lyrics enabled, starting EC2 compose-engine audio+lyrics composition`);
+
+          // Process audio+lyrics composition via EC2 compose-engine
+          const composeResult = await processAudioLyricsComposition(job_id, output_url);
+
+          if (composeResult.success && composeResult.composedUrl) {
+            composedOutputUrl = composeResult.composedUrl;
+
+            // Update the generation with composed output URL
+            await prisma.videoGeneration.update({
+              where: { id: job_id },
+              data: {
+                composedOutputUrl: composedOutputUrl,
+                qualityMetadata: {
+                  ...(qualityMeta || {}),
+                  audio_composition: {
+                    completed_at: new Date().toISOString(),
+                    composed_url: composedOutputUrl,
+                  },
+                },
+              },
+            });
+
+            console.log(`[AI Callback] ✓ Updated composedOutputUrl for ${job_id}`);
+          } else {
+            // Log error but don't fail the overall callback
+            console.error(`[AI Callback] Audio+lyrics composition failed for ${job_id}:`, composeResult.error);
+
+            // Store the error in metadata
+            await prisma.videoGeneration.update({
+              where: { id: job_id },
+              data: {
+                qualityMetadata: {
+                  ...(qualityMeta || {}),
+                  audio_composition: {
+                    error: composeResult.error,
+                    failed_at: new Date().toISOString(),
+                  },
+                },
+              },
+            });
+          }
+        }
+      }
+
       // Update creation_session when completed or failed
       if (status === 'completed' || status === 'failed') {
         await updateSessionOnAIComplete(job_id, status === 'completed');
@@ -216,6 +416,7 @@ export async function POST(request: NextRequest) {
         job_type,
         status,
         updated: true,
+        composed_output_url: composedOutputUrl,
       });
     } catch (dbError) {
       // Log the actual error for debugging

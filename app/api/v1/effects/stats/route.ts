@@ -4,15 +4,14 @@
  */
 
 import { NextResponse } from 'next/server';
-
-const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || 'http://localhost:8000';
+import { getComposeEngineUrl } from '@/lib/compose/client';
 
 /**
  * GET /api/v1/effects/stats - Get registry statistics
  */
 export async function GET() {
   try {
-    const url = `${COMPOSE_ENGINE_URL}/api/v1/effects/stats`;
+    const url = `${getComposeEngineUrl()}/api/v1/effects/stats`;
 
     const response = await fetch(url, {
       method: 'GET',

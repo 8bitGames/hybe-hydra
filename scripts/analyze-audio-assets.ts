@@ -16,7 +16,8 @@ interface AudioAnalysisResult {
 }
 
 async function analyzeAudioFile(s3Url: string, jobId: string): Promise<AudioAnalysisResult | null> {
-  const composeUrl = process.env.MODAL_COMPOSE_URL || process.env.LOCAL_COMPOSE_URL || 'http://localhost:8000';
+  // Priority: EC2 > Modal > Local > default
+  const composeUrl = process.env.EC2_COMPOSE_URL || process.env.MODAL_COMPOSE_URL || process.env.LOCAL_COMPOSE_URL || 'http://localhost:8000';
 
   try {
     const response = await fetch(`${composeUrl}/audio/analyze`, {

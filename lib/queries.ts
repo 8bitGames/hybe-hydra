@@ -184,11 +184,11 @@ export function useCampaigns(params?: {
       }
       return response.data!;
     },
-    // Campaigns don't change often - aggressive caching
-    staleTime: 15 * 60 * 1000, // 15 minutes
+    // Balance freshness with performance
+    staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 60 * 60 * 1000, // 1 hour
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnMount: true, // Refetch on mount to catch new campaigns
     placeholderData: (previousData) => previousData,
   });
 }
@@ -392,6 +392,13 @@ export function useAllAssets(
       }
       return response.data!;
     },
+    // Balance freshness with performance
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 60 * 60 * 1000, // 1 hour in-memory
+    refetchOnWindowFocus: false,
+    refetchOnMount: true, // Refetch on mount for fresh data
+    refetchOnReconnect: false,
+    placeholderData: (previousData) => previousData,
   });
 }
 
@@ -410,6 +417,13 @@ export function useAssets(
       return response.data!;
     },
     enabled: !!campaignId,
+    // Balance freshness with performance
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 60 * 60 * 1000, // 1 hour in-memory
+    refetchOnWindowFocus: false,
+    refetchOnMount: true, // Refetch on mount for fresh data
+    refetchOnReconnect: false,
+    placeholderData: (previousData) => previousData,
   });
 }
 
@@ -424,6 +438,10 @@ export function useAssetsStats(campaignId: string) {
       return response.data!;
     },
     enabled: !!campaignId,
+    // Cache stats
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -674,11 +692,12 @@ export function useFastCutVideos(params?: {
     queryFn: async () => {
       return fastCutApi.getFastCutVideos(params);
     },
-    // Aggressive caching - data persists in IndexedDB
-    staleTime: 30 * 60 * 1000, // 30 minutes before considered stale
-    gcTime: 24 * 60 * 60 * 1000, // 24 hours in-memory (matched by IndexedDB persist)
+    // Cache settings balanced for fresh data on page visits
+    // Videos complete asynchronously, so cache can become stale
+    staleTime: 5 * 60 * 1000, // 5 minutes - shorter to catch server-side completions
+    gcTime: 60 * 60 * 1000, // 1 hour in-memory
     refetchOnWindowFocus: false,
-    refetchOnMount: false, // Use cached data on mount
+    refetchOnMount: true, // Always refetch on mount to catch new videos
     refetchOnReconnect: false,
     placeholderData: (previousData) => previousData, // Show stale while revalidating
   });
@@ -761,11 +780,12 @@ export function useAllAIVideos() {
       };
     },
     enabled: campaigns.length > 0,
-    // Aggressive caching - data persists in IndexedDB
-    staleTime: 30 * 60 * 1000, // 30 minutes before considered stale
-    gcTime: 24 * 60 * 60 * 1000, // 24 hours in-memory (matched by IndexedDB persist)
+    // Cache settings balanced for fresh data on page visits
+    // Videos complete asynchronously via AWS Batch callback, so cache can become stale
+    staleTime: 5 * 60 * 1000, // 5 minutes - shorter to catch server-side completions
+    gcTime: 60 * 60 * 1000, // 1 hour in-memory
     refetchOnWindowFocus: false,
-    refetchOnMount: false, // Use cached data on mount
+    refetchOnMount: true, // Always refetch on mount to catch server-side video completions
     refetchOnReconnect: false,
     placeholderData: (previousData) => previousData, // Show stale while revalidating
   });
@@ -1478,6 +1498,9 @@ export function useInvalidateQueries() {
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines }),
     invalidateFastCutVideos: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.fastCutVideos }),
+    // Add invalidation for all AI videos (shown on /videos page)
+    invalidateAllAIVideos: () =>
+      queryClient.invalidateQueries({ queryKey: ["all-videos", "ai"] }),
     invalidateTrends: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.trends }),
     invalidateTrendingVideos: () =>

@@ -73,6 +73,8 @@ export default function FastCutMusicPage() {
     setSelectedAudio,
     audioStartTime,
     setAudioStartTime,
+    videoDuration,
+    setVideoDuration,
     audioAnalysis,
     setAudioAnalysis,
     matchingMusic,
@@ -88,6 +90,7 @@ export default function FastCutMusicPage() {
     isHydrated,
     subtitleMode,
     setSubtitleMode,
+    setAudioLyricsText,
   } = useFastCut();
 
   // Redirect if no script data or images (only after hydration)
@@ -107,6 +110,18 @@ export default function FastCutMusicPage() {
       setCampaignId(analyze.campaignId);
     }
   }, [campaignId, analyze.campaignId, setCampaignId]);
+
+  // Sync videoDuration with script's totalDuration on initial load (capped at 30s)
+  // Must wait for hydration to complete to avoid being overwritten
+  const [hasInitializedDuration, setHasInitializedDuration] = useState(false);
+  useEffect(() => {
+    if (isHydrated && !hasInitializedDuration && scriptData?.script?.totalDuration) {
+      const scriptDuration = Math.min(scriptData.script.totalDuration, 30);
+      console.log("[FastCut Music] Initializing videoDuration from script:", scriptDuration, "s (current:", videoDuration, ")");
+      setVideoDuration(scriptDuration);
+      setHasInitializedDuration(true);
+    }
+  }, [isHydrated, hasInitializedDuration, scriptData?.script?.totalDuration, setVideoDuration, videoDuration]);
 
   // Auto-match music on mount
   useEffect(() => {
@@ -207,6 +222,7 @@ export default function FastCutMusicPage() {
         audioMatches,
         selectedAudio,
         audioStartTime,
+        videoDuration,
         audioAnalysis,
         musicSkipped,
       });
@@ -244,6 +260,7 @@ export default function FastCutMusicPage() {
         audioMatches,
         selectedAudio: null,
         audioStartTime: 0,
+        videoDuration,
         audioAnalysis: null,
         musicSkipped: true,
       });
@@ -279,6 +296,7 @@ export default function FastCutMusicPage() {
               audioMatches={audioMatches}
               selectedAudio={selectedAudio}
               audioStartTime={audioStartTime}
+              videoDuration={videoDuration}
               audioAnalysis={audioAnalysis}
               matchingMusic={matchingMusic}
               analyzingAudio={analyzingAudio}
@@ -287,7 +305,9 @@ export default function FastCutMusicPage() {
               subtitleMode={subtitleMode}
               onSelectAudio={handleSelectAudio}
               onSetAudioStartTime={setAudioStartTime}
+              onSetVideoDuration={setVideoDuration}
               onSetSubtitleMode={setSubtitleMode}
+              onSetAudioLyricsText={setAudioLyricsText}
               onSkipMusic={handleSkipMusic}
               onUnskipMusic={handleUnskipMusic}
               onNext={handleNext}

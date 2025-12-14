@@ -24,8 +24,21 @@ export async function GET(request: NextRequest) {
     const includeTest = searchParams.get("include_test") === "true";
     const campaignId = searchParams.get("campaign_id");
 
-    // Build where clause
-    const where: Record<string, unknown> = {};
+    // Build base where clause
+    const where: Record<string, unknown> = {
+      deletedAt: null, // Exclude soft-deleted records
+    };
+
+    // Use AND array to combine multiple conditions
+    const andConditions: Record<string, unknown>[] = [];
+
+    // Only include videos with valid output (AI uses outputUrl, Fast Cut uses composedOutputUrl)
+    andConditions.push({
+      OR: [
+        { outputUrl: { not: null } },
+        { composedOutputUrl: { not: null } },
+      ],
+    });
 
     // Filter by type if provided
     if (type) {
@@ -40,9 +53,9 @@ export async function GET(request: NextRequest) {
     // Filter by campaign
     if (campaignId) {
       where.campaignId = campaignId;
-    } else if (includeTest) {
-      // Include test generations (those without campaign)
-      // OR with campaign but created by the user
+    } else if (!includeTest) {
+      // Exclude test generations (those without campaign)
+      where.campaignId = { not: null };
     }
 
     // For non-admin users, filter by accessible campaigns or their own creations
@@ -59,13 +72,25 @@ export async function GET(request: NextRequest) {
       const accessibleCampaignIds = accessibleCampaigns.map((c) => c.id);
 
       // Can see: their own creations OR accessible campaign generations
-      where.OR = [
-        { createdBy: user.id },
-        { campaignId: { in: accessibleCampaignIds } },
-      ];
+      andConditions.push({
+        OR: [
+          { createdBy: user.id },
+          { campaignId: { in: accessibleCampaignIds } },
+        ],
+      });
     }
 
-    const total = await prisma.videoGeneration.count({ where });
+    // Add AND conditions if any
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
+    }
+
+    // Get counts
+    const [total, totalAi, totalCompose] = await Promise.all([
+      prisma.videoGeneration.count({ where }),
+      prisma.videoGeneration.count({ where: { ...where, generationType: "AI" } }),
+      prisma.videoGeneration.count({ where: { ...where, generationType: "COMPOSE" } }),
+    ]);
 
     const generations = await prisma.videoGeneration.findMany({
       where,
@@ -101,7 +126,7 @@ export async function GET(request: NextRequest) {
       prompt: gen.prompt,
       aspect_ratio: gen.aspectRatio,
       duration_seconds: gen.durationSeconds,
-      output_url: gen.outputUrl,
+      output_url: gen.composedOutputUrl || gen.outputUrl, // Prefer composedOutputUrl for Fast Cut videos
       effect_preset: gen.effectPreset,
       script_data: gen.scriptData,
       image_assets: gen.imageAssets,
@@ -125,6 +150,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       items,
       total,
+      total_ai: totalAi,
+      total_compose: totalCompose,
       page,
       page_size: pageSize,
       pages,

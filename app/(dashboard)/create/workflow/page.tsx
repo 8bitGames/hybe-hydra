@@ -6,7 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore, type PreviewImageData as StorePreviewImageData } from "@/lib/stores/workflow-store";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
-import { useCampaigns, useAssets } from "@/lib/queries";
+import { useCampaigns, useAssets, useInvalidateQueries } from "@/lib/queries";
 import { useToast } from "@/components/ui/toast";
 import { useAuthStore } from "@/lib/auth-store";
 import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
@@ -1418,6 +1418,7 @@ export default function CreatePage() {
   const searchParams = useSearchParams();
   const { language } = useI18n();
   const toast = useToast();
+  const { invalidateAllAIVideos } = useInvalidateQueries();
 
   // Session integration - sync with session store if session param exists
   const sessionId = searchParams.get("session");
@@ -1659,6 +1660,7 @@ export default function CreatePage() {
           prompt,
           audio_asset_id: audioAsset?.id,
           audio_start_time: audioStartTime,  // Pass audio start time from AI analysis
+          use_audio_lyrics: !!audioAsset?.id,  // Enable lyrics subtitles when audio is selected
           aspect_ratio: metadata.aspectRatio,
           duration_seconds: parseInt(metadata.duration) || 5,
           reference_style: metadata.style || undefined,
@@ -1705,6 +1707,9 @@ export default function CreatePage() {
           language === "ko" ? "생성 시작" : "Generation started",
           language === "ko" ? "영상 생성이 시작되었습니다" : "Video generation has started"
         );
+
+        // Invalidate all-videos cache so the new video appears on /videos page
+        invalidateAllAIVideos();
 
         // Navigate to processing page to monitor video generation
         router.push("/processing");

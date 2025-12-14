@@ -106,6 +106,9 @@ export class GeminiClient implements IModelClient {
     parts.push({ text: user });
 
     try {
+      // Debug: log actual config being sent
+      console.log(`[GeminiClient] Request config: model=${this.actualModelId}, maxOutputTokens=${generationConfig.maxOutputTokens}, temp=${generationConfig.temperature}`);
+
       const response = await this.ai.models.generateContent({
         model: this.actualModelId,
         config: {

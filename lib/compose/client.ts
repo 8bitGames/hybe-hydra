@@ -2,34 +2,45 @@
  * Compose Engine Client for Video Rendering
  *
  * Supports two modes:
- *   - batch (default): AWS Batch GPU (production - AWS infrastructure)
+ *   - ec2 (default): EC2 GPU instance (production - single server)
  *   - local: Local compose-engine Docker container (development)
  *
- * Batch Flow: Next.js → AWS Batch (GPU g4dn + NVENC) → S3
+ * EC2 Flow: Next.js → EC2 GPU Server (g4dn + NVENC) → S3
  * Local Flow: Next.js → Docker compose-engine (CPU) → S3
  *
- * GPU Stack (AWS Batch):
+ * GPU Stack (EC2):
  *   - Instance: g4dn.xlarge (T4 GPU) or g4dn.2xlarge
  *   - Base: nvidia/cuda:12.4.0-devel-ubuntu22.04
  *   - FFmpeg: jellyfin-ffmpeg6 (has h264_nvenc baked in)
  *   - Encoder: h264_nvenc (5-10x faster than CPU)
  */
 
-// Compose engine mode: 'batch' (default) or 'local' (development)
-// Note: 'modal' mode has been removed - use 'batch' for production
-const COMPOSE_ENGINE_MODE = process.env.COMPOSE_ENGINE_MODE || 'batch';
+// Compose engine mode: 'ec2' (default) or 'local' (development)
+const COMPOSE_ENGINE_MODE = process.env.COMPOSE_ENGINE_MODE || 'ec2';
 
 // Local compose engine (development)
 const LOCAL_COMPOSE_URL = process.env.LOCAL_COMPOSE_URL || 'http://localhost:8000';
 
-// Compose engine URL (for batch mode, points to deployed compose-engine)
-const COMPOSE_ENGINE_URL = process.env.MODAL_COMPOSE_URL || LOCAL_COMPOSE_URL;
+// EC2 compose engine (GPU server)
+const EC2_COMPOSE_URL = process.env.EC2_COMPOSE_URL || 'http://15.164.236.53:8000';
+
+// Compose engine URL (for direct server modes)
+const COMPOSE_ENGINE_URL = COMPOSE_ENGINE_MODE === 'ec2'
+  ? EC2_COMPOSE_URL
+  : (process.env.MODAL_COMPOSE_URL || LOCAL_COMPOSE_URL);
 
 /**
  * Check if running in local development mode
  */
 export function isLocalMode(): boolean {
   return COMPOSE_ENGINE_MODE === 'local';
+}
+
+/**
+ * Check if running in EC2 GPU server mode
+ */
+export function isEc2Mode(): boolean {
+  return COMPOSE_ENGINE_MODE === 'ec2';
 }
 
 /**
@@ -40,10 +51,29 @@ export function isBatchMode(): boolean {
 }
 
 /**
+ * Check if running in direct server mode (local or EC2)
+ * Both modes use the same HTTP API to compose-engine
+ */
+export function isDirectServerMode(): boolean {
+  return isLocalMode() || isEc2Mode();
+}
+
+/**
  * Get current compose engine mode
  */
-export function getComposeEngineMode(): 'batch' | 'local' {
-  return COMPOSE_ENGINE_MODE as 'batch' | 'local';
+export function getComposeEngineMode(): 'batch' | 'ec2' | 'local' {
+  return COMPOSE_ENGINE_MODE as 'batch' | 'ec2' | 'local';
+}
+
+/**
+ * Get the compose engine URL for direct HTTP calls
+ * Use this for endpoints not covered by the main client functions
+ */
+export function getComposeEngineUrl(): string {
+  if (isEc2Mode()) {
+    return EC2_COMPOSE_URL;
+  }
+  return LOCAL_COMPOSE_URL;
 }
 
 // AI Effect Selection types
@@ -126,15 +156,17 @@ export interface ComposeStatusResponse {
 export type ModalStatusResponse = ComposeStatusResponse;
 
 /**
- * Submit a render job to local compose engine (development)
+ * Submit a render job to direct server (local or EC2)
  * Uses job_id as call_id for unified status polling
  */
-async function submitToLocal(
+async function submitToDirectServer(
   request: ComposeRenderRequest
 ): Promise<ComposeSubmitResponse> {
-  const url = `${LOCAL_COMPOSE_URL}/render`;
+  const baseUrl = isEc2Mode() ? EC2_COMPOSE_URL : LOCAL_COMPOSE_URL;
+  const url = `${baseUrl}/render`;
+  const modeName = isEc2Mode() ? 'EC2' : 'Local';
 
-  console.log('[Local Compose] Submitting to:', url);
+  console.log(`[${modeName} Compose] Submitting to:`, url);
 
   const response = await fetch(url, {
     method: 'POST',
@@ -146,12 +178,12 @@ async function submitToLocal(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Local compose submit failed: ${response.status} - ${errorText}`);
+    throw new Error(`${modeName} compose submit failed: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
 
-  // Map local response to unified response format
+  // Map response to unified response format
   return {
     call_id: data.job_id,
     job_id: data.job_id,
@@ -189,15 +221,16 @@ async function submitToBatch(
 }
 
 /**
- * Submit a render job (auto-selects Batch or Local based on COMPOSE_ENGINE_MODE)
+ * Submit a render job (auto-selects Batch, EC2, or Local based on COMPOSE_ENGINE_MODE)
  * Returns immediately with a call_id for polling
  */
 export async function submitRenderToCompose(
   request: ComposeRenderRequest
 ): Promise<ComposeSubmitResponse> {
-  if (isLocalMode()) {
-    console.log('[Compose] Using LOCAL mode');
-    return submitToLocal(request);
+  if (isDirectServerMode()) {
+    const modeName = isEc2Mode() ? 'EC2' : 'LOCAL';
+    console.log(`[Compose] Using ${modeName} mode`);
+    return submitToDirectServer(request);
   } else {
     console.log('[Compose] Using AWS BATCH mode');
     return submitToBatch(request);
@@ -208,10 +241,13 @@ export async function submitRenderToCompose(
 export const submitRenderToModal = submitRenderToCompose;
 
 /**
- * Poll local compose engine for job status (development)
+ * Poll direct server (local or EC2) for job status
+ * EC2 returns: { job_id, status, progress, current_step?, output_url?, error? }
  */
-async function getLocalStatus(jobId: string): Promise<ComposeStatusResponse> {
-  const url = `${LOCAL_COMPOSE_URL}/job/${jobId}/status`;
+async function getDirectServerStatus(jobId: string): Promise<ComposeStatusResponse> {
+  const baseUrl = isEc2Mode() ? EC2_COMPOSE_URL : LOCAL_COMPOSE_URL;
+  const url = `${baseUrl}/job/${jobId}/status`;
+  const modeName = isEc2Mode() ? 'EC2' : 'Local';
 
   const response = await fetch(url, {
     method: 'GET',
@@ -229,12 +265,20 @@ async function getLocalStatus(jobId: string): Promise<ComposeStatusResponse> {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Local status check failed: ${response.status} - ${errorText}`);
+    throw new Error(`${modeName} status check failed: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
 
-  // Map local status to unified format
+  // Log raw EC2 response for debugging
+  console.log(`[${modeName} Status] Raw response for ${jobId}:`, {
+    status: data.status,
+    progress: data.progress,
+    output_url: data.output_url ? `${data.output_url.substring(0, 60)}...` : null,
+    error: data.error,
+  });
+
+  // Map status to unified format
   const statusMap: Record<string, ComposeStatusResponse['status']> = {
     queued: 'processing',
     processing: 'processing',
@@ -242,15 +286,21 @@ async function getLocalStatus(jobId: string): Promise<ComposeStatusResponse> {
     failed: 'failed',
   };
 
+  const mappedStatus = statusMap[data.status] || 'processing';
+
+  // Build result object for completed/failed jobs
+  // EC2's JobStatusResponse includes output_url directly in the response
+  const result = (data.status === 'completed' || data.status === 'failed') ? {
+    status: data.status,
+    job_id: data.job_id || jobId,
+    output_url: data.output_url || null,
+    error: data.error || null,
+  } : undefined;
+
   return {
-    status: statusMap[data.status] || 'processing',
-    call_id: data.job_id,
-    result: data.status === 'completed' || data.status === 'failed' ? {
-      status: data.status,
-      job_id: data.job_id,
-      output_url: data.output_url || null,
-      error: data.error || null,
-    } : undefined,
+    status: mappedStatus,
+    call_id: data.job_id || jobId,
+    result,
     error: data.error,
   };
 }
@@ -297,13 +347,13 @@ async function getBatchStatus(batchJobId: string): Promise<ComposeStatusResponse
 }
 
 /**
- * Poll for render job status (auto-selects Batch or Local based on COMPOSE_ENGINE_MODE)
+ * Poll for render job status (auto-selects Batch, EC2, or Local based on COMPOSE_ENGINE_MODE)
  */
 export async function getComposeRenderStatus(
   callId: string
 ): Promise<ComposeStatusResponse> {
-  if (isLocalMode()) {
-    return getLocalStatus(callId);
+  if (isDirectServerMode()) {
+    return getDirectServerStatus(callId);
   } else {
     return getBatchStatus(callId);
   }
@@ -717,3 +767,74 @@ export async function composeVideoWithAudio(
 
 // Legacy alias for backward compatibility
 export const composeVideoWithAudioModal = composeVideoWithAudio;
+
+// ============================================================================
+// Auto-Compose API (for Variations)
+// ============================================================================
+
+export interface AutoComposeScriptLine {
+  text: string;
+  timing: number;
+  duration: number;
+}
+
+export interface AutoComposeRequest {
+  job_id: string;
+  search_query: string;
+  search_tags: string[];
+  audio_url?: string | null;
+  vibe?: string;
+  effect_preset?: string;
+  color_grade?: string;
+  text_style?: string;
+  aspect_ratio?: string;
+  target_duration?: number;
+  campaign_id?: string;
+  callback_url?: string;
+  script_lines?: AutoComposeScriptLine[];
+}
+
+export interface AutoComposeResponse {
+  status: 'accepted' | 'error';
+  job_id: string;
+  message?: string;
+  search_results?: number;
+}
+
+/**
+ * Submit an auto-compose job to EC2 server
+ * Auto-compose handles image search internally based on search_tags
+ * Designed for creating variations of existing compose videos
+ */
+export async function submitAutoCompose(
+  request: AutoComposeRequest
+): Promise<AutoComposeResponse> {
+  const baseUrl = isEc2Mode() ? EC2_COMPOSE_URL : LOCAL_COMPOSE_URL;
+  const url = `${baseUrl}/api/v1/compose/auto`;
+  const modeName = isEc2Mode() ? 'EC2' : 'Local';
+
+  console.log(`[${modeName} Auto-Compose] Submitting to:`, url);
+  console.log(`[${modeName} Auto-Compose] Job ${request.job_id} with tags: ${request.search_tags.join(', ')}`);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`${modeName} auto-compose submit failed: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  return {
+    status: data.status === 'accepted' ? 'accepted' : 'error',
+    job_id: data.job_id,
+    message: data.message,
+    search_results: data.search_results,
+  };
+}

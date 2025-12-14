@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 // Import all agent configs
+// Analyzers
 import { VisionAnalyzerConfig } from '@/lib/agents/analyzers/vision-analyzer';
 import { TextPatternConfig } from '@/lib/agents/analyzers/text-pattern';
 import { VisualTrendConfig } from '@/lib/agents/analyzers/visual-trend';
@@ -17,20 +18,32 @@ import { StrategySynthesizerConfig } from '@/lib/agents/analyzers/strategy-synth
 import { KeywordInsightsConfig } from '@/lib/agents/analyzers/keyword-insights';
 import { TikTokVisionConfig } from '@/lib/agents/analyzers/tiktok-vision';
 import { Veo3PersonalizeConfig } from '@/lib/agents/analyzers/veo3-personalize';
+import { ExpansionAnalyzerConfig } from '@/lib/agents/analyzers/expansion-analyzer';
+import { TrendInsightConfig } from '@/lib/agents/analyzers/trend-insight-agent';
+// Creators
 import { CreativeDirectorConfig } from '@/lib/agents/creators/creative-director';
 import { ScriptWriterConfig } from '@/lib/agents/creators/script-writer';
+import { FastCutIdeaConfig } from '@/lib/agents/creators/fast-cut-idea-agent';
+import { VideoRecreationIdeaConfig } from '@/lib/agents/creators/video-recreation-idea-agent';
+// Transformers
 import { PromptEngineerConfig } from '@/lib/agents/transformers/prompt-engineer';
 import { I2VSpecialistConfig } from '@/lib/agents/transformers/i2v-specialist';
+// Publishers
 import { PublishOptimizerConfig } from '@/lib/agents/publishers/publish-optimizer';
 import { CopywriterConfig } from '@/lib/agents/publishers/copywriter';
 // Fast Cut agents
 import { FastCutScriptGeneratorConfig } from '@/lib/agents/fast-cut/script-generator';
 import { FastCutEffectAnalyzerConfig } from '@/lib/agents/fast-cut/effect-analyzer';
 import { FastCutConductorConfig } from '@/lib/agents/fast-cut/conductor';
+import { ImageKeywordGeneratorConfig } from '@/lib/agents/fast-cut/image-keyword-generator';
+// Deep Analysis agents
+import { VideoClassifierConfig } from '@/lib/agents/deep-analysis/video-classifier';
+import { AccountMetricsConfig } from '@/lib/agents/deep-analysis/account-metrics';
+import { ComparativeAnalysisConfig } from '@/lib/agents/deep-analysis/comparative-analysis';
 
 // All agent configs to seed
 const AGENT_CONFIGS = [
-  // Analyzers
+  // Analyzers (9)
   VisionAnalyzerConfig,
   TextPatternConfig,
   VisualTrendConfig,
@@ -38,19 +51,28 @@ const AGENT_CONFIGS = [
   KeywordInsightsConfig,
   TikTokVisionConfig,
   Veo3PersonalizeConfig,
-  // Creators
+  ExpansionAnalyzerConfig,
+  TrendInsightConfig,
+  // Creators (4)
   CreativeDirectorConfig,
   ScriptWriterConfig,
-  // Transformers
+  FastCutIdeaConfig,
+  VideoRecreationIdeaConfig,
+  // Transformers (2)
   PromptEngineerConfig,
   I2VSpecialistConfig,
-  // Publishers
+  // Publishers (2)
   PublishOptimizerConfig,
   CopywriterConfig,
-  // Fast Cut
+  // Fast Cut (4)
   FastCutScriptGeneratorConfig,
   FastCutEffectAnalyzerConfig,
   FastCutConductorConfig,
+  ImageKeywordGeneratorConfig,
+  // Deep Analysis (3)
+  VideoClassifierConfig,
+  AccountMetricsConfig,
+  ComparativeAnalysisConfig,
 ];
 
 export async function POST(request: NextRequest) {

@@ -2,7 +2,7 @@
 
 import { useI18n } from "@/lib/i18n";
 import { useAssets } from "@/lib/queries";
-import { useMemo, useRef, useState, useCallback } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -47,6 +47,7 @@ interface FastCutMusicStepProps {
   audioMatches: AudioMatch[];
   selectedAudio: AudioMatch | null;
   audioStartTime: number;
+  videoDuration: number;
   audioAnalysis: AudioAnalysisResponse | null;
   matchingMusic: boolean;
   analyzingAudio: boolean;
@@ -55,9 +56,11 @@ interface FastCutMusicStepProps {
   subtitleMode: SubtitleMode;
   onSelectAudio: (audio: AudioMatch) => void;
   onSetAudioStartTime: (time: number) => void;
+  onSetVideoDuration: (duration: number) => void;
   onSkipMusic: () => void;
   onUnskipMusic: () => void;
   onSetSubtitleMode: (mode: SubtitleMode) => void;
+  onSetAudioLyricsText: (text: string | null) => void;
   onNext?: () => void;
 }
 
@@ -66,6 +69,7 @@ export function FastCutMusicStep({
   audioMatches,
   selectedAudio,
   audioStartTime,
+  videoDuration,
   audioAnalysis,
   matchingMusic,
   analyzingAudio,
@@ -74,9 +78,11 @@ export function FastCutMusicStep({
   subtitleMode,
   onSelectAudio,
   onSetAudioStartTime,
+  onSetVideoDuration,
   onSkipMusic,
   onUnskipMusic,
   onSetSubtitleMode,
+  onSetAudioLyricsText,
   onNext,
 }: FastCutMusicStepProps) {
   const { language, translate } = useI18n();
@@ -270,25 +276,64 @@ export function FastCutMusicStep({
 
   // Get lyrics data from selected audio asset's metadata
   const selectedAudioLyrics = useMemo((): LyricsData | null => {
-    if (!selectedAudio) return null;
+    if (!selectedAudio) {
+      return null;
+    }
 
     // Find the full asset from campaign assets
     const fullAsset = campaignAudioAssets.find(
       (asset) => asset.id === selectedAudio.id
     );
 
-    if (!fullAsset?.metadata) return null;
+    if (!fullAsset?.metadata) {
+      console.log("[FastCutMusicStep] ⚠️ No metadata for selected audio:", {
+        audioId: selectedAudio.id,
+        hasFullAsset: !!fullAsset,
+        campaignAudioAssetsCount: campaignAudioAssets.length,
+      });
+      return null;
+    }
 
     const metadata = fullAsset.metadata as Record<string, unknown>;
     const lyrics = metadata.lyrics as LyricsData | undefined;
 
     // Validate lyrics structure
     if (lyrics && Array.isArray(lyrics.segments) && lyrics.segments.length > 0) {
+      console.log("[FastCutMusicStep] ✅ Lyrics found in asset metadata:", {
+        audioId: selectedAudio.id,
+        segmentCount: lyrics.segments.length,
+        language: lyrics.language,
+      });
       return lyrics;
     }
 
+    console.log("[FastCutMusicStep] ⚠️ No lyrics segments in metadata:", {
+      audioId: selectedAudio.id,
+      hasLyricsObject: !!lyrics,
+      segmentCount: lyrics?.segments?.length ?? 0,
+      metadataKeys: Object.keys(metadata),
+    });
+
     return null;
   }, [selectedAudio, campaignAudioAssets]);
+
+  // Update lyrics text in context when lyrics are available
+  useEffect(() => {
+    if (selectedAudioLyrics && selectedAudioLyrics.segments.length > 0) {
+      // Format lyrics as text for display in Content Summary
+      const lyricsText = selectedAudioLyrics.segments
+        .map((segment) => segment.text)
+        .join("\n");
+      console.log("[FastCutMusicStep] 🎤 Setting lyrics text:", {
+        segmentCount: selectedAudioLyrics.segments.length,
+        textLength: lyricsText.length,
+        preview: lyricsText.substring(0, 100),
+      });
+      onSetAudioLyricsText(lyricsText);
+    } else {
+      onSetAudioLyricsText(null);
+    }
+  }, [selectedAudioLyrics, onSetAudioLyricsText]);
 
   // Format duration
   const formatDuration = (seconds: number): string => {
@@ -571,29 +616,104 @@ export function FastCutMusicStep({
             </div>
           </div>
 
-          {/* Audio Start Time Slider */}
+          {/* Video Duration Selection - Slider */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-medium text-neutral-700 flex items-center">
-                {language === "ko" ? "시작 시간" : "Start Time"}
-                <TooltipIcon tooltipKey="fastCut.tooltips.music.startTime" />
+                {language === "ko" ? "영상 길이" : "Video Duration"}
+                <TooltipIcon tooltipKey="fastCut.tooltips.music.videoDuration" />
               </Label>
               <span className="text-sm text-neutral-500 font-mono">
-                {formatDuration(audioStartTime)}
+                {videoDuration || 15}s
               </span>
             </div>
             <Slider
-              value={[audioStartTime]}
-              onValueChange={(v) => onSetAudioStartTime(v[0])}
-              min={0}
-              max={Math.max(0, selectedAudio.duration - 10)}
-              step={0.5}
+              value={[videoDuration || 15]}
+              onValueChange={(v) => {
+                const newDuration = v[0];
+                onSetVideoDuration(newDuration);
+                // Adjust start time if it would cause region to exceed audio
+                const maxStart = Math.max(0, selectedAudio.duration - newDuration);
+                if (audioStartTime > maxStart) {
+                  onSetAudioStartTime(maxStart);
+                }
+              }}
+              min={5}
+              max={30}
+              step={1}
               className="w-full"
             />
-            <div className="flex justify-between text-xs text-neutral-400">
-              <span>0:00</span>
-              <span>{formatDuration(selectedAudio.duration)}</span>
+            <div className="flex justify-between text-[10px] text-neutral-400">
+              <span>5s</span>
+              <span>15s</span>
+              <span>30s</span>
             </div>
+          </div>
+
+          {/* Audio Playback Region - Visual Timeline */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium text-neutral-700 flex items-center">
+                {language === "ko" ? "음악 재생 구간" : "Audio Playback Region"}
+                <TooltipIcon tooltipKey="fastCut.tooltips.music.startTime" />
+              </Label>
+              <span className="text-sm text-neutral-500 font-mono">
+                {formatDuration(audioStartTime)} - {formatDuration(audioStartTime + (videoDuration || 15))}
+              </span>
+            </div>
+
+            {/* Visual Timeline Bar */}
+            <div className="relative h-10 bg-neutral-100 rounded-lg overflow-hidden">
+              {/* Full audio duration background */}
+              <div className="absolute inset-0 flex items-center px-2">
+                <div className="w-full h-1 bg-neutral-200 rounded-full" />
+              </div>
+
+              {/* Selected playback region */}
+              <div
+                className="absolute top-1 bottom-1 bg-neutral-900/10 border-2 border-neutral-900 rounded transition-all duration-150"
+                style={{
+                  left: `${(audioStartTime / selectedAudio.duration) * 100}%`,
+                  width: `${Math.min(((videoDuration || 15) / selectedAudio.duration) * 100, 100 - (audioStartTime / selectedAudio.duration) * 100)}%`,
+                }}
+              >
+                {/* Start handle */}
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-6 bg-neutral-900 rounded-sm cursor-ew-resize" />
+              </div>
+
+              {/* Time markers */}
+              <div className="absolute bottom-0 left-0 right-0 flex justify-between px-1 text-[10px] text-neutral-400">
+                <span>0:00</span>
+                <span>{formatDuration(selectedAudio.duration / 2)}</span>
+                <span>{formatDuration(selectedAudio.duration)}</span>
+              </div>
+            </div>
+
+            {/* Start Time Slider */}
+            <div className="pt-1">
+              <Slider
+                value={[audioStartTime]}
+                onValueChange={(v) => {
+                  // Ensure the playback region doesn't exceed audio duration
+                  const maxStart = Math.max(0, selectedAudio.duration - (videoDuration || 15));
+                  onSetAudioStartTime(Math.min(v[0], maxStart));
+                }}
+                min={0}
+                max={Math.max(0, selectedAudio.duration - (videoDuration || 15))}
+                step={0.5}
+                className="w-full"
+              />
+            </div>
+
+            {/* Warning if playback region exceeds audio */}
+            {audioStartTime + (videoDuration || 15) > selectedAudio.duration && (
+              <p className="text-xs text-amber-600 flex items-center gap-1">
+                <span>⚠️</span>
+                {language === "ko"
+                  ? "재생 구간이 음악 길이를 초과합니다. 나머지 구간은 반복 재생됩니다."
+                  : "Playback region exceeds audio length. Remaining section will loop."}
+              </p>
+            )}
           </div>
 
           {/* AI Analysis Result */}
@@ -738,10 +858,9 @@ export function FastCutMusicStep({
                     <ScrollArea className="h-[160px] pr-2">
                       <div className="space-y-1">
                         {selectedAudioLyrics.segments.map((segment, idx) => {
-                          const videoDuration = scriptData?.script?.totalDuration || 30;
                           const segmentInRange =
                             segment.start >= audioStartTime &&
-                            segment.start < audioStartTime + videoDuration;
+                            segment.start < audioStartTime + (videoDuration || 15);
 
                           return (
                             <div

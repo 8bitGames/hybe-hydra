@@ -6,6 +6,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { v4 as uuidv4 } from "uuid";
+import { cached, CacheKeys, CacheTTL, createCacheHash } from "./cache";
 
 // Lazy initialization to ensure environment variables are loaded
 let _s3Client: S3Client | null = null;
@@ -199,8 +200,13 @@ export async function getPresignedUrl(key: string, expiresIn = 3600): Promise<st
  * Generate a presigned URL from a direct S3 URL.
  * Parses the S3 URL to extract bucket and key, then generates a presigned URL.
  * Works with any S3 bucket that the AWS credentials have access to.
+ * Uses Redis caching (6 days) to avoid regenerating URLs on every request.
  *
- * @param s3Url - Full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/key)
+ * Supports both S3 URL formats:
+ * - https://bucket.s3.region.amazonaws.com/key (with region)
+ * - https://bucket.s3.amazonaws.com/key (without region, defaults to ap-northeast-2)
+ *
+ * @param s3Url - Full S3 URL
  * @param expiresIn - Expiration time in seconds (default: 7 days - maximum allowed)
  * @returns Presigned URL or original URL if not a valid S3 URL
  */
@@ -208,9 +214,11 @@ export async function getPresignedUrlFromS3Url(
   s3Url: string,
   expiresIn = 604800 // 7 days (maximum allowed for presigned URLs)
 ): Promise<string> {
-  // Parse S3 URL: https://BUCKET.s3.REGION.amazonaws.com/KEY
+  // Parse S3 URL - supports both formats:
+  // 1. https://BUCKET.s3.REGION.amazonaws.com/KEY (with region)
+  // 2. https://BUCKET.s3.amazonaws.com/KEY (without region)
   // Use [^?]+ to stop at query string (handles already-presigned URLs)
-  const match = s3Url.match(/https:\/\/([^.]+)\.s3\.([^.]+)\.amazonaws\.com\/([^?]+)/);
+  const match = s3Url.match(/https:\/\/([^.]+)\.s3\.(?:([^.]+)\.)?amazonaws\.com\/([^?]+)/);
 
   if (!match) {
     // Not a valid S3 URL, return as-is
@@ -218,42 +226,51 @@ export async function getPresignedUrlFromS3Url(
     return s3Url;
   }
 
-  const [, bucket, region, rawKey] = match;
+  const [, bucket, regionFromUrl, rawKey] = match;
+  // Default to ap-northeast-2 (Seoul) if region not in URL
+  const region = regionFromUrl || 'ap-northeast-2';
 
   // Decode the key in case it was URL-encoded (handles double-encoding issues)
   const key = decodeURIComponent(rawKey);
 
-  // Create a new S3 client for this specific bucket/region
-  const accessKey = process.env.AWS_ACCESS_KEY_ID;
-  const secretKey = process.env.AWS_SECRET_ACCESS_KEY;
+  // Create cache key from S3 bucket + key (unique identifier for this object)
+  const cacheKey = CacheKeys.presignedUrl(createCacheHash({ bucket, key }));
 
-  if (!accessKey || !secretKey) {
-    console.warn('[getPresignedUrlFromS3Url] AWS credentials not available, returning original URL');
-    return s3Url;
-  }
+  // Use cached presigned URL if available (6 days TTL, URL valid for 7 days)
+  return cached<string>(cacheKey, CacheTTL.PRESIGNED_URL, async () => {
+    // Create a new S3 client for this specific bucket/region
+    const accessKey = process.env.AWS_ACCESS_KEY_ID;
+    const secretKey = process.env.AWS_SECRET_ACCESS_KEY;
 
-  const s3Client = new S3Client({
-    region,
-    credentials: {
-      accessKeyId: accessKey,
-      secretAccessKey: secretKey,
-    },
+    if (!accessKey || !secretKey) {
+      console.warn('[getPresignedUrlFromS3Url] AWS credentials not available, returning original URL');
+      return s3Url;
+    }
+
+    const s3Client = new S3Client({
+      region,
+      credentials: {
+        accessKeyId: accessKey,
+        secretAccessKey: secretKey,
+      },
+    });
+
+    const command = new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    });
+
+    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn });
+
+    console.log('[getPresignedUrlFromS3Url] Generated NEW presigned URL:', {
+      bucket,
+      key: key.substring(0, 50),
+      expiresIn,
+      cached: false,
+    });
+
+    return presignedUrl;
   });
-
-  const command = new GetObjectCommand({
-    Bucket: bucket,
-    Key: key,
-  });
-
-  const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn });
-
-  console.log('[getPresignedUrlFromS3Url] Generated presigned URL:', {
-    bucket,
-    key: key.substring(0, 50),
-    expiresIn,
-  });
-
-  return presignedUrl;
 }
 
 /**

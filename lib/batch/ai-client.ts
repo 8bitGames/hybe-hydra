@@ -1,25 +1,53 @@
 /**
- * AWS Batch Client for AI Generation (Veo 3.1, Gemini 3 Pro Image)
+ * Unified AI Client for AI Generation (Veo 3.1, Gemini 3 Pro Image)
  *
- * Submits AI generation jobs to AWS Batch GPU queue.
- * Uses the same infrastructure as video rendering but with different job parameters.
+ * Uses EC2 compose-engine server for all AI generation jobs.
  *
- * AWS Batch Flow: Next.js (Vercel) → AWS Batch → Vertex AI → S3 → Callback to Next.js
+ * EC2 Flow: Next.js (Vercel) → EC2 compose-engine → Vertex AI → S3 → Callback to Next.js
  *
- * GPU Stack (AWS Batch):
+ * GPU Stack:
  *   - Instance: g4dn.xlarge (T4 GPU) or g4dn.2xlarge
  *   - Authentication: GCP Workload Identity Federation (WIF)
  *   - AI Models: Veo 3.1 (video), Gemini 3 Pro Image (image) via Vertex AI
  *
  * Required Environment Variables:
- *   - AWS_ACCESS_KEY_ID: IAM user with Batch permissions
- *   - AWS_SECRET_ACCESS_KEY: IAM user secret
- *   - AWS_BATCH_AI_JOB_QUEUE: Job queue name for AI jobs
- *   - AWS_BATCH_AI_JOB_DEFINITION: Job definition for AI worker
- *   - AWS_REGION: AWS region (e.g., ap-northeast-2)
+ *   - EC2_COMPOSE_URL: EC2 compose-engine URL
  */
 
-import { BatchClient, SubmitJobCommand, DescribeJobsCommand } from '@aws-sdk/client-batch';
+// ============================================================
+// Mode Configuration
+// ============================================================
+
+// Compose engine mode: 'ec2' (default)
+const COMPOSE_ENGINE_MODE = process.env.COMPOSE_ENGINE_MODE || 'ec2';
+
+// EC2 compose-engine URL
+const EC2_COMPOSE_URL = process.env.EC2_COMPOSE_URL || 'http://15.164.236.53:8000';
+
+/**
+ * Check if running in EC2 mode
+ */
+export function isEC2Mode(): boolean {
+  return COMPOSE_ENGINE_MODE === 'ec2';
+}
+
+/**
+ * Check if running in AWS Batch mode
+ */
+export function isBatchMode(): boolean {
+  return COMPOSE_ENGINE_MODE === 'batch';
+}
+
+/**
+ * Get current AI engine mode
+ */
+export function getAIEngineMode(): 'batch' | 'ec2' {
+  return COMPOSE_ENGINE_MODE as 'batch' | 'ec2';
+}
+
+// ============================================================
+// AWS Batch Configuration
+// ============================================================
 
 // AWS Batch configuration for AI jobs
 const AWS_REGION = process.env.AWS_REGION || 'ap-northeast-2';
@@ -127,12 +155,16 @@ export interface AIJobSubmitResponse {
 }
 
 export interface AIJobStatusResponse {
-  status: 'pending' | 'runnable' | 'starting' | 'running' | 'succeeded' | 'failed';
+  status: 'pending' | 'runnable' | 'starting' | 'running' | 'succeeded' | 'failed' | 'queued' | 'processing' | 'completed';
   job_id: string;
   batch_job_id: string;
   job_type: AIJobType;
   statusReason?: string;
   mappedStatus: 'processing' | 'completed' | 'failed';
+  /** Output URL (available when completed) */
+  output_url?: string;
+  /** Progress percentage (0-100) */
+  progress?: number;
 }
 
 // ============================================================
@@ -224,9 +256,9 @@ export async function submitImageToVideo(
 }
 
 /**
- * Submit an AI generation job to AWS Batch
+ * Submit an AI generation job to AWS Batch (internal)
  */
-export async function submitAIJob(request: AIJobRequest): Promise<AIJobSubmitResponse> {
+async function submitAIJobToBatch(request: AIJobRequest): Promise<AIJobSubmitResponse> {
   const client = getBatchClient();
 
   // Ensure callback info is set
@@ -277,9 +309,74 @@ export async function submitAIJob(request: AIJobRequest): Promise<AIJobSubmitRes
 }
 
 /**
- * Get the status of an AI generation job
+ * Submit an AI generation job to EC2 compose-engine (internal)
  */
-export async function getAIJobStatus(
+async function submitAIJobToEC2(request: AIJobRequest): Promise<AIJobSubmitResponse> {
+  const url = `${EC2_COMPOSE_URL}/api/v1/ai/generate`;
+
+  // Ensure callback info is set
+  const jobParameters = {
+    ...request,
+    callback_url: request.callback_url || getAICallbackUrl(),
+    callback_secret: request.callback_secret || AI_CALLBACK_SECRET,
+  };
+
+  console.log(`[EC2 AI] Submitting ${request.job_type} job to: ${url}`);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(jobParameters),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`EC2 AI submit failed: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    console.log(`[EC2 AI] Job submitted: ${data.job_id} for ${request.job_type}`);
+
+    return {
+      job_id: data.job_id,
+      batch_job_id: data.job_id,  // Use job_id as batch_job_id for compatibility
+      job_type: data.job_type || request.job_type,
+      status: data.status === 'queued' ? 'queued' : 'error',
+      message: data.message || `AI job submitted to EC2: ${EC2_COMPOSE_URL}`,
+    };
+  } catch (error) {
+    console.error('[EC2 AI] Submit error:', error);
+    return {
+      job_id: request.job_id,
+      batch_job_id: '',
+      job_type: request.job_type,
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Submit an AI generation job (auto-selects Batch or EC2 based on COMPOSE_ENGINE_MODE)
+ */
+export async function submitAIJob(request: AIJobRequest): Promise<AIJobSubmitResponse> {
+  if (isEC2Mode()) {
+    console.log(`[AI Client] Using EC2 mode for ${request.job_type}`);
+    return submitAIJobToEC2(request);
+  } else {
+    console.log(`[AI Client] Using AWS Batch mode for ${request.job_type}`);
+    return submitAIJobToBatch(request);
+  }
+}
+
+/**
+ * Get the status of an AI generation job from AWS Batch (internal)
+ */
+async function getAIJobStatusFromBatch(
   batchJobId: string,
   jobType: AIJobType = 'video_generation'
 ): Promise<AIJobStatusResponse> {
@@ -336,6 +433,87 @@ export async function getAIJobStatus(
   }
 }
 
+/**
+ * Get the status of an AI generation job from EC2 compose-engine (internal)
+ */
+async function getAIJobStatusFromEC2(
+  jobId: string,
+  jobType: AIJobType = 'video_generation'
+): Promise<AIJobStatusResponse> {
+  const url = `${EC2_COMPOSE_URL}/api/v1/ai/job/${jobId}/status`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (response.status === 404) {
+      return {
+        status: 'failed',
+        job_id: jobId,
+        batch_job_id: jobId,
+        job_type: jobType,
+        statusReason: 'Job not found',
+        mappedStatus: 'failed',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`EC2 AI status check failed: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    // Map EC2 status to unified status format
+    const statusMap: Record<string, AIJobStatusResponse['mappedStatus']> = {
+      queued: 'processing',
+      processing: 'processing',
+      uploading: 'processing',
+      completed: 'completed',
+      failed: 'failed',
+    };
+
+    return {
+      status: data.status || 'processing',
+      job_id: data.job_id || jobId,
+      batch_job_id: jobId,  // For compatibility
+      job_type: data.job_type || jobType,
+      statusReason: data.error || data.current_step,
+      mappedStatus: statusMap[data.status] || 'processing',
+      output_url: data.output_url,
+      progress: data.progress,
+    };
+  } catch (error) {
+    console.error('[EC2 AI] Status check error:', error);
+    return {
+      status: 'failed',
+      job_id: jobId,
+      batch_job_id: jobId,
+      job_type: jobType,
+      statusReason: error instanceof Error ? error.message : 'Unknown error',
+      mappedStatus: 'failed',
+    };
+  }
+}
+
+/**
+ * Get the status of an AI generation job (auto-selects Batch or EC2 based on COMPOSE_ENGINE_MODE)
+ */
+export async function getAIJobStatus(
+  jobIdOrBatchJobId: string,
+  jobType: AIJobType = 'video_generation'
+): Promise<AIJobStatusResponse> {
+  if (isEC2Mode()) {
+    return getAIJobStatusFromEC2(jobIdOrBatchJobId, jobType);
+  } else {
+    return getAIJobStatusFromBatch(jobIdOrBatchJobId, jobType);
+  }
+}
+
 // ============================================================
 // Helper Functions
 // ============================================================
@@ -364,4 +542,155 @@ export function getAIOutputSettings(
     s3_bucket: bucket,
     s3_key: `ai/${folder}/${jobId}/output.${extension}`,
   };
+}
+
+// ============================================================
+// Polling Functions (Alternative to Callback)
+// ============================================================
+
+export interface PollOptions {
+  /** Polling interval in milliseconds (default: 5000ms for EC2, 10000ms for Batch) */
+  pollInterval?: number;
+  /** Maximum wait time in milliseconds (default: 600000ms = 10 minutes) */
+  maxWaitTime?: number;
+  /** Callback function called on each poll with current status */
+  onProgress?: (status: AIJobStatusResponse) => void;
+  /** Callback function called on completion (success or failure) */
+  onComplete?: (status: AIJobStatusResponse) => void;
+}
+
+/**
+ * Poll an AI job until completion (polling mode - no callback required)
+ *
+ * Use this instead of relying on callbacks for real-time status tracking.
+ * Useful for:
+ * - Local development where callbacks can't reach your server
+ * - When you need more control over status checking
+ * - As a fallback when callbacks fail
+ *
+ * @example
+ * ```typescript
+ * const result = await submitImageGeneration(jobId, settings, output);
+ *
+ * // Poll until complete
+ * const finalStatus = await pollAIJobUntilComplete(result.job_id, {
+ *   pollInterval: 3000,  // Check every 3 seconds
+ *   onProgress: (status) => console.log(`Progress: ${status.statusReason}`),
+ * });
+ *
+ * if (finalStatus.mappedStatus === 'completed') {
+ *   console.log('Output URL:', finalStatus.output_url);
+ * }
+ * ```
+ */
+export async function pollAIJobUntilComplete(
+  jobId: string,
+  options: PollOptions = {}
+): Promise<AIJobStatusResponse> {
+  const {
+    pollInterval = isEC2Mode() ? 5000 : 10000,  // EC2 is faster, poll more frequently
+    maxWaitTime = 600000,  // 10 minutes
+    onProgress,
+    onComplete,
+  } = options;
+
+  const startTime = Date.now();
+  let lastStatus: AIJobStatusResponse | null = null;
+
+  console.log(`[AI Polling] Starting poll for job ${jobId} (mode: ${getAIEngineMode()}, interval: ${pollInterval}ms)`);
+
+  while (true) {
+    const status = await getAIJobStatus(jobId);
+    lastStatus = status;
+
+    // Call progress callback
+    if (onProgress) {
+      onProgress(status);
+    }
+
+    // Check if job is complete (success or failure)
+    if (status.mappedStatus === 'completed' || status.mappedStatus === 'failed') {
+      console.log(`[AI Polling] Job ${jobId} finished: ${status.mappedStatus}`);
+
+      if (onComplete) {
+        onComplete(status);
+      }
+
+      return status;
+    }
+
+    // Check timeout
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= maxWaitTime) {
+      console.warn(`[AI Polling] Job ${jobId} timed out after ${elapsed}ms`);
+
+      const timeoutStatus: AIJobStatusResponse = {
+        ...status,
+        status: 'failed',
+        mappedStatus: 'failed',
+        statusReason: `Polling timeout after ${Math.round(elapsed / 1000)}s`,
+      };
+
+      if (onComplete) {
+        onComplete(timeoutStatus);
+      }
+
+      return timeoutStatus;
+    }
+
+    // Log progress
+    console.log(`[AI Polling] Job ${jobId}: ${status.status} - ${status.statusReason || 'processing'} (${Math.round(elapsed / 1000)}s elapsed)`);
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+}
+
+/**
+ * Submit an AI job and wait for completion using polling
+ *
+ * Combines submission and polling into a single call.
+ * Does NOT use callbacks - uses polling instead.
+ *
+ * @example
+ * ```typescript
+ * const result = await submitAndWaitForAIJob({
+ *   job_id: generateAIJobId('img'),
+ *   job_type: 'image_generation',
+ *   image_settings: { prompt: 'A sunset' },
+ *   output: getAIOutputSettings(jobId, 'image_generation'),
+ * }, {
+ *   onProgress: (s) => console.log(s.statusReason),
+ * });
+ * ```
+ */
+export async function submitAndWaitForAIJob(
+  request: Omit<AIJobRequest, 'callback_url' | 'callback_secret'>,
+  pollOptions: PollOptions = {}
+): Promise<{ submitResult: AIJobSubmitResponse; finalStatus: AIJobStatusResponse }> {
+  // Submit without callback (polling mode)
+  const submitResult = await submitAIJob({
+    ...request,
+    callback_url: undefined,  // No callback - will use polling
+    callback_secret: undefined,
+  });
+
+  if (submitResult.status === 'error') {
+    return {
+      submitResult,
+      finalStatus: {
+        status: 'failed',
+        job_id: request.job_id,
+        batch_job_id: submitResult.batch_job_id || '',
+        job_type: request.job_type,
+        statusReason: submitResult.error || 'Submit failed',
+        mappedStatus: 'failed',
+      },
+    };
+  }
+
+  // Poll until complete
+  const finalStatus = await pollAIJobUntilComplete(submitResult.job_id, pollOptions);
+
+  return { submitResult, finalStatus };
 }

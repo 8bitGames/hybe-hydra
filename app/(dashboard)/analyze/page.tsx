@@ -205,9 +205,9 @@ function ContextReceptionPanel() {
   }
 
   return (
-    <div className="border border-neutral-200 rounded-lg p-4 bg-neutral-50 w-full max-w-full overflow-hidden">
+    <div className="border border-neutral-200 rounded-lg p-4 bg-neutral-50 w-full overflow-hidden">
       {/* Header with data usage purpose */}
-      <div className="flex items-center justify-between mb-2 min-w-0">
+      <div className="flex items-center justify-between mb-2 min-w-0 w-full">
         <h3 className="text-sm font-semibold text-neutral-700 flex items-center gap-2 min-w-0 truncate">
           <BookmarkCheck className="h-4 w-4 text-neutral-900" />
           {language === "ko" ? "AI 생성에 활용될 데이터" : "Data for AI Generation"}
@@ -230,7 +230,7 @@ function ContextReceptionPanel() {
           : "The following data will be reflected in custom content idea generation"}
       </p>
 
-      <div className="space-y-3 overflow-hidden">
+      <div className="space-y-3 overflow-hidden w-full">
         {/* Source Type Indicator */}
         {isVideoSource && (
           <div className="flex items-center gap-2 text-xs text-neutral-500">
@@ -315,7 +315,7 @@ function ContextReceptionPanel() {
 
         {/* AI Video Analysis (for video source) */}
         {isVideoSource && videoSource?.aiAnalysis && (
-          <div className="pt-2 border-t border-neutral-200 space-y-2">
+          <div className="pt-2 border-t border-neutral-200 space-y-2 w-full overflow-hidden">
             <div className="flex items-center gap-1">
               <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
                 {language === "ko" ? "AI 영상 분석" : "AI Video Analysis"}
@@ -330,7 +330,7 @@ function ContextReceptionPanel() {
 
             {/* Hook Analysis */}
             {videoSource.aiAnalysis.hookAnalysis && (
-              <div className="overflow-hidden">
+              <div className="overflow-hidden w-full">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "훅 분석" : "Hook Analysis"}
@@ -342,7 +342,7 @@ function ContextReceptionPanel() {
                   size="sm"
                 />
               </div>
-                <p className="text-xs text-neutral-600 line-clamp-3 break-words">
+                <p className="text-xs text-neutral-600 line-clamp-3 break-all whitespace-normal">
                   {videoSource.aiAnalysis.hookAnalysis}
                 </p>
               </div>
@@ -350,7 +350,7 @@ function ContextReceptionPanel() {
 
             {/* Style Analysis */}
             {videoSource.aiAnalysis.styleAnalysis && (
-              <div className="overflow-hidden">
+              <div className="overflow-hidden w-full">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "스타일 분석" : "Style Analysis"}
@@ -362,7 +362,7 @@ function ContextReceptionPanel() {
                   size="sm"
                 />
               </div>
-                <p className="text-xs text-neutral-600 line-clamp-3 break-words">
+                <p className="text-xs text-neutral-600 line-clamp-3 break-all whitespace-normal">
                   {videoSource.aiAnalysis.styleAnalysis}
                 </p>
               </div>
@@ -370,7 +370,7 @@ function ContextReceptionPanel() {
 
             {/* Concept Details */}
             {videoSource.aiAnalysis.conceptDetails && (
-              <div className="overflow-hidden">
+              <div className="overflow-hidden w-full">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "컨셉 요소" : "Concept Elements"}
@@ -382,19 +382,19 @@ function ContextReceptionPanel() {
                   size="sm"
                 />
               </div>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1 w-full overflow-hidden">
                   {videoSource.aiAnalysis.conceptDetails.visualStyle && (
-                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-full truncate">
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-[calc(100%-8px)] truncate">
                       {videoSource.aiAnalysis.conceptDetails.visualStyle}
                     </Badge>
                   )}
                   {videoSource.aiAnalysis.conceptDetails.mood && (
-                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-full truncate">
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-[calc(100%-8px)] truncate">
                       {videoSource.aiAnalysis.conceptDetails.mood}
                     </Badge>
                   )}
                   {videoSource.aiAnalysis.conceptDetails.pace && (
-                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-full truncate">
+                    <Badge variant="outline" className="text-[10px] border-neutral-300 text-neutral-600 max-w-[calc(100%-8px)] truncate">
                       {videoSource.aiAnalysis.conceptDetails.pace}
                     </Badge>
                   )}
@@ -404,7 +404,7 @@ function ContextReceptionPanel() {
 
             {/* Suggested Approach */}
             {videoSource.aiAnalysis.suggestedApproach && (
-              <div className="overflow-hidden">
+              <div className="overflow-hidden w-full">
                 <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-neutral-400">
                   {language === "ko" ? "추천 접근법" : "Suggested Approach"}
@@ -416,7 +416,7 @@ function ContextReceptionPanel() {
                   size="sm"
                 />
               </div>
-                <p className="text-xs text-neutral-600 line-clamp-3 break-words">
+                <p className="text-xs text-neutral-600 line-clamp-3 break-all whitespace-normal">
                   {videoSource.aiAnalysis.suggestedApproach}
                 </p>
               </div>
@@ -428,7 +428,7 @@ function ContextReceptionPanel() {
 
         {/* AI Trend Insights (for trend source) */}
         {!isVideoSource && aiInsights && (
-          <div className="pt-2 border-t border-neutral-200 space-y-2">
+          <div className="pt-2 border-t border-neutral-200 space-y-2 w-full overflow-hidden">
             <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
               {language === "ko" ? "AI 트렌드 인사이트" : "AI Trend Insights"}
             </p>
@@ -658,42 +658,26 @@ function IdeaCard({
   idea,
   isSelected,
   onSelect,
-  onDelete,
 }: {
   idea: ContentIdea;
   isSelected: boolean;
   onSelect: () => void;
-  onDelete: () => void;
 }) {
   const { language } = useI18n();
 
   const typeIcon = idea.type === "ai_video" ? Video : ImageIcon;
   const TypeIcon = typeIcon;
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onDelete();
-  };
-
   return (
     <div
       onClick={onSelect}
       className={cn(
-        "w-full text-left p-4 rounded-lg border transition-all cursor-pointer group relative",
+        "w-full text-left p-4 rounded-lg border transition-all cursor-pointer",
         isSelected
           ? "border-neutral-900 bg-white"
           : "border-neutral-200 hover:border-neutral-300 bg-white"
       )}
     >
-      {/* Delete button */}
-      <button
-        onClick={handleDelete}
-        className="absolute top-2 right-2 w-6 h-6 rounded-full bg-neutral-100 hover:bg-red-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
-        title={language === "ko" ? "삭제" : "Delete"}
-      >
-        <X className="h-3.5 w-3.5 text-neutral-500 hover:text-red-600" />
-      </button>
-
       <div className="flex items-start gap-3">
         <div
           className={cn(
@@ -863,7 +847,6 @@ export default function AnalyzePage() {
   const startContentType = useWorkflowStore((state) => state.start.contentType);
   const setAnalyzeUserIdea = useWorkflowStore((state) => state.setAnalyzeUserIdea);
   const setAnalyzeAiIdeas = useWorkflowStore((state) => state.setAnalyzeAiIdeas);
-  const removeAnalyzeIdea = useWorkflowStore((state) => state.removeAnalyzeIdea);
   const selectAnalyzeIdea = useWorkflowStore((state) => state.selectAnalyzeIdea);
   const setAnalyzeOptimizedPrompt = useWorkflowStore((state) => state.setAnalyzeOptimizedPrompt);
   const setAnalyzeHashtags = useWorkflowStore((state) => state.setAnalyzeHashtags);
@@ -1046,9 +1029,9 @@ export default function AnalyzePage() {
       {/* Main Content - Two Column */}
       <div className="flex-1 flex overflow-hidden px-[5%]">
         {/* Left Column - Input */}
-        <div className="w-[55%] min-w-0 border-r border-neutral-200 flex flex-col overflow-hidden">
+        <div className="flex-[55] min-w-0 border-r border-neutral-200 flex flex-col overflow-hidden">
           <ScrollArea className="flex-1">
-            <div className="p-4 space-y-4 w-full">
+            <div className="p-4 pr-6 space-y-4 overflow-hidden box-border">
               {/* Context from Discover */}
               <ContextReceptionPanel />
 
@@ -1113,7 +1096,7 @@ export default function AnalyzePage() {
         </div>
 
         {/* Right Column - AI Ideas */}
-        <div className="w-[45%] min-w-0 flex flex-col bg-neutral-50">
+        <div className="flex-[45] min-w-0 flex flex-col bg-neutral-50 overflow-hidden">
           <div className="p-4 border-b border-neutral-200 shrink-0">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold text-neutral-700 flex items-center gap-2">
@@ -1173,7 +1156,6 @@ export default function AnalyzePage() {
                       idea={idea}
                       isSelected={analyze.selectedIdea?.id === idea.id}
                       onSelect={() => handleSelectIdea(idea)}
-                      onDelete={() => removeAnalyzeIdea(idea.id)}
                     />
                   ))}
                 </div>

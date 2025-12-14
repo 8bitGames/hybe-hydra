@@ -52,6 +52,7 @@ interface FastCutScriptStepProps {
   setPrompt: (prompt: string) => void;
   aspectRatio: string;
   setAspectRatio: (ratio: string) => void;
+  // Keywords
   editableKeywords: string[];
   setEditableKeywords: (keywords: string[]) => void;
   selectedSearchKeywords: Set<string>;

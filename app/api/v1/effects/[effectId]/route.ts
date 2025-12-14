@@ -4,8 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || 'http://localhost:8000';
+import { getComposeEngineUrl } from '@/lib/compose/client';
 
 interface RouteContext {
   params: Promise<{
@@ -23,7 +22,7 @@ export async function GET(
   try {
     const { effectId } = await context.params;
 
-    const url = `${COMPOSE_ENGINE_URL}/api/v1/effects/${effectId}`;
+    const url = `${getComposeEngineUrl()}/api/v1/effects/${effectId}`;
 
     const response = await fetch(url, {
       method: 'GET',

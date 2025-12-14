@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
-
-// Compose Engine URL (local Docker or Railway)
-const COMPOSE_ENGINE_URL = process.env.LOCAL_COMPOSE_URL || process.env.COMPOSE_ENGINE_URL || 'http://localhost:8000';
+import { getComposeEngineUrl } from '@/lib/compose/client';
 
 interface AnalyzeRequest {
   assetId: string;
@@ -23,7 +21,7 @@ interface AudioAnalysisResponse {
  * Call compose engine to analyze audio using librosa
  */
 async function analyzeAudio(s3Url: string, jobId: string, targetDuration: number): Promise<AudioAnalysisResponse | null> {
-  const url = `${COMPOSE_ENGINE_URL}/audio/analyze`;
+  const url = `${getComposeEngineUrl()}/audio/analyze`;
 
   console.log('[Fast Cut AudioAnalyze] Calling compose engine:', url);
   console.log('[Fast Cut AudioAnalyze] Audio URL:', s3Url);

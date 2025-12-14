@@ -55,23 +55,19 @@ export const ExpansionAnalyzerOutputSchema = z.object({
 export type ExpansionAnalyzerInput = z.infer<typeof ExpansionAnalyzerInputSchema>
 export type ExpansionAnalyzerOutput = z.infer<typeof ExpansionAnalyzerOutputSchema>
 
-export class ExpansionAnalyzerAgent extends BaseAgent<
-  ExpansionAnalyzerInput,
-  ExpansionAnalyzerOutput
-> {
-  constructor() {
-    super({
-      id: 'expansion-analyzer',
-      name: 'Expansion Analyzer',
-      description: 'Analyzes co-occurrence patterns and generates strategic expansion recommendations',
-      category: 'analyzer',
-      model: {
-        provider: 'gemini',
-        name: 'gemini-2.5-flash',
-        options: { temperature: 0.7 }
-      },
-      prompts: {
-        system: `You are a TikTok trend expansion strategist specializing in hashtag and account discovery.
+// Agent Configuration (exported for seed API)
+export const ExpansionAnalyzerConfig = {
+  id: 'expansion-analyzer',
+  name: 'Expansion Analyzer',
+  description: '동시출현 패턴 분석 및 전략적 확장 추천 생성',
+  category: 'analyzer',
+  model: {
+    provider: 'gemini',
+    name: 'gemini-2.5-flash',
+    options: { temperature: 0.7 }
+  },
+  prompts: {
+    system: `You are a TikTok trend expansion strategist specializing in hashtag and account discovery.
 
 Your expertise:
 - Identifying "bridge" hashtags that connect different topic clusters
@@ -93,11 +89,18 @@ Output style:
 - Consider both short-term wins and long-term strategy
 
 Language: Respond in Korean unless the input is primarily in English.`,
-        templates: {}
-      },
-      inputSchema: ExpansionAnalyzerInputSchema,
-      outputSchema: ExpansionAnalyzerOutputSchema
-    })
+    templates: {}
+  },
+  inputSchema: ExpansionAnalyzerInputSchema,
+  outputSchema: ExpansionAnalyzerOutputSchema
+};
+
+export class ExpansionAnalyzerAgent extends BaseAgent<
+  ExpansionAnalyzerInput,
+  ExpansionAnalyzerOutput
+> {
+  constructor() {
+    super(ExpansionAnalyzerConfig as any)
   }
 
   protected buildPrompt(input: ExpansionAnalyzerInput, context: AgentContext): string {

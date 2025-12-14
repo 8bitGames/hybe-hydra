@@ -536,8 +536,19 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
         },
 
         updateVariation: (id, updates) => {
+          // Log if we're updating the ID field (important for tracking)
+          if (updates.id && updates.id !== id) {
+            console.log(`[ProcessingSessionStore] updateVariation: Changing ID from ${id} to ${updates.id}`);
+          }
+
           set((s) => {
             if (!s.session) return s;
+
+            const variation = s.session.variations.find(v => v.id === id);
+            if (!variation) {
+              console.warn(`[ProcessingSessionStore] updateVariation: No variation found with ID ${id}. Available IDs:`, s.session.variations.map(v => v.id));
+            }
+
             return {
               session: {
                 ...s.session,
@@ -552,14 +563,23 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
         setVariationCompleted: (id, outputUrl, thumbnailUrl) => {
           const state = get();
 
+          console.log("[ProcessingSessionStore] setVariationCompleted called:", {
+            id,
+            outputUrl: outputUrl ? `${outputUrl.substring(0, 60)}...` : 'missing',
+            thumbnailUrl: thumbnailUrl ? 'present' : 'missing',
+            currentVariationIds: state.session?.variations.map(v => v.id) || [],
+          });
+
           set((s) => {
             if (!s.session) return s;
 
-            const updatedVariations = s.session.variations.map((v) =>
-              v.id === id
-                ? { ...v, status: "completed" as VideoGenerationStatus, progress: 100, outputUrl, thumbnailUrl }
-                : v
-            );
+            const updatedVariations = s.session.variations.map((v) => {
+              if (v.id === id) {
+                console.log(`[ProcessingSessionStore] Updating variation ${id}: status -> completed, outputUrl -> ${outputUrl ? 'set' : 'missing'}`);
+                return { ...v, status: "completed" as VideoGenerationStatus, progress: 100, outputUrl, thumbnailUrl };
+              }
+              return v;
+            });
 
             // Check if all variations are done
             const allDone = updatedVariations.every(

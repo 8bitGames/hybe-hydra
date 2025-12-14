@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { assetsApi, type Campaign, type Asset } from "@/lib/campaigns-api";
-import { useCampaign, useAssets, useVideos } from "@/lib/queries";
+import { useCampaign, useAssets, useVideos, useInvalidateQueries } from "@/lib/queries";
 import { loadBridgePrompt, clearBridgePrompt } from "@/lib/bridge-storage";
 import {
   videoApi,
@@ -757,6 +757,7 @@ export default function VideoGeneratePage() {
   const { data: imageAssetsData, isLoading: imageLoading } = useAssets(campaignId, { type: "image", page_size: 50 });
   const { data: audioAssetsData, isLoading: audioLoading } = useAssets(campaignId, { type: "audio", page_size: 50 });
   const { data: videosData, isLoading: videosLoading } = useVideos(campaignId, { page_size: 100, generation_type: "AI" });
+  const { invalidateAllAIVideos } = useInvalidateQueries();
 
   const images = imageAssetsData?.items || [];
   // Local state for audio tracks (allows adding new uploads)
@@ -1220,6 +1221,8 @@ export default function VideoGeneratePage() {
         if (hasPreviewImage) {
           setPreviewImage(null);
         }
+        // Invalidate all-videos cache so the new video appears on /videos page
+        invalidateAllAIVideos();
         // Reload stats
         const statsResult = await videoApi.getStats(campaignId);
         if (statsResult.data) setStats(statsResult.data);
@@ -1276,6 +1279,8 @@ export default function VideoGeneratePage() {
         // Add all batch generations to the list
         setGenerations((prev) => [...result.data!.generations, ...prev]);
         // Keep form data for convenience - user can generate more variants
+        // Invalidate all-videos cache so the new videos appear on /videos page
+        invalidateAllAIVideos();
         // Reload stats
         const statsResult = await videoApi.getStats(campaignId);
         if (statsResult.data) setStats(statsResult.data);
@@ -1374,6 +1379,8 @@ export default function VideoGeneratePage() {
         }));
         setGenerations((prev) => [...newGenerations, ...prev]);
         // Keep form data for convenience - user can generate more variants
+        // Invalidate all-videos cache so the new videos appear on /videos page
+        invalidateAllAIVideos();
         // Reload stats
         const statsResult = await videoApi.getStats(campaignId);
         if (statsResult.data) setStats(statsResult.data);

@@ -44,6 +44,11 @@ async function submitToAWSBatch(
     style?: string;
     audioUrl?: string;  // Audio URL for composition (optional)
     audioStartTime?: number;  // Start time in audio file (seconds)
+    // Lyrics for subtitles (extracted from audio asset metadata)
+    lyricsData?: {
+      segments: Array<{ text: string; start: number; end: number }>;
+      language?: string;
+    };
     // MANDATORY I2V parameters
     imageDescription: string;  // How the image should be used in video (required)
     // Pre-generated preview image (from two-step workflow)
@@ -164,13 +169,21 @@ async function submitToAWSBatch(
       return { success: false, error: submitResult.error };
     }
 
-    // Update with batch job ID for tracking
+    // Fetch existing metadata to preserve use_audio_lyrics flag
+    const existingGen = await prisma.videoGeneration.findUnique({
+      where: { id: generationId },
+      select: { qualityMetadata: true },
+    });
+    const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
+
+    // Update with batch job ID for tracking, preserving existing metadata
     await prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         progress: 10,
         vertexOperationName: submitResult.batch_job_id,  // Store batch job ID
         qualityMetadata: {
+          ...existingMetadata,  // Preserve use_audio_lyrics and other flags
           batch_job_id: submitResult.batch_job_id,
           job_type: hasReferenceImage ? "image_to_video" : "video_generation",
           submitted_at: new Date().toISOString(),
@@ -388,6 +401,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       reference_style,
       audio_asset_id,  // Required: audio track for composition
       audio_start_time = 0,  // Start time in audio file (seconds)
+      use_audio_lyrics = false,  // Use lyrics from audio asset as subtitles
       // I2V parameters - MANDATORY: image generation happens before video
       image_description,  // string: how the image should look/be used in video
       // Preview image (pre-generated from two-step workflow)
@@ -471,6 +485,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         trendKeywords: trend_keywords || [],
         referenceUrls: reference_urls || null,
         promptAnalysis: prompt_analysis || null,
+        // Store lyrics/audio composition settings for callback processing
+        qualityMetadata: {
+          use_audio_lyrics: use_audio_lyrics,  // Flag to trigger audio+lyrics composition after video generation
+        },
       },
       include: {
         referenceImage: {

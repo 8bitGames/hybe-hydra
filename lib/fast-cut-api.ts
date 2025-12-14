@@ -315,6 +315,14 @@ export interface FastCutVideo {
   };
   created_at: string;
   updated_at: string;
+  tiktok_seo?: {
+    description?: string;
+    hashtags?: string[];
+    keywords?: string[];
+    searchIntent?: string;
+    suggestedPostingTimes?: string[];
+    textOverlayKeywords?: string[];
+  } | null;
 }
 
 export interface FastCutVideosResponse {
@@ -433,6 +441,48 @@ export const fastCutApi = {
     const response = await api.post<AudioAnalysisResponse>('/api/v1/fast-cut/audio/analyze', {
       assetId,
       targetDuration
+    });
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Extract lyrics from audio asset
+   * Will use cached lyrics if already extracted (unless forceReExtract is true)
+   */
+  extractLyrics: async (assetId: string, options?: { languageHint?: 'ko' | 'en' | 'ja' | 'auto'; forceReExtract?: boolean }): Promise<{
+    assetId: string;
+    lyrics: {
+      fullText: string;
+      language: string;
+      isInstrumental: boolean;
+      segments: Array<{
+        text: string;
+        start: number;
+        end: number;
+        words?: Array<{ word: string; start: number; end: number }>;
+      }>;
+    } | null;
+    cached: boolean;
+  }> => {
+    const response = await api.post<{
+      assetId: string;
+      lyrics: {
+        fullText: string;
+        language: string;
+        isInstrumental: boolean;
+        segments: Array<{
+          text: string;
+          start: number;
+          end: number;
+          words?: Array<{ word: string; start: number; end: number }>;
+        }>;
+      } | null;
+      cached: boolean;
+    }>('/api/v1/audio/lyrics', {
+      assetId,
+      languageHint: options?.languageHint || 'auto',
+      forceReExtract: options?.forceReExtract || false,
     });
     if (response.error) throw new Error(response.error.message);
     return response.data!;
@@ -738,12 +788,19 @@ export const ASPECT_RATIOS = [
   { value: '1:1', label: '1:1 (Instagram)', width: 1080, height: 1080 }
 ];
 
-// Duration options
+// Duration range for slider (15-25 seconds)
+export const DURATION_RANGE = {
+  min: 15,
+  max: 25,
+  default: 20,
+  step: 1,
+} as const;
+
+// Legacy: Duration options (deprecated, use DURATION_RANGE instead)
 export const DURATION_OPTIONS = [
-  { value: 10, label: '10초' },
   { value: 15, label: '15초' },
-  { value: 30, label: '30초' },
-  { value: 60, label: '60초' }
+  { value: 20, label: '20초' },
+  { value: 25, label: '25초' }
 ];
 
 // Backward compatibility - alias for existing code that still uses composeApi

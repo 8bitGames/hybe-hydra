@@ -212,28 +212,26 @@ IMPORTANT:
 - All arrays must have at least one element for each account being compared`;
 
 // =============================================================================
-// Agent Implementation
+// Agent Configuration (exported for seed API)
 // =============================================================================
 
-export class ComparativeAnalysisAgent extends BaseAgent<ComparativeAnalysisInput, ComparativeAnalysisOutput> {
-  constructor() {
-    super({
-      id: 'comparative-analysis',
-      name: 'Comparative Analysis',
-      description: 'Compares multiple TikTok accounts and generates competitive insights',
-      category: 'analyzer',
-      model: {
-        provider: 'gemini',
-        name: 'gemini-2.5-flash',
-        options: {
-          temperature: 0.4,
-          maxTokens: 32768, // Increased for up to 10 account comparisons
-        },
-      },
-      prompts: {
-        system: SYSTEM_PROMPT,
-        templates: {
-          compare: `Compare the following {{accountCount}} TikTok accounts and provide comprehensive competitive analysis.
+export const ComparativeAnalysisConfig = {
+  id: 'comparative-analysis',
+  name: 'Comparative Analysis',
+  description: '다수의 TikTok 계정을 비교 분석하여 경쟁 인사이트 도출',
+  category: 'analyzer',
+  model: {
+    provider: 'gemini',
+    name: 'gemini-2.5-flash',
+    options: {
+      temperature: 0.4,
+      maxTokens: 32768, // Increased for up to 10 account comparisons
+    },
+  },
+  prompts: {
+    system: SYSTEM_PROMPT,
+    templates: {
+      compare: `Compare the following {{accountCount}} TikTok accounts and provide comprehensive competitive analysis.
 
 ## Accounts to Compare
 
@@ -255,11 +253,19 @@ Provide:
 
 **IMPORTANT: You MUST respond entirely in {{language}}.**
 All text fields including overallSummary, interpretations, insights, and recommendations MUST be written in {{language}}.`,
-        },
-      },
-      inputSchema: ComparativeAnalysisInputSchema,
-      outputSchema: ComparativeAnalysisOutputSchema,
-    });
+    },
+  },
+  inputSchema: ComparativeAnalysisInputSchema,
+  outputSchema: ComparativeAnalysisOutputSchema,
+};
+
+// =============================================================================
+// Agent Implementation
+// =============================================================================
+
+export class ComparativeAnalysisAgent extends BaseAgent<ComparativeAnalysisInput, ComparativeAnalysisOutput> {
+  constructor() {
+    super(ComparativeAnalysisConfig as any);
   }
 
   protected buildPrompt(input: ComparativeAnalysisInput, context: AgentContext): string {

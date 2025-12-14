@@ -42,13 +42,26 @@ function normalizeVibe(value: string): VibeType {
   return 'Pop';
 }
 
+// Helper to normalize engagement value from AI output
+const normalizeEngagement = (value: unknown): 'high' | 'medium' | 'low' => {
+  if (value === 'high' || value === 'medium' || value === 'low') return value;
+  if (typeof value !== 'string') return 'medium';
+  const normalized = value.toLowerCase().trim();
+  if (normalized.includes('high') || normalized.includes('높')) return 'high';
+  if (normalized.includes('low') || normalized.includes('낮')) return 'low';
+  return 'medium';
+};
+
 // Output Schema
 export const FastCutIdeaOutputSchema = z.object({
   ideas: z.array(z.object({
     title: z.string(),
     hook: z.string(),
     description: z.string(),
-    estimatedEngagement: z.enum(['high', 'medium', 'low']),
+    estimatedEngagement: z.preprocess(
+      normalizeEngagement,
+      z.enum(['high', 'medium', 'low']).catch('medium')
+    ),
     // Fast Cut specific data
     searchKeywords: z.array(z.string()),
     suggestedVibe: z.string().transform(normalizeVibe),

@@ -599,8 +599,6 @@ export const useWorkflowStore = create<WorkflowState>()(
           }
 
           // Reset all data properties to initial values
-          // Note: Using normal set() which merges state - this is correct because
-          // we're setting all data properties explicitly
           set({
             currentStage: "start",
             completedStages: [],
@@ -610,17 +608,13 @@ export const useWorkflowStore = create<WorkflowState>()(
             create: initialCreateData,
             processing: initialProcessingData,
             publish: initialPublishData,
-            stashedPrompts: [], // CRITICAL FIX: Also reset stashedPrompts
+            stashedPrompts: [], // Also reset stashedPrompts
           });
 
-          // CRITICAL FIX: Clear persist middleware's internal storage
-          // This prevents rehydration from restoring old data after reset
-          try {
-            useWorkflowStore.persist.clearStorage();
-            console.log("[WorkflowStore] Cleared persist storage");
-          } catch (err) {
-            console.error("[WorkflowStore] Failed to clear persist storage:", err);
-          }
+          // NOTE: Do NOT call persist.clearStorage() here!
+          // resetWorkflow() is called by syncSessionToWorkflow() on every page navigation
+          // If we clear persist storage here, it breaks data restoration from session
+          // The localStorage.removeItem() above is sufficient for cleanup
         },
 
         // Start Actions (new workflow entry point)
@@ -673,8 +667,12 @@ export const useWorkflowStore = create<WorkflowState>()(
         updateVideoAiAnalysis: (analysis) =>
           set((state) => {
             if (state.start.source?.type !== "video") return state;
-            // Auto-select fast-cut when slideshow is detected (user can still change)
-            const autoSelectContentType = analysis?.isComposeVideo ? "fast-cut" : state.start.contentType;
+            // Only auto-select contentType if user hasn't made an explicit choice yet
+            // CRITICAL: Never override user's explicit AI Video choice when isComposeVideo is detected
+            // The user can still manually switch to Fast Cut if they want
+            const autoSelectContentType = state.start.contentType
+              ? state.start.contentType  // Keep user's explicit choice
+              : (analysis?.isComposeVideo ? "fast-cut" : "ai_video");  // Auto-select only if not set
             return {
               start: {
                 ...state.start,

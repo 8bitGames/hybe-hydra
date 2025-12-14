@@ -6,8 +6,18 @@
  * Model: Gemini 2.5 Flash
  * Category: Fast Cut
  *
- * This agent specializes in converting abstract concepts into
- * concrete, searchable image keywords for slideshow creation.
+ * This agent specializes in extracting concrete visual subjects from
+ * user prompts and converting them into searchable image keywords.
+ *
+ * @agent ImageKeywordGeneratorAgent
+ * @version 2
+ * @changelog
+ * - v2: Major prompt rewrite - scene-based content extraction
+ *       - Added forbidden keywords list (no more "cinematic HD", "video clips")
+ *       - Focus on extracting actual visual subjects from user prompt
+ *       - Vibe now used only as lighting/color modifier, not primary keyword source
+ *       - Simplified buildPrompt method, removed unused template variables
+ * - v1: Initial version - vibe-based keyword generation
  */
 
 import { z } from 'zod';
@@ -81,7 +91,7 @@ export const ImageKeywordGeneratorConfig: AgentConfig<ImageKeywordGeneratorInput
   id: 'fast-cut-image-keyword-generator',
   name: 'Image Keyword Generator',
   description: 'Google 이미지 검색 최적화 키워드 생성',
-  category: 'fast-cut',
+  category: 'transformer',
 
   model: {
     provider: 'gemini',
@@ -95,93 +105,114 @@ export const ImageKeywordGeneratorConfig: AgentConfig<ImageKeywordGeneratorInput
   prompts: {
     system: `You are an expert at generating Google Image Search keywords for video production.
 
-Your job is to convert abstract video concepts into CONCRETE, SEARCHABLE image keywords.
+Your job is to EXTRACT CONCRETE VISUAL SUBJECTS from user prompts and convert them into SEARCHABLE image keywords.
 
-## CRITICAL RULES:
+## 🚨 CRITICAL: SCENE-BASED EXTRACTION
 
-1. SEARCHABILITY: Every keyword must return good images on Google Image Search
-   - ❌ BAD: "love", "happiness", "energy" (too abstract)
-   - ✅ GOOD: "couple sunset beach silhouette", "celebration confetti party" (concrete visuals)
+The user's prompt often describes specific scenes or visual concepts. You MUST:
+1. Parse the prompt to identify each scene/shot description
+2. Extract the MAIN VISUAL SUBJECT of each scene (objects, places, people, nature, etc.)
+3. Generate keywords that will find EXACTLY that subject on Google Image Search
 
-2. FORMAT: Each keyword should be 2-4 words
-   - ❌ BAD: "city" (too vague), "a beautiful sunset on the beach" (too long)
-   - ✅ GOOD: "tokyo night neon street", "sunset beach golden hour"
+## ❌ FORBIDDEN KEYWORDS (These are useless for search):
+- "generate video", "create content", "make video", "video clips"
+- "dynamic cinematic", "HD video", "4K footage", "professional video"
+- "aesthetic visuals", "engaging content", "viral video"
+- Any keyword describing VIDEO CREATION process rather than VISUAL SUBJECTS
 
-3. QUALITY MODIFIERS: Add these to improve image quality
-   - "4K", "HD", "photography", "cinematic", "professional", "aesthetic"
+## ✅ GOOD KEYWORDS (These find actual images):
+- "woman walking forest path" (specific subject + location)
+- "rose petals falling closeup" (specific object + action)
+- "neon city street night rain" (specific place + atmosphere)
+- "coffee cup steam morning light" (specific object + mood)
+- "mountains sunset golden hour" (specific landscape)
 
-4. VIBE ALIGNMENT: All keywords must match the specified vibe
-   - Exciting = dynamic, colorful, energetic visuals
-   - Emotional = warm, soft, nostalgic visuals
-   - Pop = trendy, bright, modern visuals
-   - Minimal = clean, simple, elegant visuals
+## KEYWORD FORMAT RULES:
 
-5. DIVERSITY: Generate diverse keywords across categories
-   - Subject: People, artists, performers
-   - Scene: Locations, backgrounds, environments
-   - Mood Visual: Lighting, atmosphere, feeling expressed visually
-   - Style: Photography style, aesthetic
+1. SPECIFICITY: Be specific about WHAT to search for
+   - ❌ BAD: "beautiful scene", "aesthetic moment", "dynamic shot"
+   - ✅ GOOD: "cherry blossom petals wind", "skyscraper sunset reflection"
+
+2. FORMAT: 2-4 descriptive words focusing on the SUBJECT
+   - ❌ BAD: "city" (too vague)
+   - ❌ BAD: "a beautiful sunset on the peaceful beach with waves" (too long)
+   - ✅ GOOD: "sunset beach golden waves"
+
+3. QUALITY MODIFIERS: Add ONE quality word at the end if needed
+   - "forest path morning photography"
+   - "city skyline night 4K"
+   - NOT: "4K HD cinematic professional aesthetic video footage"
+
+## OUTPUT REQUIREMENTS:
+- Generate 8-12 keywords based on ACTUAL CONTENT described in the user's prompt
+- Each keyword must be searchable on Google Images and return relevant results
+- Keywords should represent different visual subjects/scenes described in the prompt
+- Vibe modifiers (lighting, atmosphere) should COMPLEMENT the subject, not replace it
 
 Always respond in valid JSON format.`,
 
     templates: {
-      generate: `Generate optimized Google Image Search keywords for a Fast Cut video.
+      generate: `Generate Google Image Search keywords based on the ACTUAL CONTENT described in the user's prompt.
 
 ## INPUT
-VIBE: {{vibe}}
 USER PROMPT: {{userPrompt}}
-{{artistSection}}
 {{scriptSection}}
+VIBE: {{vibe}} (use this for atmosphere/lighting modifiers only)
 LANGUAGE: {{language}}
 
-## VIBE "{{vibe}}" VISUAL REFERENCE
-Use these visual elements that match the {{vibe}} vibe:
+## 🚨 STEP 1: ANALYZE THE PROMPT
+
+First, identify the VISUAL SUBJECTS mentioned in the user prompt:
+- What objects, people, places, or scenes are described?
+- What actions or states are shown?
+- What specific details are mentioned?
+
+Example Analysis:
+- Prompt: "Create a video showing a girl walking through cherry blossoms, then coffee being poured, ending with city lights at night"
+- Visual Subjects: 1) woman in cherry blossom garden, 2) coffee pouring into cup, 3) city skyline night lights
+
+## 🚨 STEP 2: GENERATE SEARCHABLE KEYWORDS
+
+For EACH visual subject identified, create a 2-4 word search keyword:
+
+❌ DO NOT generate:
+- "create video", "cinematic footage", "dynamic visuals", "HD content"
+- Generic vibe words without subjects: "exciting energy", "emotional moment"
+
+✅ GENERATE keywords like:
+- "cherry blossom petals falling" (subject from prompt)
+- "coffee pour cream swirl" (action from prompt)
+- "city skyline night lights" (scene from prompt)
+
+## VIBE "{{vibe}}" MODIFIERS (Use sparingly)
+Add these as OPTIONAL modifiers to complement subjects:
 - Lighting: {{vibeMapping.lighting}}
-- Scene: {{vibeMapping.scene}}
-- Mood: {{vibeMapping.mood}}
 - Colors: {{vibeMapping.colors}}
 
-## REQUIREMENTS
+Example: "cherry blossom" + "soft light" → "cherry blossom soft light photography"
 
-Generate 10-12 keywords distributed across these categories:
+## OUTPUT REQUIREMENTS
 
-### 1. SUBJECT (2-3 keywords)
-Keywords for the main subject/person in the video.
-{{artistKeywordGuide}}
-Format: "{name/descriptor} {context} {quality}"
-Examples: "kpop idol stage performance HD", "singer concert closeup 4K"
-
-### 2. SCENE (3-4 keywords)
-Searchable background/location keywords that match {{vibe}} vibe.
-Format: "{specific place} {lighting/time} {photography}"
-Examples based on {{vibe}}:
-{{sceneExamples}}
-
-### 3. MOOD VISUAL (2-3 keywords)
-Visual representations of the mood/atmosphere matching {{vibe}}.
-These should be CONCRETE visuals, not abstract emotions.
-Format: "{visual element} {lighting} {aesthetic}"
-Examples based on {{vibe}}:
-{{moodExamples}}
-
-### 4. STYLE (2 keywords)
-Photography/cinematography style keywords.
-Format: "{style} {medium} {quality}"
-Examples: "cinematic film grain aesthetic", "editorial fashion photography 4K"
+Generate 8-12 keywords:
+- **subject** (3-4): Main objects/people/places from the prompt
+- **scene** (2-3): Backgrounds/locations mentioned or implied
+- **moodVisual** (2-3): Atmospheric visuals that match the content
+- **style** (1-2): Photography style (keep minimal)
 
 ## OUTPUT JSON (ALL FIELDS ARE REQUIRED)
-⚠️ CRITICAL: You MUST include ALL fields below. Missing any field will cause validation failure.
 
 {
-  "reasoning": "REQUIRED - Brief explanation of why you chose these keywords based on the prompt",
+  "reasoning": "List the visual subjects you identified from the prompt and how you converted them to keywords",
   "searchKeywords": [
-    "all keywords in order of importance for image search (10-12 keywords)"
+    "keyword based on prompt content 1",
+    "keyword based on prompt content 2",
+    "... 8-12 total keywords"
   ],
   "keywordCategories": {
-    "subject": ["subject keyword 1", "subject keyword 2"],
-    "scene": ["scene keyword 1", "scene keyword 2", "scene keyword 3"],
-    "moodVisual": ["mood visual 1", "mood visual 2"],
-    "style": ["style keyword 1", "style keyword 2"]
+    "subject": ["main subject from prompt", "secondary subject"],
+    "scene": ["location mentioned", "background implied"],
+    "moodVisual": ["atmospheric visual matching content"],
+    "style": ["one photography style keyword"]
   }
 }
 
@@ -206,90 +237,20 @@ export class ImageKeywordGeneratorAgent extends BaseAgent<ImageKeywordGeneratorI
     const vibe = input.vibe as VibeType;
     const vibeMapping = VIBE_VISUAL_MAPPING[vibe];
 
-    // No artist name in keywords - extract keywords purely from prompt/script content
-    const artistSection = '';
-    const artistKeywordGuide = 'Generate generic performer/artist keywords based on the prompt context only. Do NOT include any specific artist names.';
-
-    // Build script section
+    // Build script section - these lines provide additional context for keyword extraction
     let scriptSection = '';
     if (input.scriptLines && input.scriptLines.length > 0) {
-      scriptSection = `SCRIPT LINES (for context):\n${input.scriptLines.map((line, i) => `${i + 1}. ${line}`).join('\n')}`;
+      scriptSection = `\nSCRIPT LINES (additional visual context):\n${input.scriptLines.map((line, i) => `${i + 1}. ${line}`).join('\n')}`;
     }
-
-    // Build scene examples based on vibe
-    const sceneExamples = this.getSceneExamples(vibe);
-    const moodExamples = this.getMoodExamples(vibe);
 
     return this.fillTemplate(template, {
       vibe: input.vibe,
       userPrompt: input.userPrompt,
-      artistSection,
-      artistKeywordGuide,
       scriptSection,
       language: input.language === 'ko' ? 'Korean' : 'English',
       'vibeMapping.lighting': vibeMapping.lighting.join(', '),
-      'vibeMapping.scene': vibeMapping.scene.join(', '),
-      'vibeMapping.mood': vibeMapping.mood.join(', '),
       'vibeMapping.colors': vibeMapping.colors.join(', '),
-      sceneExamples,
-      moodExamples,
     });
-  }
-
-  private getSceneExamples(vibe: VibeType): string {
-    const examples: Record<VibeType, string[]> = {
-      Exciting: [
-        '"concert crowd cheering 4K"',
-        '"festival stage lights night"',
-        '"neon city street tokyo"',
-        '"dance club strobe lights"',
-      ],
-      Emotional: [
-        '"empty road autumn sunset"',
-        '"rain window reflection night"',
-        '"ocean waves golden hour"',
-        '"vintage train station fog"',
-      ],
-      Pop: [
-        '"colorful graffiti wall urban"',
-        '"trendy cafe interior bright"',
-        '"rooftop city skyline day"',
-        '"shopping street tokyo shibuya"',
-      ],
-      Minimal: [
-        '"white studio background clean"',
-        '"modern interior minimal design"',
-        '"geometric architecture abstract"',
-        '"zen garden peaceful simple"',
-      ],
-    };
-    return examples[vibe].map(ex => `- ${ex}`).join('\n');
-  }
-
-  private getMoodExamples(vibe: VibeType): string {
-    const examples: Record<VibeType, string[]> = {
-      Exciting: [
-        '"confetti explosion celebration"',
-        '"motion blur dynamic energy"',
-        '"fireworks night sky colorful"',
-      ],
-      Emotional: [
-        '"soft bokeh lights night"',
-        '"film grain nostalgic vintage"',
-        '"warm sunlight through curtains"',
-      ],
-      Pop: [
-        '"bright pastel aesthetic clean"',
-        '"instagram flat lay trendy"',
-        '"colorful balloon party fun"',
-      ],
-      Minimal: [
-        '"shadow play black white"',
-        '"negative space art minimal"',
-        '"soft gradient subtle tones"',
-      ],
-    };
-    return examples[vibe].map(ex => `- ${ex}`).join('\n');
   }
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { useI18n } from "@/lib/i18n";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ import {
   selectOriginalVideo,
   selectSession,
 } from "@/lib/stores/processing-session-store";
+import { useFastCut } from "@/lib/stores/fast-cut-context";
+import { useWorkflowStore } from "@/lib/stores/workflow-store";
 
 interface GeneratingViewProps {
   className?: string;
@@ -30,11 +32,69 @@ export function GeneratingView({ className }: GeneratingViewProps) {
   const session = useProcessingSessionStore(selectSession);
   const originalVideo = useProcessingSessionStore(selectOriginalVideo);
 
+  // Get images from fast-cut context (for fast-cut mode)
+  const { selectedImages: fastCutImages } = useFastCut();
+
+  // Get images from workflow store (for AI video mode)
+  const analyzeAssets = useWorkflowStore((state) => state.analyze.assets);
+  const previewImage = useWorkflowStore((state) => state.analyze.previewImage);
+
   if (!session || !originalVideo) {
     return null;
   }
 
   const { content } = session;
+  const isAIVideo = session.contentType === "ai_video";
+
+  // Get images based on content type
+  const displayImages = useMemo(() => {
+    // First try session images (already populated during initSession)
+    if (content.images && content.images.length > 0) {
+      return content.images;
+    }
+
+    // AI Video mode: get from workflow store
+    if (isAIVideo) {
+      const images: Array<{ id: string; url: string; thumbnailUrl: string }> = [];
+
+      // Add preview image if available
+      if (previewImage?.imageUrl) {
+        images.push({
+          id: previewImage.previewId || "preview",
+          url: previewImage.imageUrl,
+          thumbnailUrl: previewImage.imageUrl,
+        });
+      }
+
+      // Add analyze assets (image type)
+      if (analyzeAssets && analyzeAssets.length > 0) {
+        analyzeAssets
+          .filter((asset) => asset.type === "image")
+          .forEach((asset) => {
+            images.push({
+              id: asset.id,
+              url: asset.url,
+              thumbnailUrl: asset.url,
+            });
+          });
+      }
+
+      if (images.length > 0) {
+        return images;
+      }
+    }
+
+    // Fast-cut mode: get from fast-cut context
+    if (!isAIVideo && fastCutImages && fastCutImages.length > 0) {
+      return fastCutImages.map((img) => ({
+        id: img.id,
+        url: img.sourceUrl || "",
+        thumbnailUrl: img.thumbnailUrl || img.sourceUrl || "",
+      }));
+    }
+
+    return [];
+  }, [content.images, isAIVideo, previewImage, analyzeAssets, fastCutImages]);
 
   // Format progress percentage
   const progressPercent = originalVideo.progress || 0;
@@ -132,88 +192,141 @@ export function GeneratingView({ className }: GeneratingViewProps) {
                 {isKorean ? "콘텐츠 요약" : "Content Summary"}
               </h3>
 
-              <div className="space-y-4">
-                {/* Script */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-sm text-neutral-500">
-                    <FileText className="w-4 h-4" />
-                    {isKorean ? "스크립트" : "Script"}
+              {isAIVideo ? (
+                /* AI Video: Script left, Image right (horizontal layout) */
+                <div className="flex gap-4">
+                  {/* Left: Script */}
+                  <div className="flex-1 space-y-1.5">
+                    <div className="flex items-center gap-2 text-sm text-neutral-500">
+                      <FileText className="w-4 h-4" />
+                      {isKorean ? "스크립트" : "Script"}
+                    </div>
+                    <div className="bg-neutral-50 rounded-lg p-3 max-h-[300px] overflow-y-auto">
+                      <p className="text-sm text-neutral-700 whitespace-pre-wrap break-words leading-relaxed">
+                        {content.script || (isKorean ? "스크립트 없음" : "No script")}
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-sm text-neutral-700 line-clamp-2 bg-neutral-50 rounded-lg p-2.5">
-                    {content.script || (isKorean ? "스크립트 없음" : "No script")}
-                  </p>
-                </div>
 
-                {/* Images */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-neutral-500">
-                    <ImageIcon className="w-4 h-4" />
-                    {isKorean ? "이미지" : "Images"}
-                    {content.images.length > 0 && (
-                      <span className="text-xs text-neutral-400">({content.images.length})</span>
+                  {/* Right: Single Image */}
+                  <div className="w-[180px] flex-shrink-0 space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-neutral-500">
+                      <ImageIcon className="w-4 h-4" />
+                      {isKorean ? "이미지" : "Image"}
+                    </div>
+                    {displayImages.length > 0 ? (
+                      <div className="aspect-[9/16] w-full rounded-lg bg-neutral-100 overflow-hidden border border-neutral-200">
+                        {displayImages[0].thumbnailUrl || displayImages[0].url ? (
+                          <img
+                            src={displayImages[0].thumbnailUrl || displayImages[0].url}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon className="w-5 h-5 text-neutral-400" />
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-neutral-400">
+                        {isKorean ? "이미지 없음" : "No image"}
+                      </span>
                     )}
                   </div>
-                  {content.images.length > 0 ? (
-                    <div className="grid grid-cols-5 gap-2">
-                      {content.images.map((img, idx) => (
-                        <div
-                          key={img.id || idx}
-                          className="aspect-square rounded-lg bg-neutral-100 overflow-hidden border border-neutral-200"
-                        >
-                          {img.thumbnailUrl || img.url ? (
-                            <img
-                              src={img.thumbnailUrl || img.url}
-                              alt=""
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <ImageIcon className="w-5 h-5 text-neutral-400" />
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-sm text-neutral-400">
-                      {isKorean ? "이미지 없음" : "No images"}
-                    </span>
-                  )}
                 </div>
-
-                {/* Music */}
-                {content.musicTrack && (
+              ) : (
+                /* Fast Cut: Script on top, Images below (vertical layout) */
+                <div className="space-y-4">
+                  {/* Script */}
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2 text-sm text-neutral-500">
-                      <Music className="w-4 h-4" />
-                      {isKorean ? "음악" : "Music"}
+                      <FileText className="w-4 h-4" />
+                      {isKorean ? "스크립트" : "Script"}
                     </div>
-                    <div className="flex items-center gap-2 bg-neutral-50 rounded-lg p-2.5">
-                      <Music className="w-4 h-4 text-neutral-400" />
-                      <div>
-                        <p className="text-sm text-neutral-700">{content.musicTrack.name}</p>
-                        <p className="text-xs text-neutral-500">
-                          {Math.floor(content.musicTrack.duration / 60)}:
-                          {String(content.musicTrack.duration % 60).padStart(2, "0")}
-                        </p>
+                    <div className="bg-neutral-50 rounded-lg p-3 max-h-[200px] overflow-y-auto">
+                      <p className="text-sm text-neutral-700 whitespace-pre-wrap break-words leading-relaxed">
+                        {content.script || (isKorean ? "스크립트 없음" : "No script")}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Images: Horizontal scroll */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 text-sm text-neutral-500">
+                      <ImageIcon className="w-4 h-4" />
+                      {isKorean ? "이미지" : "Images"}
+                      {displayImages.length > 0 && (
+                        <span className="text-xs text-neutral-400">({displayImages.length})</span>
+                      )}
+                    </div>
+                    {displayImages.length > 0 ? (
+                      <div className="flex gap-2 overflow-x-auto pb-2">
+                        {displayImages.map((img, idx) => (
+                          <div
+                            key={img.id || idx}
+                            className="w-[80px] h-[142px] flex-shrink-0 rounded-lg bg-neutral-100 overflow-hidden border border-neutral-200"
+                          >
+                            {img.thumbnailUrl || img.url ? (
+                              <img
+                                src={img.thumbnailUrl || img.url}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <ImageIcon className="w-4 h-4 text-neutral-400" />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-neutral-400">
+                        {isKorean ? "이미지 없음" : "No images"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Music & Effects row */}
+              {(content.musicTrack || content.effectPreset) && (
+                <div className="flex gap-4 mt-4 pt-4 border-t border-neutral-100">
+                  {/* Music */}
+                  {content.musicTrack && (
+                    <div className="flex-1 space-y-1.5">
+                      <div className="flex items-center gap-2 text-sm text-neutral-500">
+                        <Music className="w-4 h-4" />
+                        {isKorean ? "음악" : "Music"}
+                      </div>
+                      <div className="flex items-center gap-2 bg-neutral-50 rounded-lg p-2.5">
+                        <Music className="w-4 h-4 text-neutral-400" />
+                        <div>
+                          <p className="text-sm text-neutral-700">{content.musicTrack.name}</p>
+                          <p className="text-xs text-neutral-500">
+                            {Math.floor(content.musicTrack.duration / 60)}:
+                            {String(content.musicTrack.duration % 60).padStart(2, "0")}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Effect Preset */}
-                {content.effectPreset && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 text-sm text-neutral-500">
-                      <Sparkles className="w-4 h-4" />
-                      {isKorean ? "이펙트" : "Effects"}
+                  {/* Effect Preset */}
+                  {content.effectPreset && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-sm text-neutral-500">
+                        <Sparkles className="w-4 h-4" />
+                        {isKorean ? "이펙트" : "Effects"}
+                      </div>
+                      <Badge variant="secondary" className="bg-neutral-100 text-neutral-700">
+                        {content.effectPreset.name}
+                      </Badge>
                     </div>
-                    <Badge variant="secondary" className="bg-neutral-100 text-neutral-700">
-                      {content.effectPreset.name}
-                    </Badge>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -1,15 +1,18 @@
 /**
  * OpenAI Model Client
  * ====================
- * Client for GPT-5.1 models (Publisher Agents)
+ * Client for GPT-5.2 models (Publisher Agents)
  *
- * GPT-5.1 Features:
- * - Adaptive reasoning with reasoningEffort parameter
+ * GPT-5.2 Features:
+ * - 400K context window, 128K max output tokens
+ * - Adaptive reasoning with reasoningEffort parameter (none, low, medium, high, xhigh)
  * - Superior natural language copywriting
  * - Excellent tone/voice control
  * - Optimized for user-facing content
  *
- * @see https://platform.openai.com/docs/models/gpt-5.1
+ * Model ID: gpt-5.2-2025-12-11
+ *
+ * @see https://platform.openai.com/docs/models/gpt-5.2
  */
 
 import type {
@@ -22,8 +25,8 @@ import type {
 } from './types';
 
 export interface OpenAIClientConfig extends ModelClientConfig {
-  model: 'gpt-5.1' | 'gpt-5.1-mini';
-  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
+  model: 'gpt-5.2-2025-12-11';
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | 'xhigh';
   presencePenalty?: number;
   frequencyPenalty?: number;
 }
@@ -84,7 +87,7 @@ export class OpenAIClient implements IModelClient {
       temperature: 0.7,
       maxTokens: 4096,
       topP: 1,
-      reasoningEffort: 'medium',
+      reasoningEffort: 'none', // GPT-5.2 default: 'none' for lower latency
       presencePenalty: 0,
       frequencyPenalty: 0,
       ...config,
@@ -141,14 +144,11 @@ export class OpenAIClient implements IModelClient {
     }
 
     // Build request body
+    // Note: GPT-5.2 only supports temperature=1 (default), so we don't send it
     const requestBody: Record<string, unknown> = {
       model: this.config.model,
       messages,
-      temperature: this.config.temperature,
-      max_tokens: this.config.maxTokens,
-      top_p: this.config.topP,
-      presence_penalty: this.config.presencePenalty,
-      frequency_penalty: this.config.frequencyPenalty,
+      max_completion_tokens: this.config.maxTokens,
     };
 
     // GPT-5.1 specific: reasoning effort
@@ -229,14 +229,11 @@ export class OpenAIClient implements IModelClient {
     }
 
     // Build request body with stream
+    // Note: GPT-5.2 only supports temperature=1 (default), so we don't send it
     const requestBody: Record<string, unknown> = {
       model: this.config.model,
       messages,
-      temperature: this.config.temperature,
-      max_tokens: this.config.maxTokens,
-      top_p: this.config.topP,
-      presence_penalty: this.config.presencePenalty,
-      frequency_penalty: this.config.frequencyPenalty,
+      max_completion_tokens: this.config.maxTokens,
       stream: true,
     };
 
@@ -321,15 +318,15 @@ export function createOpenAIClient(
 ): OpenAIClient {
   const presets: Record<string, OpenAIClientConfig> = {
     copywriting: {
-      model: 'gpt-5.1',
+      model: 'gpt-5.2-2025-12-11',
       temperature: 0.8,
       maxTokens: 4096,
-      reasoningEffort: 'low', // Fast for creative writing
+      reasoningEffort: 'none', // Fast for creative writing
       presencePenalty: 0.1,
       frequencyPenalty: 0.1,
     },
     optimization: {
-      model: 'gpt-5.1',
+      model: 'gpt-5.2-2025-12-11',
       temperature: 0.7,
       maxTokens: 4096,
       reasoningEffort: 'medium', // Balanced for strategic decisions

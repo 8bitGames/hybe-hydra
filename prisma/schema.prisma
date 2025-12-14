@@ -40,8 +40,8 @@ enum VideoGenerationStatus {
 
 // Video generation type enum
 enum VideoGenerationType {
-  AI       // Veo API generated video
-  COMPOSE  // MoviePy composed video from images + audio
+  AI // Veo API generated video
+  COMPOSE // MoviePy composed video from images + audio
 }
 
 // Trend platform enum
@@ -136,11 +136,11 @@ model Campaign {
   startDate       DateTime?      @map("start_date")
   endDate         DateTime?      @map("end_date")
   budgetCode      String?        @map("budget_code")
-  genre           String?        @map("genre")           // Music genre for content generation (e.g., pop, hiphop, ballad, country)
+  genre           String?        @map("genre") // Music genre for content generation (e.g., pop, hiphop, ballad, country)
   createdBy       String         @map("created_by")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
-  deletedAt       DateTime?      @map("deleted_at")  // Soft delete timestamp
+  deletedAt       DateTime?      @map("deleted_at") // Soft delete timestamp
 
   // Relations
   artist           Artist            @relation(fields: [artistId], references: [id])
@@ -198,7 +198,7 @@ model StylePreset {
 // Video Generation model
 model VideoGeneration {
   id                  String                @id @default(uuid())
-  campaignId          String?               @map("campaign_id")  // Nullable for Quick Create
+  campaignId          String?               @map("campaign_id") // Nullable for Quick Create
   isQuickCreate       Boolean               @default(false) @map("is_quick_create")
   generationType      VideoGenerationType   @default(AI) @map("generation_type") // AI or COMPOSE
   prompt              String
@@ -218,16 +218,16 @@ model VideoGeneration {
   qualityMetadata     Json?                 @map("quality_metadata")
 
   // Audio track - for both AI (optional) and Compose (required)
-  audioAssetId      String?  @map("audio_asset_id")
+  audioAssetId      String? @map("audio_asset_id")
   audioAnalysis     Json?   @map("audio_analysis") // {bpm, energy_curve, segments, duration}
   audioStartTime    Float?  @map("audio_start_time") // Selected start time in audio (seconds)
   audioDuration     Float?  @map("audio_duration") // Duration of audio used (max 15s)
   composedOutputUrl String? @map("composed_output_url") // Final video with audio
 
   // Compose-specific fields
-  scriptData    Json?   @map("script_data")    // {lines: [{text, duration, imageKeyword}], totalDuration}
-  imageAssets   Json?   @map("image_assets")   // [{id, url, keyword, sortOrder}]
-  effectPreset  String? @map("effect_preset")  // "zoom_pan", "ken_burns", etc.
+  scriptData   Json?   @map("script_data") // {lines: [{text, duration, imageKeyword}], totalDuration}
+  imageAssets  Json?   @map("image_assets") // [{id, url, keyword, sortOrder}]
+  effectPreset String? @map("effect_preset") // "zoom_pan", "ken_burns", etc.
 
   // Bridge context - tracks how this generation was created
   originalInput  String?  @map("original_input") // User's original idea/input
@@ -240,9 +240,9 @@ model VideoGeneration {
   // TikTok SEO Optimization - stores SEO metadata for TikTok publishing
   tiktokSEO Json? @map("tiktok_seo") // { description, hashtags, keywords, searchIntent, suggestedPostingTimes, textOverlayKeywords }
 
-  createdBy String   @map("created_by")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String    @map("created_by")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at") // Soft delete - null means not deleted
 
   // Relations
@@ -428,31 +428,31 @@ model KeywordAnalysis {
   platform String @default("TIKTOK")
 
   // Aggregate Stats
-  totalVideos    Int   @map("total_videos")
-  totalViews     BigInt @map("total_views")
-  totalLikes     BigInt @map("total_likes")
-  totalComments  BigInt @map("total_comments")
-  totalShares    BigInt @map("total_shares")
-  avgViews       BigInt @map("avg_views")
-  avgLikes       BigInt @map("avg_likes")
-  avgComments    BigInt @map("avg_comments")
-  avgShares      BigInt @map("avg_shares")
-  avgEngagementRate  Float @map("avg_engagement_rate")
-  medianViews        BigInt @map("median_views")
-  medianEngagementRate Float @map("median_engagement_rate")
+  totalVideos          Int    @map("total_videos")
+  totalViews           BigInt @map("total_views")
+  totalLikes           BigInt @map("total_likes")
+  totalComments        BigInt @map("total_comments")
+  totalShares          BigInt @map("total_shares")
+  avgViews             BigInt @map("avg_views")
+  avgLikes             BigInt @map("avg_likes")
+  avgComments          BigInt @map("avg_comments")
+  avgShares            BigInt @map("avg_shares")
+  avgEngagementRate    Float  @map("avg_engagement_rate")
+  medianViews          BigInt @map("median_views")
+  medianEngagementRate Float  @map("median_engagement_rate")
 
   // Performance Tiers (stored as JSON arrays of video objects)
-  viralVideos         Json @map("viral_videos")
+  viralVideos          Json @map("viral_videos")
   highPerformingVideos Json @map("high_performing_videos")
-  averageVideos       Json @map("average_videos")
+  averageVideos        Json @map("average_videos")
 
   // Hashtag Insights
-  topHashtags         Json @map("top_hashtags")
-  hashtagCombos       Json @map("hashtag_combos")
+  topHashtags         Json     @map("top_hashtags")
+  hashtagCombos       Json     @map("hashtag_combos")
   recommendedHashtags String[] @map("recommended_hashtags")
 
   // Content Patterns
-  avgDescriptionLength Int @map("avg_description_length")
+  avgDescriptionLength Int  @map("avg_description_length")
   commonPhrases        Json @map("common_phrases")
   callToActions        Json @map("call_to_actions")
   emojiUsage           Json @map("emoji_usage")
@@ -462,10 +462,10 @@ model KeywordAnalysis {
   uniqueCreators Int  @map("unique_creators")
 
   // Recommendations
-  optimalHashtagCount    Int      @map("optimal_hashtag_count")
-  suggestedHashtags      String[] @map("suggested_hashtags")
-  contentTips            String[] @map("content_tips")
-  engagementBenchmarks   Json     @map("engagement_benchmarks")
+  optimalHashtagCount  Int      @map("optimal_hashtag_count")
+  suggestedHashtags    String[] @map("suggested_hashtags")
+  contentTips          String[] @map("content_tips")
+  engagementBenchmarks Json     @map("engagement_benchmarks")
 
   // All analyzed videos
   allVideos Json @map("all_videos")
@@ -506,9 +506,9 @@ model KeywordAnalysisHistory {
   medianEngagementRate Float  @map("median_engagement_rate")
 
   // Performance tier counts
-  viralVideoCount         Int @map("viral_video_count")
-  highPerformingCount     Int @map("high_performing_count")
-  averageVideoCount       Int @map("average_video_count")
+  viralVideoCount     Int @map("viral_video_count")
+  highPerformingCount Int @map("high_performing_count")
+  averageVideoCount   Int @map("average_video_count")
 
   // Hashtag snapshot (top hashtags of the day)
   topHashtags Json @map("top_hashtags")
@@ -695,37 +695,37 @@ model ScheduledPost {
 
 // Stashed Prompt Analysis - saves analyze results for future use
 model StashedPromptAnalysis {
-  id          String   @id @default(uuid())
-  name        String   // User-defined name for this stash
-  campaignId  String?  @map("campaign_id")
+  id         String  @id @default(uuid())
+  name       String // User-defined name for this stash
+  campaignId String? @map("campaign_id")
 
   // Original request context
-  context     Json     // ContextData from the original analyze request
+  context Json // ContextData from the original analyze request
 
   // Images used (stored as references)
-  images      Json     // Array of {url, type, name} - original image data
+  images Json // Array of {url, type, name} - original image data
 
   // Analysis results
-  variations  Json     // Array of PromptVariation objects
-  imageAnalysis Json   @map("image_analysis") // {summary, detectedElements, colorPalette, mood}
+  variations    Json // Array of PromptVariation objects
+  imageAnalysis Json @map("image_analysis") // {summary, detectedElements, colorPalette, mood}
 
   // Prompts used for generation (stored for reproducibility)
-  analysisPromptUsed  String?  @map("analysis_prompt_used")  // Full prompt sent to Gemini for image analysis
-  finalizePromptUsed  String?  @map("finalize_prompt_used")  // Full prompt sent to Gemini for finalization
+  analysisPromptUsed String? @map("analysis_prompt_used") // Full prompt sent to Gemini for image analysis
+  finalizePromptUsed String? @map("finalize_prompt_used") // Full prompt sent to Gemini for finalization
 
   // Selected/finalized prompt (if user proceeded to finalize)
-  selectedVariationId String?  @map("selected_variation_id")
-  veo3Prompt          String?  @map("veo3_prompt")           // The final Veo3 video generation prompt
-  finalMetadata       Json?    @map("final_metadata")        // {duration, aspectRatio, style, recommendedSettings}
+  selectedVariationId String? @map("selected_variation_id")
+  veo3Prompt          String? @map("veo3_prompt") // The final Veo3 video generation prompt
+  finalMetadata       Json?   @map("final_metadata") // {duration, aspectRatio, style, recommendedSettings}
 
   // Organization
-  tags        String[] @default([])
-  isFavorite  Boolean  @default(false) @map("is_favorite")
+  tags       String[] @default([])
+  isFavorite Boolean  @default(false) @map("is_favorite")
 
   // Metadata
-  createdBy   String   @map("created_by")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([campaignId])
   @@index([createdBy])
@@ -740,27 +740,27 @@ model StashedPromptAnalysis {
 
 // TikTok Video Analysis Cache - caches video analysis results to avoid repeated API calls
 model TikTokVideoAnalysisCache {
-  id           String   @id @default(uuid())
-  videoUrl     String   @unique @map("video_url") // Original TikTok video URL
-  videoUrlHash String   @map("video_url_hash") // MD5 hash for fast lookup
-  videoId      String?  @map("video_id") // TikTok video ID extracted from URL
+  id           String  @id @default(uuid())
+  videoUrl     String  @unique @map("video_url") // Original TikTok video URL
+  videoUrlHash String  @map("video_url_hash") // MD5 hash for fast lookup
+  videoId      String? @map("video_id") // TikTok video ID extracted from URL
 
   // Cached thumbnail in S3
   thumbnailS3Url String? @map("thumbnail_s3_url")
   thumbnailS3Key String? @map("thumbnail_s3_key")
 
   // Video metadata
-  authorUsername  String? @map("author_username")
-  authorNickname  String? @map("author_nickname")
-  description     String?
-  hashtags        String[]
-  musicTitle      String? @map("music_title")
-  musicAuthor     String? @map("music_author")
-  duration        Int?
-  playCount       BigInt? @map("play_count")
-  likeCount       BigInt? @map("like_count")
-  commentCount    BigInt? @map("comment_count")
-  shareCount      BigInt? @map("share_count")
+  authorUsername String?  @map("author_username")
+  authorNickname String?  @map("author_nickname")
+  description    String?
+  hashtags       String[]
+  musicTitle     String?  @map("music_title")
+  musicAuthor    String?  @map("music_author")
+  duration       Int?
+  playCount      BigInt?  @map("play_count")
+  likeCount      BigInt?  @map("like_count")
+  commentCount   BigInt?  @map("comment_count")
+  shareCount     BigInt?  @map("share_count")
 
   // Compose video detection
   isPhotoPost Boolean  @default(false) @map("is_photo_post")
@@ -768,9 +768,9 @@ model TikTokVideoAnalysisCache {
   imageCount  Int      @default(0) @map("image_count")
 
   // Full analysis results (stored as JSON)
-  styleAnalysis   Json? @map("style_analysis")   // Visual style, color palette, lighting, etc.
-  contentAnalysis Json? @map("content_analysis") // Main subject, actions, setting, etc.
-  promptElements  Json? @map("prompt_elements")  // Style keywords, mood keywords, etc.
+  styleAnalysis   Json?   @map("style_analysis") // Visual style, color palette, lighting, etc.
+  contentAnalysis Json?   @map("content_analysis") // Main subject, actions, setting, etc.
+  promptElements  Json?   @map("prompt_elements") // Style keywords, mood keywords, etc.
   suggestedPrompt String? @map("suggested_prompt")
 
   // Detailed concept for recreation
@@ -799,8 +799,8 @@ model GeneratedPreviewImage {
   previewId String @unique @map("preview_id") // UUID generated during creation
 
   // Image storage
-  imageUrl String  @map("image_url") // S3 URL of the final image
-  s3Key    String  @map("s3_key") // S3 object key
+  imageUrl String @map("image_url") // S3 URL of the final image
+  s3Key    String @map("s3_key") // S3 object key
 
   // Generation context
   videoPrompt       String  @map("video_prompt") // Main scene description (Veo3 prompt)
@@ -811,12 +811,12 @@ model GeneratedPreviewImage {
   negativePrompt    String? @map("negative_prompt") // What to avoid
 
   // Composition mode
-  compositionMode  String  @default("direct") @map("composition_mode") // "direct" | "two_step"
-  compositePrompt  String? @map("composite_prompt") // For two_step mode
-  sceneImageUrl    String? @map("scene_image_url") // For two_step mode - intermediate scene
-  sceneImageS3Key  String? @map("scene_image_s3_key")
-  productImageUrl  String? @map("product_image_url") // Reference product image URL
-  handPose         String? @map("hand_pose") // For two_step mode - how hands hold product
+  compositionMode String  @default("direct") @map("composition_mode") // "direct" | "two_step"
+  compositePrompt String? @map("composite_prompt") // For two_step mode
+  sceneImageUrl   String? @map("scene_image_url") // For two_step mode - intermediate scene
+  sceneImageS3Key String? @map("scene_image_s3_key")
+  productImageUrl String? @map("product_image_url") // Reference product image URL
+  handPose        String? @map("hand_pose") // For two_step mode - how hands hold product
 
   // Relations
   userId     String  @map("user_id")
@@ -845,7 +845,7 @@ model ImageSearchCache {
   cacheKey     String   @unique @map("cache_key") // MD5 hash of keywords+params
   keywords     String[] // Original keywords for debugging
   searchParams Json?    @map("search_params") // {maxImages, safeSearch, imageSize}
-  results      Json     // Full search response {candidates, totalFound, filtered}
+  results      Json // Full search response {candidates, totalFound, filtered}
   totalResults Int      @map("total_results")
   hitCount     Int      @default(0) @map("hit_count") // Analytics
   createdAt    DateTime @default(now()) @map("created_at")
@@ -896,36 +896,36 @@ enum DeepAnalysisStatus {
 
 // Account Analysis - stores comprehensive TikTok account analysis results
 model AccountAnalysis {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
   // TikTok Account Info
-  tiktokUserId      String   @map("tiktok_user_id")
-  uniqueId          String   @map("unique_id")  // @username
-  nickname          String
-  avatarUrl         String?  @map("avatar_url")
-  signature         String?  // Bio
-  verified          Boolean  @default(false)
+  tiktokUserId String  @map("tiktok_user_id")
+  uniqueId     String  @map("unique_id") // @username
+  nickname     String
+  avatarUrl    String? @map("avatar_url")
+  signature    String? // Bio
+  verified     Boolean @default(false)
 
   // Account Stats at Analysis Time
-  followers         BigInt
-  following         Int
-  totalLikes        BigInt   @map("total_likes")
-  totalVideos       Int      @map("total_videos")
+  followers   BigInt
+  following   Int
+  totalLikes  BigInt @map("total_likes")
+  totalVideos Int    @map("total_videos")
 
   // Analysis Parameters
-  videosAnalyzed    Int      @map("videos_analyzed")  // 50-100
-  analysisLanguage  String   @default("ko") @map("analysis_language")
-  status            DeepAnalysisStatus @default(PENDING)
+  videosAnalyzed   Int                @map("videos_analyzed") // 50-100
+  analysisLanguage String             @default("ko") @map("analysis_language")
+  status           DeepAnalysisStatus @default(PENDING)
 
   // Calculated Metrics (JSON for flexibility)
-  basicMetrics      Json?    @map("basic_metrics")      // avg views, likes, etc.
-  engagementMetrics Json?    @map("engagement_metrics") // rates, ratios
-  contentMixMetrics Json?    @map("content_mix_metrics")// category breakdown
-  postingMetrics    Json?    @map("posting_metrics")    // posting frequency, consistency
+  basicMetrics      Json? @map("basic_metrics") // avg views, likes, etc.
+  engagementMetrics Json? @map("engagement_metrics") // rates, ratios
+  contentMixMetrics Json? @map("content_mix_metrics") // category breakdown
+  postingMetrics    Json? @map("posting_metrics") // posting frequency, consistency
 
   // AI Analysis Results (JSON)
-  aiInsights        Json?    @map("ai_insights")
-  recommendations   Json?    @map("recommendations")
+  aiInsights      Json? @map("ai_insights")
+  recommendations Json? @map("recommendations")
 
   // Video Classifications
   videoClassifications VideoClassification[]
@@ -934,10 +934,10 @@ model AccountAnalysis {
   comparisonReports ComparisonReportAccount[]
 
   // Metadata
-  analyzedBy        String?  @map("analyzed_by")  // user who ran analysis
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-  expiresAt         DateTime? @map("expires_at")   // Optional TTL
+  analyzedBy String?   @map("analyzed_by") // user who ran analysis
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  expiresAt  DateTime? @map("expires_at") // Optional TTL
 
   @@index([uniqueId])
   @@index([createdAt])
@@ -947,46 +947,46 @@ model AccountAnalysis {
 
 // Video Classification - stores per-video analysis results
 model VideoClassification {
-  id              String   @id @default(uuid())
-  analysisId      String   @map("analysis_id")
-  analysis        AccountAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  id         String          @id @default(uuid())
+  analysisId String          @map("analysis_id")
+  analysis   AccountAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
 
   // Video Reference
-  tiktokVideoId   String   @map("tiktok_video_id")
-  videoUrl        String   @map("video_url")
-  thumbnailUrl    String?  @map("thumbnail_url")
-  description     String?
+  tiktokVideoId String  @map("tiktok_video_id")
+  videoUrl      String  @map("video_url")
+  thumbnailUrl  String? @map("thumbnail_url")
+  description   String?
 
   // Video Stats
-  playCount       BigInt   @map("play_count")
-  likeCount       Int      @map("like_count")
-  commentCount    Int      @map("comment_count")
-  shareCount      Int      @map("share_count")
+  playCount    BigInt @map("play_count")
+  likeCount    Int    @map("like_count")
+  commentCount Int    @map("comment_count")
+  shareCount   Int    @map("share_count")
 
   // Calculated
-  engagementRate  Float    @map("engagement_rate")
+  engagementRate Float @map("engagement_rate")
 
   // AI Classifications (dynamic categories)
-  aiCategories    String[] @map("ai_categories")     // AI generated categories
-  aiConfidence    Float    @default(0) @map("ai_confidence")
-  customTags      String[] @map("custom_tags")       // User-defined tags
-  reasoning       String?  // AI classification reasoning
+  aiCategories String[] @map("ai_categories") // AI generated categories
+  aiConfidence Float    @default(0) @map("ai_confidence")
+  customTags   String[] @map("custom_tags") // User-defined tags
+  reasoning    String? // AI classification reasoning
 
   // Music Info
-  musicTitle      String?  @map("music_title")
-  musicId         String?  @map("music_id")
-  isOwnMusic      Boolean  @default(false) @map("is_own_music")
+  musicTitle String? @map("music_title")
+  musicId    String? @map("music_id")
+  isOwnMusic Boolean @default(false) @map("is_own_music")
 
   // Publishing Info
-  publishedAt     DateTime? @map("published_at")
-  duration        Int?     // seconds
+  publishedAt DateTime? @map("published_at")
+  duration    Int? // seconds
 
   // AI Analysis for this video
-  contentAnalysis Json?    @map("content_analysis")
+  contentAnalysis Json? @map("content_analysis")
 
   // Timestamps
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([analysisId])
   @@index([tiktokVideoId])
@@ -995,39 +995,39 @@ model VideoClassification {
 
 // Comparison Report - stores multi-account comparison results
 model ComparisonReport {
-  id              String   @id @default(uuid())
+  id String @id @default(uuid())
 
   // Report Info
-  title           String?
-  language        String   @default("ko")
-  accountCount    Int      @default(0) @map("account_count")
-  overallSummary  String?  @map("overall_summary") @db.Text
+  title          String?
+  language       String  @default("ko")
+  accountCount   Int     @default(0) @map("account_count")
+  overallSummary String? @map("overall_summary") @db.Text
 
   // Accounts in Comparison
-  accounts        ComparisonReportAccount[]
+  accounts ComparisonReportAccount[]
 
   // Comparison Results (JSON)
-  radarChartData  Json?    @map("radar_chart_data")
-  barChartData    Json?    @map("bar_chart_data")
-  rankingTable    Json?    @map("ranking_table")
-  rankings        Json?
+  radarChartData Json? @map("radar_chart_data")
+  barChartData   Json? @map("bar_chart_data")
+  rankingTable   Json? @map("ranking_table")
+  rankings       Json?
 
   // Significant Differences
-  significantDiffs Json?   @map("significant_diffs")
+  significantDiffs       Json? @map("significant_diffs")
   significantDifferences Json? @map("significant_differences")
-  benchmarkComparison Json? @map("benchmark_comparison")
+  benchmarkComparison    Json? @map("benchmark_comparison")
 
   // Strategic Analysis
-  strategicInsights Json?  @map("strategic_insights")
+  strategicInsights      Json? @map("strategic_insights")
   accountRecommendations Json? @map("account_recommendations")
   competitivePositioning Json? @map("competitive_positioning")
 
   // AI Comparative Analysis
-  aiComparison    Json?    @map("ai_comparison")
+  aiComparison Json? @map("ai_comparison")
 
   // Metadata
-  createdBy       String?  @map("created_by")
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdBy String?  @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@index([createdAt])
   @@map("comparison_reports")
@@ -1035,14 +1035,14 @@ model ComparisonReport {
 
 // Comparison Report Account - junction table
 model ComparisonReportAccount {
-  id              String   @id @default(uuid())
-  reportId        String   @map("report_id")
-  report          ComparisonReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  analysisId      String   @map("analysis_id")
-  analysis        AccountAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  id         String           @id @default(uuid())
+  reportId   String           @map("report_id")
+  report     ComparisonReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  analysisId String           @map("analysis_id")
+  analysis   AccountAnalysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
 
   // Order in comparison (1st, 2nd, etc.)
-  sortOrder       Int      @default(0) @map("sort_order")
+  sortOrder Int @default(0) @map("sort_order")
 
   @@unique([reportId, analysisId])
   @@map("comparison_report_accounts")
@@ -1050,14 +1050,14 @@ model ComparisonReportAccount {
 
 // Custom Tag - user-defined tags for video classification
 model DeepAnalysisCustomTag {
-  id              String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  name            String
-  createdBy       String?  @map("created_by")
+  name      String
+  createdBy String? @map("created_by")
 
-  usageCount      Int      @default(0) @map("usage_count")
+  usageCount Int @default(0) @map("usage_count")
 
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([name, createdBy])
   @@map("deep_analysis_custom_tags")
@@ -1069,13 +1069,13 @@ model DeepAnalysisCustomTag {
 
 // Prompt Refine Session - stores chat sessions for iterative prompt improvement
 model PromptRefineSession {
-  id        String   @id @default(uuid())
-  agentId   String   @map("agent_id") // Which agent prompt is being refined
-  title     String?  // Auto-generated or user-defined title
+  id      String  @id @default(uuid())
+  agentId String  @map("agent_id") // Which agent prompt is being refined
+  title   String? // Auto-generated or user-defined title
 
   // Chat messages stored as JSON array
   // [{role: "user"|"assistant", content: string, timestamp: ISO8601, improvedPrompts?: {...}}]
-  messages  Json     @default("[]")
+  messages Json @default("[]")
 
   // Snapshot of prompt at session start (for comparison)
   initialPrompt Json @map("initial_prompt") // {systemPrompt, templates}
@@ -1085,11 +1085,11 @@ model PromptRefineSession {
   improvementsCount   Int   @default(0) @map("improvements_count")
 
   // Session metadata
-  messageCount Int      @default(0) @map("message_count")
+  messageCount  Int       @default(0) @map("message_count")
   lastMessageAt DateTime? @map("last_message_at")
 
   // Organization
-  isFavorite Boolean @default(false) @map("is_favorite")
+  isFavorite Boolean  @default(false) @map("is_favorite")
   tags       String[] @default([])
 
   // Metadata
@@ -1128,20 +1128,20 @@ model HashtagCoOccurrence {
 
 // Discovered Account - accounts found from trend analysis
 model DiscoveredAccount {
-  id              String   @id @default(cuid())
-  platform        String   @default("tiktok")
-  accountId       String   @map("account_id") // TikTok user ID
-  username        String
-  displayName     String?  @map("display_name")
-  followerCount   Int?     @map("follower_count")
-  videoCount      Int?     @map("video_count")
-  avgEngagement   Float?   @map("avg_engagement")
-  discoveredFrom  String[] @map("discovered_from") // Keywords/hashtags that led to discovery
-  relevanceScore  Float    @map("relevance_score") // Calculated relevance to tracked topics
-  topHashtags     String[] @map("top_hashtags") // Their most used hashtags
-  contentOverlap  Float?   @map("content_overlap") // % overlap with tracked keywords
-  firstSeen       DateTime @default(now()) @map("first_seen")
-  lastUpdated     DateTime @updatedAt @map("last_updated")
+  id             String   @id @default(cuid())
+  platform       String   @default("tiktok")
+  accountId      String   @map("account_id") // TikTok user ID
+  username       String
+  displayName    String?  @map("display_name")
+  followerCount  Int?     @map("follower_count")
+  videoCount     Int?     @map("video_count")
+  avgEngagement  Float?   @map("avg_engagement")
+  discoveredFrom String[] @map("discovered_from") // Keywords/hashtags that led to discovery
+  relevanceScore Float    @map("relevance_score") // Calculated relevance to tracked topics
+  topHashtags    String[] @map("top_hashtags") // Their most used hashtags
+  contentOverlap Float?   @map("content_overlap") // % overlap with tracked keywords
+  firstSeen      DateTime @default(now()) @map("first_seen")
+  lastUpdated    DateTime @updatedAt @map("last_updated")
 
   @@unique([platform, accountId])
   @@index([relevanceScore])
@@ -1153,12 +1153,12 @@ model DiscoveredAccount {
 // Expansion Recommendation - AI-generated expansion suggestions
 model ExpansionRecommendation {
   id              String    @id @default(cuid())
-  type            String    // "keyword" | "account" | "hashtag"
+  type            String // "keyword" | "account" | "hashtag"
   sourceKeyword   String    @map("source_keyword") // The tracked keyword that triggered this
   recommendedItem String    @map("recommended_item") // The suggested keyword/account
-  score           Float     // Recommendation strength (0-100)
-  reason          String    // Human-readable explanation
-  metadata        Json?     // Additional context (engagement, trend direction, etc)
+  score           Float // Recommendation strength (0-100)
+  reason          String // Human-readable explanation
+  metadata        Json? // Additional context (engagement, trend direction, etc)
   status          String    @default("pending") // pending, accepted, dismissed
   createdAt       DateTime  @default(now()) @map("created_at")
   expiresAt       DateTime? @map("expires_at") // Recommendations can expire
@@ -1176,33 +1176,33 @@ model ExpansionRecommendation {
 
 // Exploration Strategy enum
 enum ExplorationStrategy {
-  NOVELTY     // 새로움 우선
-  POPULARITY  // 인기도 우선
-  BALANCED    // 균형
+  NOVELTY // 새로움 우선
+  POPULARITY // 인기도 우선
+  BALANCED // 균형
 }
 
 // Exploration Session - stores trend exploration results
 model ExplorationSession {
-  id            String              @id @default(cuid())
-  userId        String              @map("user_id")
-  seedKeyword   String              @map("seed_keyword")
-  depth         Int                 @default(3)
-  strategy      ExplorationStrategy @default(BALANCED)
+  id          String              @id @default(cuid())
+  userId      String              @map("user_id")
+  seedKeyword String              @map("seed_keyword")
+  depth       Int                 @default(3)
+  strategy    ExplorationStrategy @default(BALANCED)
 
   // Results Summary
-  totalDiscoveries    Int       @default(0) @map("total_discoveries")
-  totalSearches       Int       @default(0) @map("total_searches")
-  totalVideosAnalyzed Int       @default(0) @map("total_videos_analyzed")
-  durationMs          Int       @default(0) @map("duration_ms")
+  totalDiscoveries    Int @default(0) @map("total_discoveries")
+  totalSearches       Int @default(0) @map("total_searches")
+  totalVideosAnalyzed Int @default(0) @map("total_videos_analyzed")
+  durationMs          Int @default(0) @map("duration_ms")
 
   // Full Results (JSON for flexibility)
-  discoveries   Json?     // Array of Discovery objects
-  network       Json?     // {nodes: NetworkNode[], edges: NetworkEdge[]}
-  stats         Json?     // ExplorationStats object
+  discoveries Json? // Array of Discovery objects
+  network     Json? // {nodes: NetworkNode[], edges: NetworkEdge[]}
+  stats       Json? // ExplorationStats object
 
   // Metadata
-  createdAt     DateTime  @default(now()) @map("created_at")
-  expiresAt     DateTime? @map("expires_at") // Optional TTL for cleanup
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime? @map("expires_at") // Optional TTL for cleanup
 
   @@index([userId])
   @@index([seedKeyword])
@@ -1212,25 +1212,25 @@ model ExplorationSession {
 
 // User Keyword History Action enum
 enum UserKeywordAction {
-  SEARCHED  // 사용자가 검색함
-  TRACKED   // 트래킹에 추가함
-  CLICKED   // 관련 비디오 클릭함
-  EXPLORED  // 탐색 결과에서 봄
+  SEARCHED // 사용자가 검색함
+  TRACKED // 트래킹에 추가함
+  CLICKED // 관련 비디오 클릭함
+  EXPLORED // 탐색 결과에서 봄
 }
 
 // User Keyword History - tracks user's keyword interactions for novelty calculation
 model UserKeywordHistory {
-  id        String            @id @default(cuid())
-  userId    String            @map("user_id")
-  keyword   String
-  action    UserKeywordAction
+  id      String            @id @default(cuid())
+  userId  String            @map("user_id")
+  keyword String
+  action  UserKeywordAction
 
   // Interaction count (how many times this action was performed)
-  count     Int               @default(1)
+  count Int @default(1)
 
   // First and last interaction
-  firstSeen DateTime          @default(now()) @map("first_seen")
-  lastSeen  DateTime          @updatedAt @map("last_seen")
+  firstSeen DateTime @default(now()) @map("first_seen")
+  lastSeen  DateTime @updatedAt @map("last_seen")
 
   @@unique([userId, keyword, action])
   @@index([userId])
@@ -1245,26 +1245,26 @@ model UserKeywordHistory {
 
 // Saved Keyword - user's bookmarked keywords for tracking
 model SavedKeyword {
-  id        String        @id @default(cuid())
-  userId    String        @map("user_id")
-  keyword   String
-  platform  TrendPlatform @default(TIKTOK)
+  id       String        @id @default(cuid())
+  userId   String        @map("user_id")
+  keyword  String
+  platform TrendPlatform @default(TIKTOK)
 
   // Display settings
-  displayName String?     @map("display_name") // Custom label
-  color       String?     // Hex color for heatmap visualization
-  priority    Int         @default(0) // Sort order (higher = more important)
-  notes       String?     // User notes
+  displayName String? @map("display_name") // Custom label
+  color       String? // Hex color for heatmap visualization
+  priority    Int     @default(0) // Sort order (higher = more important)
+  notes       String? // User notes
 
   // Baseline metrics at save time (for comparison/growth tracking)
-  baselineViews          BigInt? @map("baseline_views")
-  baselineEngagement     Float?  @map("baseline_engagement")
-  baselineTotalVideos    Int?    @map("baseline_total_videos")
-  baselineViralCount     Int?    @map("baseline_viral_count")
+  baselineViews       BigInt? @map("baseline_views")
+  baselineEngagement  Float?  @map("baseline_engagement")
+  baselineTotalVideos Int?    @map("baseline_total_videos")
+  baselineViralCount  Int?    @map("baseline_viral_count")
 
   // Alert settings
-  alertEnabled     Boolean @default(false) @map("alert_enabled")
-  alertThreshold   Float?  @map("alert_threshold") // % change to trigger alert
+  alertEnabled   Boolean @default(false) @map("alert_enabled")
+  alertThreshold Float?  @map("alert_threshold") // % change to trigger alert
 
   // Tracking
   lastAnalyzedAt DateTime? @map("last_analyzed_at")
@@ -1272,7 +1272,7 @@ model SavedKeyword {
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   snapshots KeywordDailySnapshot[]
 
   @@unique([userId, keyword, platform])
@@ -1286,34 +1286,34 @@ model SavedKeyword {
 // Keyword Daily Snapshot - optimized for heatmap visualization
 // Stores daily aggregated metrics for saved keywords
 model KeywordDailySnapshot {
-  id              String   @id @default(cuid())
-  savedKeywordId  String   @map("saved_keyword_id")
-  date            DateTime @db.Date // Date-only for daily aggregation
+  id             String   @id @default(cuid())
+  savedKeywordId String   @map("saved_keyword_id")
+  date           DateTime @db.Date // Date-only for daily aggregation
 
   // Core metrics (for heatmap color intensity)
-  totalViews      BigInt   @map("total_views")
-  avgViews        BigInt   @map("avg_views")
-  avgEngagement   Float    @map("avg_engagement")
-  totalVideos     Int      @map("total_videos")
+  totalViews    BigInt @map("total_views")
+  avgViews      BigInt @map("avg_views")
+  avgEngagement Float  @map("avg_engagement")
+  totalVideos   Int    @map("total_videos")
 
   // Performance tiers (for detailed heatmap)
-  viralCount         Int   @map("viral_count")
-  highPerformingCount Int  @map("high_performing_count")
+  viralCount          Int @map("viral_count")
+  highPerformingCount Int @map("high_performing_count")
 
   // Growth metrics (compared to previous day)
-  viewsGrowth        Float? @map("views_growth")       // % change from previous day
-  engagementGrowth   Float? @map("engagement_growth")  // % change from previous day
-  videosGrowth       Float? @map("videos_growth")      // % change from previous day
+  viewsGrowth      Float? @map("views_growth") // % change from previous day
+  engagementGrowth Float? @map("engagement_growth") // % change from previous day
+  videosGrowth     Float? @map("videos_growth") // % change from previous day
 
   // Heatmap-optimized scores (0-100 scale for easy visualization)
-  trendScore         Int    @default(0) @map("trend_score")      // Overall trend strength
-  viralityScore      Int    @default(0) @map("virality_score")   // Viral potential
-  growthScore        Int    @default(0) @map("growth_score")     // Growth momentum
+  trendScore    Int @default(0) @map("trend_score") // Overall trend strength
+  viralityScore Int @default(0) @map("virality_score") // Viral potential
+  growthScore   Int @default(0) @map("growth_score") // Growth momentum
 
   // Top hashtags snapshot
-  topHashtags        Json?  @map("top_hashtags") // [{tag, count, avgEngagement}]
+  topHashtags Json? @map("top_hashtags") // [{tag, count, avgEngagement}]
 
-  createdAt          DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   // Relations
   savedKeyword SavedKeyword @relation(fields: [savedKeywordId], references: [id], onDelete: Cascade)

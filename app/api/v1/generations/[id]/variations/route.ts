@@ -3,6 +3,10 @@ import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { generateVideo, VeoGenerationParams, getVeoConfig } from "@/lib/veo";
+import { generateImage, convertAspectRatioForGeminiImage } from "@/lib/imagen";
+import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
+import { composeVideoWithAudio } from "@/lib/compose/client";
+import type { AgentContext } from "@/lib/agents/types";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -55,7 +59,7 @@ function generatePromptVariations(
   return variations.slice(0, count);
 }
 
-// Async video generation handler for variations (runs in background)
+// Async video generation handler for variations (runs in background) - Uses I2V mode + Audio Composition
 function startVariationVideoGeneration(
   generationId: string,
   params: {
@@ -64,6 +68,16 @@ function startVariationVideoGeneration(
     durationSeconds: number;
     aspectRatio: string;
     style?: string;
+    // Audio composition params (from seed generation)
+    audioAsset?: {
+      id: string;
+      s3Url: string;
+      filename: string;
+    } | null;
+    audioStartTime?: number;
+    audioDuration?: number;
+    campaignId?: string | null;
+    userId: string;
   }
 ) {
   // Don't await - let it run in background
@@ -74,7 +88,7 @@ function startVariationVideoGeneration(
         where: { id: generationId },
         data: {
           status: "PROCESSING",
-          progress: 10,
+          progress: 5,
         },
       });
 
@@ -82,11 +96,105 @@ function startVariationVideoGeneration(
       const veoConfig = getVeoConfig();
       console.log(`[Variation ${generationId}] VEO mode: ${veoConfig.mode} (${veoConfig.description})`);
 
+      // ============================================
+      // I2V Mode: Generate image first, then video
+      // ============================================
+      let generatedImageBase64: string | undefined;
+      let geminiVideoPrompt: string | undefined;
+
+      console.log(`[Variation ${generationId}] Starting I2V mode - Image generation first...`);
+
+      // Step 1: Use I2V Specialist Agent to generate optimized image prompt
+      const i2vAgent = createI2VSpecialistAgent();
+      const agentContext: AgentContext = {
+        workflow: {
+          artistName: "Brand",
+          platform: "tiktok",
+          language: "ko",
+          sessionId: `variation-${generationId}`,
+        },
+      };
+
+      const imagePromptResult = await i2vAgent.generateImagePrompt(
+        params.prompt,
+        agentContext,
+        { style: params.style }
+      );
+
+      if (imagePromptResult.success && imagePromptResult.data?.prompt) {
+        const geminiImagePrompt = imagePromptResult.data.prompt;
+        console.log(`[Variation ${generationId}] Gemini image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
+
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: { progress: 20 },
+        });
+
+        // Step 2: Generate image with Imagen using Gemini's prompt
+        try {
+          const imageResult = await generateImage({
+            prompt: geminiImagePrompt,
+            negativePrompt: params.negativePrompt,
+            aspectRatio: convertAspectRatioForGeminiImage(params.aspectRatio || "16:9"),
+            style: params.style,
+          });
+
+          if (imageResult.success && imageResult.imageBase64) {
+            generatedImageBase64 = imageResult.imageBase64;
+            console.log(`[Variation ${generationId}] Image generated successfully!`);
+
+            await prisma.videoGeneration.update({
+              where: { id: generationId },
+              data: { progress: 35 },
+            });
+
+            // Step 3: Use I2V Specialist Agent to generate video prompt with animation instructions
+            const videoPromptResult = await i2vAgent.generateVideoPrompt(
+              {
+                visual_style: params.style || "cinematic",
+                color_palette: [],
+                mood: "dynamic",
+                main_subject: params.prompt,
+              },
+              params.prompt,
+              agentContext,
+              { duration: params.durationSeconds || 8, style: params.style }
+            );
+
+            if (videoPromptResult.success && videoPromptResult.data?.prompt) {
+              geminiVideoPrompt = videoPromptResult.data.prompt;
+              console.log(`[Variation ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
+            }
+
+            await prisma.videoGeneration.update({
+              where: { id: generationId },
+              data: { progress: 40 },
+            });
+          } else {
+            console.warn(`[Variation ${generationId}] Image generation failed, falling back to T2V`);
+          }
+        } catch (imagenError) {
+          console.error(`[Variation ${generationId}] Imagen error:`, imagenError);
+        }
+      } else {
+        console.warn(`[Variation ${generationId}] Image prompt generation failed, falling back to T2V`);
+      }
+
+      // Step 4: Generate video with VEO (I2V if image available, T2V as fallback)
+      let finalVideoPrompt = params.prompt;
+      if (generatedImageBase64 && geminiVideoPrompt) {
+        finalVideoPrompt = geminiVideoPrompt;
+        console.log(`[Variation ${generationId}] Using I2V mode with generated image`);
+      } else {
+        console.log(`[Variation ${generationId}] Using T2V mode (fallback)`);
+      }
+
       const veoParams: VeoGenerationParams = {
-        prompt: params.prompt,
+        prompt: finalVideoPrompt,
         negativePrompt: params.negativePrompt,
         durationSeconds: params.durationSeconds,
         aspectRatio: params.aspectRatio as "16:9" | "9:16" | "1:1",
+        referenceImageBase64: generatedImageBase64, // This enables I2V in VEO
         style: params.style,
         model: veoConfig.model,
       };
@@ -105,16 +213,67 @@ function startVariationVideoGeneration(
         });
         const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
 
+        // ============================================
+        // Audio Composition (if audioAsset exists)
+        // ============================================
+        let finalOutputUrl = result.videoUrl;
+        let composedOutputUrl: string | undefined;
+
+        if (params.audioAsset?.s3Url) {
+          console.log(`[Variation ${generationId}] Starting audio composition with EC2 compose-engine...`);
+
+          await prisma.videoGeneration.update({
+            where: { id: generationId },
+            data: { progress: 75, status: "PROCESSING" },
+          });
+
+          try {
+            // Build S3 output key for composed video
+            const s3Folder = params.campaignId || `quick-create/${params.userId}`;
+            const outputS3Key = `${s3Folder}/composed_${generationId}.mp4`;
+
+            const composeResult = await composeVideoWithAudio({
+              video_url: result.videoUrl,
+              audio_url: params.audioAsset.s3Url,
+              audio_start_time: params.audioStartTime || 0,
+              audio_volume: 1.0,
+              fade_in: 0.5,
+              fade_out: 0.5,
+              output_s3_bucket: process.env.AWS_S3_BUCKET || 'hydra-assets-hybe',
+              output_s3_key: outputS3Key,
+            });
+
+            if (composeResult.status === 'completed' && composeResult.output_url) {
+              composedOutputUrl = composeResult.output_url;
+              finalOutputUrl = composedOutputUrl;
+              console.log(`[Variation ${generationId}] Audio composition complete: ${composedOutputUrl}`);
+            } else {
+              console.warn(`[Variation ${generationId}] Audio composition failed: ${composeResult.error}`);
+              // Don't fail the whole generation - video is still usable without audio
+            }
+          } catch (composeError) {
+            console.error(`[Variation ${generationId}] Audio composition error:`, composeError);
+            // Don't fail - video is still usable
+          }
+        }
+
         await prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "COMPLETED",
             progress: 100,
-            outputUrl: result.videoUrl,
+            outputUrl: result.videoUrl, // Original VEO video
+            composedOutputUrl: composedOutputUrl || null, // Video with audio
             qualityScore: 75 + Math.floor(Math.random() * 20),
             qualityMetadata: {
               ...existingMetadata,
               veoMetadata: result.metadata,
+              generationMode: generatedImageBase64 ? "I2V" : "T2V",
+              audioComposition: composedOutputUrl ? {
+                audioAssetId: params.audioAsset?.id,
+                audioAssetFilename: params.audioAsset?.filename,
+                composedAt: new Date().toISOString(),
+              } : null,
             },
           },
         });
@@ -370,13 +529,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
     );
 
-    // Start async video generation for all variations
+    // Start async video generation for all variations (with audio composition)
     createdGenerations.forEach(({ generation }) => {
       startVariationVideoGeneration(generation.id, {
         prompt: generation.prompt,
         negativePrompt: generation.negativePrompt || undefined,
         durationSeconds: generation.durationSeconds,
         aspectRatio: generation.aspectRatio,
+        // Pass audio info from seed generation for composition
+        audioAsset: seedGeneration.audioAsset ? {
+          id: seedGeneration.audioAsset.id,
+          s3Url: seedGeneration.audioAsset.s3Url,
+          filename: seedGeneration.audioAsset.filename,
+        } : null,
+        audioStartTime: seedGeneration.audioStartTime || 0,
+        audioDuration: seedGeneration.audioDuration || undefined,
+        campaignId: seedGeneration.campaignId,
+        userId: user.id,
       });
     });
 

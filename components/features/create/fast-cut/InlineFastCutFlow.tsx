@@ -6,7 +6,8 @@ import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useProcessingSessionStore } from "@/lib/stores/processing-session-store";
 import { useShallow } from "zustand/react/shallow";
-import { useAssets } from "@/lib/queries";
+import { useAssets, queryKeys } from "@/lib/queries";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -468,6 +469,7 @@ export function InlineFastCutFlow({
   const router = useRouter();
   const { language, translate } = useI18n();
   const toast = useToast();
+  const queryClient = useQueryClient();
 
   const { discover, analyze, setCreateType } = useWorkflowStore(
     useShallow((state) => ({
@@ -494,6 +496,7 @@ export function InlineFastCutFlow({
   const [prompt, setPrompt] = useState(initialPrompt);
   const [originalPrompt, setOriginalPrompt] = useState(initialPrompt);
   const [aspectRatio, setAspectRatio] = useState("9:16");
+  const [targetDuration, setTargetDuration] = useState(20); // Default 20 seconds, will be updated from script generation
   const [generatingScript, setGeneratingScript] = useState(false);
   const [scriptData, setScriptData] = useState<ScriptGenerationResponse | null>(null);
 
@@ -531,6 +534,7 @@ export function InlineFastCutFlow({
   const [analyzingAudio, setAnalyzingAudio] = useState(false);
   const [musicSkipped, setMusicSkipped] = useState(false);
   const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>("lyrics");
+  const [audioLyricsText, setAudioLyricsText] = useState<string | null>(null);
 
   // Step 4: Render state
   const [styleSetId, setStyleSetId] = useState<string>("viral_tiktok");
@@ -606,7 +610,7 @@ export function InlineFastCutFlow({
         artistName: analyze.artistStageName || analyze.artistName || "Artist",
         trendKeywords: editableKeywords,
         userPrompt: prompt.trim(),
-        targetDuration: 0,
+        targetDuration: targetDuration,
         language,
       });
 
@@ -615,11 +619,19 @@ export function InlineFastCutFlow({
         setTiktokSEO(result.tiktokSEO);
       }
 
+      // Set targetDuration from the actual generated script duration
+      // This ensures Music step uses the correct duration (max 30 seconds)
+      if (result.script.totalDuration) {
+        const cappedDuration = Math.min(result.script.totalDuration, 30);
+        setTargetDuration(cappedDuration);
+        console.log("[FastCut] Set targetDuration from script:", result.script.totalDuration, "s (capped to", cappedDuration, "s)");
+      }
+
       // Auto-select style set based on prompt (async, don't block flow)
       fastCutApi.selectStyleSet(prompt.trim(), { useAI: true, campaignId })
         .then((selection) => {
           setStyleSetId(selection.selected.id);
-          console.log("[FastCut] Auto-selected style set:", selection.selected.nameKo, "- Reason:", selection.selection.reasoning);
+          console.log("[FastCut] Auto-selected style set:", selection.selected.nameKo);
         })
         .catch((err) => {
           console.warn("[FastCut] Style set auto-selection failed, using default:", err);
@@ -757,12 +769,58 @@ export function InlineFastCutFlow({
     setAnalyzingAudio(true);
 
     try {
-      const targetDuration = scriptData?.script?.totalDuration || 15;
-      const analysis = await fastCutApi.analyzeAudioBestSegment(audio.id, targetDuration);
-      setAudioAnalysis(analysis);
-      setAudioStartTime(analysis.suggestedStartTime);
+      // Run audio analysis and lyrics extraction in parallel for better performance
+      const [analysisResult, lyricsResult] = await Promise.allSettled([
+        fastCutApi.analyzeAudioBestSegment(audio.id, targetDuration),
+        fastCutApi.extractLyrics(audio.id, { languageHint: 'auto' }),
+      ]);
+
+      // Handle audio analysis result
+      if (analysisResult.status === 'fulfilled') {
+        setAudioAnalysis(analysisResult.value);
+        setAudioStartTime(analysisResult.value.suggestedStartTime);
+      } else {
+        console.warn("Audio analysis failed:", analysisResult.reason);
+        setAudioStartTime(0);
+      }
+
+      // Handle lyrics extraction result
+      if (lyricsResult.status === 'fulfilled') {
+        const { lyrics, cached } = lyricsResult.value;
+        if (lyrics && !lyrics.isInstrumental && lyrics.segments.length > 0) {
+          console.log("[FastCut] Lyrics extracted:", {
+            cached,
+            language: lyrics.language,
+            segmentCount: lyrics.segments.length,
+          });
+
+          // Store lyrics text for display in Content Summary
+          const lyricsText = lyrics.segments.map((s) => s.text).join("\n");
+          setAudioLyricsText(lyricsText);
+          console.log("[FastCut] 🎤 Lyrics text saved for display:", {
+            textLength: lyricsText.length,
+            preview: lyricsText.substring(0, 100),
+          });
+
+          // Invalidate assets cache so the UI updates with new lyrics metadata
+          // This ensures FastCutMusicStep can display the lyrics preview
+          if (!cached) {
+            // Invalidate all asset queries for this campaign to ensure UI updates
+            queryClient.invalidateQueries({ queryKey: queryKeys.assets(campaignId) });
+          }
+        } else if (lyrics?.isInstrumental) {
+          console.log("[FastCut] Audio is instrumental (no lyrics)");
+          setAudioLyricsText(null);
+        } else {
+          console.log("[FastCut] No lyrics found in audio");
+          setAudioLyricsText(null);
+        }
+      } else {
+        console.warn("[FastCut] Lyrics extraction failed:", lyricsResult.reason);
+        setAudioLyricsText(null);
+      }
     } catch (err) {
-      console.warn("Audio analysis failed:", err);
+      console.warn("Audio processing failed:", err);
       setAudioStartTime(0);
     } finally {
       setAnalyzingAudio(false);
@@ -834,6 +892,7 @@ export function InlineFastCutFlow({
 
       // Start render - audioAssetId is optional when music is skipped
       console.log("[FastCut] 🚀 Starting render API call...");
+      console.log("[FastCut] 🎤 Subtitle mode:", subtitleMode, "→ useAudioLyrics:", subtitleMode === "lyrics");
       const renderResult = await fastCutApi.startRender({
         generationId,
         campaignId,
@@ -843,7 +902,7 @@ export function InlineFastCutFlow({
         // Use style set instead of individual effectPreset
         styleSetId,
         aspectRatio,
-        targetDuration: 0,
+        targetDuration,
         audioStartTime: musicSkipped ? 0 : audioStartTime,
         prompt,
         searchKeywords: editableKeywords,
@@ -862,12 +921,25 @@ export function InlineFastCutFlow({
         console.log("[FastCut] selectedStyleSet:", selectedStyleSet?.name);
         console.log("[FastCut] generationId:", renderResult.generationId);
 
+        // Use lyrics text for display when subtitleMode is "lyrics", otherwise use AI script
+        const displayScript = subtitleMode === "lyrics" && audioLyricsText
+          ? audioLyricsText
+          : scriptData.script.lines.map(l => l.text).join("\n");
+
+        console.log("[FastCut] 🎤 Session script source:", {
+          subtitleMode,
+          hasAudioLyricsText: !!audioLyricsText,
+          usingLyrics: subtitleMode === "lyrics" && !!audioLyricsText,
+          scriptPreview: displayScript.substring(0, 100),
+        });
+
         const sessionData = {
           campaignId,
           campaignName,
           generationId: renderResult.generationId,
+          contentType: "fast-cut" as const, // Fast Cut workflow
           content: {
-            script: scriptData.script.lines.map(l => l.text).join("\n"),
+            script: displayScript,
             images: selectedImages.map((img) => ({
               id: img.id,
               url: imageUrlMap.get(img.id) || img.sourceUrl,
@@ -1098,6 +1170,7 @@ export function InlineFastCutFlow({
                 audioMatches={audioMatches}
                 selectedAudio={selectedAudio}
                 audioStartTime={audioStartTime}
+                videoDuration={targetDuration}
                 audioAnalysis={audioAnalysis}
                 matchingMusic={matchingMusic}
                 analyzingAudio={analyzingAudio}
@@ -1106,7 +1179,9 @@ export function InlineFastCutFlow({
                 subtitleMode={subtitleMode}
                 onSelectAudio={handleSelectAudio}
                 onSetAudioStartTime={setAudioStartTime}
+                onSetVideoDuration={setTargetDuration}
                 onSetSubtitleMode={setSubtitleMode}
+                onSetAudioLyricsText={setAudioLyricsText}
                 onSkipMusic={handleSkipMusic}
                 onUnskipMusic={handleUnskipMusic}
                 onNext={handleNext}

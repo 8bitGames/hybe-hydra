@@ -612,11 +612,13 @@ export default function StartPage() {
 
   // Proceed to next step based on content type
   const handleProceedToAnalyze = () => {
-    // CRITICAL: Sync start data to session store BEFORE transferToAnalyze changes the stage
-    // This ensures start data is persisted even if the unmount sync doesn't complete in time
-    syncNow();
-
+    // CRITICAL: transferToAnalyze() must be called BEFORE syncNow()
+    // because it sets analyze.optimizedPrompt from start.source.aiAnalysis.suggestedApproach
+    // If syncNow() is called first, the optimizedPrompt won't be saved to session
     transferToAnalyze();
+
+    // Sync AFTER transferToAnalyze to include analyze.optimizedPrompt in session data
+    syncNow();
 
     // Route based on content type
     if (start.contentType === "fast-cut") {

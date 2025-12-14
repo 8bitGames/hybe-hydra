@@ -26,6 +26,9 @@ const StyleSetSelectorOutputSchema = z.object({
   confidence: z.number().min(0).max(1),
   reasoning: z.string(),
   alternativeIds: z.array(z.string()).optional(),
+  // Duration recommendation (15-25 seconds)
+  recommendedDuration: z.number().min(15).max(25).optional(),
+  durationReasoning: z.string().optional(),
 });
 
 type StyleSetSelectorOutput = z.infer<typeof StyleSetSelectorOutputSchema>;
@@ -51,20 +54,27 @@ const StyleSetSelectorConfig: AgentConfig<StyleSetSelectorInput, StyleSetSelecto
   },
 
   prompts: {
-    system: `You are a video style expert. Analyze user prompts and select the most appropriate style set.
+    system: `You are a video style and duration expert. Analyze user prompts and select the most appropriate style set AND recommend optimal video duration.
 
 Available Style Sets:
 ${STYLE_SET_DESCRIPTIONS}
 
+Duration Guidelines (15-25 seconds):
+- 15-17초: 간단한 제품 소개, 한 줄 메시지, 임팩트 강조
+- 18-20초: 일반적인 콘텐츠, 2-3개 포인트 전달, 짧은 스토리
+- 21-23초: 상세 설명, 비교/리뷰, 감성적 스토리텔링
+- 24-25초: 복잡한 내용, 튜토리얼, 다단계 정보 전달
+
 Rules:
 1. Analyze the prompt's mood, purpose, and target audience
 2. Select ONE style set that best matches
-3. Provide confidence score (0.0-1.0)
-4. Suggest 1-2 alternatives if confidence is below 0.8
-5. Respond in JSON format only`,
+3. Recommend optimal duration (15-25 seconds) based on content complexity
+4. Provide confidence score (0.0-1.0)
+5. Suggest 1-2 alternatives if confidence is below 0.8
+6. Respond in JSON format only`,
 
     templates: {
-      select: `Analyze this video concept and select the best style set:
+      select: `Analyze this video concept and select the best style set with optimal duration:
 
 "{{prompt}}"
 
@@ -72,8 +82,10 @@ Respond with JSON:
 {
   "styleSetId": "selected_id",
   "confidence": 0.85,
-  "reasoning": "Brief explanation",
-  "alternativeIds": ["alt1", "alt2"]
+  "reasoning": "Brief style explanation",
+  "alternativeIds": ["alt1", "alt2"],
+  "recommendedDuration": 20,
+  "durationReasoning": "Brief duration explanation"
 }`,
     },
   },
@@ -108,12 +120,19 @@ export class StyleSetSelectorAgent extends BaseAgent<StyleSetSelectorInput, Styl
       if (result.success && result.data) {
         // Validate the returned ID exists
         if (STYLE_SETS_BY_ID[result.data.styleSetId]) {
-          console.log(`[StyleSetSelector] AI selected: ${result.data.styleSetId} (confidence: ${result.data.confidence})`);
+          // Clamp duration to valid range
+          const recommendedDuration = result.data.recommendedDuration
+            ? Math.max(15, Math.min(25, result.data.recommendedDuration))
+            : 20;
+
+          console.log(`[StyleSetSelector] AI selected: ${result.data.styleSetId} (confidence: ${result.data.confidence}, duration: ${recommendedDuration}s)`);
           return {
             styleSetId: result.data.styleSetId,
             confidence: result.data.confidence,
             reasoning: result.data.reasoning,
             alternativeIds: result.data.alternativeIds?.filter(id => STYLE_SETS_BY_ID[id]),
+            recommendedDuration,
+            durationReasoning: result.data.durationReasoning,
           };
         } else {
           console.warn(`[StyleSetSelector] AI returned invalid styleSetId: ${result.data.styleSetId}, falling back to keywords`);
@@ -191,14 +210,23 @@ export function selectStyleSetByKeywords(prompt: string): StyleSetSelectionResul
       confidence: 0.3,
       reasoning: 'No keyword matches found, using default viral_tiktok style',
       alternativeIds: ['cinematic_mood', 'clean_minimal'],
+      recommendedDuration: 20,
+      durationReasoning: '기본 권장 길이',
     };
   }
+
+  // Estimate duration based on style intensity
+  const estimatedDuration = best.set.audio.intensity === 'high' ? 17
+    : best.set.audio.intensity === 'low' ? 23
+    : 20;
 
   return {
     styleSetId: best.set.id,
     confidence,
     reasoning: `Matched ${best.score} keywords for ${best.set.nameKo} style`,
     alternativeIds: alternativeIds.length > 0 ? alternativeIds : undefined,
+    recommendedDuration: estimatedDuration,
+    durationReasoning: `${best.set.nameKo} 스타일에 적합한 길이`,
   };
 }
 

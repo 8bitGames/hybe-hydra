@@ -5,6 +5,8 @@ import { Prisma } from '@prisma/client';
 import { submitRenderToModal, ModalRenderRequest, isLocalMode, isBatchMode } from '@/lib/compose/client';
 import { getStyleSetById, styleSetToRenderSettings } from '@/lib/fast-cut/style-sets';
 import { getScriptFromAssetLyrics } from '@/lib/subtitle-styles/lyrics-converter';
+import { createLyricsExtractorAgent, toLyricsData } from '@/lib/agents/analyzers';
+import { getPresignedUrl } from '@/lib/storage';
 
 const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 'hydra-assets-hybe';
 
@@ -256,25 +258,142 @@ export async function POST(request: NextRequest) {
     console.log(`${LOG_PREFIX} Audio lookup took ${Date.now() - audioLookupStartTime}ms`);
 
     // Resolve script - either from provided script or from audio asset lyrics
+    // When useAudioLyrics is true, lyrics take priority over AI-generated script
     let script = providedScript;
-    if (useAudioLyrics && !providedScript?.lines?.length && audioAsset?.metadata) {
-      console.log(`${LOG_PREFIX} useAudioLyrics enabled - loading lyrics from audio asset`);
-      const lyricsScript = getScriptFromAssetLyrics(
-        audioAsset.metadata as Record<string, unknown>,
-        {
-          audioStartTime,
-          videoDuration: targetDuration,
+
+    // Debug: Log lyrics resolution attempt
+    console.log(`${LOG_PREFIX} 🎤 Lyrics resolution:`, {
+      useAudioLyrics,
+      hasAudioAsset: !!audioAsset,
+      hasMetadata: !!audioAsset?.metadata,
+      audioStartTime,
+      targetDuration,
+    });
+
+    if (useAudioLyrics && audioAssetIdClean) {
+      let metadata = audioAsset?.metadata as Record<string, unknown> || {};
+      let hasLyricsInMetadata = !!metadata.lyrics;
+      let lyricsData = metadata.lyrics as { segments?: unknown[]; isInstrumental?: boolean } | undefined;
+
+      console.log(`${LOG_PREFIX} 🎤 Audio metadata check:`, {
+        hasLyricsInMetadata,
+        isInstrumental: lyricsData?.isInstrumental,
+        segmentCount: Array.isArray(lyricsData?.segments) ? lyricsData.segments.length : 0,
+      });
+
+      // ON-DEMAND LYRICS EXTRACTION: If useAudioLyrics is true but no lyrics exist, extract them now
+      if (!hasLyricsInMetadata || !lyricsData?.segments?.length) {
+        console.log(`${LOG_PREFIX} 🎤 No lyrics in metadata - attempting on-demand extraction...`);
+
+        try {
+          // Get fresh audio asset data with s3Key
+          const audioAssetFull = await prisma.asset.findUnique({
+            where: { id: audioAssetIdClean },
+            select: { id: true, s3Key: true, s3Url: true, metadata: true }
+          });
+
+          if (audioAssetFull?.s3Key) {
+            // Generate fresh presigned URL
+            const audioUrl = await getPresignedUrl(audioAssetFull.s3Key, 3600);
+
+            // Create and run lyrics extractor
+            const extractor = createLyricsExtractorAgent();
+            const agentContext = {
+              workflow: {
+                platform: 'tiktok' as const,
+                language: 'ko' as const,
+                artistName: 'unknown',
+              },
+            };
+
+            console.log(`${LOG_PREFIX} 🎤 Extracting lyrics from audio...`);
+            const extractionStartTime = Date.now();
+
+            const result = await extractor.extractLyricsFromUrl(
+              audioUrl,
+              { languageHint: 'auto', audioDuration: targetDuration * 2 },
+              agentContext
+            );
+
+            console.log(`${LOG_PREFIX} 🎤 Lyrics extraction completed in ${Date.now() - extractionStartTime}ms`);
+
+            if (result.success && result.data && !result.data.isInstrumental) {
+              const extractedLyrics = toLyricsData(result.data);
+
+              // Store lyrics in asset metadata for future use
+              const existingMetadata = (audioAssetFull.metadata || {}) as Record<string, unknown>;
+              const updatedMetadata = JSON.parse(JSON.stringify({
+                ...existingMetadata,
+                hasLyrics: !extractedLyrics.isInstrumental,
+                lyricsLanguage: extractedLyrics.language,
+                lyricsExtractedAt: extractedLyrics.extractedAt,
+                lyrics: extractedLyrics,
+              })) as Prisma.InputJsonValue;
+
+              await prisma.asset.update({
+                where: { id: audioAssetIdClean },
+                data: { metadata: updatedMetadata },
+              });
+
+              // Update local variables for immediate use
+              metadata = updatedMetadata as Record<string, unknown>;
+              hasLyricsInMetadata = true;
+              lyricsData = extractedLyrics;
+
+              console.log(`${LOG_PREFIX} ✅ Lyrics extracted and saved:`, {
+                segmentCount: extractedLyrics.segments?.length || 0,
+                language: extractedLyrics.language,
+                isInstrumental: extractedLyrics.isInstrumental,
+              });
+            } else {
+              console.log(`${LOG_PREFIX} ⚠️ Lyrics extraction returned no usable lyrics:`, {
+                success: result.success,
+                hasData: !!result.data,
+                isInstrumental: result.data?.isInstrumental,
+                error: result.error,
+              });
+            }
+          } else {
+            console.log(`${LOG_PREFIX} ⚠️ Cannot extract lyrics - audio asset has no s3Key`);
+          }
+        } catch (extractError) {
+          console.error(`${LOG_PREFIX} ❌ On-demand lyrics extraction failed:`, extractError);
+          // Continue without lyrics - will fall back to AI script
         }
-      );
-      if (lyricsScript && lyricsScript.lines.length > 0) {
-        script = lyricsScript;
-        console.log(`${LOG_PREFIX} Lyrics loaded from audio asset:`, {
-          linesCount: lyricsScript.lines.length,
-          firstLine: lyricsScript.lines[0]?.text?.substring(0, 30) + '...',
-        });
-      } else {
-        console.log(`${LOG_PREFIX} No lyrics found in audio asset metadata`);
       }
+
+      // Now try to get lyrics script (either from existing metadata or freshly extracted)
+      if (hasLyricsInMetadata && lyricsData?.segments?.length) {
+        console.log(`${LOG_PREFIX} useAudioLyrics enabled - loading lyrics from audio asset (lyrics take priority over AI script)`);
+        const lyricsScript = getScriptFromAssetLyrics(
+          metadata,
+          {
+            audioStartTime,
+            videoDuration: targetDuration,
+          }
+        );
+
+        console.log(`${LOG_PREFIX} 🎤 getScriptFromAssetLyrics result:`, {
+          hasResult: !!lyricsScript,
+          linesCount: lyricsScript?.lines?.length ?? 0,
+          firstLine: lyricsScript?.lines?.[0]?.text?.substring(0, 50),
+        });
+
+        if (lyricsScript && lyricsScript.lines.length > 0) {
+          script = lyricsScript;
+          console.log(`${LOG_PREFIX} ✅ Lyrics loaded from audio asset:`, {
+            linesCount: lyricsScript.lines.length,
+            firstLine: lyricsScript.lines[0]?.text?.substring(0, 30) + '...',
+            replacedAiScript: !!(providedScript?.lines?.length),
+          });
+        } else {
+          console.log(`${LOG_PREFIX} ❌ No lyrics found/returned - falling back to AI script`);
+        }
+      } else {
+        console.log(`${LOG_PREFIX} ❌ No usable lyrics available - falling back to AI script`);
+      }
+    } else {
+      console.log(`${LOG_PREFIX} ⚠️ Skipping lyrics (useAudioLyrics=${useAudioLyrics}, hasAudioAsset=${!!audioAssetIdClean})`);
     }
 
     // Build fastCutData to store all fast cut settings for variations

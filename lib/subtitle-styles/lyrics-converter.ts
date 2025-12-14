@@ -45,8 +45,11 @@ export function lyricsToSubtitles(
   // Process each segment
   for (const segment of lyrics.segments) {
     // Calculate adjusted times with audio offset
-    const adjustedStart = segment.start + audioStartTime;
-    const adjustedEnd = segment.end + audioStartTime;
+    // Subtract audioStartTime because lyrics timestamps are relative to audio file start,
+    // but video playback starts at audioStartTime into the audio
+    // Example: audioStartTime=60, segment.start=65 → video time = 65-60 = 5
+    const adjustedStart = segment.start - audioStartTime;
+    const adjustedEnd = segment.end - audioStartTime;
 
     // Skip segments that start after video ends
     if (adjustedStart >= videoEnd) {
@@ -480,8 +483,11 @@ export function lyricsToRenderScript(
 
   for (const segment of lyrics.segments) {
     // Calculate adjusted times with audio offset
-    const adjustedStart = segment.start + audioStartTime;
-    const adjustedEnd = segment.end + audioStartTime;
+    // Subtract audioStartTime because lyrics timestamps are relative to audio file start,
+    // but video playback starts at audioStartTime into the audio
+    // Example: audioStartTime=60, segment.start=65 → video time = 65-60 = 5
+    const adjustedStart = segment.start - audioStartTime;
+    const adjustedEnd = segment.end - audioStartTime;
 
     // Skip segments that start after video ends (if videoDuration provided)
     if (videoDuration && adjustedStart >= videoDuration) {

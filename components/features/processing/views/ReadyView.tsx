@@ -34,6 +34,10 @@ import {
   X,
   Star,
   Check,
+  Palette,
+  Camera,
+  Wand2,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -46,7 +50,7 @@ import {
   STYLE_SETS,
 } from "@/lib/stores/processing-session-store";
 
-// Icon mapping for style sets
+// Icon mapping for FastCut style sets
 const STYLE_ICONS: Record<string, LucideIcon> = {
   viral_tiktok: Zap,
   cinematic_mood: Film,
@@ -57,6 +61,82 @@ const STYLE_ICONS: Record<string, LucideIcon> = {
   dreamy_soft: Cloud,
   bold_impact: Bold,
 };
+
+// AI Video style presets (8 individual presets matching FastCut UI)
+const AI_STYLE_PRESETS = [
+  {
+    id: "soft_pastel",
+    name: "Soft Pastel",
+    nameKo: "소프트 파스텔",
+    description: "Gentle, muted pastel tones",
+    descriptionKo: "부드럽고 차분한 파스텔 톤",
+    icon: Palette,
+    category: "mood",
+  },
+  {
+    id: "dark_moody",
+    name: "Dark Moody",
+    nameKo: "다크 무드",
+    description: "Deep shadows, dramatic contrast",
+    descriptionKo: "깊은 그림자와 극적인 대비",
+    icon: Cloud,
+    category: "mood",
+  },
+  {
+    id: "bright_cheerful",
+    name: "Bright & Cheerful",
+    nameKo: "밝고 경쾌한",
+    description: "Vibrant, uplifting colors",
+    descriptionKo: "활기차고 밝은 컬러",
+    icon: Zap,
+    category: "mood",
+  },
+  {
+    id: "golden_hour",
+    name: "Golden Hour",
+    nameKo: "골든 아워",
+    description: "Warm sunset lighting",
+    descriptionKo: "따뜻한 일몰 조명",
+    icon: Lightbulb,
+    category: "lighting",
+  },
+  {
+    id: "cinematic_film",
+    name: "Cinematic Film",
+    nameKo: "시네마틱 필름",
+    description: "Classic movie look",
+    descriptionKo: "클래식 영화 스타일",
+    icon: Film,
+    category: "cinematic",
+  },
+  {
+    id: "teal_orange",
+    name: "Teal & Orange",
+    nameKo: "틸 앤 오렌지",
+    description: "Hollywood color grading",
+    descriptionKo: "할리우드 컬러 그레이딩",
+    icon: Camera,
+    category: "cinematic",
+  },
+  {
+    id: "dreamy_blur",
+    name: "Dreamy Blur",
+    nameKo: "드리미 블러",
+    description: "Soft, ethereal atmosphere",
+    descriptionKo: "몽환적인 분위기",
+    icon: Wand2,
+    category: "effect",
+  },
+  {
+    id: "high_contrast",
+    name: "High Contrast",
+    nameKo: "하이 컨트라스트",
+    description: "Bold, punchy visuals",
+    descriptionKo: "강렬하고 임팩트 있는 비주얼",
+    icon: Bold,
+    category: "effect",
+  },
+];
 
 interface ReadyViewProps {
   className?: string;
@@ -78,6 +158,11 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
   const toggleStyleSelection = useProcessingSessionStore((state) => state.toggleStyleSelection);
   const selectAllStyles = useProcessingSessionStore((state) => state.selectAllStyles);
   const clearStyleSelection = useProcessingSessionStore((state) => state.clearStyleSelection);
+  const setSelectedStyles = useProcessingSessionStore((state) => state.setSelectedStyles);
+
+  // Content type check
+  const contentType = session?.contentType;
+  const isAIVideo = contentType === "ai_video";
 
   // Video player state
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -93,6 +178,28 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
   // Playable video URL (fresh presigned URL for video player)
   const [playableVideoUrl, setPlayableVideoUrl] = useState<string | null>(null);
   const [isLoadingVideoUrl, setIsLoadingVideoUrl] = useState(false);
+
+  // AI Video variation state - individual preset selection like FastCut
+  const [selectedAIPresets, setSelectedAIPresets] = useState<string[]>([]);
+
+  // Toggle AI preset selection
+  const toggleAIPreset = useCallback((presetId: string) => {
+    setSelectedAIPresets((prev) =>
+      prev.includes(presetId)
+        ? prev.filter((id) => id !== presetId)
+        : [...prev, presetId]
+    );
+  }, []);
+
+  // Select all AI presets
+  const selectAllAIPresets = useCallback(() => {
+    setSelectedAIPresets(AI_STYLE_PRESETS.map((p) => p.id));
+  }, []);
+
+  // Clear AI preset selection
+  const clearAIPresetSelection = useCallback(() => {
+    setSelectedAIPresets([]);
+  }, []);
 
   // Fetch fresh presigned URL for video playback
   useEffect(() => {
@@ -220,7 +327,16 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
 
   // Handle start generation from inline panel
   const handleStartVariationGeneration = useCallback(async () => {
-    if (selectedStyles.length === 0) return;
+    if (isAIVideo) {
+      // AI Video: Use selectedAIPresets
+      if (selectedAIPresets.length === 0) return;
+      // Store the selected presets as styles for ProcessingFlowPage to use
+      setSelectedStyles(selectedAIPresets);
+    } else {
+      // FastCut: Use selectedStyles
+      if (selectedStyles.length === 0) return;
+    }
+
     setIsStartingGeneration(true);
     try {
       if (onStartGeneration) {
@@ -229,7 +345,7 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
     } finally {
       setIsStartingGeneration(false);
     }
-  }, [selectedStyles.length, onStartGeneration]);
+  }, [isAIVideo, selectedAIPresets, selectedStyles.length, setSelectedStyles, onStartGeneration]);
 
   // Get generation progress stats
   const progressStats = useMemo(() => {
@@ -240,17 +356,27 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
     return { total, completed, failed, inProgress };
   }, [variations]);
 
-  // Calculate estimated time
+  // Calculate estimated time (different for AI Video vs FastCut)
   const estimatedTime = useMemo(() => {
-    const count = selectedStyles.length;
-    if (count === 0) return null;
-    const minutesPerVideo = 2;
-    const totalMinutes = count * minutesPerVideo;
-    return isKorean ? `약 ${totalMinutes}분` : `~${totalMinutes} min`;
-  }, [selectedStyles.length, isKorean]);
+    if (isAIVideo) {
+      const count = selectedAIPresets.length;
+      if (count === 0) return null;
+      const minutesPerVideo = 3; // AI Video takes longer
+      const totalMinutes = count * minutesPerVideo;
+      return isKorean ? `약 ${totalMinutes}분` : `~${totalMinutes} min`;
+    } else {
+      const count = selectedStyles.length;
+      if (count === 0) return null;
+      const minutesPerVideo = 2;
+      const totalMinutes = count * minutesPerVideo;
+      return isKorean ? `약 ${totalMinutes}분` : `~${totalMinutes} min`;
+    }
+  }, [isAIVideo, selectedAIPresets.length, selectedStyles.length, isKorean]);
 
-  // Can start generation check
-  const canStart = selectedStyles.length > 0 && !isStartingGeneration;
+  // Can start generation check (different for AI Video vs FastCut)
+  const canStart = isAIVideo
+    ? selectedAIPresets.length > 0 && !isStartingGeneration
+    : selectedStyles.length > 0 && !isStartingGeneration;
 
   if (!session || !originalVideo) {
     return null;
@@ -466,9 +592,13 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
                         ? (isKorean
                           ? "선택한 스타일로 영상을 생성하고 있습니다"
                           : "Generating videos with your selected styles")
-                        : (isKorean
-                          ? "8가지 스타일로 다양한 버전 생성 후 비교하여 선택"
-                          : "Generate multiple versions with 8 different styles and compare")}
+                        : isAIVideo
+                          ? (isKorean
+                            ? "8가지 스타일로 다양한 AI 영상 변형 생성"
+                            : "Generate AI video variations with 8 different styles")
+                          : (isKorean
+                            ? "8가지 스타일로 다양한 버전 생성 후 비교하여 선택"
+                            : "Generate multiple versions with 8 different styles and compare")}
                     </p>
                     {!isGeneratingVariations && (
                       <div className="flex items-center text-sm text-neutral-400">
@@ -509,133 +639,264 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
           <Card className="border-2 border-neutral-200 bg-white">
             <CardContent className="p-6">
               {!isGeneratingVariations ? (
-                /* Style Selection Mode */
-                <>
-                  {/* Header */}
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-neutral-900">
-                      {isKorean ? "생성할 스타일 선택" : "Select Styles to Generate"}
-                      <span className="text-neutral-400 font-normal ml-2">(1-8개)</span>
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          selectAllStyles();
-                        }}
-                      >
-                        {isKorean ? "전체 선택" : "Select All"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          clearStyleSelection();
-                        }}
-                      >
-                        {isKorean ? "선택 해제" : "Clear"}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Style grid - wider layout */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-                    {STYLE_SETS.map((style) => {
-                      const Icon: LucideIcon = STYLE_ICONS[style.id] || Zap;
-                      const isSelected = selectedStyles.includes(style.id);
-
-                      return (
-                        <div
-                          key={style.id}
-                          className={cn(
-                            "relative p-4 rounded-xl border-2 cursor-pointer transition-all",
-                            isSelected
-                              ? "border-neutral-900 bg-neutral-50"
-                              : "border-neutral-200 hover:border-neutral-300 bg-white"
-                          )}
+                /* Style Selection Mode - Different UI for AI Video vs FastCut */
+                isAIVideo ? (
+                  /* AI Video: 8 Individual Preset Selection (like FastCut) */
+                  <>
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-lg font-semibold text-neutral-900">
+                        {isKorean ? "AI 스타일 선택" : "Select AI Styles"}
+                        <span className="text-neutral-400 font-normal ml-2">(1-8개)</span>
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
-                            toggleStyleSelection(style.id);
+                            selectAllAIPresets();
                           }}
                         >
-                          {/* Checkbox */}
-                          <div className="absolute top-2 right-2">
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={() => toggleStyleSelection(style.id)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="data-[state=checked]:bg-neutral-900 data-[state=checked]:border-neutral-900"
-                            />
-                          </div>
-
-                          {/* Icon */}
-                          <div
-                            className={cn(
-                              "w-10 h-10 rounded-lg flex items-center justify-center mb-3 mx-auto",
-                              isSelected ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600"
-                            )}
-                          >
-                            <Icon className="w-5 h-5" />
-                          </div>
-
-                          {/* Text */}
-                          <h4 className="font-medium text-neutral-900 text-sm text-center mb-1">
-                            {isKorean ? style.nameKo : style.name}
-                          </h4>
-                          <p className="text-xs text-neutral-500 text-center line-clamp-2">
-                            {isKorean ? style.descriptionKo : style.description}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Footer info & Start Button */}
-                  <div className="mt-6 pt-4 border-t border-neutral-200 flex items-center justify-between">
-                    <div className="flex items-center gap-6 text-sm">
-                      <span className="text-neutral-600">
-                        {isKorean ? "선택됨:" : "Selected:"}{" "}
-                        <span className="font-semibold text-neutral-900">{selectedStyles.length}개</span>
-                      </span>
-                      {estimatedTime && (
-                        <span className="text-neutral-500">
-                          {isKorean ? "예상 시간:" : "Est. time:"} {estimatedTime}
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1.5 text-neutral-500">
-                        <Lightbulb className="w-4 h-4" />
-                        {isKorean
-                          ? "3-5개 스타일 선택 시 효과적인 A/B 테스트가 가능합니다"
-                          : "Selecting 3-5 styles enables effective A/B testing"}
-                      </span>
+                          {isKorean ? "전체 선택" : "Select All"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearAIPresetSelection();
+                          }}
+                        >
+                          {isKorean ? "선택 해제" : "Clear"}
+                        </Button>
+                      </div>
                     </div>
 
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleStartVariationGeneration();
-                      }}
-                      disabled={!canStart}
-                      size="lg"
-                      className="bg-neutral-900 hover:bg-neutral-800 text-white"
-                    >
-                      {isStartingGeneration ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          {isKorean ? "시작 중..." : "Starting..."}
-                        </>
-                      ) : (
-                        <>
-                          <Rocket className="w-4 h-4 mr-2" />
-                          {isKorean ? "베리에이션 생성 시작" : "Start Variations"}
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </>
+                    {/* Preset grid - 8 individual cards like FastCut */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+                      {AI_STYLE_PRESETS.map((preset) => {
+                        const Icon = preset.icon;
+                        const isSelected = selectedAIPresets.includes(preset.id);
+
+                        return (
+                          <div
+                            key={preset.id}
+                            className={cn(
+                              "relative p-4 rounded-xl border-2 cursor-pointer transition-all",
+                              isSelected
+                                ? "border-neutral-900 bg-neutral-50"
+                                : "border-neutral-200 hover:border-neutral-300 bg-white"
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleAIPreset(preset.id);
+                            }}
+                          >
+                            {/* Checkbox */}
+                            <div className="absolute top-2 right-2">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleAIPreset(preset.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="data-[state=checked]:bg-neutral-900 data-[state=checked]:border-neutral-900"
+                              />
+                            </div>
+
+                            {/* Icon */}
+                            <div
+                              className={cn(
+                                "w-10 h-10 rounded-lg flex items-center justify-center mb-3 mx-auto",
+                                isSelected ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600"
+                              )}
+                            >
+                              <Icon className="w-5 h-5" />
+                            </div>
+
+                            {/* Text */}
+                            <h4 className="font-medium text-neutral-900 text-sm text-center mb-1">
+                              {isKorean ? preset.nameKo : preset.name}
+                            </h4>
+                            <p className="text-xs text-neutral-500 text-center line-clamp-2">
+                              {isKorean ? preset.descriptionKo : preset.description}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Footer info & Start Button */}
+                    <div className="mt-6 pt-4 border-t border-neutral-200 flex items-center justify-between">
+                      <div className="flex items-center gap-6 text-sm">
+                        <span className="text-neutral-600">
+                          {isKorean ? "선택됨:" : "Selected:"}{" "}
+                          <span className="font-semibold text-neutral-900">{selectedAIPresets.length}개</span>
+                        </span>
+                        {estimatedTime && (
+                          <span className="text-neutral-500">
+                            {isKorean ? "예상 시간:" : "Est. time:"} {estimatedTime}
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1.5 text-neutral-500">
+                          <Lightbulb className="w-4 h-4" />
+                          {isKorean
+                            ? "3-5개 스타일 선택 시 효과적인 A/B 테스트가 가능합니다"
+                            : "Selecting 3-5 styles enables effective A/B testing"}
+                        </span>
+                      </div>
+
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartVariationGeneration();
+                        }}
+                        disabled={!canStart}
+                        size="lg"
+                        className="bg-neutral-900 hover:bg-neutral-800 text-white"
+                      >
+                        {isStartingGeneration ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            {isKorean ? "시작 중..." : "Starting..."}
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            {isKorean ? "AI 변형 생성 시작" : "Start AI Variations"}
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  /* FastCut: 8 Style Selection */
+                  <>
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-lg font-semibold text-neutral-900">
+                        {isKorean ? "생성할 스타일 선택" : "Select Styles to Generate"}
+                        <span className="text-neutral-400 font-normal ml-2">(1-8개)</span>
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selectAllStyles();
+                          }}
+                        >
+                          {isKorean ? "전체 선택" : "Select All"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearStyleSelection();
+                          }}
+                        >
+                          {isKorean ? "선택 해제" : "Clear"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Style grid - wider layout */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+                      {STYLE_SETS.map((style) => {
+                        const Icon: LucideIcon = STYLE_ICONS[style.id] || Zap;
+                        const isSelected = selectedStyles.includes(style.id);
+
+                        return (
+                          <div
+                            key={style.id}
+                            className={cn(
+                              "relative p-4 rounded-xl border-2 cursor-pointer transition-all",
+                              isSelected
+                                ? "border-neutral-900 bg-neutral-50"
+                                : "border-neutral-200 hover:border-neutral-300 bg-white"
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleStyleSelection(style.id);
+                            }}
+                          >
+                            {/* Checkbox */}
+                            <div className="absolute top-2 right-2">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleStyleSelection(style.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="data-[state=checked]:bg-neutral-900 data-[state=checked]:border-neutral-900"
+                              />
+                            </div>
+
+                            {/* Icon */}
+                            <div
+                              className={cn(
+                                "w-10 h-10 rounded-lg flex items-center justify-center mb-3 mx-auto",
+                                isSelected ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600"
+                              )}
+                            >
+                              <Icon className="w-5 h-5" />
+                            </div>
+
+                            {/* Text */}
+                            <h4 className="font-medium text-neutral-900 text-sm text-center mb-1">
+                              {isKorean ? style.nameKo : style.name}
+                            </h4>
+                            <p className="text-xs text-neutral-500 text-center line-clamp-2">
+                              {isKorean ? style.descriptionKo : style.description}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Footer info & Start Button */}
+                    <div className="mt-6 pt-4 border-t border-neutral-200 flex items-center justify-between">
+                      <div className="flex items-center gap-6 text-sm">
+                        <span className="text-neutral-600">
+                          {isKorean ? "선택됨:" : "Selected:"}{" "}
+                          <span className="font-semibold text-neutral-900">{selectedStyles.length}개</span>
+                        </span>
+                        {estimatedTime && (
+                          <span className="text-neutral-500">
+                            {isKorean ? "예상 시간:" : "Est. time:"} {estimatedTime}
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1.5 text-neutral-500">
+                          <Lightbulb className="w-4 h-4" />
+                          {isKorean
+                            ? "3-5개 스타일 선택 시 효과적인 A/B 테스트가 가능합니다"
+                            : "Selecting 3-5 styles enables effective A/B testing"}
+                        </span>
+                      </div>
+
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartVariationGeneration();
+                        }}
+                        disabled={!canStart}
+                        size="lg"
+                        className="bg-neutral-900 hover:bg-neutral-800 text-white"
+                      >
+                        {isStartingGeneration ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            {isKorean ? "시작 중..." : "Starting..."}
+                          </>
+                        ) : (
+                          <>
+                            <Rocket className="w-4 h-4 mr-2" />
+                            {isKorean ? "베리에이션 생성 시작" : "Start Variations"}
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </>
+                )
               ) : (
                 /* Generation Progress Mode - Full Width */
                 <>

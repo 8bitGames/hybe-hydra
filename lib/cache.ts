@@ -66,6 +66,9 @@ export const CacheKeys = {
 
   // Merchandise list - with filters
   merchandiseList: (hash: string) => `merchandise:list:${hash}`,
+
+  // Presigned URLs - cache by S3 key hash
+  presignedUrl: (keyHash: string) => `s3:presigned:${keyHash}`,
 } as const;
 
 /**
@@ -81,6 +84,7 @@ export const CacheTTL = {
   TRENDS: 15 * 60,     // 15 minutes - for trend data
   STATIC: 60 * 60,     // 1 hour - for rarely changing data (artists, labels, presets)
   ANALYSIS: 24 * 60 * 60,  // 24 hours - for expensive analysis results
+  PRESIGNED_URL: 6 * 24 * 60 * 60,  // 6 days - presigned URLs valid for 7 days
 } as const;
 
 /**
