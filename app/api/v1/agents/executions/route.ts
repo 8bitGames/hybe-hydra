@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { getServiceClient } from '@/lib/supabase/service';
 
 /**
  * GET /api/v1/agents/executions?agent_id=xxx&limit=20
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
+    const supabase = getServiceClient();
 
     let query = supabase
       .from('agent_executions')

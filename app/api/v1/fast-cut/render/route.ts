@@ -60,6 +60,8 @@ interface RenderRequest {
   colorGrade?: string;
   // Audio timing control
   audioStartTime?: number;  // Start time in seconds for audio (default: 0)
+  // Image transition speed control (from style set or manual)
+  cutDuration?: number;  // Duration per image in seconds (overrides BPM-based calculation)
   prompt?: string;
   // Additional fast cut data for variations
   searchKeywords?: string[];
@@ -119,6 +121,7 @@ export async function POST(request: NextRequest) {
       aspectRatio,
       targetDuration,
       audioStartTime = 0,  // Default to 0 if not provided
+      cutDuration: requestCutDuration,  // From request body (frontend may pass this)
       prompt = 'Fast cut video generation',
       searchKeywords = [],
       tiktokSEO,
@@ -136,6 +139,7 @@ export async function POST(request: NextRequest) {
       aspectRatio,
       targetDuration,
       audioStartTime,
+      cutDuration: requestCutDuration || '(will resolve from style set)',
       prompt: prompt?.substring(0, 100) || '(none)',
       searchKeywordsCount: searchKeywords?.length || 0,
       hasTiktokSEO: !!tiktokSEO,
@@ -158,6 +162,7 @@ export async function POST(request: NextRequest) {
     let colorGrade: string;
     let useAiEffects: boolean;
     let aiEffects: AIEffectSelection | undefined;
+    let cutDuration: number | undefined = requestCutDuration;  // May be overridden by style set
 
     console.log(`${LOG_PREFIX} Resolving render settings...`);
     const settingsStartTime = Date.now();
@@ -181,6 +186,10 @@ export async function POST(request: NextRequest) {
       colorGrade = renderSettings.colorGrade;
       useAiEffects = false; // Style sets use predefined effects
       aiEffects = renderSettings.aiEffects;
+      // Use style set's cutDuration if not explicitly provided in request
+      if (!cutDuration && renderSettings.cutDuration) {
+        cutDuration = renderSettings.cutDuration;
+      }
 
       console.log(`${LOG_PREFIX} Style set resolved:`, {
         styleSetId,
@@ -189,6 +198,7 @@ export async function POST(request: NextRequest) {
         effectPreset,
         textStyle,
         colorGrade,
+        cutDuration,
         hasAiEffects: !!aiEffects,
         aiEffectsTransitions: aiEffects?.transitions?.length || 0,
         aiEffectsMotions: aiEffects?.motions?.length || 0,
@@ -403,6 +413,7 @@ export async function POST(request: NextRequest) {
         effect_preset: effectPreset,
         aspect_ratio: aspectRatio,
         target_duration: targetDuration,  // 0 = auto-calculate
+        cut_duration: cutDuration,  // Duration per image (from style set or request)
         text_style: textStyle,
         color_grade: colorGrade,
         // AI Effect Selection System
@@ -427,6 +438,7 @@ export async function POST(request: NextRequest) {
       vibe,
       effect_preset: effectPreset,
       target_duration: targetDuration,
+      cut_duration: cutDuration,  // Image transition speed from style set
       text_style: textStyle,
       color_grade: colorGrade,
       use_ai_effects: useAiEffects,

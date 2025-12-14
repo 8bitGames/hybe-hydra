@@ -25,6 +25,7 @@ services:
       - .env
     environment:
       - TEMP_DIR=/tmp/compose
+      - USE_FFMPEG_PIPELINE=1  # ~3x faster rendering
     volumes:
       - ./app:/root/app
       - compose-temp:/tmp/compose
@@ -51,6 +52,7 @@ services:
     environment:
       - TEMP_DIR=/tmp/compose
       - NVIDIA_VISIBLE_DEVICES=all
+      - USE_FFMPEG_PIPELINE=1  # ~3x faster rendering
     volumes:
       - ./app:/root/app
       - compose-temp:/tmp/compose

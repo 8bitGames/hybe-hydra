@@ -86,6 +86,8 @@ export default function FastCutMusicPage() {
     selectedImages,
     setError,
     isHydrated,
+    subtitleMode,
+    setSubtitleMode,
   } = useFastCut();
 
   // Redirect if no script data or images (only after hydration)
@@ -282,8 +284,10 @@ export default function FastCutMusicPage() {
               analyzingAudio={analyzingAudio}
               campaignId={campaignId || ""}
               musicSkipped={musicSkipped}
+              subtitleMode={subtitleMode}
               onSelectAudio={handleSelectAudio}
               onSetAudioStartTime={setAudioStartTime}
+              onSetSubtitleMode={setSubtitleMode}
               onSkipMusic={handleSkipMusic}
               onUnskipMusic={handleUnskipMusic}
               onNext={handleNext}

@@ -214,8 +214,9 @@ class XfadeRenderer:
                 "-i", clip2_path,
                 "-filter_complex", filter_complex,
                 "-c:v", "libx264",
-                "-preset", "fast",
+                "-preset", "ultrafast",  # Changed from 'fast' for speed
                 "-crf", "23",
+                "-threads", "0",  # Use all available CPU threads
                 "-c:a", "aac",
                 "-b:a", "192k",
                 output_path
@@ -468,8 +469,9 @@ class XfadeRenderer:
             else:
                 cmd.extend([
                     "-c:v", "libx264",
-                    "-preset", "fast",
+                    "-preset", "ultrafast",  # Changed from 'fast' for speed
                     "-crf", "23",
+                    "-threads", "0",  # Use all available CPU threads
                 ])
 
             cmd.extend([

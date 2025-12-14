@@ -7,7 +7,7 @@ import { saveBridgePrompt } from "@/lib/bridge-storage";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api";
 import { promptApi, PromptTransformResponse } from "@/lib/video-api";
-import { useCampaigns, useKeywordAnalysis, KeywordAnalysis, useInvalidateQueries } from "@/lib/queries";
+import { useCampaigns, useKeywordAnalysis, KeywordAnalysis, useInvalidateQueries, useSavedKeywords, useSaveKeyword, useDeleteSavedKeyword, SavedKeyword } from "@/lib/queries";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +55,10 @@ import {
   ChevronDown,
   ChevronUp,
   Settings,
+  Star,
+  Trash2,
+  Bookmark,
+  RefreshCw,
 } from "lucide-react";
 import { cn, sanitizeUsername, sanitizeText, getProxiedImageUrl } from "@/lib/utils";
 import { RelatedKeywordsDiscovery, SuggestedAccounts, SearchRecommendations } from "@/components/trends/expansion";
@@ -678,7 +682,13 @@ export default function TrendsPage() {
   const [activeTab, setActiveTab] = useState<string>("");
   const [isSearching, setIsSearching] = useState(false);
 
-  const { invalidateKeywordAnalysis } = useInvalidateQueries();
+  const { invalidateKeywordAnalysis, invalidateSavedKeywords } = useInvalidateQueries();
+
+  // Saved Keywords Hooks
+  const { data: savedKeywordsData, isLoading: savedKeywordsLoading } = useSavedKeywords({ includeSnapshots: false });
+  const savedKeywords = savedKeywordsData?.savedKeywords || [];
+  const saveKeywordMutation = useSaveKeyword();
+  const deleteKeywordMutation = useDeleteSavedKeyword();
 
   // Fetch keyword analysis
   const { data: analysisData, isLoading: analysisLoading, refetch: refetchAnalysis } = useKeywordAnalysis({
@@ -753,6 +763,80 @@ export default function TrendsPage() {
     invalidateKeywordAnalysis();
     await refetchAnalysis();
   }, [keywords, invalidateKeywordAnalysis, refetchAnalysis]);
+
+  // Check if keyword is saved
+  const isKeywordSaved = useCallback((keyword: string) => {
+    return savedKeywords.some((sk) => sk.keyword.toLowerCase() === keyword.toLowerCase());
+  }, [savedKeywords]);
+
+  // Get saved keyword ID by keyword
+  const getSavedKeywordId = useCallback((keyword: string) => {
+    const saved = savedKeywords.find((sk) => sk.keyword.toLowerCase() === keyword.toLowerCase());
+    return saved?.id;
+  }, [savedKeywords]);
+
+  // Save keyword handler
+  const handleSaveKeyword = useCallback(async (keyword: string, analysis: KeywordAnalysis | null) => {
+    if (isKeywordSaved(keyword)) {
+      // Delete if already saved
+      const savedId = getSavedKeywordId(keyword);
+      if (savedId) {
+        try {
+          await deleteKeywordMutation.mutateAsync(savedId);
+          toast.success(
+            language === "ko" ? "키워드 삭제됨" : "Keyword removed",
+            language === "ko" ? `"${keyword}" 저장 목록에서 삭제됨` : `"${keyword}" removed from saved list`
+          );
+        } catch (err) {
+          toast.error(
+            language === "ko" ? "삭제 실패" : "Delete failed",
+            language === "ko" ? "다시 시도해주세요" : "Please try again"
+          );
+        }
+      }
+    } else {
+      // Save keyword with current analysis data
+      try {
+        await saveKeywordMutation.mutateAsync({
+          keyword,
+          platform: "TIKTOK",
+          currentViews: analysis?.aggregateStats.totalViews,
+          currentEngagement: analysis?.aggregateStats.avgEngagementRate,
+          currentTotalVideos: analysis?.totalVideos,
+          currentViralCount: analysis?.performanceTiers.viral.length,
+        });
+        toast.success(
+          language === "ko" ? "키워드 저장됨" : "Keyword saved",
+          language === "ko" ? `"${keyword}" 저장 목록에 추가됨` : `"${keyword}" added to saved list`
+        );
+      } catch (err) {
+        toast.error(
+          language === "ko" ? "저장 실패" : "Save failed",
+          language === "ko" ? "다시 시도해주세요" : "Please try again"
+        );
+      }
+    }
+  }, [isKeywordSaved, getSavedKeywordId, deleteKeywordMutation, saveKeywordMutation, language, toast]);
+
+  // Load saved keyword for analysis
+  const handleLoadSavedKeyword = useCallback((savedKeyword: SavedKeyword) => {
+    const kw = savedKeyword.keyword;
+    if (!keywords.includes(kw)) {
+      if (keywords.length >= 3) {
+        toast.warning(
+          language === "ko" ? "최대 3개" : "Max 3",
+          language === "ko" ? "키워드는 최대 3개까지" : "Up to 3 keywords allowed"
+        );
+        return;
+      }
+      const newKeywords = [...keywords, kw];
+      setKeywords(newKeywords);
+      setActiveTab(kw);
+      setIsSearching(true);
+    } else {
+      setActiveTab(kw);
+    }
+  }, [keywords, language, toast]);
 
   const handleSelectTrend = useCallback((tag: string) => {
     setSelectedTrends((prev) => {
@@ -972,6 +1056,53 @@ export default function TrendsPage() {
                 </span>
               </div>
             )}
+
+            {/* Saved Keywords Section */}
+            {savedKeywords.length > 0 && (
+              <div className="mt-3 pt-3 border-t">
+                <div className="flex items-center gap-2 mb-2">
+                  <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {language === "ko" ? "저장된 키워드" : "Saved Keywords"}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    ({savedKeywords.length})
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {savedKeywords.slice(0, 8).map((savedKw) => {
+                    const isActive = keywords.includes(savedKw.keyword);
+                    return (
+                      <Badge
+                        key={savedKw.id}
+                        variant={isActive ? "default" : "outline"}
+                        className={cn(
+                          "cursor-pointer text-xs transition-all",
+                          isActive ? "" : "hover:bg-muted"
+                        )}
+                        onClick={() => handleLoadSavedKeyword(savedKw)}
+                        title={savedKw.lastAnalyzedAt
+                          ? `${language === "ko" ? "마지막 분석:" : "Last analyzed:"} ${new Date(savedKw.lastAnalyzedAt).toLocaleDateString()}`
+                          : undefined
+                        }
+                      >
+                        <Star className={cn(
+                          "h-2.5 w-2.5 mr-1",
+                          isActive ? "" : "text-yellow-500 fill-yellow-500"
+                        )} />
+                        #{savedKw.displayName || savedKw.keyword}
+                        {isActive && <Check className="h-2.5 w-2.5 ml-1" />}
+                      </Badge>
+                    );
+                  })}
+                  {savedKeywords.length > 8 && (
+                    <span className="text-[10px] text-muted-foreground py-1">
+                      +{savedKeywords.length - 8} {language === "ko" ? "더보기" : "more"}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Analysis Results */}
@@ -1010,14 +1141,43 @@ export default function TrendsPage() {
                 </div>
               ) : analysisData && analysisData.analyses.length > 0 ? (
                 <Tabs value={activeTab || analysisData.keywords[0]} onValueChange={setActiveTab}>
-                  <TabsList className="mb-4">
-                    {analysisData.analyses.map((analysis) => (
-                      <TabsTrigger key={analysis.keyword} value={analysis.keyword} className="text-xs">
-                        #{analysis.keyword}
-                        <span className="ml-1 text-muted-foreground">({analysis.totalVideos})</span>
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
+                  <div className="flex items-center gap-2 mb-4">
+                    <TabsList>
+                      {analysisData.analyses.map((analysis) => (
+                        <TabsTrigger key={analysis.keyword} value={analysis.keyword} className="text-xs">
+                          #{analysis.keyword}
+                          <span className="ml-1 text-muted-foreground">({analysis.totalVideos})</span>
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                    {/* Save button for active keyword */}
+                    {activeTab && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          "h-8 px-2",
+                          isKeywordSaved(activeTab) && "text-yellow-500"
+                        )}
+                        onClick={() => {
+                          const analysis = analysisData.analyses.find(a => a.keyword === activeTab) || null;
+                          handleSaveKeyword(activeTab, analysis);
+                        }}
+                        disabled={saveKeywordMutation.isPending || deleteKeywordMutation.isPending}
+                        title={isKeywordSaved(activeTab)
+                          ? (language === "ko" ? "저장된 키워드에서 삭제" : "Remove from saved")
+                          : (language === "ko" ? "키워드 저장" : "Save keyword")
+                        }
+                      >
+                        <Star
+                          className={cn(
+                            "h-4 w-4",
+                            isKeywordSaved(activeTab) && "fill-yellow-500"
+                          )}
+                        />
+                      </Button>
+                    )}
+                  </div>
 
                   {analysisData.analyses.map((analysis) => (
                     <TabsContent key={analysis.keyword} value={analysis.keyword} className="mt-0">

@@ -334,6 +334,9 @@ class VertexAIClient:
                     "temperature": 1.0,
                     "topP": 0.95,
                     "topK": 40,
+                    "imageConfig": {
+                        "aspectRatio": config.aspect_ratio.value,
+                    },
                 },
             }
 

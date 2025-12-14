@@ -79,6 +79,7 @@ export interface ComposeRenderRequest {
     effect_preset: string;
     aspect_ratio: string;
     target_duration: number;
+    cut_duration?: number;  // Duration per image in seconds (overrides BPM-based calculation)
     text_style: string;
     color_grade: string;
     // AI Effect Selection System

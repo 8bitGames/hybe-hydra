@@ -6,6 +6,7 @@ import { getKeywordInsightsAgent } from "@/lib/agents/analyzers/keyword-insights
 import type { AgentContext } from "@/lib/agents/types";
 import { coOccurrenceAnalyzer } from "@/lib/expansion/co-occurrence";
 import { accountDiscoveryService } from "@/lib/expansion/account-discovery";
+import { isExcludedHashtag } from "@/lib/hashtag-filter";
 
 const CACHE_DURATION_HOURS = 24;
 
@@ -377,12 +378,15 @@ function analyzeVideos(videos: any[], keyword: string): KeywordAnalysis {
     belowAverage: analyzedVideos.slice(avgThreshold),
   };
 
-  // Hashtag Analysis
+  // Hashtag Analysis (excluding generic tags like #fyp, #viral, etc.)
   const hashtagStats = new Map<string, { count: number; totalEngagement: number; totalViews: number; topVideoId: string; topEngagement: number }>();
 
   analyzedVideos.forEach((v) => {
     v.hashtags.forEach((tag) => {
       const normalized = tag.toLowerCase().replace(/^#/, "");
+      // Skip generic/excluded hashtags
+      if (isExcludedHashtag(normalized)) return;
+
       const existing = hashtagStats.get(normalized);
       if (existing) {
         existing.count++;
@@ -415,10 +419,14 @@ function analyzeVideos(videos: any[], keyword: string): KeywordAnalysis {
     .sort((a, b) => b.count - a.count)
     .slice(0, 20);
 
-  // Hashtag Combos (pairs that appear together frequently)
+  // Hashtag Combos (pairs that appear together frequently, excluding generic tags)
   const comboCount = new Map<string, { count: number; totalEngagement: number }>();
   analyzedVideos.forEach((v) => {
-    const tags = v.hashtags.map((t) => t.toLowerCase().replace(/^#/, "")).slice(0, 5);
+    // Filter out excluded hashtags before analyzing combos
+    const tags = v.hashtags
+      .map((t) => t.toLowerCase().replace(/^#/, ""))
+      .filter((t) => !isExcludedHashtag(t))
+      .slice(0, 5);
     for (let i = 0; i < tags.length; i++) {
       for (let j = i + 1; j < tags.length; j++) {
         const combo = [tags[i], tags[j]].sort().join(" + ");

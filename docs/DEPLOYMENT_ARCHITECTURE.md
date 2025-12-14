@@ -178,7 +178,7 @@ INNGEST_SIGNING_KEY=...
 # AWS S3
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
-AWS_REGION=ap-southeast-2
+AWS_REGION=ap-northeast-2
 AWS_S3_BUCKET=hydra-assets-hybe
 
 # Redis (Railway provides this)
@@ -215,7 +215,7 @@ MODAL_STATUS_URL=https://modawnai--hydra-compose-engine-get-render-status.modal.
 modal secret create aws-s3-secret \
   AWS_ACCESS_KEY_ID=... \
   AWS_SECRET_ACCESS_KEY=... \
-  AWS_REGION=ap-southeast-2 \
+  AWS_REGION=ap-northeast-2 \
   AWS_S3_BUCKET=hydra-assets-hybe
 ```
 
@@ -254,7 +254,7 @@ modal token new
 modal secret create aws-s3-secret \
   AWS_ACCESS_KEY_ID=AKIASBF5YXJFHLVFVGQR \
   AWS_SECRET_ACCESS_KEY=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 \
-  AWS_REGION=ap-southeast-2 \
+  AWS_REGION=ap-northeast-2 \
   AWS_S3_BUCKET=hydra-assets-hybe
 
 # 4. Deploy
@@ -387,7 +387,7 @@ This uses Railway + Modal for rendering while developing the frontend locally.
 |----------|----------|-------------|
 | `AWS_ACCESS_KEY_ID` | Yes | AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | Yes | AWS secret key |
-| `AWS_REGION` | Yes | AWS region (ap-southeast-2) |
+| `AWS_REGION` | Yes | AWS region (ap-northeast-2) |
 | `AWS_S3_BUCKET` | Yes | S3 bucket name |
 | `REDIS_URL` | Yes | Redis connection URL |
 | `MODAL_ENABLED` | No | Enable Modal rendering (default: false) |

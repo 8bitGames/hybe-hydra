@@ -19,6 +19,7 @@ import {
 // ============================================================================
 
 export type FastCutStep = "script" | "images" | "music" | "effects";
+export type SubtitleMode = "script" | "lyrics";
 
 interface FastCutState {
   // Current step
@@ -51,6 +52,7 @@ interface FastCutState {
   audioAnalysis: AudioAnalysisResponse | null;
   analyzingAudio: boolean;
   musicSkipped: boolean;
+  subtitleMode: SubtitleMode;  // 'script' = AI text overlay, 'lyrics' = audio lyrics
 
   // Effects step
   styleSetId: string;
@@ -98,6 +100,7 @@ interface FastCutActions {
   setAudioAnalysis: (analysis: AudioAnalysisResponse | null) => void;
   setAnalyzingAudio: (loading: boolean) => void;
   setMusicSkipped: (skipped: boolean) => void;
+  setSubtitleMode: (mode: SubtitleMode) => void;
 
   // Effects actions
   setStyleSetId: (id: string) => void;
@@ -139,6 +142,7 @@ const initialState: FastCutState = {
   audioAnalysis: null,
   analyzingAudio: false,
   musicSkipped: false,
+  subtitleMode: "lyrics",  // Default to lyrics when available
   styleSetId: "viral_tiktok",
   styleSets: [],
   rendering: false,
@@ -465,6 +469,10 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
     setState((prev) => ({ ...prev, musicSkipped }));
   }, []);
 
+  const setSubtitleMode = useCallback((subtitleMode: SubtitleMode) => {
+    setState((prev) => ({ ...prev, subtitleMode }));
+  }, []);
+
   // Effects actions
   const setStyleSetId = useCallback((styleSetId: string) => {
     setState((prev) => ({ ...prev, styleSetId }));
@@ -515,6 +523,7 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
     setAudioAnalysis,
     setAnalyzingAudio,
     setMusicSkipped,
+    setSubtitleMode,
     setStyleSetId,
     setStyleSets,
     setRendering,

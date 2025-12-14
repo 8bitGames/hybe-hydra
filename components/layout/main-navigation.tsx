@@ -115,7 +115,7 @@ const secondaryItems: NavItem[] = [
         description: { ko: "AI 및 패스트컷 영상", en: "AI and Fast Cut videos" },
       },
       {
-        name: { ko: "에셋 관리", en: "Assets" },
+        name: { ko: "전체 에셋", en: "All Assets" },
         href: "/assets",
         icon: Image,
         description: { ko: "업로드된 이미지 및 파일", en: "Uploaded images and files" },

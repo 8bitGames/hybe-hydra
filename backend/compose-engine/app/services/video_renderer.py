@@ -177,17 +177,20 @@ class VideoRenderer:
                 request, preset, len(image_paths), audio_analysis.duration, job_id, has_audio
             )
 
-            # BPM-based image duration (400-800ms range)
-            # 1 beat = 60/BPM seconds
+            # Image duration: use cut_duration from settings if provided, else BPM-based
             MIN_DURATION = 0.4  # 400ms
-            MAX_DURATION = 0.8  # 800ms
+            MAX_DURATION = 3.0  # 3000ms (allow longer cuts for cinematic styles)
             DEFAULT_DURATION = 0.6  # 600ms fallback
 
-            if audio_analysis.bpm and audio_analysis.bpm > 0:
-                # Calculate duration per beat
+            if request.settings.cut_duration and request.settings.cut_duration > 0:
+                # Use explicit cut_duration from style set
+                IMAGE_DURATION = max(MIN_DURATION, min(MAX_DURATION, request.settings.cut_duration))
+                logger.info(f"[{job_id}] Using style set cut_duration: {IMAGE_DURATION*1000:.0f}ms per image")
+            elif audio_analysis.bpm and audio_analysis.bpm > 0:
+                # Fallback: Calculate duration per beat
                 beat_duration = 60.0 / audio_analysis.bpm
-                # Clamp to 400-800ms range
-                IMAGE_DURATION = max(MIN_DURATION, min(MAX_DURATION, beat_duration))
+                # Clamp to 400-800ms range for BPM-based
+                IMAGE_DURATION = max(MIN_DURATION, min(0.8, beat_duration))
                 logger.info(f"[{job_id}] BPM: {audio_analysis.bpm:.1f} -> {IMAGE_DURATION*1000:.0f}ms per image")
             else:
                 IMAGE_DURATION = DEFAULT_DURATION
@@ -793,8 +796,8 @@ class VideoRenderer:
             elapsed = time.time() - start_time
             logger.info(f"[{job_id}] NVENC encoding completed in {elapsed:.2f}s")
         else:
-            # CPU encoding with optimized libx264 (fast preset, 8 threads)
-            logger.info(f"[{job_id}] Starting CPU encoding (libx264, preset=fast, threads=8, timeout={ENCODING_TIMEOUT}s)...")
+            # CPU encoding with optimized libx264 (ultrafast preset, 8 threads)
+            logger.info(f"[{job_id}] Starting CPU encoding (libx264, preset=ultrafast, threads=8, timeout={ENCODING_TIMEOUT}s)...")
             try:
                 await asyncio.wait_for(
                     loop.run_in_executor(
@@ -806,7 +809,7 @@ class VideoRenderer:
                             audio_codec="aac",
                             audio_bitrate="192k",
                             threads=8,
-                            preset="fast",
+                            preset="ultrafast",  # Changed from 'fast' for speed
                             ffmpeg_params=["-crf", "23"],
                             temp_audiofile=temp_audiofile,
                             logger="bar"

@@ -17,9 +17,9 @@ class AudioAnalyzer:
     def __init__(self, sample_rate: int = 22050):
         self.sample_rate = sample_rate
 
-    def analyze(self, audio_path: str) -> AudioAnalysis:
+    def analyze(self, audio_path: str, target_duration: float = 15.0) -> AudioAnalysis:
         """
-        Analyze an audio file for BPM, beats, and energy.
+        Analyze an audio file for BPM, beats, energy, and best segment.
         """
         logger.info(f"[AudioAnalyzer] Starting audio analysis: {audio_path}")
 
@@ -54,6 +54,22 @@ class AudioAnalyzer:
             if idx < len(rms_normalized):
                 energy_curve.append((float(t), float(rms_normalized[idx])))
 
+        # Find best 15s segment (highest energy section)
+        best_15s_start = 0.0
+        if duration > target_duration:
+            samples_per_segment = int(target_duration * sr / hop_length)
+            best_energy = 0.0
+            best_start_idx = 0
+
+            for i in range(len(rms) - samples_per_segment):
+                segment_energy = np.mean(rms[i:i + samples_per_segment])
+                if segment_energy > best_energy:
+                    best_energy = segment_energy
+                    best_start_idx = i
+
+            best_15s_start = librosa.frames_to_time(best_start_idx, sr=sr, hop_length=hop_length)
+            logger.info(f"[AudioAnalyzer] Best {target_duration}s segment starts at: {best_15s_start:.2f}s")
+
         # Suggest vibe based on tempo
         tempo_val = float(tempo) if isinstance(tempo, np.ndarray) else tempo
         if tempo_val >= 120:
@@ -65,14 +81,15 @@ class AudioAnalyzer:
         else:
             suggested_vibe = "Emotional"
 
-        logger.info(f"[AudioAnalyzer] Analysis complete: BPM={int(round(tempo_val))}, duration={duration:.2f}s, vibe={suggested_vibe}")
+        logger.info(f"[AudioAnalyzer] Analysis complete: BPM={int(round(tempo_val))}, duration={duration:.2f}s, vibe={suggested_vibe}, best_start={best_15s_start:.2f}s")
 
         return AudioAnalysis(
             bpm=int(round(tempo_val)),
             beat_times=beat_times.tolist(),
             energy_curve=energy_curve,
             duration=float(duration),
-            suggested_vibe=suggested_vibe
+            suggested_vibe=suggested_vibe,
+            best_15s_start=float(best_15s_start)
         )
 
     def find_best_segment(

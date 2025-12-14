@@ -2,117 +2,44 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 
-// Modal audio endpoint (default URL built-in, no env var needed)
-const MODAL_AUDIO_ENDPOINT_URL = process.env.MODAL_AUDIO_ENDPOINT_URL ||
-  'https://modawnai--hydra-compose-engine-audio-endpoint.modal.run';
-
-// For local development only (requires explicit env var)
-const LOCAL_COMPOSE_URL = process.env.LOCAL_COMPOSE_URL;
-const USE_LOCAL = process.env.COMPOSE_ENGINE_MODE === 'local' && LOCAL_COMPOSE_URL;
+// Compose Engine URL (local Docker or Railway)
+const COMPOSE_ENGINE_URL = process.env.LOCAL_COMPOSE_URL || process.env.COMPOSE_ENGINE_URL || 'http://localhost:8000';
 
 interface AnalyzeRequest {
   assetId: string;
   targetDuration?: number;
 }
 
-interface FastCutEngineAnalysisResponse {
+interface AudioAnalysisResponse {
   bpm: number;
   beat_times: number[];
   energy_curve: [number, number][];
   duration: number;
   suggested_vibe: string;
-  best_15s_start: number;  // Best starting point for 15s segment
-}
-
-interface FastCutEngineBestSegmentResponse {
-  start_time: number;
-  end_time: number;
-  duration: number;
+  best_15s_start: number;
 }
 
 /**
- * Poll Modal for async job result
+ * Call compose engine to analyze audio using librosa
  */
-async function pollModalResult(callId: string, maxAttempts = 60): Promise<FastCutEngineAnalysisResponse | null> {
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const response = await fetch(MODAL_AUDIO_ENDPOINT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'status', call_id: callId }),
-      });
+async function analyzeAudio(s3Url: string, jobId: string, targetDuration: number): Promise<AudioAnalysisResponse | null> {
+  const url = `${COMPOSE_ENGINE_URL}/audio/analyze`;
 
-      // 202 = still processing
-      if (response.status === 202) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        continue;
-      }
-
-      if (!response.ok) {
-        console.error('[Fast Cut AudioAnalyze] Modal status check failed:', response.status);
-        return null;
-      }
-
-      const data = await response.json();
-
-      if (data.status === 'completed' && data.result?.analysis) {
-        const analysis = data.result.analysis;
-        console.log('[Fast Cut AudioAnalyze] Modal analysis result:', {
-          bpm: analysis.bpm,
-          duration: analysis.duration,
-          best_15s_start: analysis.best_15s_start,
-        });
-        return {
-          bpm: analysis.bpm,
-          beat_times: [],
-          energy_curve: analysis.energy_curve?.map((e: number, i: number) => [i * 0.5, e] as [number, number]) || [],
-          duration: analysis.duration,
-          suggested_vibe: 'energetic',
-          best_15s_start: analysis.best_15s_start ?? 0,
-        };
-      }
-
-      if (data.status === 'failed') {
-        console.error('[Fast Cut AudioAnalyze] Modal job failed:', data.error);
-        return null;
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    } catch (error) {
-      console.error('[Fast Cut AudioAnalyze] Poll error:', error);
-      return null;
-    }
-  }
-
-  console.error('[Fast Cut AudioAnalyze] Modal polling timed out');
-  return null;
-}
-
-/**
- * Call Modal audio endpoint to analyze audio using librosa
- * Uses action-based API: { action: 'analyze', audio_url, target_duration }
- */
-async function analyzeWithModal(s3Url: string, jobId: string, targetDuration: number): Promise<FastCutEngineAnalysisResponse | null> {
-  // Use local URL if explicitly configured for local development
-  const url = USE_LOCAL ? `${LOCAL_COMPOSE_URL}/audio/analyze` : MODAL_AUDIO_ENDPOINT_URL;
-  const isModal = !USE_LOCAL;
-
-  console.log('[Fast Cut AudioAnalyze] Calling:', url, isModal ? '(Modal)' : '(Local)');
+  console.log('[Fast Cut AudioAnalyze] Calling compose engine:', url);
   console.log('[Fast Cut AudioAnalyze] Audio URL:', s3Url);
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
 
-    // Modal uses action-based API, local uses direct endpoint
-    const body = isModal
-      ? { action: 'analyze', audio_url: s3Url, job_id: jobId, target_duration: targetDuration }
-      : { audio_url: s3Url, job_id: jobId };
-
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        audio_url: s3Url,
+        job_id: jobId,
+        target_duration: targetDuration
+      }),
       signal: controller.signal,
     });
 
@@ -120,31 +47,34 @@ async function analyzeWithModal(s3Url: string, jobId: string, targetDuration: nu
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Unknown error');
-      console.error('[Fast Cut AudioAnalyze] analyze failed:', response.status, errorText);
+      console.error('[Fast Cut AudioAnalyze] Compose engine failed:', response.status, errorText);
       return null;
     }
 
     const data = await response.json();
 
-    // Modal returns call_id for async polling, need to wait for result
-    if (isModal && data.call_id) {
-      console.log('[Fast Cut AudioAnalyze] Modal job submitted, polling for result:', data.call_id);
-      return await pollModalResult(data.call_id);
-    }
-
     console.log('[Fast Cut AudioAnalyze] Analysis complete:', {
       bpm: data.bpm,
       duration: data.duration,
       vibe: data.suggested_vibe,
+      best_15s_start: data.best_15s_start,
       beatCount: data.beat_times?.length,
       energyPoints: data.energy_curve?.length
     });
-    return data;
+
+    return {
+      bpm: data.bpm,
+      beat_times: data.beat_times || [],
+      energy_curve: data.energy_curve || [],
+      duration: data.duration,
+      suggested_vibe: data.suggested_vibe,
+      best_15s_start: data.best_15s_start ?? 0,
+    };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
-      console.error('[Fast Cut AudioAnalyze] request timed out after 120s');
+      console.error('[Fast Cut AudioAnalyze] Request timed out after 120s');
     } else {
-      console.error('[Fast Cut AudioAnalyze] connection error:', error);
+      console.error('[Fast Cut AudioAnalyze] Connection error:', error);
     }
     return null;
   }
@@ -152,7 +82,7 @@ async function analyzeWithModal(s3Url: string, jobId: string, targetDuration: nu
 
 /**
  * Analyze audio asset and find best segment (highest energy section)
- * Uses fast-cut-engine backend for real audio analysis with librosa
+ * Uses compose-engine backend for real audio analysis with librosa
  */
 export async function POST(request: NextRequest) {
   try {
@@ -187,8 +117,8 @@ export async function POST(request: NextRequest) {
     const metadata = asset.metadata as Record<string, unknown> || {};
     const jobId = `analyze-${assetId}-${Date.now()}`;
 
-    // Try real audio analysis with Modal (librosa)
-    const analysisResult = await analyzeWithModal(asset.s3Url, jobId, targetDuration);
+    // Try real audio analysis with compose engine (librosa)
+    const analysisResult = await analyzeAudio(asset.s3Url, jobId, targetDuration);
 
     if (analysisResult) {
       // Update asset metadata with real analysis results
@@ -211,8 +141,15 @@ export async function POST(request: NextRequest) {
         data: { metadata: updatedMetadata }
       });
 
-      // Use best 15s start from Modal analysis
-      const suggestedStart = analysisResult.best_15s_start ?? 0;
+      // Use best 15s start from analysis
+      let suggestedStart = analysisResult.best_15s_start ?? 0;
+
+      // If analysis returned 0 but audio is long enough, use heuristics as fallback
+      if (suggestedStart === 0 && analysisResult.duration > targetDuration * 1.5) {
+        console.log('[Fast Cut AudioAnalyze] Analysis returned 0, using heuristics fallback');
+        suggestedStart = calculateFallbackStart(analysisResult.duration, targetDuration, analysisResult.bpm);
+      }
+
       const suggestedEnd = Math.min(suggestedStart + targetDuration, analysisResult.duration);
 
       console.log('[Fast Cut AudioAnalyze] Using best segment:', {
@@ -235,8 +172,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Fallback to heuristics if Modal is unavailable
-    console.log('[Fast Cut AudioAnalyze] Using fallback heuristics (Modal unavailable)');
+    // Fallback to heuristics if compose engine is unavailable
+    console.log('[Fast Cut AudioAnalyze] Using fallback heuristics (compose engine unavailable)');
     const audioDuration = (metadata.duration || metadata.audioDurationSec || 180) as number;
     const metadataBpm = (metadata.bpm || metadata.audioBpm || null) as number | null;
     const suggestedStart = calculateFallbackStart(audioDuration, targetDuration, metadataBpm);

@@ -28,7 +28,7 @@
 // ============================================================================
 
 export * from './types';
-export { BaseAgent, type MemoryConfig } from './base-agent';
+export { BaseAgent, type MemoryConfig, type AutoFeedbackConfig } from './base-agent';
 
 // ============================================================================
 // Memory Service
@@ -348,13 +348,16 @@ export const AgentFactories = {
 
 /**
  * Agent category mapping
+ * Note: fast-cut agents are now distributed by function:
+ * - fast-cut-script-generator → creator
+ * - fast-cut-effect-analyzer → analyzer
+ * - fast-cut-conductor → transformer
  */
 export const AgentCategories = {
-  analyzer: ['vision-analyzer', 'text-pattern', 'visual-trend', 'strategy-synthesizer', 'keyword-insights', 'tiktok-vision', 'veo3-personalize'],
-  creator: ['creative-director', 'script-writer', 'fast-cut-idea'],
-  transformer: ['prompt-engineer', 'i2v-specialist'],
+  analyzer: ['vision-analyzer', 'text-pattern', 'visual-trend', 'strategy-synthesizer', 'keyword-insights', 'tiktok-vision', 'veo3-personalize', 'fast-cut-effect-analyzer'],
+  creator: ['creative-director', 'script-writer', 'fast-cut-idea', 'fast-cut-script-generator'],
+  transformer: ['prompt-engineer', 'i2v-specialist', 'fast-cut-conductor'],
   publisher: ['publish-optimizer', 'copywriter'],
-  'fast-cut': ['fast-cut-script-generator', 'fast-cut-effect-analyzer', 'fast-cut-conductor'],
 } as const;
 
 /**

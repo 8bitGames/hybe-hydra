@@ -82,7 +82,7 @@ export const FastCutScriptGeneratorConfig: AgentConfig<FastCutScriptGeneratorInp
   id: 'fast-cut-script-generator',
   name: 'Fast Cut Script Generator',
   description: 'TikTok 영상 스크립트 생성 (Grounding Search + 트렌드 통합)',
-  category: 'fast-cut',
+  category: 'creator',
 
   model: {
     provider: 'gemini',

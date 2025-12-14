@@ -28,6 +28,7 @@ class AudioAnalyzeRequest(BaseModel):
     """Request model for audio analysis."""
     audio_url: str
     job_id: Optional[str] = "temp"
+    target_duration: float = 15.0  # Target duration for best segment analysis
 
 
 class BestSegmentRequest(BaseModel):
@@ -58,7 +59,7 @@ async def analyze_audio(request: AudioAnalyzeRequest):
 
     try:
         await s3.download_file(request.audio_url, local_path)
-        result = analyzer.analyze(local_path)
+        result = analyzer.analyze(local_path, target_duration=request.target_duration)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

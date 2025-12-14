@@ -102,7 +102,6 @@ const CATEGORIES = [
   { value: 'creator', label: 'Creator', color: 'bg-purple-500' },
   { value: 'transformer', label: 'Transformer', color: 'bg-orange-500' },
   { value: 'publisher', label: 'Publisher', color: 'bg-green-500' },
-  { value: 'fast-cut', label: 'Fast Cut', color: 'bg-pink-500' },
 ];
 
 const MODEL_PROVIDERS = [

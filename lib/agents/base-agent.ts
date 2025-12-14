@@ -120,6 +120,21 @@ const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
   autoLearn: false,
 };
 
+// Auto-feedback configuration
+export interface AutoFeedbackConfig {
+  enabled: boolean;
+  /** Target latency in ms for scoring (faster = better score) */
+  targetLatencyMs?: number;
+  /** Target output tokens for efficiency scoring */
+  targetOutputTokens?: number;
+}
+
+const DEFAULT_AUTO_FEEDBACK_CONFIG: AutoFeedbackConfig = {
+  enabled: true, // Enable by default for all agents
+  targetLatencyMs: 5000,
+  targetOutputTokens: 2000,
+};
+
 export abstract class BaseAgent<TInput, TOutput> {
   protected config: AgentConfig<TInput, TOutput>;
   protected modelClient: IModelClient;
@@ -129,6 +144,7 @@ export abstract class BaseAgent<TInput, TOutput> {
   protected enableExecutionLogging: boolean = true;
   protected reflectionConfig: ReflectionConfig = DEFAULT_REFLECTION_CONFIG;
   protected memoryConfig: MemoryConfig = DEFAULT_MEMORY_CONFIG;
+  protected autoFeedbackConfig: AutoFeedbackConfig = DEFAULT_AUTO_FEEDBACK_CONFIG;
 
   constructor(config: AgentConfig<TInput, TOutput>) {
     this.config = config;
@@ -1411,6 +1427,11 @@ export abstract class BaseAgent<TInput, TOutput> {
         total_tokens: result.metadata.tokenUsage.total,
         status: 'success',
       });
+
+      // Store auto-feedback for successful execution
+      if (this.autoFeedbackConfig.enabled) {
+        await this.storeAutoFeedback(executionId, result, true);
+      }
     } catch (error) {
       console.warn(`[${this.config.id}] Failed to log execution complete:`, error);
     }
@@ -1431,9 +1452,108 @@ export abstract class BaseAgent<TInput, TOutput> {
         status: 'error',
         error_message: errorMessage,
       });
+
+      // Store auto-feedback for errors (low score)
+      if (this.autoFeedbackConfig.enabled) {
+        await this.storeAutoFeedback(executionId, result, false);
+      }
     } catch (error) {
       console.warn(`[${this.config.id}] Failed to log execution error:`, error);
     }
+  }
+
+  /**
+   * Store auto-generated feedback based on execution metrics
+   * Uses a simple scoring algorithm (not AI-based) for efficiency
+   */
+  private async storeAutoFeedback(
+    executionId: string,
+    result: AgentResult<TOutput>,
+    success: boolean
+  ): Promise<void> {
+    if (!this.autoFeedbackConfig.enabled) return;
+
+    try {
+      const evaluationService = getEvaluationService();
+      const { latencyMs, tokenUsage } = result.metadata;
+      const targetLatency = this.autoFeedbackConfig.targetLatencyMs || 5000;
+      const targetTokens = this.autoFeedbackConfig.targetOutputTokens || 2000;
+
+      // Calculate scores (1-5 scale)
+      let overallScore: number;
+      let relevanceScore: number;
+      let qualityScore: number;
+      let creativityScore: number;
+
+      if (!success) {
+        // Error case: low scores
+        overallScore = 1;
+        relevanceScore = 1;
+        qualityScore = 1;
+        creativityScore = 2;
+      } else {
+        // Success case: calculate based on metrics
+
+        // Latency score: 5 if under target, decreases linearly
+        const latencyRatio = latencyMs / targetLatency;
+        const latencyScore = Math.max(1, Math.min(5, 6 - latencyRatio * 2));
+
+        // Token efficiency score: penalize excessive token usage
+        const tokenRatio = tokenUsage.output / targetTokens;
+        const tokenScore = Math.max(1, Math.min(5, 6 - tokenRatio));
+
+        // Base quality score for successful execution
+        qualityScore = Math.round(4 + (latencyScore - 3) * 0.3);
+        relevanceScore = 4; // Assume relevant if successful
+        creativityScore = 3; // Neutral creativity score
+
+        // Overall score: weighted average
+        overallScore = Math.round(
+          qualityScore * 0.4 +
+          relevanceScore * 0.3 +
+          tokenScore * 0.2 +
+          latencyScore * 0.1
+        );
+
+        // Clamp all scores to 1-5
+        overallScore = Math.max(1, Math.min(5, overallScore));
+        qualityScore = Math.max(1, Math.min(5, qualityScore));
+        relevanceScore = Math.max(1, Math.min(5, relevanceScore));
+        creativityScore = Math.max(1, Math.min(5, creativityScore));
+      }
+
+      // Store the feedback
+      await evaluationService.storeFeedback(
+        executionId,
+        this.config.id,
+        {
+          overall_score: overallScore,
+          relevance_score: relevanceScore,
+          quality_score: qualityScore,
+          creativity_score: creativityScore,
+          feedback_text: success
+            ? `Auto-evaluated: ${latencyMs}ms latency, ${tokenUsage.total} tokens`
+            : 'Auto-evaluated: Execution failed',
+        },
+        'auto'
+      );
+    } catch (error) {
+      console.warn(`[${this.config.id}] Failed to store auto-feedback:`, error);
+    }
+  }
+
+  /**
+   * Configure auto-feedback settings
+   */
+  setAutoFeedbackConfig(config: Partial<AutoFeedbackConfig>): void {
+    this.autoFeedbackConfig = { ...this.autoFeedbackConfig, ...config };
+  }
+
+  /**
+   * Enable or disable auto-feedback
+   */
+  enableAutoFeedback(enabled: boolean = true): void {
+    this.autoFeedbackConfig.enabled = enabled;
   }
 
   /**

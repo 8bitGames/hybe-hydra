@@ -106,3 +106,15 @@ export {
   type LyricsExtractorOutput,
   type AudioMimeType,
 } from './lyrics-extractor';
+
+// Trend Insight - Trend exploration result analysis
+export {
+  TrendInsightAgent,
+  createTrendInsightAgent,
+  getTrendInsightAgent,
+  TrendInsightConfig,
+  TrendInsightInputSchema,
+  TrendInsightOutputSchema,
+  type TrendInsightInput,
+  type TrendInsightOutput,
+} from './trend-insight-agent';

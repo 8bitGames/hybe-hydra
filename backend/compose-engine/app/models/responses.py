@@ -41,6 +41,10 @@ class AudioAnalysis(BaseModel):
     )
     duration: float = Field(..., description="Audio duration in seconds")
     suggested_vibe: str = Field(..., description="Suggested vibe based on tempo")
+    best_15s_start: float = Field(
+        default=0.0,
+        description="Best starting point for 15s segment (highest energy)"
+    )
 
 
 class ImageCandidate(BaseModel):

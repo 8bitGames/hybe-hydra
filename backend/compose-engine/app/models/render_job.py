@@ -103,6 +103,10 @@ class RenderSettings(BaseModel):
         default=15,
         description="Target video duration in seconds"
     )
+    cut_duration: Optional[float] = Field(
+        default=None,
+        description="Duration per image in seconds (overrides BPM-based calculation)"
+    )
     text_style: TextStyle = Field(
         default=TextStyle.BOLD_POP,
         description="Text overlay style"

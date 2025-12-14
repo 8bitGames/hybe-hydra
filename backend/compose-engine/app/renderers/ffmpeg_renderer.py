@@ -163,21 +163,32 @@ class FFmpegRenderer:
             )
             logger.info(f"[{job_id}] [STEP 3/11] Target duration: {target_duration:.1f}s")
 
-            # Smart beat-sync: calculate optimal clip durations
+            # Calculate clip durations based on cut_duration or beat-sync
             clip_durations = []
             num_clips = 0
 
             logger.info(f"[{job_id}] [STEP 3/11] ========================================")
-            logger.info(f"[{job_id}] [STEP 3/11] SMART BEAT-SYNC CALCULATION")
+            logger.info(f"[{job_id}] [STEP 3/11] CLIP DURATION CALCULATION")
             logger.info(f"[{job_id}] [STEP 3/11] ========================================")
             logger.info(f"[{job_id}] [STEP 3/11] Input parameters:")
+            logger.info(f"[{job_id}] [STEP 3/11]   cut_duration setting: {request.settings.cut_duration}")
             logger.info(f"[{job_id}] [STEP 3/11]   BPM: {audio_analysis.bpm if audio_analysis.bpm else 'N/A'}")
             logger.info(f"[{job_id}] [STEP 3/11]   Beat times available: {len(beat_times)}")
             logger.info(f"[{job_id}] [STEP 3/11]   Target duration: {target_duration:.1f}s")
             logger.info(f"[{job_id}] [STEP 3/11]   Images available: {len(image_paths)}")
 
-            if audio_analysis.bpm and audio_analysis.bpm > 0 and len(beat_times) > 0:
-                # Use smart beat-sync algorithm
+            # Priority 1: Use explicit cut_duration from style set if provided
+            if request.settings.cut_duration and request.settings.cut_duration > 0:
+                image_duration = request.settings.cut_duration
+                # Clamp to reasonable range (0.3s to 5s)
+                image_duration = max(0.3, min(5.0, image_duration))
+                num_clips = max(1, int(target_duration / image_duration))
+                clip_durations = [image_duration] * num_clips
+                logger.info(f"[{job_id}] [STEP 3/11] ✓ Using STYLE SET cut_duration: {image_duration*1000:.0f}ms")
+                logger.info(f"[{job_id}] [STEP 3/11]   Num clips: {num_clips}")
+                logger.info(f"[{job_id}] [STEP 3/11]   Total duration: {num_clips * image_duration:.1f}s")
+            elif audio_analysis.bpm and audio_analysis.bpm > 0 and len(beat_times) > 0:
+                # Priority 2: Use smart beat-sync algorithm
                 logger.info(f"[{job_id}] [STEP 3/11] Using SMART BEAT-SYNC algorithm...")
                 logger.info(f"[{job_id}] [STEP 3/11] Beat interval: {60.0/audio_analysis.bpm:.3f}s")
 
@@ -299,14 +310,29 @@ class FFmpegRenderer:
                 job_id=job_id,
             )
             step_time = time.time() - step_start
+
+            # Check if any clips were created
+            if not clip_paths:
+                raise RuntimeError(f"All {num_clips} clip creations failed. Check FFmpeg logs above for details.")
+
             logger.info(f"[{job_id}] [STEP 5/11] Created {len(clip_paths)} video clips in {step_time:.1f}s ({step_time/len(clip_paths):.2f}s per clip)")
 
             # =================================================================
             # STEP 6: GET AI EFFECTS
             # =================================================================
-            logger.info(f"[{job_id}] [STEP 6/11] AI effects: use_ai_effects={request.settings.use_ai_effects}")
+            has_preset_effects = request.settings.ai_effects is not None
+            logger.info(f"[{job_id}] [STEP 6/11] AI effects: use_ai_effects={request.settings.use_ai_effects}, has_preset_effects={has_preset_effects}")
             ai_effects = None
-            if request.settings.use_ai_effects:
+
+            # First: Check if pre-defined effects are provided (from style sets)
+            if request.settings.ai_effects:
+                ai_effects = request.settings.ai_effects
+                logger.info(f"[{job_id}] [STEP 6/11] Using pre-defined AI effects from style set:")
+                logger.info(f"[{job_id}] [STEP 6/11]   Transitions: {ai_effects.transitions}")
+                logger.info(f"[{job_id}] [STEP 6/11]   Motions: {ai_effects.motions}")
+                logger.info(f"[{job_id}] [STEP 6/11]   Filters: {ai_effects.filters}")
+            # Second: If no preset effects and use_ai_effects is True, dynamically select
+            elif request.settings.use_ai_effects:
                 step_start = time.time()
                 ai_effects = await self._get_ai_effects(
                     settings=request.settings,
@@ -316,24 +342,36 @@ class FFmpegRenderer:
                 )
                 step_time = time.time() - step_start
                 if ai_effects:
-                    logger.info(f"[{job_id}] [STEP 6/11] AI effects selected in {step_time:.1f}s:")
+                    logger.info(f"[{job_id}] [STEP 6/11] AI effects dynamically selected in {step_time:.1f}s:")
                     logger.info(f"[{job_id}] [STEP 6/11]   Transitions: {ai_effects.transitions}")
                     logger.info(f"[{job_id}] [STEP 6/11]   Motions: {ai_effects.motions}")
                     logger.info(f"[{job_id}] [STEP 6/11]   Filters: {ai_effects.filters}")
                 else:
                     logger.info(f"[{job_id}] [STEP 6/11] AI effects selection failed, using defaults")
+            else:
+                logger.info(f"[{job_id}] [STEP 6/11] No AI effects (no preset and use_ai_effects=false)")
 
             # =================================================================
-            # STEP 7: CONCATENATE CLIPS (direct cuts, no transitions)
+            # STEP 7: CONCATENATE CLIPS (with xfade transitions if available)
             # =================================================================
             step_start = time.time()
             await self._update_progress(progress_callback, job_id, 55, "Concatenating clips")
-            logger.info(f"[{job_id}] [STEP 7/11] Concatenating {len(clip_paths)} clips (direct cuts)...")
+
+            # Check if we have transitions to apply
+            transitions_to_apply = []
+            if ai_effects and ai_effects.transitions:
+                transitions_to_apply = ai_effects.transitions
+                logger.info(f"[{job_id}] [STEP 7/11] Concatenating {len(clip_paths)} clips with xfade transitions: {transitions_to_apply}")
+            else:
+                logger.info(f"[{job_id}] [STEP 7/11] Concatenating {len(clip_paths)} clips (direct cuts, no transitions)")
 
             video_path = await self._concatenate_clips(
                 clip_paths=clip_paths,
+                clip_durations=clip_durations,
                 job_dir=job_dir,
                 job_id=job_id,
+                transitions=transitions_to_apply,
+                output_size=output_size,
             )
             step_time = time.time() - step_start
             if os.path.exists(video_path):
@@ -809,14 +847,86 @@ class FFmpegRenderer:
     async def _concatenate_clips(
         self,
         clip_paths: List[str],
+        clip_durations: List[float],
         job_dir: str,
         job_id: str,
+        transitions: List[str] = None,
+        output_size: Tuple[int, int] = None,
     ) -> str:
-        """Concatenate clips using simple direct cuts (no transitions)."""
-        from .ffmpeg_pipeline import concatenate_clips_simple
+        """Concatenate clips with optional xfade transitions.
 
-        logger.info(f"[{job_id}] Using direct cuts (no transitions): {len(clip_paths)} clips")
+        Args:
+            clip_paths: List of clip video file paths
+            clip_durations: List of durations for each clip
+            job_dir: Job directory for output
+            job_id: Job ID for logging
+            transitions: List of transition effect names (e.g., ['wipeleft', 'slideright'])
+            output_size: Target output size (width, height)
+
+        Returns:
+            Path to concatenated video file
+        """
         concat_output = os.path.join(job_dir, f"{job_id}_concat.mp4")
+
+        # If we have transitions, use XfadeRenderer
+        if transitions and len(transitions) > 0:
+            from ..effects.renderers.xfade_renderer import XfadeRenderer, ClipSegment
+            from ..effects.safe_effects import get_safe_transition
+
+            logger.info(f"[{job_id}] Using xfade transitions: {transitions}")
+
+            # Build clip segments with durations
+            segments = []
+            for i, (clip_path, duration) in enumerate(zip(clip_paths, clip_durations)):
+                segments.append(ClipSegment(
+                    path=clip_path,
+                    duration=duration,
+                    start_time=0.0
+                ))
+
+            # Map transition names to safe xfade names
+            # Only the FIRST transition uses the style set's effect, rest use fade
+            xfade_names = []
+            for i in range(len(clip_paths) - 1):
+                if i == 0 and len(transitions) > 0:
+                    # First transition: use style set's first transition for initial impact
+                    effect_name = transitions[0]
+                    safe_name = get_safe_transition(effect_name, fallback="fade")
+                    xfade_names.append(safe_name)
+                else:
+                    # All other transitions: use simple fade for consistency
+                    xfade_names.append("fade")
+
+            logger.info(f"[{job_id}] Mapped to xfade effects: first={xfade_names[0] if xfade_names else 'none'}, rest=fade ({len(xfade_names)} total)")
+
+            # Calculate transition duration based on clip durations
+            # Use shorter transition for fast cuts
+            avg_clip_duration = sum(clip_durations) / len(clip_durations)
+            # Transition duration: 20-30% of clip duration, min 0.2s, max 0.5s
+            transition_duration = max(0.2, min(0.5, avg_clip_duration * 0.25))
+            logger.info(f"[{job_id}] Transition duration: {transition_duration:.2f}s (avg clip: {avg_clip_duration:.2f}s)")
+
+            # Use XfadeRenderer (pure FFmpeg, no MoviePy)
+            xfade_renderer = XfadeRenderer()
+            success = xfade_renderer.render_sequence(
+                clips=segments,
+                output_path=concat_output,
+                transitions=xfade_names,
+                transition_duration=transition_duration,
+                use_gpu=is_nvenc_available(),
+                target_size=output_size,
+            )
+
+            if success and os.path.exists(concat_output):
+                file_size = os.path.getsize(concat_output) / (1024 * 1024)
+                logger.info(f"[{job_id}] xfade concatenation SUCCESS: {file_size:.1f}MB")
+                return concat_output
+            else:
+                logger.warning(f"[{job_id}] xfade concatenation failed, falling back to simple concat")
+
+        # Fallback: simple concatenation without transitions
+        from .ffmpeg_pipeline import concatenate_clips_simple
+        logger.info(f"[{job_id}] Using direct cuts (no transitions): {len(clip_paths)} clips")
         await concatenate_clips_simple(clip_paths, concat_output, job_id)
         return concat_output
 

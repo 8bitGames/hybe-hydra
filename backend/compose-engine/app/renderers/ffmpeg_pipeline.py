@@ -122,55 +122,62 @@ async def create_image_clip(
         fps=fps,
     )
 
-    # Select encoder based on GPU availability
-    encoder_name = "unknown"
+    async def try_encode(encoder_opts: List[str], encoder_name: str) -> bool:
+        """Try encoding with specified encoder options."""
+        cmd = [
+            ffmpeg, "-y",
+            "-loop", "1",  # Loop static image
+            "-i", image_path,
+            "-t", str(duration),
+            "-vf", filter_chain,
+            *encoder_opts,
+            "-an",  # No audio for individual clips
+            "-r", str(fps),
+            output_path,
+        ]
+
+        _log_ffmpeg_cmd(cmd, job_id)
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        elapsed = time.time() - start_time
+
+        if proc.returncode != 0:
+            # Log full error (up to 2000 chars) for debugging
+            error_msg = stderr.decode()
+            logger.error(f"[{job_id}] FFmpeg {encoder_name} FAILED ({elapsed:.1f}s): {error_msg[-1500:]}")
+            return False
+
+        # Log success with file size
+        if os.path.exists(output_path):
+            size_kb = os.path.getsize(output_path) / 1024
+            logger.debug(f"[{job_id}] Clip created: {output_path} ({size_kb:.0f}KB, {elapsed:.2f}s, {encoder_name})")
+
+        return True
+
+    # Try GPU encoding first if requested
     if use_gpu and is_nvenc_available():
-        encoder_opts = [
+        gpu_opts = [
             "-c:v", "h264_nvenc",
             "-preset", "p4",  # Fast preset for clips
             "-b:v", "8M",
         ]
-        encoder_name = "h264_nvenc"
-    else:
-        encoder_opts = [
-            "-c:v", "libx264",
-            "-preset", "ultrafast",  # Fast for intermediate clips
-            "-crf", "18",
-        ]
-        encoder_name = "libx264"
+        if await try_encode(gpu_opts, "h264_nvenc"):
+            return True
+        # GPU failed, fall back to CPU
+        logger.warning(f"[{job_id}] NVENC failed, falling back to CPU encoding")
 
-    cmd = [
-        ffmpeg, "-y",
-        "-loop", "1",  # Loop static image
-        "-i", image_path,
-        "-t", str(duration),
-        "-vf", filter_chain,
-        *encoder_opts,
-        "-an",  # No audio for individual clips
-        "-r", str(fps),
-        output_path,
+    # CPU encoding (either as fallback or primary)
+    cpu_opts = [
+        "-c:v", "libx264",
+        "-preset", "ultrafast",  # Fast for intermediate clips
+        "-crf", "18",
     ]
-
-    _log_ffmpeg_cmd(cmd, job_id)
-
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate()
-    elapsed = time.time() - start_time
-
-    if proc.returncode != 0:
-        logger.error(f"[{job_id}] FFmpeg clip creation FAILED ({elapsed:.1f}s): {stderr.decode()[:500]}")
-        return False
-
-    # Log success with file size
-    if os.path.exists(output_path):
-        size_kb = os.path.getsize(output_path) / 1024
-        logger.debug(f"[{job_id}] Clip created: {output_path} ({size_kb:.0f}KB, {elapsed:.2f}s, {encoder_name})")
-
-    return True
+    return await try_encode(cpu_opts, "libx264")
 
 
 async def create_clips_parallel(

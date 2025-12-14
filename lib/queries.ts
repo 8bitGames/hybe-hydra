@@ -72,6 +72,12 @@ export const queryKeys = {
   singleKeywordAnalysis: (keyword: string) => ["trends", "keyword-analysis", "single", keyword] as const,
   keywordHistory: (params?: { limit?: number; offset?: number }) => ["trends", "keyword-history", params] as const,
 
+  // Saved Keywords & Heatmap
+  savedKeywords: (params?: { platform?: string; includeSnapshots?: boolean }) =>
+    ["trends", "saved-keywords", params] as const,
+  savedKeyword: (id: string) => ["trends", "saved-keywords", id] as const,
+  trendHeatmap: (params?: { days?: number }) => ["trends", "heatmap", params] as const,
+
   // Merchandise
   merchandise: ["merchandise"] as const,
   merchandiseList: (params?: { artist_id?: string; type?: string }) =>
@@ -1148,6 +1154,311 @@ export function useKeywordHistory(params?: {
   });
 }
 
+// Saved Keywords Types
+export interface SavedKeywordSnapshot {
+  id: string;
+  date: string;
+  totalViews: number;
+  avgViews: number;
+  avgEngagement: number;
+  totalVideos: number;
+  viralCount: number;
+  highPerformingCount: number;
+  viewsGrowth: number | null;
+  engagementGrowth: number | null;
+  videosGrowth: number | null;
+  trendScore: number;
+  viralityScore: number;
+  growthScore: number;
+  topHashtags: { tag: string; count: number; avgEngagement: number }[] | null;
+}
+
+export interface SavedKeyword {
+  id: string;
+  userId: string;
+  keyword: string;
+  platform: string;
+  displayName: string | null;
+  color: string | null;
+  priority: number;
+  notes: string | null;
+  baselineViews: number | null;
+  baselineEngagement: number | null;
+  baselineTotalVideos: number | null;
+  baselineViralCount: number | null;
+  alertEnabled: boolean;
+  alertThreshold: number | null;
+  lastAnalyzedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  snapshots?: SavedKeywordSnapshot[];
+}
+
+export interface SavedKeywordsResponse {
+  success: boolean;
+  savedKeywords: SavedKeyword[];
+  count: number;
+}
+
+export interface SaveKeywordInput {
+  keyword: string;
+  platform?: string;
+  displayName?: string;
+  color?: string;
+  notes?: string;
+  priority?: number;
+  alertEnabled?: boolean;
+  alertThreshold?: number;
+  currentViews?: number;
+  currentEngagement?: number;
+  currentTotalVideos?: number;
+  currentViralCount?: number;
+}
+
+export interface UpdateKeywordInput {
+  displayName?: string;
+  color?: string;
+  notes?: string;
+  priority?: number;
+  alertEnabled?: boolean;
+  alertThreshold?: number;
+}
+
+// Heatmap Types
+export interface HeatmapCell {
+  date: string;
+  keyword: string;
+  displayName: string | null;
+  color: string | null;
+  trendScore: number;
+  viralityScore: number;
+  growthScore: number;
+  totalViews: number;
+  avgViews: number;
+  avgEngagement: number;
+  totalVideos: number;
+  viralCount: number;
+  viewsGrowth: number | null;
+  engagementGrowth: number | null;
+}
+
+export interface HeatmapData {
+  dates: string[];
+  keywords: {
+    id: string;
+    keyword: string;
+    displayName: string | null;
+    color: string | null;
+    priority: number;
+  }[];
+  cells: HeatmapCell[];
+  summary: {
+    totalKeywords: number;
+    dateRange: { start: string; end: string };
+    avgTrendScore: number;
+    topGrowing: { keyword: string; growthScore: number } | null;
+    topViral: { keyword: string; viralityScore: number } | null;
+  };
+}
+
+export interface HeatmapResponse {
+  success: boolean;
+  heatmap: HeatmapData;
+}
+
+export interface SyncResult {
+  keyword: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface SyncKeywordsResponse {
+  success: boolean;
+  message: string;
+  synced: number;
+  total: number;
+  results: SyncResult[];
+}
+
+// Saved Keywords Hooks
+export function useSavedKeywords(params?: {
+  platform?: string;
+  includeSnapshots?: boolean;
+  snapshotDays?: number;
+  enabled?: boolean;
+}) {
+  return useQuery({
+    queryKey: queryKeys.savedKeywords({
+      platform: params?.platform,
+      includeSnapshots: params?.includeSnapshots,
+    }),
+    queryFn: async (): Promise<SavedKeywordsResponse> => {
+      const searchParams = new URLSearchParams();
+      if (params?.platform) searchParams.set("platform", params.platform);
+      if (params?.includeSnapshots) searchParams.set("include_snapshots", "true");
+      if (params?.snapshotDays) searchParams.set("snapshot_days", params.snapshotDays.toString());
+
+      const query = searchParams.toString();
+      const response = await api.get<SavedKeywordsResponse>(
+        `/api/v1/trends/saved-keywords${query ? `?${query}` : ""}`
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    enabled: params?.enabled !== false,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+export function useSavedKeyword(id: string, params?: { days?: number }) {
+  return useQuery({
+    queryKey: queryKeys.savedKeyword(id),
+    queryFn: async (): Promise<{ success: boolean; savedKeyword: SavedKeyword }> => {
+      const searchParams = new URLSearchParams();
+      if (params?.days) searchParams.set("days", params.days.toString());
+
+      const query = searchParams.toString();
+      const response = await api.get<{ success: boolean; savedKeyword: SavedKeyword }>(
+        `/api/v1/trends/saved-keywords/${id}${query ? `?${query}` : ""}`
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    enabled: !!id,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useSaveKeyword() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: SaveKeywordInput) => {
+      const response = await api.post<{ success: boolean; savedKeyword: SavedKeyword }>(
+        "/api/v1/trends/saved-keywords",
+        data
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["trends", "saved-keywords"] });
+      queryClient.invalidateQueries({ queryKey: ["trends", "heatmap"] });
+    },
+  });
+}
+
+export function useUpdateSavedKeyword() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: UpdateKeywordInput }) => {
+      const response = await api.patch<{ success: boolean; savedKeyword: SavedKeyword }>(
+        `/api/v1/trends/saved-keywords/${id}`,
+        data
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["trends", "saved-keywords"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.savedKeyword(variables.id) });
+      queryClient.invalidateQueries({ queryKey: ["trends", "heatmap"] });
+    },
+  });
+}
+
+export function useDeleteSavedKeyword() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.delete<{ success: boolean; message: string }>(
+        `/api/v1/trends/saved-keywords/${id}`
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["trends", "saved-keywords"] });
+      queryClient.invalidateQueries({ queryKey: ["trends", "heatmap"] });
+    },
+  });
+}
+
+// Heatmap Hooks
+export function useHeatmapData(params?: {
+  days?: number;
+  metric?: "trendScore" | "viralityScore" | "growthScore";
+  enabled?: boolean;
+}) {
+  return useQuery({
+    queryKey: queryKeys.trendHeatmap({ days: params?.days }),
+    queryFn: async (): Promise<HeatmapResponse> => {
+      const searchParams = new URLSearchParams();
+      if (params?.days) searchParams.set("days", params.days.toString());
+      if (params?.metric) searchParams.set("metric", params.metric);
+
+      const query = searchParams.toString();
+      const response = await api.get<HeatmapResponse>(
+        `/api/v1/trends/heatmap${query ? `?${query}` : ""}`
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    enabled: params?.enabled !== false,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+}
+
+// Sync Keywords Hooks
+export function useSyncKeywords() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (keywordIds?: string[]) => {
+      const response = await api.post<SyncKeywordsResponse>(
+        "/api/v1/trends/saved-keywords/sync",
+        keywordIds ? { keywordIds } : {}
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["trends", "saved-keywords"] });
+      queryClient.invalidateQueries({ queryKey: ["trends", "heatmap"] });
+    },
+  });
+}
+
 // Invalidation helpers
 export function useInvalidateQueries() {
   const queryClient = useQueryClient();
@@ -1177,6 +1488,10 @@ export function useInvalidateQueries() {
       queryClient.invalidateQueries({ queryKey: ["trends", "keyword-analysis"] }),
     invalidateKeywordHistory: () =>
       queryClient.invalidateQueries({ queryKey: ["trends", "keyword-history"] }),
+    invalidateSavedKeywords: () =>
+      queryClient.invalidateQueries({ queryKey: ["trends", "saved-keywords"] }),
+    invalidateHeatmap: () =>
+      queryClient.invalidateQueries({ queryKey: ["trends", "heatmap"] }),
     invalidateAll: () => queryClient.invalidateQueries(),
   };
 }

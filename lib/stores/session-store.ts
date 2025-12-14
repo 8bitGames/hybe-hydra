@@ -228,7 +228,7 @@ interface SessionActions {
   loadSession: (sessionId: string) => Promise<void>;
   saveSession: (options?: { force?: boolean }) => Promise<void>;
   pauseSession: () => Promise<void>;
-  completeSession: () => Promise<void>;
+  completeSession: (sessionId?: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
 
   // Stage Management
@@ -867,18 +867,27 @@ export const useSessionStore = create<SessionStore>()(
       console.log("[SessionStore] Paused session:", activeSession.id);
     },
 
-    completeSession: async () => {
+    completeSession: async (sessionId?: string) => {
       const { activeSession } = get();
-      if (!activeSession) return;
+
+      // Use provided sessionId or fall back to activeSession
+      const targetSessionId = sessionId || activeSession?.id;
+
+      if (!targetSessionId) {
+        console.warn("[SessionStore] completeSession: No session ID available");
+        return;
+      }
 
       const supabase = createClient();
       const now = new Date();
 
       // CRITICAL FIX: Add current stage to completedStages if not already there
       // This ensures the final stage (e.g., "publish") is marked as completed
-      const finalCompletedStages = activeSession.completedStages.includes(activeSession.currentStage)
-        ? activeSession.completedStages
-        : [...activeSession.completedStages, activeSession.currentStage];
+      const currentStage = activeSession?.currentStage || "publish";
+      const currentCompletedStages = activeSession?.completedStages || [];
+      const finalCompletedStages = currentCompletedStages.includes(currentStage)
+        ? currentCompletedStages
+        : [...currentCompletedStages, currentStage];
 
       const { error } = await supabase
         .from("creation_sessions")
@@ -889,7 +898,7 @@ export const useSessionStore = create<SessionStore>()(
           completed_at: now.toISOString(),
           updated_at: now.toISOString(),
         })
-        .eq("id", activeSession.id);
+        .eq("id", targetSessionId);
 
       if (error) {
         console.error("[SessionStore] Failed to complete session:", error);
@@ -897,21 +906,24 @@ export const useSessionStore = create<SessionStore>()(
       }
 
       // Clean up IndexedDB
-      await deleteFromIDB(activeSession.id);
+      await deleteFromIDB(targetSessionId);
 
-      set({
-        activeSession: {
-          ...activeSession,
-          status: "completed",
-          // CRITICAL FIX: Update local state with final completedStages
-          completedStages: finalCompletedStages,
-          completedAt: now,
-          updatedAt: now,
-        },
-        lastSavedAt: now,
-      });
+      // Update local state only if this was the active session
+      if (activeSession && activeSession.id === targetSessionId) {
+        set({
+          activeSession: {
+            ...activeSession,
+            status: "completed",
+            // CRITICAL FIX: Update local state with final completedStages
+            completedStages: finalCompletedStages,
+            completedAt: now,
+            updatedAt: now,
+          },
+          lastSavedAt: now,
+        });
+      }
 
-      console.log("[SessionStore] Completed session:", activeSession.id, "with stages:", finalCompletedStages);
+      console.log("[SessionStore] Completed session:", targetSessionId, "with stages:", finalCompletedStages);
     },
 
     deleteSession: async (sessionId: string) => {

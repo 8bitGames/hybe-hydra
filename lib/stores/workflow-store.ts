@@ -598,6 +598,9 @@ export const useWorkflowStore = create<WorkflowState>()(
             console.error("[WorkflowStore] Failed to clear localStorage:", err);
           }
 
+          // Reset all data properties to initial values
+          // Note: Using normal set() which merges state - this is correct because
+          // we're setting all data properties explicitly
           set({
             currentStage: "start",
             completedStages: [],
@@ -607,7 +610,17 @@ export const useWorkflowStore = create<WorkflowState>()(
             create: initialCreateData,
             processing: initialProcessingData,
             publish: initialPublishData,
+            stashedPrompts: [], // CRITICAL FIX: Also reset stashedPrompts
           });
+
+          // CRITICAL FIX: Clear persist middleware's internal storage
+          // This prevents rehydration from restoring old data after reset
+          try {
+            useWorkflowStore.persist.clearStorage();
+            console.log("[WorkflowStore] Cleared persist storage");
+          } catch (err) {
+            console.error("[WorkflowStore] Failed to clear persist storage:", err);
+          }
         },
 
         // Start Actions (new workflow entry point)

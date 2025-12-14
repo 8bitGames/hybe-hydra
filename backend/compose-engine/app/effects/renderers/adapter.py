@@ -12,6 +12,12 @@ from moviepy import ImageClip, CompositeVideoClip, concatenate_videoclips
 
 from .xfade_renderer import XfadeRenderer, ClipSegment, XFADE_TRANSITIONS
 from ..registry import get_registry, EffectMetadata, BLACKLISTED_EFFECTS
+from ..safe_effects import (
+    get_safe_transition,
+    FRONTEND_TO_XFADE_MAP,
+    EXTENDED_BLACKLIST,
+    SAFE_XFADE_TRANSITIONS,
+)
 
 # Try to import GL renderer and transitions
 try:
@@ -443,38 +449,20 @@ class RendererAdapter:
 
             print(f"[ADAPTER][{job_id}] All {len(clips)} clips exported successfully")
 
-            # Get xfade transition names with blacklist filtering
+            # Get xfade transition names using centralized safe_effects module
+            # This ensures all effects are validated against blacklist and mapped properly
             xfade_names = []
             for t in transitions:
-                # ALWAYS check blacklist FIRST, regardless of source
-                if t.effect_id in BLACKLISTED_EFFECTS:
-                    logger.warning(f"[{job_id}] Replacing blacklisted {t.effect_id} with fade")
-                    xfade_names.append("fade")
-                elif t.effect_id in XFADE_TRANSITIONS:
-                    xfade_name = XFADE_TRANSITIONS[t.effect_id]
-                    # Double-check the mapped name isn't blacklisted
-                    if xfade_name in BLACKLISTED_EFFECTS or f"xfade_{xfade_name}" in BLACKLISTED_EFFECTS:
-                        logger.warning(f"[{job_id}] Mapped xfade {xfade_name} is blacklisted, using fade")
-                        xfade_names.append("fade")
-                    else:
-                        xfade_names.append(xfade_name)
-                elif t.effect_id.startswith("xfade_"):
-                    xfade_name = t.effect_id.replace("xfade_", "")
-                    # Check raw xfade name against blacklist
-                    if xfade_name in BLACKLISTED_EFFECTS or t.effect_id in BLACKLISTED_EFFECTS:
-                        logger.warning(f"[{job_id}] xfade {xfade_name} is blacklisted, using fade")
-                        xfade_names.append("fade")
-                    else:
-                        xfade_names.append(xfade_name)
-                else:
-                    # Map GL transition to similar xfade with diversity
-                    mapped = self._map_to_xfade(t.effect_id)
-                    # Final blacklist check on mapped name
-                    if mapped in BLACKLISTED_EFFECTS or f"xfade_{mapped}" in BLACKLISTED_EFFECTS:
-                        logger.warning(f"[{job_id}] Mapped {t.effect_id} -> {mapped} is blacklisted, using fade")
-                        xfade_names.append("fade")
-                    else:
-                        xfade_names.append(mapped)
+                # Use centralized get_safe_transition which handles:
+                # 1. Blacklist checking
+                # 2. Frontend-to-xfade mapping
+                # 3. Safe fallback for unknown effects
+                safe_effect = get_safe_transition(t.effect_id, fallback="fade")
+                xfade_names.append(safe_effect)
+
+                # Log if effect was remapped
+                if safe_effect != t.effect_id.lower().strip():
+                    logger.info(f"[{job_id}] Mapped '{t.effect_id}' -> '{safe_effect}'")
 
             print(f"[ADAPTER][{job_id}] xfade effects to apply: {xfade_names}")
             logger.info(f"[{job_id}] xfade effects to apply: {xfade_names}")
@@ -524,193 +512,13 @@ class RendererAdapter:
     def _map_to_xfade(self, effect_id: str) -> str:
         """Map a GL Transition or other effect to similar xfade transition.
 
-        IMPORTANT: Never map to blacklisted effects that cause visual corruption.
-        DIVERSITY: Each GL effect maps to a UNIQUE xfade effect for variety.
+        NOTE: This method is now a thin wrapper around the centralized
+        safe_effects module which handles all mapping and blacklist checking.
+        Kept for backward compatibility with any code that might call it directly.
         """
-        # Mapping from GL Transitions to xfade equivalents
-        # NOTE: Avoid mapping to blacklisted effects (hlslice, hrslice, vuslice, vdslice, hblur)
-        # DIVERSITY: Spread effects across ALL available safe xfade transitions
-        # Contains 50+ GL transitions from gl-transitions library
-        gl_to_xfade = {
-            # === BASIC TRANSITIONS ===
-            "gl_fade": "fade",
-            "gl_fadecolor": "fadeblack",
-            "gl_fadegrayscale": "fadegrays",
-
-            # === WIPE TRANSITIONS ===
-            "gl_wipeleft": "wipeleft",
-            "gl_wiperight": "wiperight",
-            "gl_wipeup": "wipeup",
-            "gl_wipedown": "wipedown",
-            "gl_directionalwipe": "wipeleft",
-            "gl_windowslice": "wiperight",
-            "gl_directional": "slideup",
-
-            # === SLIDE TRANSITIONS ===
-            "gl_slideright": "slideright",
-            "gl_slideleft": "slideleft",
-            "gl_swap": "coverright",       # Use cover for swap effect
-            "gl_leftright": "revealleft",  # Use reveal for variety
-            "gl_wind": "hlwind",           # Use actual wind effect!
-
-            # === CIRCLE TRANSITIONS ===
-            "gl_circle": "circleopen",
-            "gl_circleopen": "circleopen",
-            "gl_circleclose": "circleclose",
-            "gl_heart": "circleopen",
-            "gl_zoomincircles": "circleopen",
-            "gl_polar_function": "circleclose",
-            "gl_waterdrop": "circlecrop",
-
-            # === ZOOM TRANSITIONS ===
-            "gl_zoomin": "zoomin",
-            "gl_crosszoom": "zoomin",
-            "gl_simpleZoom": "zoomin",
-            "gl_dreamy_zoom": "zoomin",
-            "gl_rotate_scale_fade": "zoomin",
-
-            # === ROTATION TRANSITIONS ===
-            "gl_pinwheel": "radial",
-            "gl_radial": "radial",
-            "gl_rotate": "radial",
-            "gl_swirl": "diagtr",
-            "gl_kaleidoscope": "radial",
-            "gl_powerKaleido": "diagbl",
-            "gl_angular": "wipetl",
-
-            # === 3D/CUBE TRANSITIONS ===
-            "gl_cube": "diagtl",
-            "gl_doorway": "vertopen",
-            "gl_stereo_viewer": "horzopen",
-            "gl_bowtiehorizontal": "horzopen",
-            "gl_bowtievertical": "vertopen",
-            "gl_bowTie": "vertclose",
-
-            # === PIXEL/MOSAIC TRANSITIONS ===
-            # NOTE: rectcrop is BLACKLISTED - causes horizontal stripes!
-            "gl_pixelize": "pixelize",
-            "gl_mosaic": "pixelize",        # Changed from rectcrop (blacklisted)
-            "gl_randomsquares": "pixelize",
-            "gl_hexagonalize": "dissolve",  # Changed from pixelize for variety
-            "gl_crosshatch": "diagtl",      # Changed from rectcrop (blacklisted)
-            "gl_squareswipe": "diagtr",     # Changed from rectcrop (blacklisted)
-            "gl_gridflip": "diagbl",        # Changed for variety
-
-            # === DISTORTION TRANSITIONS ===
-            "gl_crosswarp": "dissolve",
-            "gl_dreamy": "smoothleft",
-            "gl_morph": "distance",
-            "gl_ripple": "smoothdown",
-            "gl_squeeze": "squeezeh",
-            "gl_butterflywavescrawler": "horzclose",
-            "gl_undulating": "wipedown",
-            "gl_colordistance": "distance",
-            "gl_perlin": "smoothup",
-            "gl_doomscreenmelt": "smoothdown",
-            "gl_linearblur": "smoothright",
-            "gl_flyeye": "squeezev",
-
-            # === GLITCH TRANSITIONS ===
-            "gl_glitchdisplace": "circlecrop",
-            "gl_glitchmemories": "dissolve",
-            "gl_static": "fadewhite",
-            "gl_tvstatic": "fadewhite",
-
-            # === SPECIAL EFFECTS ===
-            "gl_burn": "fadeblack",
-            "gl_film_burn": "fadeblack",
-            "gl_overexposure": "fadewhite",
-            "gl_colorphase": "fadegrays",
-            "gl_colorphaseRotate": "diagbr",
-            "gl_luminance_melt": "fadegrays",
-            "gl_multiply_blend": "dissolve",
-            "gl_displacement": "vuwind",       # Use wind effect
-            "gl_inverted_page_curl": "revealup",  # Use reveal for page curl
-            "gl_directionalscaled": "coverup",    # Use cover effect
-            "gl_directionalwarp": "hrwind",       # Use wind effect
-            "gl_bounce": "coverdown",             # Use cover for bounce
-            "gl_polkadotscurtain": "circleclose",
-            "gl_windowblinds": "horzopen",
-        }
-
-        # Try direct mapping
-        if effect_id in gl_to_xfade:
-            mapped = gl_to_xfade[effect_id]
-            # Double-check: ensure mapped effect is not blacklisted
-            xfade_id = f"xfade_{mapped}"
-            if xfade_id in BLACKLISTED_EFFECTS:
-                logger.warning(f"Mapped effect {mapped} is blacklisted, using fade instead")
-                return "fade"
-            return mapped
-
-        # Try partial match - use DIVERSE safe alternatives based on hash
-        effect_lower = effect_id.lower()
-
-        # Keyword-based mapping with diversity using hash for variation
-        if "fade" in effect_lower:
-            variants = ["fade", "fadeblack", "fadewhite", "fadegrays"]
-            return variants[hash(effect_id) % len(variants)]
-        elif "wipe" in effect_lower:
-            variants = ["wipeleft", "wiperight", "wipeup", "wipedown", "wipetl", "wipetr", "wipebl", "wipebr"]
-            return variants[hash(effect_id) % len(variants)]
-        elif "slide" in effect_lower:
-            variants = ["slideleft", "slideright", "slideup", "slidedown"]
-            return variants[hash(effect_id) % len(variants)]
-        elif "zoom" in effect_lower:
-            return "zoomin"
-        elif "blur" in effect_lower:
-            variants = ["smoothleft", "smoothright", "smoothup", "smoothdown", "dissolve"]
-            return variants[hash(effect_id) % len(variants)]
-        elif "circle" in effect_lower:
-            variants = ["circleopen", "circleclose", "circlecrop"]
-            return variants[hash(effect_id) % len(variants)]
-        elif "pixel" in effect_lower:
-            variants = ["pixelize", "dissolve", "diagtl"]  # rectcrop removed (blacklisted)
-            return variants[hash(effect_id) % len(variants)]
-        elif "slice" in effect_lower:
-            variants = ["wipeleft", "wiperight", "horzopen", "vertopen"]
-            return variants[hash(effect_id) % len(variants)]
-        elif "diag" in effect_lower:
-            variants = ["diagtl", "diagtr", "diagbl", "diagbr"]
-            return variants[hash(effect_id) % len(variants)]
-        elif "smooth" in effect_lower:
-            variants = ["smoothleft", "smoothright", "smoothup", "smoothdown"]
-            return variants[hash(effect_id) % len(variants)]
-        elif "squeeze" in effect_lower:
-            variants = ["squeezev", "squeezeh"]
-            return variants[hash(effect_id) % len(variants)]
-        elif "vert" in effect_lower:
-            variants = ["vertopen", "vertclose"]
-            return variants[hash(effect_id) % len(variants)]
-        elif "horz" in effect_lower:
-            variants = ["horzopen", "horzclose"]
-            return variants[hash(effect_id) % len(variants)]
-
-        # Default fallback with diversity based on effect_id hash
-        # Includes all safe FFmpeg xfade effects for maximum variety
-        fallback_effects = [
-            # Basic fades
-            "fade", "dissolve", "fadeblack", "fadewhite", "fadegrays", "distance",
-            # Wipes
-            "wipeleft", "wiperight", "wipeup", "wipedown", "wipetl", "wipetr", "wipebl", "wipebr",
-            # Slides
-            "slideleft", "slideright", "slideup", "slidedown",
-            # Smooth
-            "smoothleft", "smoothright", "smoothup", "smoothdown",
-            # Geometric
-            "circleopen", "circleclose", "circlecrop", "vertopen", "vertclose", "horzopen", "horzclose",
-            # Diagonal
-            "diagtl", "diagtr", "diagbl", "diagbr",
-            # Special
-            "pixelize", "radial", "zoomin", "squeezev", "squeezeh",
-            # Wind effects
-            "hlwind", "hrwind", "vuwind", "vdwind",
-            # Cover effects
-            "coverleft", "coverright", "coverup", "coverdown",
-            # Reveal effects
-            "revealleft", "revealright", "revealup", "revealdown",
-        ]
-        return fallback_effects[hash(effect_id) % len(fallback_effects)]
+        # Use centralized safe_effects module for mapping
+        # This ensures consistent behavior across the entire system
+        return get_safe_transition(effect_id, fallback="fade")
 
     def _apply_moviepy_transitions(
         self,

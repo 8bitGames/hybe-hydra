@@ -151,7 +151,7 @@ export const FastCutConductorConfig: AgentConfig<FastCutConductorInput, FastCutC
   id: 'fast-cut-conductor',
   name: 'Fast Cut Conductor',
   description: '영상 컴포지션 플래닝 (이미지/가사 분석 + 세그먼트/전환/효과 계획)',
-  category: 'fast-cut',
+  category: 'transformer',
 
   model: {
     provider: 'gemini',

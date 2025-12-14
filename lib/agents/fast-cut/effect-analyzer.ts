@@ -55,7 +55,7 @@ export const FastCutEffectAnalyzerConfig: AgentConfig<FastCutEffectAnalyzerInput
   id: 'fast-cut-effect-analyzer',
   name: 'Fast Cut Effect Analyzer',
   description: '영상 프롬프트 분석 및 효과/무드/장르 추출',
-  category: 'fast-cut',
+  category: 'analyzer',
 
   model: {
     provider: 'gemini',

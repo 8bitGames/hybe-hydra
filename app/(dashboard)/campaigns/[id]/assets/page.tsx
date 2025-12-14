@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { assetsApi } from "@/lib/campaigns-api";
+import { assetsApi, Asset } from "@/lib/campaigns-api";
 import {
   useCampaign,
   useAssets,
@@ -31,6 +31,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Upload,
   Image,
   Video,
@@ -41,8 +46,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Package,
+  Subtitles,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
+import { AudioLyricsModal } from "@/components/features/audio-lyrics-modal";
+import type { LyricsData } from "@/lib/subtitle-styles";
 
 type AssetFilter = "all" | "image" | "video" | "audio" | "goods";
 type MerchandiseType = "album" | "photocard" | "lightstick" | "apparel" | "accessory" | "other";
@@ -59,7 +67,7 @@ const MERCHANDISE_TYPES: { value: MerchandiseType; label: string; labelKo: strin
 export default function CampaignAssetsPage() {
   const params = useParams();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const campaignId = params.id as string;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,6 +81,23 @@ export default function CampaignAssetsPage() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadAsGoods, setUploadAsGoods] = useState(false);
   const [selectedMerchType, setSelectedMerchType] = useState<MerchandiseType>("album");
+
+  // Lyrics modal state
+  const [lyricsModalOpen, setLyricsModalOpen] = useState(false);
+  const [selectedAudioAsset, setSelectedAudioAsset] = useState<Asset | null>(null);
+
+  // Open lyrics modal for audio asset
+  const handleAudioLyricsClick = (asset: Asset) => {
+    setSelectedAudioAsset(asset);
+    setLyricsModalOpen(true);
+  };
+
+  // Check if audio has lyrics
+  const hasLyrics = (asset: Asset): boolean => {
+    const metadata = asset.metadata as Record<string, unknown> | null;
+    const lyrics = metadata?.lyrics as LyricsData | undefined;
+    return !!(lyrics && lyrics.segments && lyrics.segments.length > 0);
+  };
 
   // Use TanStack Query for data fetching with caching
   const { data: campaign, isLoading: campaignLoading, error: campaignError } = useCampaign(campaignId);
@@ -441,6 +466,28 @@ export default function CampaignAssetsPage() {
 
                   {/* Actions Overlay */}
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    {/* Lyrics button for audio */}
+                    {asset.type === "audio" && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => handleAudioLyricsClick(asset)}
+                            className={`p-2 rounded-lg transition-colors ${
+                              hasLyrics(asset)
+                                ? "bg-green-500/30 hover:bg-green-500/50"
+                                : "bg-white/20 hover:bg-white/30"
+                            }`}
+                          >
+                            <Subtitles className="h-5 w-5 text-white" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {hasLyrics(asset)
+                            ? (language === "ko" ? "자막 편집" : "Edit Lyrics")
+                            : (language === "ko" ? "자막 추가" : "Add Lyrics")}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                     {asset.s3_url && (
                       <a
                         href={asset.s3_url}
@@ -575,6 +622,14 @@ export default function CampaignAssetsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Audio Lyrics Modal */}
+      <AudioLyricsModal
+        open={lyricsModalOpen}
+        onOpenChange={setLyricsModalOpen}
+        asset={selectedAudioAsset}
+        onSaved={() => refetchAssets()}
+      />
     </div>
   );
 }

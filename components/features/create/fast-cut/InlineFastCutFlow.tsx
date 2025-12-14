@@ -62,6 +62,9 @@ import { FastCutImageStep } from "./FastCutImageStep";
 import { FastCutMusicStep } from "./FastCutMusicStep";
 import { FastCutEffectStep } from "./FastCutEffectStep";
 
+// Types
+import type { SubtitleMode } from "@/lib/stores/fast-cut-context";
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -527,6 +530,7 @@ export function InlineFastCutFlow({
   const [audioAnalysis, setAudioAnalysis] = useState<AudioAnalysisResponse | null>(null);
   const [analyzingAudio, setAnalyzingAudio] = useState(false);
   const [musicSkipped, setMusicSkipped] = useState(false);
+  const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>("lyrics");
 
   // Step 4: Render state
   const [styleSetId, setStyleSetId] = useState<string>("viral_tiktok");
@@ -844,6 +848,8 @@ export function InlineFastCutFlow({
         prompt,
         searchKeywords: editableKeywords,
         tiktokSEO: tiktokSEO || undefined,
+        // Use audio lyrics for subtitles when lyrics mode selected
+        useAudioLyrics: subtitleMode === "lyrics",
       });
       console.log("[FastCut] 📦 Render API response received");
 
@@ -1097,8 +1103,10 @@ export function InlineFastCutFlow({
                 analyzingAudio={analyzingAudio}
                 campaignId={campaignId}
                 musicSkipped={musicSkipped}
+                subtitleMode={subtitleMode}
                 onSelectAudio={handleSelectAudio}
                 onSetAudioStartTime={setAudioStartTime}
+                onSetSubtitleMode={setSubtitleMode}
                 onSkipMusic={handleSkipMusic}
                 onUnskipMusic={handleUnskipMusic}
                 onNext={handleNext}

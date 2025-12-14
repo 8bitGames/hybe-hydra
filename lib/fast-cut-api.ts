@@ -266,6 +266,8 @@ export interface RenderRequest {
   useAiEffects?: boolean;  // Enable AI-based effect selection
   aiPrompt?: string;  // Prompt for AI effect analysis (defaults to prompt field)
   aiEffects?: SelectedEffects;  // Pre-selected AI effects (auto-selected if not provided)
+  // Lyrics subtitle mode
+  useAudioLyrics?: boolean;  // Use audio lyrics for subtitles instead of script
 }
 
 export interface RenderResponse {

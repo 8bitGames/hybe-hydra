@@ -26,7 +26,8 @@ export const VIRAL_TIKTOK: FastCutStyleSet = {
     vibe: 'Exciting',
     colorGrade: 'vibrant',
     effectPreset: 'zoom_beat',
-    transitions: ['zoom', 'glitch', 'slide'],
+    // Safe FFmpeg xfade transitions - circleclose first for viral impact
+    transitions: ['circleclose', 'slideright', 'wipeleft', 'radial'],
     motions: ['shake', 'zoom_in', 'pulse'],
     filters: [],
   },
@@ -68,8 +69,9 @@ export const CINEMATIC_MOOD: FastCutStyleSet = {
     vibe: 'Emotional',
     colorGrade: 'cinematic',
     effectPreset: 'crossfade',
-    transitions: ['fade', 'dissolve', 'crossfade'],
-    motions: ['parallax', 'slow_zoom'],
+    // Safe FFmpeg xfade transitions - smooth fades for cinematic feel
+    transitions: ['fade', 'fadeblack', 'dissolve'],
+    motions: ['ken_burns', 'subtle_zoom'],
     filters: [],
   },
 
@@ -110,8 +112,9 @@ export const CLEAN_MINIMAL: FastCutStyleSet = {
     vibe: 'Minimal',
     colorGrade: 'natural',
     effectPreset: 'minimal',
-    transitions: ['cut', 'fade'],
-    motions: ['none', 'subtle_zoom'],
+    // Safe FFmpeg xfade transitions - clean and simple (wipeleft first for clean start)
+    transitions: ['wipeleft', 'fade', 'wiperight'],
+    motions: ['subtle_zoom'],
     filters: [],
   },
 
@@ -152,7 +155,8 @@ export const ENERGETIC_BEAT: FastCutStyleSet = {
     vibe: 'Exciting',
     colorGrade: 'vibrant',
     effectPreset: 'zoom_beat',
-    transitions: ['zoom', 'wipe', 'flash'],
+    // Safe FFmpeg xfade transitions - dynamic beat-synced
+    transitions: ['slideright', 'slideleft', 'circleopen', 'radial'],
     motions: ['shake', 'pulse', 'zoom_in'],
     filters: [],
   },
@@ -194,8 +198,9 @@ export const RETRO_AESTHETIC: FastCutStyleSet = {
     vibe: 'Pop',
     colorGrade: 'moody', // 'vintage' not supported by compose server
     effectPreset: 'crossfade',
-    transitions: ['fade', 'dissolve', 'vhs'],
-    motions: ['subtle_zoom', 'scan_lines'],
+    // Safe FFmpeg xfade transitions - retro/vintage feel (pixelize first for retro impact)
+    transitions: ['pixelize', 'fade', 'dissolve'],
+    motions: ['ken_burns', 'subtle_zoom'],
     filters: [],
   },
 
@@ -236,8 +241,9 @@ export const PROFESSIONAL_CORP: FastCutStyleSet = {
     vibe: 'Minimal',
     colorGrade: 'cinematic', // 'cool' not supported by compose server
     effectPreset: 'minimal',
-    transitions: ['fade', 'slide', 'wipe'],
-    motions: ['subtle_zoom', 'parallax'],
+    // Safe FFmpeg xfade transitions - professional and clean (smoothleft first for elegant start)
+    transitions: ['smoothleft', 'fade', 'dissolve', 'smoothright'],
+    motions: ['subtle_zoom'],
     filters: [],
   },
 
@@ -278,8 +284,9 @@ export const DREAMY_SOFT: FastCutStyleSet = {
     vibe: 'Emotional',
     colorGrade: 'natural', // 'warm' not supported by compose server
     effectPreset: 'crossfade',
-    transitions: ['fade', 'dissolve', 'blur'],
-    motions: ['slow_zoom', 'float'],
+    // Safe FFmpeg xfade transitions - soft and dreamy (fadewhite first for dreamy start)
+    transitions: ['fadewhite', 'fade', 'dissolve'],
+    motions: ['ken_burns', 'subtle_zoom'],
     filters: [],
   },
 
@@ -320,8 +327,9 @@ export const BOLD_IMPACT: FastCutStyleSet = {
     vibe: 'Exciting',
     colorGrade: 'moody', // 'dramatic' not supported by compose server
     effectPreset: 'zoom_beat',
-    transitions: ['zoom', 'flash', 'slam'],
-    motions: ['zoom_in', 'shake', 'punch'],
+    // Safe FFmpeg xfade transitions - radial first for bold announcement impact
+    transitions: ['radial', 'circleclose', 'wipedown', 'slidedown'],
+    motions: ['zoom_in', 'shake', 'pulse'],
     filters: [],
   },
 

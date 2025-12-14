@@ -515,19 +515,14 @@ export default function PublishPage() {
 
         // Mark session as completed
         try {
-          // Get current activeSession from store (avoids stale closure)
-          let currentActiveSession = useSessionStore.getState().activeSession;
-          // Ensure session is loaded before completing (handles fast-cut flow)
-          if (!currentActiveSession && sessionIdFromUrl) {
-            console.log("[Publish] Loading session before completing:", sessionIdFromUrl);
-            await loadSession(sessionIdFromUrl);
-            // Re-check activeSession after loading
-            currentActiveSession = useSessionStore.getState().activeSession;
-          }
+          // CRITICAL FIX: Use sessionIdFromUrl directly to avoid async state timing issues
+          // The previous approach (loadSession then getState) failed because Zustand state
+          // updates are async and getState() would return null immediately after loadSession()
+          const sessionIdToComplete = useSessionStore.getState().activeSession?.id || sessionIdFromUrl;
 
-          if (currentActiveSession) {
-            await completeSession();
-            console.log("[Publish] Session marked as completed:", currentActiveSession.id);
+          if (sessionIdToComplete) {
+            await completeSession(sessionIdToComplete);
+            console.log("[Publish] Session marked as completed:", sessionIdToComplete);
             // Refresh session list to reflect the change
             await useSessionStore.getState().fetchSessions();
           } else {

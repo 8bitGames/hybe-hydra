@@ -178,6 +178,7 @@ interface APIHashtagInsight {
 }
 
 interface APICreatorInsight {
+  id: string;
   name: string;
   videoCount: number;
   avgEngagement: number;
@@ -409,8 +410,9 @@ function transformAPIToKeywordAnalysis(apiData: APIKeywordAnalysis): KeywordAnal
   }));
 
   // Transform top creators (show up to 10 for recommendations)
+  // Use actual TikTok username (c.id) for profile URLs, fallback to name-based ID if missing
   const topCreators = apiData.creatorInsights.topCreators.slice(0, 10).map((c, index) => ({
-    id: `creator-${index}-${c.name.replace(/\s+/g, '-').toLowerCase()}`,
+    id: c.id || c.name.replace(/\s+/g, '').toLowerCase(),
     name: c.name,
     videoCount: c.videoCount,
     avgEngagement: c.avgEngagement,

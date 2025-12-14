@@ -21,6 +21,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Image as ImageIcon,
   Music,
   Video,
@@ -37,8 +42,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Package,
+  Subtitles,
 } from "lucide-react";
 import { downloadFile } from "@/lib/utils";
+import { AudioLyricsModal } from "@/components/features/audio-lyrics-modal";
+import type { LyricsData } from "@/lib/subtitle-styles";
 
 export default function AssetsPage() {
   const router = useRouter();
@@ -49,6 +57,23 @@ export default function AssetsPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [page, setPage] = useState(1);
   const pageSize = 50;
+
+  // Lyrics modal state
+  const [lyricsModalOpen, setLyricsModalOpen] = useState(false);
+  const [selectedAudioAsset, setSelectedAudioAsset] = useState<Asset | null>(null);
+
+  // Open lyrics modal for audio asset
+  const handleAudioClick = (asset: Asset) => {
+    setSelectedAudioAsset(asset);
+    setLyricsModalOpen(true);
+  };
+
+  // Check if audio has lyrics
+  const hasLyrics = (asset: Asset): boolean => {
+    const metadata = asset.metadata as Record<string, unknown> | null;
+    const lyrics = metadata?.lyrics as LyricsData | undefined;
+    return !!(lyrics && lyrics.segments && lyrics.segments.length > 0);
+  };
 
   // Fetch campaigns for filter dropdown
   const { data: campaignsData } = useCampaigns({ page_size: 100 });
@@ -378,11 +403,37 @@ export default function AssetsPage() {
                     </div>
                   </div>
                   <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                    {/* Lyrics button for audio */}
+                    {asset.type === "audio" && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="secondary"
+                            size="icon"
+                            className={`h-7 w-7 ${hasLyrics(asset) ? "bg-green-100 hover:bg-green-200" : ""}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAudioClick(asset);
+                            }}
+                          >
+                            <Subtitles className={`h-3 w-3 ${hasLyrics(asset) ? "text-green-600" : ""}`} />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {hasLyrics(asset)
+                            ? (language === "ko" ? "자막 편집" : "Edit Lyrics")
+                            : (language === "ko" ? "자막 추가" : "Add Lyrics")}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                     <Button
                       variant="secondary"
                       size="icon"
                       className="h-7 w-7"
-                      onClick={() => window.open(asset.s3_url, "_blank")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(asset.s3_url, "_blank");
+                      }}
                     >
                       <Eye className="h-3 w-3" />
                     </Button>
@@ -390,7 +441,10 @@ export default function AssetsPage() {
                       variant="secondary"
                       size="icon"
                       className="h-7 w-7"
-                      onClick={() => downloadFile(asset.s3_url, asset.original_filename)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadFile(asset.s3_url, asset.original_filename);
+                      }}
                     >
                       <Download className="h-3 w-3" />
                     </Button>
@@ -432,6 +486,26 @@ export default function AssetsPage() {
                       {new Date(asset.created_at).toLocaleDateString()}
                     </p>
                     <div className="flex gap-1">
+                      {/* Lyrics button for audio */}
+                      {asset.type === "audio" && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={hasLyrics(asset) ? "text-green-600" : ""}
+                              onClick={() => handleAudioClick(asset)}
+                            >
+                              <Subtitles className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {hasLyrics(asset)
+                              ? (language === "ko" ? "자막 편집" : "Edit Lyrics")
+                              : (language === "ko" ? "자막 추가" : "Add Lyrics")}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -482,6 +556,14 @@ export default function AssetsPage() {
           </Button>
         </div>
       )}
+
+      {/* Audio Lyrics Modal */}
+      <AudioLyricsModal
+        open={lyricsModalOpen}
+        onOpenChange={setLyricsModalOpen}
+        asset={selectedAudioAsset}
+        onSaved={() => refetch()}
+      />
     </div>
   );
 }

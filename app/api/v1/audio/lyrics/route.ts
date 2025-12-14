@@ -6,6 +6,7 @@ import {
   createLyricsExtractorAgent,
   toLyricsData,
 } from "@/lib/agents/analyzers";
+import { getPresignedUrl } from "@/lib/storage";
 import type { LyricsData } from "@/lib/subtitle-styles";
 
 /**
@@ -88,14 +89,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Get audio URL from asset
-    const audioUrl = asset.s3Url;
-    if (!audioUrl) {
+    // Get audio URL from asset - use s3Key to generate fresh presigned URL
+    // This avoids 403 errors from expired presigned URLs stored in s3Url
+    if (!asset.s3Key) {
       return NextResponse.json(
-        { detail: "Asset does not have a URL" },
+        { detail: "Asset does not have an S3 key" },
         { status: 400 }
       );
     }
+
+    // Generate fresh presigned URL (1 hour expiry is sufficient for processing)
+    const audioUrl = await getPresignedUrl(asset.s3Key, 3600);
 
     // Create lyrics extractor agent
     const extractor = createLyricsExtractorAgent();

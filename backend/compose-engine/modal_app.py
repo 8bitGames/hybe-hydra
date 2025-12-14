@@ -918,7 +918,29 @@ def analyze_audio(request_data: dict) -> dict:
             best_start = 0
             best_energy = 0
 
-            if duration > target_duration:
+            # Check if energy extraction was successful (not all zeros)
+            energy_variance = max(energy_curve) - min(energy_curve) if energy_curve else 0
+            energy_extraction_valid = energy_variance > 0.1  # At least 10% variance
+
+            if not energy_extraction_valid:
+                print(f"[{job_id}] Energy extraction failed (variance={energy_variance:.3f}), using heuristics")
+                # Use heuristic: estimate first chorus position
+                if duration > target_duration * 1.5:
+                    if duration > 180:
+                        # Full song (3+ min): First chorus around 45-50s, start buildup 6s before
+                        best_start = min(44, duration * 0.25) - 6
+                    elif duration > 120:
+                        # Long track (2-3 min): First chorus around 35-40s
+                        best_start = min(34, duration * 0.28) - 6
+                    elif duration > 60:
+                        # Medium track (1-2 min): Drop around 20-25s
+                        best_start = min(19, duration * 0.3) - 4
+                    elif duration > 30:
+                        # Short track (30s-1min): Drop around 10-15s
+                        best_start = min(9, duration * 0.35) - 3
+                    best_start = max(0, best_start)
+                print(f"[{job_id}] Heuristic best_start: {best_start}s")
+            elif duration > target_duration:
                 for start in range(int(duration - target_duration) + 1):
                     end_idx = min(start + target_duration, len(energy_curve))
                     window_energy = energy_curve[start:end_idx]

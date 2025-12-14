@@ -32,6 +32,9 @@ import {
   ArrowUpDown,
   Volume2,
   FolderOpen,
+  FileText,
+  Zap,
+  RotateCcw,
 } from "lucide-react";
 import {
   Select,
@@ -40,7 +43,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { fastCutApi, StyleSetSummary, RenderStatus } from "@/lib/fast-cut-api";
+import { Slider } from "@/components/ui/slider";
+import { fastCutApi, StyleSetSummary, RenderStatus, AudioAnalysisResponse } from "@/lib/fast-cut-api";
 import { api } from "@/lib/api";
 import { v4 as uuidv4 } from "uuid";
 import Link from "next/link";
@@ -139,6 +143,14 @@ export default function StyleSetTestPage() {
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
 
+  // Subtitle Mode State
+  const [subtitleMode, setSubtitleMode] = useState<"script" | "lyrics">("script");
+
+  // Audio Analysis State
+  const [audioStartTime, setAudioStartTime] = useState<number>(0);
+  const [audioAnalysis, setAudioAnalysis] = useState<AudioAnalysisResponse | null>(null);
+  const [analyzingAudio, setAnalyzingAudio] = useState(false);
+
   // Render State
   const [rendering, setRendering] = useState(false);
   const [renderStatus, setRenderStatus] = useState<RenderStatus | null>(null);
@@ -215,11 +227,43 @@ export default function StyleSetTestPage() {
     return audioAssets.find((a) => a.id === selectedAudioId);
   }, [audioAssets, selectedAudioId]);
 
-  // Generate default script lines for testing (15 seconds total)
+  // Analyze audio best segment when audio is selected
+  useEffect(() => {
+    const analyzeAudio = async () => {
+      if (!selectedAudioId) {
+        setAudioStartTime(0);
+        setAudioAnalysis(null);
+        return;
+      }
+
+      setAnalyzingAudio(true);
+      try {
+        const targetDuration = 20; // Fixed 20 seconds for test
+        const analysis = await fastCutApi.analyzeAudioBestSegment(selectedAudioId, targetDuration);
+        setAudioAnalysis(analysis);
+        if (analysis.suggestedStartTime !== undefined) {
+          setAudioStartTime(analysis.suggestedStartTime);
+          console.log(`[Test] Audio best segment: ${analysis.suggestedStartTime}s - ${analysis.suggestedEndTime}s`);
+        }
+      } catch (err) {
+        console.error("Failed to analyze audio:", err);
+        setAudioStartTime(0);
+        setAudioAnalysis(null);
+      } finally {
+        setAnalyzingAudio(false);
+      }
+    };
+
+    analyzeAudio();
+  }, [selectedAudioId]);
+
+  // Generate default script lines for testing (20 seconds total)
+  // Note: cutDuration is for image transition speed, not text
+  // Text timing is separate - we use a fixed 2 seconds per subtitle for readability
   const generateTestScript = useCallback(() => {
-    const cutDuration = selectedStyleSet?.cutDuration ?? 1.5;
-    const totalDuration = 15; // Fixed 15 seconds
-    const numSubtitles = Math.ceil(totalDuration / cutDuration);
+    const textDuration = 2.0; // Fixed text display duration for readability
+    const totalDuration = 20; // Fixed 20 seconds
+    const numSubtitles = Math.ceil(totalDuration / textDuration);
 
     const testSubtitles = [
       "스타일 테스트 영상",
@@ -236,16 +280,16 @@ export default function StyleSetTestPage() {
 
     const lines = [];
     for (let idx = 0; idx < numSubtitles; idx++) {
-      const timing = idx * cutDuration;
+      const timing = idx * textDuration;
       if (timing >= totalDuration) break;
       lines.push({
         text: testSubtitles[idx % testSubtitles.length],
         timing,
-        duration: Math.min(cutDuration, totalDuration - timing),
+        duration: Math.min(textDuration, totalDuration - timing),
       });
     }
     return lines;
-  }, [selectedStyleSet?.cutDuration]);
+  }, []);
 
   // Convert file to base64 data URL
   const fileToBase64 = useCallback((file: File): Promise<string> => {
@@ -430,7 +474,7 @@ export default function StyleSetTestPage() {
 
   // Format duration
   const formatDuration = (seconds?: number): string => {
-    if (!seconds) return "-";
+    if (seconds === undefined || seconds === null) return "-";
     const mins = Math.floor(seconds / 60);
     const secs = Math.round(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
@@ -538,19 +582,43 @@ export default function StyleSetTestPage() {
       // Generate test script with subtitles
       const scriptLines = generateTestScript();
 
+      // Calculate how many images are needed based on cutDuration
+      const cutDuration = selectedStyleSet?.cutDuration ?? 1.5;
+      const targetDuration = 20; // Fixed 20 seconds for test
+      const numImagesNeeded = Math.ceil(targetDuration / cutDuration);
+
+      // Repeat images to fill the duration
+      const repeatedImages: { url: string; order: number }[] = [];
+      for (let i = 0; i < numImagesNeeded; i++) {
+        const sourceImage = processedImages[i % processedImages.length];
+        repeatedImages.push({
+          url: sourceImage.url,
+          order: i,
+        });
+      }
+
+      console.log(`${LOG_PREFIX} Image calculation:`, {
+        cutDuration,
+        targetDuration,
+        numImagesNeeded,
+        originalImages: processedImages.length,
+        repeatedImages: repeatedImages.length,
+      });
+
       const renderRequest = {
         generationId: newGenerationId,
         campaignId: "", // Empty = no campaign (test mode)
         audioAssetId: selectedAudioId,
-        images: processedImages.map((img) => ({
-          url: img.url,
-          order: img.order,
-        })),
+        images: repeatedImages,
         script: { lines: scriptLines }, // Include test subtitles
         styleSetId: selectedStyleSetId,
         aspectRatio,
-        targetDuration: 15, // Fixed 15 seconds for test
+        targetDuration,
+        cutDuration, // Explicitly pass cutDuration for image transition speed
+        audioStartTime, // Best segment start time from audio analysis
         prompt: "Style set test video",
+        // Subtitle mode - use audio lyrics when lyrics mode selected
+        useAudioLyrics: subtitleMode === "lyrics",
       };
 
       console.log(`${LOG_PREFIX} Render request payload:`, JSON.stringify(renderRequest, null, 2));
@@ -980,6 +1048,194 @@ export default function StyleSetTestPage() {
                   {language === "ko"
                     ? "음원을 선택해주세요"
                     : "Please select an audio track"}
+                </p>
+              )}
+            </div>
+
+            {/* Audio Start Time Controls - Only show when audio is selected */}
+            {selectedAudio && (
+              <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold flex items-center gap-2">
+                    <Zap className="h-4 w-4" />
+                    {language === "ko" ? "시작 위치 설정" : "Start Position"}
+                  </Label>
+                  {analyzingAudio && (
+                    <Badge variant="outline" className="text-xs border-neutral-300 animate-pulse">
+                      <Spinner className="h-3 w-3 mr-1" />
+                      {language === "ko" ? "분석 중..." : "Analyzing..."}
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Audio Start Time Slider */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-neutral-600">
+                      {language === "ko" ? "시작 시간" : "Start Time"}
+                    </span>
+                    <span className="text-sm font-mono font-medium text-neutral-900">
+                      {formatDuration(audioStartTime)}
+                    </span>
+                  </div>
+                  <Slider
+                    value={[audioStartTime]}
+                    onValueChange={(v) => setAudioStartTime(v[0])}
+                    min={0}
+                    max={Math.max(0, (selectedAudio.metadata?.duration || 60) - 20)}
+                    step={0.5}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-neutral-400">
+                    <span>0:00</span>
+                    <span>{formatDuration(selectedAudio.metadata?.duration || 60)}</span>
+                  </div>
+                </div>
+
+                {/* Preview Audio from Start Time */}
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (audioRef.current && selectedAudio) {
+                        audioRef.current.src = selectedAudio.s3_url;
+                        audioRef.current.currentTime = audioStartTime;
+                        audioRef.current.play();
+                        setPlayingAudioId(selectedAudio.id);
+                      }
+                    }}
+                    className="flex-1"
+                  >
+                    <Play className="h-3 w-3 mr-1" />
+                    {language === "ko" ? "시작 위치에서 재생" : "Play from Start"}
+                  </Button>
+                  {playingAudioId === selectedAudio.id && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        audioRef.current?.pause();
+                        setPlayingAudioId(null);
+                      }}
+                    >
+                      <Pause className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+
+                {/* AI Analysis Result */}
+                {audioAnalysis && !analyzingAudio && (
+                  <div className="p-3 bg-neutral-50 rounded-lg space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-neutral-600" />
+                      <span className="text-sm font-medium text-neutral-700">
+                        {language === "ko" ? "AI 분석 결과" : "AI Analysis"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-xs text-neutral-500 block">
+                          {language === "ko" ? "분석된 BPM" : "Detected BPM"}
+                        </span>
+                        <span className="font-medium text-neutral-900">
+                          {audioAnalysis.bpm || "N/A"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-xs text-neutral-500 block">
+                          {language === "ko" ? "추천 구간" : "Suggested Segment"}
+                        </span>
+                        <span className="font-medium text-neutral-900">
+                          {formatDuration(audioAnalysis.suggestedStartTime)} - {formatDuration(audioAnalysis.suggestedEndTime)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Use AI Recommendation Button */}
+                    {audioAnalysis.suggestedStartTime !== audioStartTime && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs"
+                        onClick={() => setAudioStartTime(audioAnalysis.suggestedStartTime)}
+                      >
+                        <RotateCcw className="h-3 w-3 mr-1" />
+                        {language === "ko" ? "AI 추천 시간으로 변경" : "Use AI Suggested Time"}
+                      </Button>
+                    )}
+                    {audioAnalysis.suggestedStartTime === audioStartTime && (
+                      <div className="flex items-center gap-1 text-xs text-green-600">
+                        <Check className="h-3 w-3" />
+                        {language === "ko" ? "AI 추천 구간 사용 중" : "Using AI recommended segment"}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Video Duration Info */}
+                <div className="text-xs text-neutral-500 bg-neutral-50 p-2 rounded">
+                  {language === "ko"
+                    ? `영상 길이: 20초 (${formatDuration(audioStartTime)} ~ ${formatDuration(audioStartTime + 20)})`
+                    : `Video duration: 20s (${formatDuration(audioStartTime)} ~ ${formatDuration(audioStartTime + 20)})`
+                  }
+                </div>
+              </div>
+            )}
+
+            {/* Subtitle Mode Selection */}
+            <div className="bg-white border border-neutral-200 rounded-xl p-5">
+              <Label className="text-base font-semibold flex items-center gap-2 mb-4">
+                <FileText className="h-4 w-4" />
+                {language === "ko" ? "자막 모드" : "Subtitle Mode"}
+              </Label>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setSubtitleMode("script")}
+                  className={cn(
+                    "flex-1 p-3 rounded-lg border-2 text-center transition-all",
+                    "hover:border-neutral-400",
+                    subtitleMode === "script"
+                      ? "border-neutral-900 bg-neutral-50"
+                      : "border-neutral-200 bg-white"
+                  )}
+                >
+                  <FileText className="h-5 w-5 mx-auto mb-1" />
+                  <p className="text-sm font-medium">
+                    {language === "ko" ? "스크립트" : "Script"}
+                  </p>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    {language === "ko" ? "테스트 자막 사용" : "Use test subtitles"}
+                  </p>
+                </button>
+
+                <button
+                  onClick={() => setSubtitleMode("lyrics")}
+                  className={cn(
+                    "flex-1 p-3 rounded-lg border-2 text-center transition-all",
+                    "hover:border-neutral-400",
+                    subtitleMode === "lyrics"
+                      ? "border-neutral-900 bg-neutral-50"
+                      : "border-neutral-200 bg-white"
+                  )}
+                >
+                  <Music className="h-5 w-5 mx-auto mb-1" />
+                  <p className="text-sm font-medium">
+                    {language === "ko" ? "가사" : "Lyrics"}
+                  </p>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    {language === "ko" ? "음원 가사 사용" : "Use audio lyrics"}
+                  </p>
+                </button>
+              </div>
+
+              {subtitleMode === "lyrics" && !selectedAudioId && (
+                <p className="text-xs text-orange-600 mt-3">
+                  {language === "ko"
+                    ? "가사 모드를 사용하려면 음원을 선택해주세요"
+                    : "Select audio to use lyrics mode"}
                 </p>
               )}
             </div>
