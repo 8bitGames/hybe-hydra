@@ -1,18 +1,8 @@
 import { compare, hash } from "bcryptjs";
-import { sign, verify } from "jsonwebtoken";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { prisma } from "./db/prisma";
 import type { User, UserRole } from "@prisma/client";
-
-const JWT_SECRET = process.env.JWT_SECRET || "your-jwt-secret-key";
-const ACCESS_TOKEN_EXPIRES = "2h"; // Extended from 30m to handle long video generation workflows
-const REFRESH_TOKEN_EXPIRES = "7d";
-
-export interface TokenPayload {
-  userId: string;
-  email: string;
-  role: UserRole;
-}
 
 export interface AuthUser {
   id: string;
@@ -23,7 +13,13 @@ export interface AuthUser {
   isActive: boolean;
 }
 
-// Password hashing
+// Create Supabase client for token verification
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+// Password hashing (kept for backward compatibility and local user table)
 export async function hashPassword(password: string): Promise<string> {
   return hash(password, 12);
 }
@@ -32,51 +28,26 @@ export async function verifyPassword(password: string, hashedPassword: string): 
   return compare(password, hashedPassword);
 }
 
-// Token generation
-export function generateAccessToken(user: User): string {
-  const payload: TokenPayload = {
-    userId: user.id,
-    email: user.email,
-    role: user.role,
-  };
-  return sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRES });
-}
-
-export function generateRefreshToken(user: User): string {
-  const payload: TokenPayload = {
-    userId: user.id,
-    email: user.email,
-    role: user.role,
-  };
-  return sign(payload, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRES });
-}
-
-// Token verification
-export function verifyToken(token: string): TokenPayload | null {
-  try {
-    return verify(token, JWT_SECRET) as TokenPayload;
-  } catch {
-    return null;
-  }
-}
-
-// Get current user from request
+// Get current user from cookies (for server components)
 export async function getCurrentUser(): Promise<AuthUser | null> {
   try {
     const cookieStore = await cookies();
-    const token = cookieStore.get("access_token")?.value;
+    const accessToken = cookieStore.get("sb-access-token")?.value;
 
-    if (!token) {
+    if (!accessToken) {
       return null;
     }
 
-    const payload = verifyToken(token);
-    if (!payload) {
+    // Verify token with Supabase
+    const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(accessToken);
+
+    if (error || !supabaseUser?.email) {
       return null;
     }
 
+    // Get user profile from our table
     const user = await prisma.user.findUnique({
-      where: { id: payload.userId },
+      where: { email: supabaseUser.email },
       select: {
         id: true,
         email: true,
@@ -104,29 +75,36 @@ export async function getUserFromHeader(authHeader: string | null): Promise<Auth
   }
 
   const token = authHeader.substring(7);
-  const payload = verifyToken(token);
 
-  if (!payload) {
+  try {
+    // Verify token with Supabase
+    const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
+
+    if (error || !supabaseUser?.email) {
+      return null;
+    }
+
+    // Get user profile from our table (for role, labelIds)
+    const user = await prisma.user.findUnique({
+      where: { email: supabaseUser.email },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        labelIds: true,
+        isActive: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      return null;
+    }
+
+    return user;
+  } catch {
     return null;
   }
-
-  const user = await prisma.user.findUnique({
-    where: { id: payload.userId },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      role: true,
-      labelIds: true,
-      isActive: true,
-    },
-  });
-
-  if (!user || !user.isActive) {
-    return null;
-  }
-
-  return user;
 }
 
 // Check if user has access to a label

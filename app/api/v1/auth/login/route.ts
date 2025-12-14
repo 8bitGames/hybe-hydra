@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/db/prisma";
-import { verifyPassword, generateAccessToken, generateRefreshToken } from "@/lib/auth";
+
+// Create Supabase client for auth operations
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,28 +21,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email },
+    // Authenticate with Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     });
 
+    if (authError || !authData.session) {
+      return NextResponse.json(
+        { detail: "Invalid email or password" },
+        { status: 401 }
+      );
+    }
+
+    // Get user profile from our users table (for role, labelIds, etc.)
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        labelIds: true,
+        isActive: true,
+      },
+    });
+
+    // Check if user exists in our table and is active
     if (!user) {
       return NextResponse.json(
-        { detail: "Invalid email or password" },
+        { detail: "User profile not found" },
         { status: 401 }
       );
     }
 
-    // Verify password
-    const isValid = await verifyPassword(password, user.hashedPassword);
-    if (!isValid) {
-      return NextResponse.json(
-        { detail: "Invalid email or password" },
-        { status: 401 }
-      );
-    }
-
-    // Check if active
     if (!user.isActive) {
       return NextResponse.json(
         { detail: "Account is deactivated" },
@@ -44,14 +62,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate tokens
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-
+    // Return Supabase tokens along with user profile
     return NextResponse.json({
-      access_token: accessToken,
-      refresh_token: refreshToken,
+      access_token: authData.session.access_token,
+      refresh_token: authData.session.refresh_token,
       token_type: "bearer",
+      expires_in: authData.session.expires_in,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        label_ids: user.labelIds,
+      },
     });
   } catch (error) {
     console.error("Login error:", error);
