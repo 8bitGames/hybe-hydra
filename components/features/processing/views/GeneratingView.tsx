@@ -305,8 +305,8 @@ export function GeneratingView({ className }: GeneratingViewProps) {
                         <div>
                           <p className="text-sm text-neutral-700">{content.musicTrack.name}</p>
                           <p className="text-xs text-neutral-500">
-                            {Math.floor(content.musicTrack.duration / 60)}:
-                            {String(content.musicTrack.duration % 60).padStart(2, "0")}
+                            {isKorean ? "시작" : "Start"}: {Math.floor(content.musicTrack.startTime / 60)}:
+                            {String(Math.floor(content.musicTrack.startTime % 60)).padStart(2, "0")}
                           </p>
                         </div>
                       </div>

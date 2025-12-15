@@ -1694,7 +1694,7 @@ export default function CreatePage() {
             musicTrack: audioAsset ? {
               id: audioAsset.id,
               name: audioAsset.name,
-              duration: 0,
+              startTime: audioStartTime,
               url: audioAsset.url,
             } : undefined,
           },
@@ -1722,7 +1722,7 @@ export default function CreatePage() {
         setIsGenerating(false);
       }
     },
-    [selectedCampaignId, selectedCampaignName, audioAsset, imageAssets, analyze, router, language, toast, fileToBase64, initProcessingSession, activeSession]
+    [selectedCampaignId, selectedCampaignName, audioAsset, audioStartTime, imageAssets, analyze, router, language, toast, fileToBase64, initProcessingSession, activeSession]
   );
 
   // Translations

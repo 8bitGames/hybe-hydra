@@ -256,7 +256,7 @@ export abstract class BaseAgent<TInput, TOutput> {
       });
     } else {
       return new OpenAIClient({
-        model: name as 'gpt-5.1' | 'gpt-5.1-mini',
+        model: name as 'gpt-5.2-2025-12-11',
         temperature: options?.temperature ?? 0.7,
         maxTokens: options?.maxTokens ?? 4096,
         reasoningEffort: options?.reasoningEffort ?? 'medium',
@@ -1545,6 +1545,9 @@ export abstract class BaseAgent<TInput, TOutput> {
           feedback_text: success
             ? `Auto-evaluated: ${latencyMs}ms latency, ${tokenUsage.total} tokens`
             : 'Auto-evaluated: Execution failed',
+          strengths: [],
+          weaknesses: [],
+          suggestions: [],
         },
         'automated'
       );

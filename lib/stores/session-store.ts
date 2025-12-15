@@ -13,6 +13,28 @@ import {
 } from "./workflow-store";
 
 // ============================================
+// UUID VALIDATION
+// ============================================
+
+/**
+ * Validate if a string is a valid UUID v4 format.
+ * Used to distinguish between database session IDs (UUIDs) and
+ * local processing session IDs (format: session-{timestamp}-{random}).
+ */
+const isValidUUID = (id: string): boolean => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+};
+
+/**
+ * Check if the ID is a local processing session ID (not a database UUID).
+ * Local processing session IDs have format: session-{timestamp}-{random}
+ */
+const isProcessingSessionId = (id: string): boolean => {
+  return id.startsWith("session-") && !isValidUUID(id);
+};
+
+// ============================================
 // STORAGE CLEANUP UTILITIES
 // ============================================
 
@@ -112,6 +134,7 @@ export interface MusicStageData {
   audioMatches: unknown[];
   selectedAudio: unknown | null;
   audioStartTime: number;
+  videoDuration: number;
   audioAnalysis: unknown | null;
   musicSkipped: boolean;
 }
@@ -707,6 +730,27 @@ export const useSessionStore = create<SessionStore>()(
       set({ isLoading: true });
 
       try {
+        // Validate session ID format before proceeding
+        if (isProcessingSessionId(sessionId)) {
+          console.warn(
+            "[SessionStore] Received processing session ID instead of database UUID:",
+            sessionId,
+            "Processing session IDs (format: session-{timestamp}-{random}) cannot be loaded from the database.",
+            "Please use the databaseSessionId from the processing session store."
+          );
+          throw new Error(
+            `Invalid session ID format: "${sessionId}" is a local processing session ID, not a database UUID. ` +
+            `Please navigate with the correct database session ID.`
+          );
+        }
+
+        if (!isValidUUID(sessionId)) {
+          console.error("[SessionStore] Invalid session ID format:", sessionId);
+          throw new Error(
+            `Invalid session ID format: "${sessionId}" is not a valid UUID.`
+          );
+        }
+
         // CRITICAL: Clear ALL session-related storage FIRST when switching sessions
         // This prevents data leakage from previously active sessions
         clearAllSessionStorage();

@@ -47,7 +47,7 @@ export interface SessionContent {
   musicTrack?: {
     id: string;
     name: string;
-    duration: number;
+    startTime: number;  // Audio start position in seconds
     url: string;
   };
   effectPreset?: {

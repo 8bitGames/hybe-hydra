@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Convert BigInt to number for JSON serialization
-    const serialized = savedKeywords.map((kw) => ({
+    const serialized = savedKeywords.map((kw: any) => ({
       ...kw,
       baselineViews: kw.baselineViews ? Number(kw.baselineViews) : null,
       snapshots: kw.snapshots?.map((s: any) => ({

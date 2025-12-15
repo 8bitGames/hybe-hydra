@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { VideoGenerationStatus } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
-// AWS Batch AI client for video/image generation via Vertex AI
+// EC2 AI client for video/image generation via Vertex AI
 import {
   submitImageToVideo,
   submitVideoGeneration,
@@ -12,27 +12,29 @@ import {
   type ImageToVideoSettings,
   type VideoAspectRatio,
   type AudioOverlaySettings,
-} from "@/lib/batch/ai-client";
+  type SubtitleEntry,
+} from "@/lib/ec2/ai-client";
 import { getPresignedUrlFromS3Url } from "@/lib/storage";
+import type { LyricsData } from "@/lib/subtitle-styles/types";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
 /**
- * Submit video generation job to AWS Batch
+ * Submit video generation job to EC2 compose-engine
  *
- * AWS Batch Flow:
+ * EC2 Flow:
  * 1. Submit job with parameters
- * 2. AWS Batch picks up job from queue
- * 3. Worker container runs with GCP WIF authentication
+ * 2. EC2 compose-engine picks up job
+ * 3. Worker runs with GCP WIF authentication
  * 4. Worker calls Vertex AI for image/video generation
  * 5. Worker uploads result to S3
  * 6. Worker calls /api/v1/ai/callback to update status
  *
  * This function returns immediately - status updates come via callback
  */
-async function submitToAWSBatch(
+async function submitToEC2(
   generationId: string,
   campaignId: string,
   params: {
@@ -44,18 +46,15 @@ async function submitToAWSBatch(
     style?: string;
     audioUrl?: string;  // Audio URL for composition (optional)
     audioStartTime?: number;  // Start time in audio file (seconds)
-    // Lyrics for subtitles (extracted from audio asset metadata)
-    lyricsData?: {
-      segments: Array<{ text: string; start: number; end: number }>;
-      language?: string;
-    };
+    // Pre-converted subtitles for audio+lyrics composition
+    subtitles?: SubtitleEntry[];
     // MANDATORY I2V parameters
     imageDescription: string;  // How the image should be used in video (required)
     // Pre-generated preview image (from two-step workflow)
     previewImageBase64?: string;  // Skip image generation if provided (local uploads)
     previewImageUrl?: string;     // Skip image generation if provided (S3/external URLs)
   }
-): Promise<{ success: boolean; batchJobId?: string; error?: string }> {
+): Promise<{ success: boolean; ec2JobId?: string; error?: string }> {
   try {
     // Update status to processing
     await prisma.videoGeneration.update({
@@ -77,7 +76,7 @@ async function submitToAWSBatch(
     const hasReferenceImage = params.previewImageUrl || params.referenceImageUrl;
 
     console.log(`[Generation ${generationId}] ═══════════════════════════════════════════════════════`);
-    console.log(`[Generation ${generationId}] Submitting to AWS Batch (Vertex AI via WIF)`);
+    console.log(`[Generation ${generationId}] Submitting to EC2 compose-engine (Vertex AI via WIF)`);
     console.log(`[Generation ${generationId}] Mode: ${hasReferenceImage ? "I2V (Image-to-Video)" : "T2V (Text-to-Video)"}`);
     console.log(`[Generation ${generationId}] Output: s3://${outputSettings.s3_bucket}/${outputSettings.s3_key}`);
 
@@ -92,7 +91,13 @@ async function submitToAWSBatch(
       fade_out: 0.3,
       mix_original_audio: false,  // Replace original audio with new audio
       original_audio_volume: 0.3,
+      // Include subtitles if lyrics were extracted from audio asset
+      subtitles: params.subtitles,
     } : undefined;
+
+    if (params.subtitles && params.subtitles.length > 0) {
+      console.log(`[Generation ${generationId}] Audio overlay includes ${params.subtitles.length} subtitle entries`);
+    }
 
     if (hasReferenceImage) {
       // I2V Mode: Image-to-Video with reference image
@@ -157,13 +162,13 @@ async function submitToAWSBatch(
     }
 
     if (submitResult.status === "error") {
-      console.error(`[Generation ${generationId}] AWS Batch submit failed:`, submitResult.error);
+      console.error(`[Generation ${generationId}] EC2 submit failed:`, submitResult.error);
       await prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "FAILED",
           progress: 100,
-          errorMessage: submitResult.error || "Failed to submit to AWS Batch",
+          errorMessage: submitResult.error || "Failed to submit to EC2",
         },
       });
       return { success: false, error: submitResult.error };
@@ -176,15 +181,15 @@ async function submitToAWSBatch(
     });
     const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
 
-    // Update with batch job ID for tracking, preserving existing metadata
+    // Update with EC2 job ID for tracking, preserving existing metadata
     await prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         progress: 10,
-        vertexOperationName: submitResult.batch_job_id,  // Store batch job ID
+        vertexOperationName: submitResult.ec2_job_id || submitResult.job_id,  // Store EC2 job ID
         qualityMetadata: {
           ...existingMetadata,  // Preserve use_audio_lyrics and other flags
-          batch_job_id: submitResult.batch_job_id,
+          ec2_job_id: submitResult.ec2_job_id || submitResult.job_id,
           job_type: hasReferenceImage ? "image_to_video" : "video_generation",
           submitted_at: new Date().toISOString(),
           output_bucket: outputSettings.s3_bucket,
@@ -193,12 +198,12 @@ async function submitToAWSBatch(
       },
     });
 
-    console.log(`[Generation ${generationId}] ✓ AWS Batch job submitted: ${submitResult.batch_job_id}`);
+    console.log(`[Generation ${generationId}] ✓ EC2 job submitted: ${submitResult.ec2_job_id || submitResult.job_id}`);
     console.log(`[Generation ${generationId}] Status updates will come via /api/v1/ai/callback`);
 
-    return { success: true, batchJobId: submitResult.batch_job_id };
+    return { success: true, ec2JobId: submitResult.ec2_job_id || submitResult.job_id };
   } catch (error) {
-    console.error(`[Generation ${generationId}] Error submitting to AWS Batch:`, error);
+    console.error(`[Generation ${generationId}] Error submitting to EC2:`, error);
     await prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
@@ -429,10 +434,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Validate audio asset (optional - if provided, must exist and be audio type)
+    // Include metadata to extract lyrics for subtitle generation
     let audioAsset = null;
     if (audio_asset_id) {
       audioAsset = await prisma.asset.findUnique({
         where: { id: audio_asset_id },
+        select: {
+          id: true,
+          type: true,
+          filename: true,
+          originalFilename: true,
+          s3Url: true,
+          metadata: true,  // Include metadata for lyrics extraction
+        },
       });
 
       if (!audioAsset) {
@@ -486,8 +500,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         referenceUrls: reference_urls || null,
         promptAnalysis: prompt_analysis || null,
         // Store lyrics/audio composition settings for callback processing
+        // Also include job_type upfront so status API can identify AI Video jobs immediately
         qualityMetadata: {
           use_audio_lyrics: use_audio_lyrics,  // Flag to trigger audio+lyrics composition after video generation
+          job_type: hasReferenceImage ? 'image_to_video' : 'video_generation',  // Set early for status API
+          renderBackend: 'ec2',  // AI Video always uses EC2
+          createdAt: new Date().toISOString(),  // Track creation time for progress estimation
         },
       },
       include: {
@@ -509,7 +527,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const refAsset = await prisma.asset.findUnique({ where: { id: reference_image_id } });
       if (refAsset?.s3Url) {
         try {
-          // Generate presigned URL with 48 hour expiration for AWS Batch
+          // Generate presigned URL with 48 hour expiration for EC2 queue wait time
           referenceImageUrl = await getPresignedUrlFromS3Url(refAsset.s3Url, 172800);
           console.log(`[Generation] I2V mode: Using campaign asset ${reference_image_id}`);
           console.log(`[Generation] Generated presigned reference image URL`);
@@ -520,15 +538,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Submit to AWS Batch for video generation via Vertex AI
-    console.log(`[Generation] Submitting to AWS Batch (Vertex AI) with params:`, {
+    // Submit to EC2 compose-engine for video generation via Vertex AI
+    console.log(`[Generation] Submitting to EC2 (Vertex AI) with params:`, {
       hasPreviewBase64: !!preview_image_base64,
       hasPreviewUrl: !!preview_image_url,
       hasReferenceImageId: !!reference_image_id,
       hasImageDescription: !!image_description,
     });
 
-    // Generate fresh presigned URLs for all S3 assets (48 hour expiry for AWS Batch queue wait time)
+    // Generate fresh presigned URLs for all S3 assets (48 hour expiry for EC2 queue wait time)
     // This is CRITICAL: stored s3Urls may be expired or inaccessible to the worker
 
     // Presign audio URL if provided
@@ -556,13 +574,64 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       presignedPreviewImageUrl = preview_image_url;  // Non-S3 URL, use as-is
     }
 
-    // Note: AWS Batch handles the entire I2V flow:
+    // Extract lyrics from audio asset metadata and convert to subtitles
+    // This is done here (not in callback) so subtitles are included in the initial EC2 request
+    let subtitles: SubtitleEntry[] | undefined;
+    if (use_audio_lyrics && audioAsset?.metadata) {
+      const metadata = audioAsset.metadata as Record<string, unknown>;
+      const lyricsData = metadata?.lyrics as LyricsData | undefined;
+
+      if (lyricsData && !lyricsData.isInstrumental && lyricsData.segments?.length > 0) {
+        console.log(`[Generation] Extracting ${lyricsData.segments.length} lyrics segments for subtitles`);
+        console.log(`[Generation] Audio start time offset: ${audio_start_time}s, Video duration: ${duration_seconds}s`);
+
+        const videoDuration = duration_seconds || 8;
+        subtitles = [];
+
+        for (const segment of lyricsData.segments) {
+          // Apply audio_start_time offset
+          // Lyrics timestamps are relative to audio file start
+          // Video playback starts at audioStartTime into the audio
+          // Example: audioStartTime=60, segment.start=65 → video time = 5
+          const adjustedStart = segment.start - audio_start_time;
+          const adjustedEnd = segment.end - audio_start_time;
+
+          // Skip segments outside video boundaries
+          if (adjustedStart >= videoDuration || adjustedEnd <= 0) {
+            continue;
+          }
+
+          // Clamp to video boundaries
+          const clampedStart = Math.max(0, adjustedStart);
+          const clampedEnd = Math.min(videoDuration, adjustedEnd);
+
+          // Skip if too short (< 0.3s)
+          if (clampedEnd - clampedStart < 0.3) {
+            continue;
+          }
+
+          subtitles.push({
+            text: segment.text.trim(),
+            start: clampedStart,
+            end: clampedEnd,
+          });
+        }
+
+        console.log(`[Generation] Converted to ${subtitles.length} subtitle entries for video`);
+      } else if (lyricsData?.isInstrumental) {
+        console.log(`[Generation] Audio is instrumental, no lyrics to extract`);
+      } else {
+        console.log(`[Generation] No lyrics found in audio asset metadata`);
+      }
+    }
+
+    // Note: EC2 compose-engine handles the entire I2V flow:
     // 1. Download reference image
     // 2. Call Vertex AI Veo 3.1 for video generation
-    // 3. Apply audio overlay (if audioUrl provided)
+    // 3. Apply audio overlay with subtitles (if audioUrl provided)
     // 4. Upload result to S3
     // 5. Callback to /api/v1/ai/callback with status
-    submitToAWSBatch(generation.id, campaignId, {
+    submitToEC2(generation.id, campaignId, {
       prompt,
       negativePrompt: negative_prompt,
       durationSeconds: duration_seconds,
@@ -571,6 +640,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       style: reference_style,
       audioUrl: audioPresignedUrl,  // Use fresh presigned URL instead of potentially expired s3Url
       audioStartTime: audio_start_time,  // Start time in audio file (seconds)
+      subtitles,  // Lyrics converted to subtitles with timing adjusted for video
       // I2V is MANDATORY - always generate image first
       imageDescription: image_description || prompt,  // Use prompt as fallback description
       // Pre-generated preview image (skip AI image generation step if provided)
@@ -616,7 +686,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               s3_url: generation.audioAsset.s3Url,
             }
           : null,
-        message: "Video generation submitted to AWS Batch (Vertex AI via WIF)",
+        message: "Video generation submitted to EC2 (Vertex AI via WIF)",
       },
       { status: 201 }
     );

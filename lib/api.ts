@@ -197,9 +197,9 @@ class ApiClient {
   }
 
   // POST request
-  async post<T, B = Record<string, unknown>>(
+  async post<T>(
     endpoint: string,
-    body?: B
+    body?: object
   ): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: "POST",
@@ -210,7 +210,7 @@ class ApiClient {
   // PATCH request
   async patch<T>(
     endpoint: string,
-    body?: Record<string, unknown>
+    body?: object
   ): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: "PATCH",
@@ -235,10 +235,18 @@ export const authApi = {
     ),
 
   login: (data: { email: string; password: string }) =>
-    api.post<{ access_token: string; refresh_token: string; token_type: string }>(
-      "/api/v1/auth/login",
-      data
-    ),
+    api.post<{
+      access_token: string;
+      refresh_token: string;
+      token_type: string;
+      user?: {
+        id: string;
+        email: string;
+        name: string;
+        role: string;
+        label_ids: string[];
+      };
+    }>("/api/v1/auth/login", data),
 
   refresh: (refreshToken: string) =>
     api.post<{ access_token: string; refresh_token: string; token_type: string }>(

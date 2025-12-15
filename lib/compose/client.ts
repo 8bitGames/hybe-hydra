@@ -16,6 +16,7 @@
  */
 
 // Compose engine mode: 'ec2' (default) or 'local' (development)
+// Note: 'batch' mode has been removed - use EC2 for all rendering
 const COMPOSE_ENGINE_MODE = process.env.COMPOSE_ENGINE_MODE || 'ec2';
 
 // Local compose engine (development)
@@ -44,10 +45,11 @@ export function isEc2Mode(): boolean {
 }
 
 /**
- * Check if running in AWS Batch mode
+ * Check if running in batch mode (legacy)
+ * @deprecated Batch mode has been removed. Always returns false.
  */
 export function isBatchMode(): boolean {
-  return COMPOSE_ENGINE_MODE === 'batch';
+  return false;
 }
 
 /**
@@ -61,8 +63,14 @@ export function isDirectServerMode(): boolean {
 /**
  * Get current compose engine mode
  */
-export function getComposeEngineMode(): 'batch' | 'ec2' | 'local' {
-  return COMPOSE_ENGINE_MODE as 'batch' | 'ec2' | 'local';
+export function getComposeEngineMode(): 'ec2' | 'local' {
+  // 'batch' mode has been removed - only 'ec2' and 'local' are supported
+  const mode = COMPOSE_ENGINE_MODE as string;
+  if (mode === 'batch') {
+    console.warn('[Compose] batch mode is deprecated, using ec2 instead');
+    return 'ec2';
+  }
+  return mode as 'ec2' | 'local';
 }
 
 /**
@@ -193,48 +201,15 @@ async function submitToDirectServer(
 }
 
 /**
- * Submit a render job to AWS Batch (production)
- */
-async function submitToBatch(
-  request: ComposeRenderRequest
-): Promise<ComposeSubmitResponse> {
-  // Dynamic import to avoid loading AWS SDK when not needed
-  const { submitRenderToBatch } = await import('@/lib/batch/client');
-
-  const result = await submitRenderToBatch({
-    job_id: request.job_id,
-    images: request.images,
-    audio: request.audio,
-    script: request.script,
-    settings: request.settings,
-    output: request.output,
-  });
-
-  // Map Batch response to unified response format
-  return {
-    call_id: result.batch_job_id,
-    job_id: result.job_id,
-    status: result.status === 'queued' ? 'queued' : 'error',
-    message: result.message,
-    error: result.error,
-  };
-}
-
-/**
- * Submit a render job (auto-selects Batch, EC2, or Local based on COMPOSE_ENGINE_MODE)
+ * Submit a render job to EC2 or Local compose-engine
  * Returns immediately with a call_id for polling
  */
 export async function submitRenderToCompose(
   request: ComposeRenderRequest
 ): Promise<ComposeSubmitResponse> {
-  if (isDirectServerMode()) {
-    const modeName = isEc2Mode() ? 'EC2' : 'LOCAL';
-    console.log(`[Compose] Using ${modeName} mode`);
-    return submitToDirectServer(request);
-  } else {
-    console.log('[Compose] Using AWS BATCH mode');
-    return submitToBatch(request);
-  }
+  const modeName = isEc2Mode() ? 'EC2' : 'LOCAL';
+  console.log(`[Compose] Using ${modeName} mode`);
+  return submitToDirectServer(request);
 }
 
 // Legacy alias for backward compatibility
@@ -306,57 +281,12 @@ async function getDirectServerStatus(jobId: string): Promise<ComposeStatusRespon
 }
 
 /**
- * Poll AWS Batch for render job status
- */
-async function getBatchStatus(batchJobId: string): Promise<ComposeStatusResponse> {
-  // Dynamic import to avoid loading AWS SDK when not needed
-  const { getBatchJobStatus } = await import('@/lib/batch/client');
-
-  const result = await getBatchJobStatus(batchJobId);
-
-  // Map Batch status to unified format
-  if (result.mappedStatus === 'completed') {
-    return {
-      status: 'completed',
-      call_id: result.batch_job_id,
-      result: {
-        status: 'completed',
-        job_id: result.job_id,
-        output_url: null, // Will be set by callback
-        error: null,
-      },
-    };
-  } else if (result.mappedStatus === 'failed') {
-    return {
-      status: 'failed',
-      call_id: result.batch_job_id,
-      result: {
-        status: 'failed',
-        job_id: result.job_id,
-        output_url: null,
-        error: result.statusReason || 'Job failed',
-      },
-      error: result.statusReason,
-    };
-  } else {
-    return {
-      status: 'processing',
-      call_id: result.batch_job_id,
-    };
-  }
-}
-
-/**
- * Poll for render job status (auto-selects Batch, EC2, or Local based on COMPOSE_ENGINE_MODE)
+ * Poll for render job status from EC2 or Local compose-engine
  */
 export async function getComposeRenderStatus(
   callId: string
 ): Promise<ComposeStatusResponse> {
-  if (isDirectServerMode()) {
-    return getDirectServerStatus(callId);
-  } else {
-    return getBatchStatus(callId);
-  }
+  return getDirectServerStatus(callId);
 }
 
 // Legacy alias for backward compatibility
@@ -413,37 +343,51 @@ export interface BatchStatusResponse {
 
 /**
  * Submit multiple render jobs in parallel (batch processing)
- * Uses AWS Batch for parallel GPU rendering
+ * Uses EC2 compose-engine for parallel GPU rendering
  */
 export async function submitBatchRender(
   jobs: ComposeRenderRequest[]
 ): Promise<BatchSubmitResponse> {
-  // Dynamic import to avoid loading AWS SDK when not needed
-  const { submitBatchRenderJobs } = await import('@/lib/batch/client');
+  const modeName = isEc2Mode() ? 'EC2' : 'Local';
+  console.log(`[${modeName} Batch] Submitting ${jobs.length} jobs in parallel`);
 
-  const batchRequests = jobs.map(job => ({
-    job_id: job.job_id,
-    images: job.images,
-    audio: job.audio,
-    script: job.script,
-    settings: job.settings,
-    output: job.output,
-  }));
+  // Submit all jobs in parallel to EC2/Local compose-engine
+  const results = await Promise.all(
+    jobs.map(async (job) => {
+      try {
+        const result = await submitToDirectServer(job);
+        return {
+          job_id: job.job_id,
+          call_id: result.call_id,
+          status: result.status,
+          error: result.error,
+        };
+      } catch (error) {
+        return {
+          job_id: job.job_id,
+          call_id: '',
+          status: 'error' as const,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    })
+  );
 
-  const result = await submitBatchRenderJobs(batchRequests);
+  const successCount = results.filter(r => r.status === 'queued').length;
+  const status = successCount === jobs.length ? 'queued' :
+                 successCount > 0 ? 'partial' : 'error';
 
-  // Map to unified response format
   return {
-    batch_id: result.batch_id,
-    total_jobs: result.total_jobs,
-    call_ids: result.results.map(r => ({
+    batch_id: `batch-${Date.now()}`,
+    total_jobs: jobs.length,
+    call_ids: results.map(r => ({
       job_id: r.job_id,
-      call_id: r.batch_job_id,
+      call_id: r.call_id,
     })),
-    status: result.status,
-    message: result.status === 'queued'
-      ? `${result.total_jobs} jobs submitted to AWS Batch`
-      : `${result.results.filter(r => r.status === 'queued').length}/${result.total_jobs} jobs submitted`,
+    status,
+    message: status === 'queued'
+      ? `${jobs.length} jobs submitted to ${modeName}`
+      : `${successCount}/${jobs.length} jobs submitted`,
   };
 }
 
@@ -451,16 +395,16 @@ export async function submitBatchRender(
 export const submitBatchRenderToModal = submitBatchRender;
 
 /**
- * Poll status for multiple render jobs at once
+ * Poll status for multiple render jobs at once from EC2/Local compose-engine
  */
 export async function getBatchRenderStatus(
   callIds: string[]
 ): Promise<BatchStatusResponse> {
-  // Poll each job individually using AWS Batch
+  // Poll each job individually using EC2/Local compose-engine
   const results = await Promise.all(
     callIds.map(async (callId) => {
       try {
-        const status = await getBatchStatus(callId);
+        const status = await getDirectServerStatus(callId);
         return {
           call_id: callId,
           status: status.status,

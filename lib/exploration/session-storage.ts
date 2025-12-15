@@ -125,8 +125,8 @@ export async function getExplorationSession(sessionId: string): Promise<Explorat
       seedKeyword: session.seedKeyword,
       depth: session.depth,
       strategy: fromPrismaStrategy(session.strategy),
-      discoveries: (session.discoveries as Discovery[]) || [],
-      network: (session.network as ExplorationNetwork) || { nodes: [], edges: [] },
+      discoveries: (session.discoveries as unknown as Discovery[]) || [],
+      network: (session.network as unknown as ExplorationNetwork) || { nodes: [], edges: [] },
       stats: {
         totalSearches: session.totalSearches,
         totalVideosAnalyzed: session.totalVideosAnalyzed,
@@ -272,7 +272,7 @@ export async function getKeywordHeatmapData(
     }>()
 
     for (const session of sessions) {
-      const discoveries = session.discoveries as Discovery[] || []
+      const discoveries = (session.discoveries as unknown as Discovery[]) || []
       const dateKey = session.createdAt.toISOString().split('T')[0]
 
       for (const discovery of discoveries) {

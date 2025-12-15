@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
-import { submitRenderToModal, ModalRenderRequest, isLocalMode, isBatchMode } from '@/lib/compose/client';
+import { submitRenderToModal, ModalRenderRequest, isLocalMode } from '@/lib/compose/client';
 import { getStyleSetById, styleSetToRenderSettings } from '@/lib/fast-cut/style-sets';
 import { getScriptFromAssetLyrics } from '@/lib/subtitle-styles/lyrics-converter';
 import { createLyricsExtractorAgent, toLyricsData } from '@/lib/agents/analyzers';
@@ -12,7 +12,7 @@ const S3_BUCKET = process.env.AWS_S3_BUCKET || process.env.MINIO_BUCKET_NAME || 
 
 /**
  * Remove query string from S3 URL
- * AWS Batch uses IAM role for S3 access, so pre-signed URL parameters are not needed
+ * EC2 uses IAM role for S3 access, so pre-signed URL parameters are not needed
  * and cause issues when parsing the S3 key (query string gets included in key)
  */
 function cleanS3Url(url: string): string {
@@ -502,7 +502,7 @@ export async function POST(request: NextRequest) {
     console.log(`${LOG_PREFIX} Output S3 key: ${outputKey}`);
 
     // Prepare render request for Modal
-    // Clean S3 URLs to remove pre-signed query parameters (AWS Batch uses IAM role)
+    // Clean S3 URLs to remove pre-signed query parameters (EC2 uses IAM role)
     const cleanedImages = images.map(img => ({
       url: cleanS3Url(img.url),
       order: img.order
@@ -567,9 +567,8 @@ export async function POST(request: NextRequest) {
     });
 
     // Determine render backend for status display
-    const renderBackend = isLocalMode() ? 'local' : isBatchMode() ? 'batch' : 'modal';
-    const backendLabel = renderBackend === 'local' ? 'Local (CPU)' :
-                         renderBackend === 'batch' ? 'AWS Batch (GPU)' : 'Modal (CPU)';
+    const renderBackend = isLocalMode() ? 'local' : 'modal';
+    const backendLabel = renderBackend === 'local' ? 'Local (CPU)' : 'Modal (CPU)';
 
     console.log(`${LOG_PREFIX} ----------------------------------------`);
     console.log(`${LOG_PREFIX} SUBMITTING TO BACKEND: ${backendLabel}`);

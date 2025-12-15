@@ -942,7 +942,7 @@ export default function AnalyzePage() {
         video_hashtags: videoSource?.hashtags || null,
       };
 
-      const response = await api.post<GenerateIdeasResponse, GenerateIdeasRequest>(
+      const response = await api.post<GenerateIdeasResponse>(
         "/api/v1/analyze/generate-ideas",
         request
       );

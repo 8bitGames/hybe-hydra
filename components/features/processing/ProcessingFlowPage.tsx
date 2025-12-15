@@ -351,9 +351,16 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
       console.error("[ProcessingFlowPage] Failed to update session stage:", error);
     }
     // Navigate to publish page with the database session ID
+    // IMPORTANT: Only use databaseSessionId (UUID), never fall back to session?.id (local format)
     const dbSessionId = session?.databaseSessionId;
-    router.push(`/publish?sessionId=${dbSessionId || session?.id}`);
-  }, [router, session?.id, session?.databaseSessionId, activeSession, proceedToStage, loadSession]);
+    if (dbSessionId) {
+      router.push(`/publish?sessionId=${dbSessionId}`);
+    } else {
+      console.error("[ProcessingFlowPage] Cannot navigate to publish: no databaseSessionId available");
+      // Navigate without session ID - publish page will handle the error
+      router.push("/publish");
+    }
+  }, [router, session?.databaseSessionId, activeSession, proceedToStage, loadSession]);
 
   const handleBackToReady = useCallback(() => {
     setState("READY");
@@ -561,9 +568,16 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
       console.error("[ProcessingFlowPage] Failed to update session stage:", error);
     }
     // Navigate to publish page with the database session ID
+    // IMPORTANT: Only use databaseSessionId (UUID), never fall back to session?.id (local format)
     const dbSessionId = session?.databaseSessionId;
-    router.push(`/publish?sessionId=${dbSessionId || session?.id}`);
-  }, [router, session?.id, session?.databaseSessionId, activeSession, proceedToStage, loadSession]);
+    if (dbSessionId) {
+      router.push(`/publish?sessionId=${dbSessionId}`);
+    } else {
+      console.error("[ProcessingFlowPage] Cannot navigate to publish: no databaseSessionId available");
+      // Navigate without session ID - publish page will handle the error
+      router.push("/publish");
+    }
+  }, [router, session?.databaseSessionId, activeSession, proceedToStage, loadSession]);
 
   // Debug logging
   console.log("[ProcessingFlowPage] isHydrated:", isHydrated, "isInitializing:", isInitializing, "session:", session?.id, "state:", session?.state);

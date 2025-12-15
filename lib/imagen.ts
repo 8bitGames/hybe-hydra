@@ -2,7 +2,7 @@
  * Image Generation Service
  *
  * Generates images for I2V video generation.
- * Uses Vertex AI exclusively (Imagen 3.0 or via AWS Batch).
+ * Uses Vertex AI exclusively (Imagen 3.0 or via EC2 compose-engine).
  *
  * NOTE: Google AI API (GOOGLE_AI_API_KEY) is NOT used for image generation.
  * All image generation goes through Vertex AI for consistency and cost management.
@@ -62,7 +62,7 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; m
  * This image will be used as the starting point for I2V video generation
  *
  * NOTE: Only Vertex AI is supported. Google AI API is not used.
- * For production, images are generated via AWS Batch backend.
+ * For production, images are generated via EC2 compose-engine backend.
  *
  * When a reference image (product image) is provided, the model will incorporate
  * that actual product into the generated scene.

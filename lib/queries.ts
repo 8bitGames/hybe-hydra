@@ -719,6 +719,14 @@ export interface AllVideoItem {
   updated_at: string;
   generation_type: "AI" | "FAST_CUT";
   quality_score: number | null;
+  tiktok_seo?: {
+    description?: string;
+    hashtags?: string[];
+    keywords?: string[];
+    searchIntent?: string;
+    suggestedPostingTimes?: string[];
+    textOverlayKeywords?: string[];
+  } | null;
 }
 
 export interface AllVideosResponse {
@@ -781,7 +789,7 @@ export function useAllAIVideos() {
     },
     enabled: campaigns.length > 0,
     // Cache settings balanced for fresh data on page visits
-    // Videos complete asynchronously via AWS Batch callback, so cache can become stale
+    // Videos complete asynchronously via EC2 callback, so cache can become stale
     staleTime: 5 * 60 * 1000, // 5 minutes - shorter to catch server-side completions
     gcTime: 60 * 60 * 1000, // 1 hour in-memory
     refetchOnWindowFocus: false,

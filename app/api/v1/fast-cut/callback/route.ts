@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 /**
  * Render Callback Endpoint
  *
- * Called by Modal or AWS Batch when a render job completes (success or failure).
+ * Called by Modal or EC2 when a render job completes (success or failure).
  * Updates the database with the final status.
  *
  * POST /api/v1/fast-cut/callback
@@ -20,17 +20,17 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// Support both Modal and AWS Batch callback secrets
+// Support both Modal and EC2 callback secrets
 const MODAL_CALLBACK_SECRET = process.env.MODAL_CALLBACK_SECRET || 'hydra-modal-callback-secret';
-const BATCH_CALLBACK_SECRET = process.env.BATCH_CALLBACK_SECRET || MODAL_CALLBACK_SECRET;
+const EC2_CALLBACK_SECRET = process.env.BATCH_CALLBACK_SECRET || MODAL_CALLBACK_SECRET;
 
 function isValidSecret(secret: string): boolean {
-  return secret === MODAL_CALLBACK_SECRET || secret === BATCH_CALLBACK_SECRET;
+  return secret === MODAL_CALLBACK_SECRET || secret === EC2_CALLBACK_SECRET;
 }
 
 function getSecretSource(secret: string): string {
   if (secret === MODAL_CALLBACK_SECRET) return 'Modal';
-  if (secret === BATCH_CALLBACK_SECRET) return 'AWS Batch';
+  if (secret === EC2_CALLBACK_SECRET) return 'EC2';
   return 'Unknown';
 }
 
@@ -140,10 +140,10 @@ export async function POST(request: NextRequest) {
       secretSource: getSecretSource(secret),
     });
 
-    // Validate secret (supports both Modal and AWS Batch)
+    // Validate secret (supports both Modal and EC2)
     if (!isValidSecret(secret)) {
       console.error(`${LOG_PREFIX} ❌ UNAUTHORIZED - Invalid callback secret`);
-      console.error(`${LOG_PREFIX} Expected Modal or Batch secret, got: ${secret?.substring(0, 10)}...`);
+      console.error(`${LOG_PREFIX} Expected Modal or EC2 secret, got: ${secret?.substring(0, 10)}...`);
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
     }
 

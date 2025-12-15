@@ -4,7 +4,7 @@
  * Shared logic for generating preview images (first frames) for I2V workflow.
  * Used by both /create and /campaigns/[id] API endpoints.
  *
- * NOTE: Image generation is routed to AWS Batch backend where Vertex AI Gemini 3 Pro Image
+ * NOTE: Image generation is routed to EC2 compose-engine backend where Vertex AI Gemini 3 Pro Image
  * can run with WIF (Workload Identity Federation) authentication.
  * Vercel serverless doesn't have access to AWS metadata service needed for WIF.
  */
@@ -20,7 +20,7 @@ import {
   getAIJobStatus,
   generateAIJobId,
   type ImageAspectRatio,
-} from "@/lib/batch/ai-client";
+} from "@/lib/ec2/ai-client";
 
 // ============================================================================
 // Types
@@ -57,14 +57,14 @@ export interface PreviewImageResult {
 }
 
 // ============================================================================
-// AWS Batch Helper Functions
+// EC2 Helper Functions
 // ============================================================================
 
 const AWS_S3_BUCKET = process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
 const POLL_INTERVAL_MS = 3000; // 3 seconds
 const MAX_WAIT_TIME_MS = 300000; // 5 minutes
 
-interface BatchImageGenerationResult {
+interface EC2ImageGenerationResult {
   success: boolean;
   imageBase64?: string;
   imageUrl?: string;
@@ -73,21 +73,21 @@ interface BatchImageGenerationResult {
 }
 
 /**
- * Generate image via AWS Batch backend (Vertex AI Gemini 3 Pro Image)
+ * Generate image via EC2 compose-engine backend (Vertex AI Gemini 3 Pro Image)
  * Submits job, polls for completion, and downloads result from S3
  */
-async function generateImageViaBatch(
+async function generateImageViaEC2(
   prompt: string,
   aspectRatio: string,
   negativePrompt?: string,
   logPrefix: string = "[Preview Image]"
-): Promise<BatchImageGenerationResult> {
+): Promise<EC2ImageGenerationResult> {
   const jobId = generateAIJobId("img");
   const s3Key = `ai/images/${jobId}/output.png`;
 
-  console.log(`${logPrefix} [AWS Batch] Submitting image generation job: ${jobId}`);
+  console.log(`${logPrefix} [EC2] Submitting image generation job: ${jobId}`);
 
-  // Submit job to AWS Batch
+  // Submit job to EC2 compose-engine
   const submitResult = await submitImageGeneration(
     jobId,
     {
@@ -105,28 +105,30 @@ async function generateImageViaBatch(
   );
 
   if (submitResult.status === "error") {
-    console.error(`${logPrefix} [AWS Batch] Job submit failed: ${submitResult.error}`);
+    console.error(`${logPrefix} [EC2] Job submit failed: ${submitResult.error}`);
     return {
       success: false,
-      error: `AWS Batch submit failed: ${submitResult.error}`,
+      error: `EC2 submit failed: ${submitResult.error}`,
     };
   }
 
-  console.log(`${logPrefix} [AWS Batch] Job queued: ${submitResult.batch_job_id}`);
+  console.log(`${logPrefix} [EC2] Job queued: ${submitResult.ec2_job_id || submitResult.job_id}`);
 
   // Poll for completion
   const startTime = Date.now();
+  const jobIdToCheck = submitResult.ec2_job_id || submitResult.job_id;
+
   while (Date.now() - startTime < MAX_WAIT_TIME_MS) {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
 
-    const status = await getAIJobStatus(submitResult.batch_job_id, "image_generation");
+    const status = await getAIJobStatus(jobIdToCheck, "image_generation");
     const elapsed = Math.round((Date.now() - startTime) / 1000);
 
-    console.log(`${logPrefix} [AWS Batch] Status: ${status.status} (${elapsed}s elapsed)`);
+    console.log(`${logPrefix} [EC2] Status: ${status.status} (${elapsed}s elapsed)`);
 
     if (status.mappedStatus === "completed") {
       // Job completed - download image from S3
-      console.log(`${logPrefix} [AWS Batch] Job completed! Downloading from S3: ${s3Key}`);
+      console.log(`${logPrefix} [EC2] Job completed! Downloading from S3: ${s3Key}`);
 
       try {
         const imageBase64 = await downloadFromS3AsBase64(s3Key);
@@ -139,7 +141,7 @@ async function generateImageViaBatch(
           s3Key,
         };
       } catch (downloadError) {
-        console.error(`${logPrefix} [AWS Batch] Failed to download from S3:`, downloadError);
+        console.error(`${logPrefix} [EC2] Failed to download from S3:`, downloadError);
         return {
           success: false,
           error: `Failed to download generated image: ${downloadError instanceof Error ? downloadError.message : "Unknown error"}`,
@@ -148,16 +150,16 @@ async function generateImageViaBatch(
     }
 
     if (status.mappedStatus === "failed") {
-      console.error(`${logPrefix} [AWS Batch] Job failed: ${status.statusReason}`);
+      console.error(`${logPrefix} [EC2] Job failed: ${status.error}`);
       return {
         success: false,
-        error: `Image generation failed: ${status.statusReason || "Unknown error"}`,
+        error: `Image generation failed: ${status.error || "Unknown error"}`,
       };
     }
   }
 
   // Timeout
-  console.error(`${logPrefix} [AWS Batch] Job timed out after ${MAX_WAIT_TIME_MS / 1000}s`);
+  console.error(`${logPrefix} [EC2] Job timed out after ${MAX_WAIT_TIME_MS / 1000}s`);
   return {
     success: false,
     error: `Image generation timed out after ${MAX_WAIT_TIME_MS / 1000} seconds`,
@@ -326,17 +328,17 @@ export async function generateDirectPreviewImage(
     }
   }
 
-  // Step 2: Generate image via AWS Batch backend (Vertex AI)
+  // Step 2: Generate image via EC2 compose-engine backend (Vertex AI)
   // NOTE: Only Vertex AI is supported. Google AI API is not used.
-  console.log(`${logPrefix} Step 2: Generating image via AWS Batch backend (Vertex AI)...`);
+  console.log(`${logPrefix} Step 2: Generating image via EC2 compose-engine backend (Vertex AI)...`);
 
-  // Note: product_image_url (reference image) is not yet supported in batch mode
-  // TODO: Add reference image support to AWS Batch ai_worker.py
+  // Note: product_image_url (reference image) is not yet supported in EC2 mode
+  // TODO: Add reference image support to EC2 compose-engine ai_worker.py
   if (product_image_url) {
-    console.warn(`${logPrefix} Warning: Reference image (product_image_url) is not yet supported in batch mode. Generating without reference.`);
+    console.warn(`${logPrefix} Warning: Reference image (product_image_url) is not yet supported in EC2 mode. Generating without reference.`);
   }
 
-  const imageResult = await generateImageViaBatch(
+  const imageResult = await generateImageViaEC2(
     geminiImagePrompt,
     aspect_ratio,
     negative_prompt,
@@ -344,7 +346,7 @@ export async function generateDirectPreviewImage(
   );
 
   if (!imageResult.success || !imageResult.imageBase64) {
-    console.error(`${logPrefix} AWS Batch image generation failed: ${imageResult.error}`);
+    console.error(`${logPrefix} EC2 image generation failed: ${imageResult.error}`);
     return {
       success: false,
       preview_id: previewId,
@@ -357,7 +359,7 @@ export async function generateDirectPreviewImage(
     };
   }
 
-  console.log(`${logPrefix} Image generated successfully via AWS Batch!`);
+  console.log(`${logPrefix} Image generated successfully via EC2!`);
 
   // Step 3: Upload to S3
   const filename = `preview-${previewId}.png`;
@@ -606,7 +608,7 @@ export async function generateTwoStepPreviewImage(
 
 /**
  * Generate preview image.
- * - Default: Direct mode (AWS Batch → Vertex AI Gemini 3 Pro Image)
+ * - Default: Direct mode (EC2 → Vertex AI Gemini 3 Pro Image)
  * - Two-step mode: Only if explicitly requested with composition_mode: "two_step"
  */
 export async function generatePreviewImage(
@@ -629,6 +631,6 @@ export async function generatePreviewImage(
     return generateTwoStepPreviewImage(input, s3Config, logPrefix);
   }
 
-  // Default: Direct mode via AWS Batch (Vertex AI Gemini 3 Pro Image)
+  // Default: Direct mode via EC2 (Vertex AI Gemini 3 Pro Image)
   return generateDirectPreviewImage(input, s3Config, logPrefix);
 }

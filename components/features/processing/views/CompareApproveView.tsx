@@ -307,6 +307,13 @@ export function CompareApproveView({
               const isApproved = variation.approval === "approved";
               const isRejected = variation.approval === "rejected";
 
+              // Debug: Log each variation being rendered
+              console.log(`[CompareApproveView] Rendering variation ${index}:`, {
+                id: variation.id,
+                status: variation.status,
+                outputUrl: variation.outputUrl || 'MISSING!',
+              });
+
               return (
                 <div key={variation.id} className="shrink-0 w-64">
                   <Card
@@ -331,6 +338,15 @@ export function CompareApproveView({
                           muted={isMuted}
                           onLoadedMetadata={handleLoadedMetadata}
                           onClick={togglePlay}
+                          onError={(e) => {
+                            console.error(`[CompareApproveView] Video load error for ${variation.id}:`, {
+                              src: variation.outputUrl,
+                              error: e.currentTarget.error?.message || 'Unknown error',
+                            });
+                          }}
+                          onLoadStart={() => {
+                            console.log(`[CompareApproveView] Video load started for ${variation.id}:`, variation.outputUrl?.substring(0, 80));
+                          }}
                         />
 
                         {/* Style badge */}

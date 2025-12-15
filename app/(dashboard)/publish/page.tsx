@@ -189,21 +189,46 @@ export default function PublishPage() {
     const loadSessionFromUrl = async () => {
       if (!activeSession && sessionIdFromUrl) {
         try {
-          console.log("[Publish] Loading session from URL:", sessionIdFromUrl);
-          await loadSession(sessionIdFromUrl);
+          // Check if this is a processing session ID (not a UUID)
+          const isProcessingId = sessionIdFromUrl.startsWith("session-") &&
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionIdFromUrl);
+
+          let sessionIdToLoad = sessionIdFromUrl;
+
+          if (isProcessingId) {
+            // Try to get the database session ID from processing session store
+            const dbSessionId = processingSession?.databaseSessionId;
+            if (dbSessionId) {
+              console.log("[Publish] Resolving processing session ID to database UUID:", sessionIdFromUrl, "->", dbSessionId);
+              sessionIdToLoad = dbSessionId;
+            } else {
+              console.warn("[Publish] Processing session ID without databaseSessionId:", sessionIdFromUrl);
+              // Cannot load from database without a valid UUID
+              throw new Error(
+                `Cannot load session: "${sessionIdFromUrl}" is a local processing session ID. ` +
+                `No linked database session found.`
+              );
+            }
+          }
+
+          console.log("[Publish] Loading session from URL:", sessionIdToLoad);
+          await loadSession(sessionIdToLoad);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error("[Publish] Failed to load session from URL:", sessionIdFromUrl, errorMessage);
-          // If session doesn't exist, redirect to start page
-          if (errorMessage.includes("not found") || errorMessage.includes("PGRST116")) {
-            console.log("[Publish] Session not found, redirecting to start");
+          // If session doesn't exist or invalid format, redirect to start page
+          if (errorMessage.includes("not found") ||
+              errorMessage.includes("PGRST116") ||
+              errorMessage.includes("Invalid session ID format") ||
+              errorMessage.includes("local processing session ID")) {
+            console.log("[Publish] Session not found or invalid, redirecting to start");
             router.push("/start");
           }
         }
       }
     };
     loadSessionFromUrl();
-  }, [activeSession, sessionIdFromUrl, loadSession, router]);
+  }, [activeSession, sessionIdFromUrl, loadSession, router, processingSession?.databaseSessionId]);
 
   // Clean up stale selections on mount
   // This handles the case where localStorage has stale IDs that don't match current videos

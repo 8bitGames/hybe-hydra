@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromHeader } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { getModalRenderStatus } from '@/lib/compose/client';
+import { getAIJobStatus } from '@/lib/ec2/ai-client';
 import { getPresignedUrlFromS3Url } from '@/lib/storage';
 
 interface RouteContext {
@@ -89,16 +90,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     // Get call ID from qualityMetadata (supports both Fast Cut and AI I2V)
     const metadata = generation.qualityMetadata as Record<string, unknown> | null;
-    // Fast Cut uses modalCallId, AI I2V uses batch_job_id
+    // Fast Cut uses modalCallId, AI Video uses ec2_job_id, legacy uses batch_job_id
     const modalCallId = metadata?.modalCallId as string | undefined;
+    const ec2JobId = metadata?.ec2_job_id as string | undefined;
     const batchJobId = metadata?.batch_job_id as string | undefined;
-    const callId = modalCallId || batchJobId;
+    const callId = modalCallId || ec2JobId || batchJobId;
     const renderBackend = metadata?.renderBackend as string | undefined;
-    const createdAt = metadata?.createdAt as string | undefined;
+    const createdAt = metadata?.createdAt || metadata?.submitted_at as string | undefined;
     const jobType = metadata?.job_type as string | undefined;
 
     console.log(`${LOG_PREFIX} Metadata:`, {
       hasModalCallId: !!modalCallId,
+      hasEc2JobId: !!ec2JobId,
       hasBatchJobId: !!batchJobId,
       callIdPreview: callId?.substring(0, 20) + '...',
       renderBackend: renderBackend || '(not set)',
@@ -106,9 +109,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
       jobType: jobType || '(not set)',
     });
 
-    if (!callId) {
+    // For AI Video jobs, generationId === job_id sent to EC2
+    // So we can use generationId directly if ec2_job_id not yet saved (race condition from fire-and-forget submitToEC2)
+    const isAIVideoJobType = jobType === 'image_to_video' || jobType === 'video_generation';
+    const usingGenerationIdFallback = !callId && isAIVideoJobType;
+    const effectiveCallId = callId || (isAIVideoJobType ? generationId : null);
+
+    if (usingGenerationIdFallback) {
+      console.log(`${LOG_PREFIX} Using generationId as callId (AI Video fallback for race condition)`);
+    }
+
+    if (!effectiveCallId) {
       // No call ID - might be an old job or error
-      console.warn(`${LOG_PREFIX} No callId found (modalCallId or batch_job_id) - returning DB status (${Date.now() - requestStartTime}ms total)`);
+      console.warn(`${LOG_PREFIX} No callId found (modalCallId, ec2_job_id, or batch_job_id) - returning DB status (${Date.now() - requestStartTime}ms total)`);
       const rawOutputUrl = generation.composedOutputUrl || generation.outputUrl;
       const outputUrl = rawOutputUrl ? await getPresignedUrlFromS3Url(rawOutputUrl) : null;
       return NextResponse.json({
@@ -120,16 +133,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
     }
 
-    // Poll backend for current status (supports Modal, AWS Batch, and Local)
-    console.log(`${LOG_PREFIX} Polling backend for status...`);
+    // Poll backend for current status (supports Modal, EC2, and Local)
+    // AI Video jobs (image_to_video, video_generation) use different endpoint than Fast Cut
+    const isAIVideoJob = isAIVideoJobType;  // Reuse the check from above
+    console.log(`${LOG_PREFIX} Polling backend for status... (isAIVideoJob: ${isAIVideoJob}, effectiveCallId: ${effectiveCallId.substring(0, 20)}...)`);
     const backendPollStart = Date.now();
     try {
-      const backendStatus = await getModalRenderStatus(callId);
+      // Use appropriate status function based on job type
+      const backendStatus = isAIVideoJob
+        ? await getAIJobStatus(effectiveCallId).then(res => ({
+            status: res.mappedStatus,
+            result: res.output_url ? { output_url: res.output_url } : null,
+            error: res.error,
+            call_id: res.job_id,
+          }))
+        : await getModalRenderStatus(effectiveCallId);
       const backendPollMs = Date.now() - backendPollStart;
 
       console.log(`${LOG_PREFIX} Backend response (${backendPollMs}ms):`, {
         generationId,
-        callId: callId.substring(0, 20) + '...',
+        callId: effectiveCallId.substring(0, 20) + '...',
         backendStatus: backendStatus.status,
         hasResult: !!backendStatus.result,
         hasOutputUrl: !!backendStatus.result?.output_url,
@@ -138,7 +161,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       if (backendStatus.status === 'completed') {
         console.log(`${LOG_PREFIX} Backend reports COMPLETED - checking for output URL...`);
-        // For AWS Batch, output_url comes from callback, not from status check
+        // For EC2, output_url comes from callback, not from status check
         // Check if we already have the output URL in database (set by callback)
         const freshDbStart = Date.now();
         const freshGeneration = await prisma.videoGeneration.findUnique({
@@ -210,7 +233,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             error: null
           });
         } else {
-          // AWS Batch shows completed but callback hasn't arrived yet
+          // EC2 shows completed but callback hasn't arrived yet
           // Return processing status while waiting for callback with output URL
           const totalMs = Date.now() - requestStartTime;
           console.log(`${LOG_PREFIX} ⏳ Backend completed but no output URL yet - waiting for callback (${totalMs}ms total)`);
@@ -253,7 +276,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }
 
       // Still processing - calculate estimated progress
-      // AWS Batch with cold start: ~120s total (90s cold start + 20s GPU render)
+      // EC2 with cold start: ~120s total (90s cold start + 20s GPU render)
       // Modal/Local: ~50s total
       let estimatedProgress = 50; // Default mid-way
       let elapsedSeconds = 0;
@@ -261,8 +284,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (createdAt) {
         elapsedSeconds = (Date.now() - new Date(createdAt).getTime()) / 1000;
 
-        if (renderBackend === 'batch') {
-          // AWS Batch has cold start overhead (~90s) + GPU render (~20s)
+        if (renderBackend === 'ec2') {
+          // EC2 has cold start overhead (~90s) + GPU render (~20s)
           if (elapsedSeconds < 90) {
             // Cold start phase (0-90s) → show 5-35%
             estimatedProgress = 5 + Math.floor((elapsedSeconds / 90) * 30);
@@ -280,7 +303,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       // Determine render backend for status message
       let backendName = 'Cloud';
       if (renderBackend === 'local') backendName = 'Local';
-      else if (renderBackend === 'batch') backendName = 'AWS Batch (GPU)';
+      else if (renderBackend === 'ec2') backendName = 'EC2 (GPU)';
       else if (renderBackend === 'modal') backendName = 'Modal';
 
       const totalMs = Date.now() - requestStartTime;

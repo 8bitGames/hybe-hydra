@@ -2,7 +2,6 @@
  * EC2 AI Client for Vertex AI Generation
  *
  * Submits AI generation jobs directly to EC2 compose-engine server.
- * This is an alternative to AWS Batch for AI workloads.
  *
  * EC2 Flow: Next.js → EC2 compose-engine → Vertex AI → S3 → Callback to Next.js
  *
@@ -27,7 +26,7 @@ function getAICallbackUrl(): string {
 }
 
 // ============================================================
-// Type Definitions (same as batch/ai-client.ts)
+// Type Definitions
 // ============================================================
 
 export type AIJobType = 'video_generation' | 'image_generation' | 'image_to_video';
