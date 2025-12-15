@@ -180,7 +180,7 @@ export default function FastCutEffectsPage() {
           musicTrack: selectedAudio ? {
             id: selectedAudio.id,
             name: selectedAudio.filename || "Selected Track",
-            duration: selectedAudio.duration || 0,
+            startTime: audioStartTime || 0,
             url: selectedAudio.s3Url || "",
           } : undefined,
           effectPreset: styleSetId ? {

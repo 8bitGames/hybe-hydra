@@ -96,7 +96,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const batchJobId = metadata?.batch_job_id as string | undefined;
     const callId = modalCallId || ec2JobId || batchJobId;
     const renderBackend = metadata?.renderBackend as string | undefined;
-    const createdAt = metadata?.createdAt || metadata?.submitted_at as string | undefined;
+    const createdAt = (metadata?.createdAt || metadata?.submitted_at) as string | undefined;
     const jobType = metadata?.job_type as string | undefined;
 
     console.log(`${LOG_PREFIX} Metadata:`, {
@@ -150,13 +150,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
         : await getModalRenderStatus(effectiveCallId);
       const backendPollMs = Date.now() - backendPollStart;
 
+      // Type-safe error check - result may or may not have error property depending on job type
+      const resultError = backendStatus.result && 'error' in backendStatus.result
+        ? (backendStatus.result as { error?: string | null }).error
+        : null;
+
       console.log(`${LOG_PREFIX} Backend response (${backendPollMs}ms):`, {
         generationId,
         callId: effectiveCallId.substring(0, 20) + '...',
         backendStatus: backendStatus.status,
         hasResult: !!backendStatus.result,
         hasOutputUrl: !!backendStatus.result?.output_url,
-        hasError: !!backendStatus.error || !!backendStatus.result?.error,
+        hasError: !!backendStatus.error || !!resultError,
       });
 
       if (backendStatus.status === 'completed') {
@@ -248,7 +253,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }
 
       if (backendStatus.status === 'failed' || backendStatus.status === 'error') {
-        const errorMsg = backendStatus.result?.error || backendStatus.error || 'Render failed';
+        const errorMsg = resultError || backendStatus.error || 'Render failed';
         console.error(`${LOG_PREFIX} ❌ Backend reports FAILED:`, {
           errorMsg: errorMsg.substring(0, 200),
           backendStatus: backendStatus.status,

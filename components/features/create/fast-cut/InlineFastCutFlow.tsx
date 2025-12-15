@@ -948,7 +948,7 @@ export function InlineFastCutFlow({
             musicTrack: selectedAudio ? {
               id: selectedAudio.id,
               name: selectedAudio.filename,
-              duration: selectedAudio.duration,
+              startTime: audioStartTime || 0,
               url: selectedAudio.s3Url,
             } : undefined,
             effectPreset: selectedStyleSet ? {
