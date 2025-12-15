@@ -2909,6 +2909,27 @@ export default function DeepAnalysisPage() {
       const response = await fetch(`/api/deep-analysis/compare?id=${reportId}`);
       const data = await response.json();
       if (data.success && data.report) {
+        // Populate selectedAccounts from the saved report's accounts (including analysisData)
+        const loadedAccounts: SelectedAccount[] = data.report.accounts.map((acc: {
+          uniqueId: string;
+          nickname: string;
+          avatarUrl?: string;
+          verified: boolean;
+          followers: number;
+          analysisId?: string;
+          analysisData?: AccountAnalysisData;
+        }) => ({
+          uniqueId: acc.uniqueId,
+          nickname: acc.nickname,
+          avatarUrl: acc.avatarUrl,
+          followers: acc.followers,
+          verified: acc.verified,
+          analysisId: acc.analysisId,
+          status: 'complete' as const,
+          analysisData: acc.analysisData,
+        }));
+        setSelectedAccounts(loadedAccounts);
+
         setComparisonData({
           overallSummary: data.report.overallSummary,
           rankings: data.report.rankings,
