@@ -360,7 +360,6 @@ def get_render_status(call_id: str):
 
 
 # Health check removed to save web endpoint quota
-# Batch processing endpoints removed - use individual submit_render calls instead
 
 
 # ============================================================================

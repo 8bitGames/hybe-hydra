@@ -49,7 +49,7 @@ const StyleSetSelectorConfig: AgentConfig<StyleSetSelectorInput, StyleSetSelecto
     name: 'gemini-2.5-flash',
     options: {
       temperature: 0.2,
-      maxTokens: 1024,
+      maxTokens: 4096, // Increased for thinking model
     },
   },
 

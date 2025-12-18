@@ -29,7 +29,7 @@ FONTS_DIR = os.path.join(
 COOPER_BLACK = os.path.join(FONTS_DIR, "COOPBL.TTF")
 
 # Noto Sans font paths (preferred) with fallbacks
-# Updated for AWS Batch/Modal Docker containers
+# Updated for Docker containers
 FALLBACK_FONTS = [
     # Common Linux paths
     "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
@@ -550,19 +550,37 @@ async def apply_text_overlays_pillow(
         # Final output mapping
         filter_complex = ";".join(filter_parts)
 
+        # Check if NVENC is available for GPU encoding
+        from ..ffmpeg_pipeline import is_nvenc_available
+        use_gpu = is_nvenc_available()
+
         # Build FFmpeg command
-        cmd = [
-            ffmpeg_path, "-y",
-            *inputs,
-            "-filter_complex", filter_complex,
-            "-map", f"[{current_input}]",
-            "-map", "0:a?",  # Copy audio if present
-            "-c:v", "libx264",  # Use CPU encoder for compatibility
-            "-preset", "fast",
-            "-crf", "18",
-            "-c:a", "copy",
-            output_video,
-        ]
+        if use_gpu:
+            cmd = [
+                ffmpeg_path, "-y",
+                *inputs,
+                "-filter_complex", filter_complex,
+                "-map", f"[{current_input}]",
+                "-map", "0:a?",
+                "-c:v", "h264_nvenc",
+                "-preset", "p4",
+                "-cq", "20",
+                "-c:a", "copy",
+                output_video,
+            ]
+        else:
+            cmd = [
+                ffmpeg_path, "-y",
+                *inputs,
+                "-filter_complex", filter_complex,
+                "-map", f"[{current_input}]",
+                "-map", "0:a?",
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-crf", "18",
+                "-c:a", "copy",
+                output_video,
+            ]
 
         logger.info(f"[{job_id}] Applying {len(overlays)} text overlays with Pillow+overlay method")
         logger.debug(f"[{job_id}] FFmpeg command: {' '.join(cmd[:10])}...")
@@ -667,16 +685,34 @@ async def apply_text_overlays_ass(
         escaped_ass_path = ass_path.replace("\\", "/").replace(":", "\\:")
         logger.info(f"[{job_id}] [ASS] Escaped ASS path: {escaped_ass_path}")
 
-        cmd = [
-            ffmpeg_path, "-y",
-            "-i", input_video,
-            "-vf", f"ass='{escaped_ass_path}'",
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "18",
-            "-c:a", "copy",
-            output_video,
-        ]
+        # Check if NVENC is available for GPU encoding
+        from ..ffmpeg_pipeline import is_nvenc_available
+        use_gpu = is_nvenc_available()
+
+        if use_gpu:
+            cmd = [
+                ffmpeg_path, "-y",
+                "-i", input_video,
+                "-vf", f"ass='{escaped_ass_path}'",
+                "-c:v", "h264_nvenc",
+                "-preset", "p4",
+                "-cq", "20",
+                "-c:a", "copy",
+                output_video,
+            ]
+            logger.info(f"[{job_id}] [ASS] Using GPU encoding (h264_nvenc)")
+        else:
+            cmd = [
+                ffmpeg_path, "-y",
+                "-i", input_video,
+                "-vf", f"ass='{escaped_ass_path}'",
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-crf", "18",
+                "-c:a", "copy",
+                output_video,
+            ]
+            logger.info(f"[{job_id}] [ASS] Using CPU encoding (libx264)")
 
         logger.info(f"[{job_id}] [ASS] FFmpeg command: {' '.join(cmd)}")
 

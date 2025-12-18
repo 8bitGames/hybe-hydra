@@ -112,3 +112,4 @@ google-vision-credentials.json
 
 # GCP backend (local development only)
 backend/gcp/
+hyb-hydra-dev-d2dc3a95cc1b.json

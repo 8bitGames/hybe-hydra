@@ -16,6 +16,7 @@ from ..models.render_job import (
 )
 from ..services.image_fetcher import ImageFetcher
 from ..services.video_renderer import VideoRenderer
+from ..services.keyword_transformer import get_keyword_transformer
 from ..utils.job_queue import JobQueue
 from ..dependencies import get_job_queue, get_render_semaphore
 from ..config import get_settings
@@ -121,6 +122,20 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
         # Search for images using the tags
         image_fetcher = ImageFetcher()
 
+        # Transform keywords based on style (vibe, color_grade, effect_preset)
+        try:
+            keyword_transformer = get_keyword_transformer()
+            transformed_tags = await keyword_transformer.transform(
+                original_tags=request.search_tags,
+                vibe=request.vibe,
+                color_grade=request.color_grade,
+                effect_preset=request.effect_preset,
+            )
+            logger.info(f"[Auto-Compose] Job {request.job_id} transformed tags: {request.search_tags} -> {transformed_tags}")
+        except Exception as e:
+            logger.warning(f"[Auto-Compose] Job {request.job_id} keyword transformation failed: {e}, using original tags")
+            transformed_tags = request.search_tags
+
         # Try each tag combination until we get enough images
         # Use progressive resolution fallback: 720 -> 480 -> 360
         all_candidates = []
@@ -132,7 +147,7 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
 
             logger.info(f"[Auto-Compose] Job {request.job_id} searching with min_res={min_res}")
 
-            for tag in request.search_tags:
+            for tag in transformed_tags:
                 result = await image_fetcher.search(
                     query=tag,
                     max_results=10,
@@ -351,6 +366,7 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
                 output_url=output_url,
                 metadata={
                     "search_tags": request.search_tags,
+                    "transformed_tags": transformed_tags,
                     "vibe": request.vibe,
                     "effect_preset": request.effect_preset,
                     "color_grade": request.color_grade,

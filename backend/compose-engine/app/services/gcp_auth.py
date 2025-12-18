@@ -88,6 +88,20 @@ class GCPAuthManager:
 
         # Check for service account JSON first (preferred method)
         self._service_account_json = service_account_json or os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+
+        # Also check if GOOGLE_APPLICATION_CREDENTIALS points to a service account file
+        if not self._service_account_json:
+            cred_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+            if cred_file and os.path.exists(cred_file):
+                try:
+                    with open(cred_file, 'r') as f:
+                        cred_config = json.load(f)
+                        if cred_config.get("type") == "service_account":
+                            logger.info(f"Detected service account file: {cred_file}")
+                            self._service_account_json = json.dumps(cred_config)
+                except Exception as e:
+                    logger.warning(f"Could not read credential file: {e}")
+
         self._use_service_account = bool(self._service_account_json)
 
         # WIF-related settings (legacy)

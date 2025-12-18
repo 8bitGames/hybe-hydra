@@ -249,8 +249,12 @@ class VertexAIClient:
                 response_data = result.get("response", {})
                 videos = response_data.get("videos", [])
 
+                logger.info(f"Veo response data: {response_data}")
+                logger.info(f"Veo videos array: {videos}")
+
                 if videos and len(videos) > 0:
                     video_uri = videos[0].get("gcsUri", output_gcs_uri)
+                    logger.info(f"Video URI from Veo: {video_uri}")
                     return GenerationResult(
                         success=True,
                         operation_name=operation_name,

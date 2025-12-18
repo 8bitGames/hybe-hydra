@@ -48,17 +48,55 @@ def find_ffmpeg() -> str:
 
 
 def check_nvenc_available() -> bool:
-    """Check if NVIDIA NVENC encoder is available."""
+    """Check if NVIDIA NVENC encoder is actually usable.
+
+    Just checking if h264_nvenc is listed isn't enough - the encoder may be
+    compiled in but the NVIDIA library (libnvidia-encode.so.1) may not be
+    accessible (e.g., in containers without proper GPU mounting).
+
+    This function actually tries a small encoding test to verify it works.
+    """
     try:
         import subprocess
+        import tempfile
+
+        # First quick check - is h264_nvenc even listed?
         result = subprocess.run(
             [find_ffmpeg(), "-encoders"],
             capture_output=True,
             text=True,
             timeout=5,
         )
-        return "h264_nvenc" in result.stdout
-    except Exception:
+        if "h264_nvenc" not in result.stdout:
+            logger.debug("NVENC check: h264_nvenc not in encoder list")
+            return False
+
+        # Actually try to encode a tiny test video
+        # This catches cases where the encoder is listed but the NVIDIA
+        # library isn't accessible
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as tmp:
+            test_result = subprocess.run(
+                [
+                    find_ffmpeg(),
+                    "-y",
+                    "-f", "lavfi",
+                    "-i", "color=black:s=64x64:d=0.1",
+                    "-c:v", "h264_nvenc",
+                    "-frames:v", "1",
+                    tmp.name,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if test_result.returncode == 0:
+                logger.info("NVENC check: h264_nvenc is available and working")
+                return True
+            else:
+                logger.warning(f"NVENC check: h264_nvenc failed - {test_result.stderr[-200:]}")
+                return False
+    except Exception as e:
+        logger.debug(f"NVENC check failed with exception: {e}")
         return False
 
 
@@ -478,6 +516,115 @@ async def mix_audio_to_video(
         return False
 
     return True
+
+
+async def create_video_from_image_sequence(
+    image_paths: List[str],
+    durations: List[float],
+    output_path: str,
+    output_size: Tuple[int, int],
+    fps: int = 30,
+    use_gpu: bool = True,
+    job_id: str = "unknown",
+) -> bool:
+    """Create video from image sequence in ONE FFmpeg call.
+
+    This is much faster than creating individual clips and concatenating.
+    Uses FFmpeg concat demuxer with duration per image.
+
+    Args:
+        image_paths: List of image file paths (will be looped if needed)
+        durations: List of durations for each image (in seconds)
+        output_path: Output video path
+        output_size: (width, height) for output video
+        fps: Frame rate
+        use_gpu: Whether to use GPU encoding
+        job_id: Job ID for logging
+
+    Returns:
+        True if successful
+    """
+    start_time = time.time()
+    num_clips = len(durations)
+    total_duration = sum(durations)
+
+    logger.info(f"[{job_id}] Creating video from {num_clips} images in ONE pass")
+    logger.info(f"[{job_id}] Total duration: {total_duration:.1f}s, Output: {output_size[0]}x{output_size[1]}")
+
+    ffmpeg = find_ffmpeg()
+    width, height = output_size
+
+    # Create concat demuxer file with durations
+    concat_file = output_path + ".concat.txt"
+    with open(concat_file, "w") as f:
+        for i, duration in enumerate(durations):
+            img_path = image_paths[i % len(image_paths)]
+            f.write(f"file '{img_path}'\n")
+            f.write(f"duration {duration}\n")
+        # Add last image again (required by concat demuxer for proper duration)
+        last_img = image_paths[(num_clips - 1) % len(image_paths)]
+        f.write(f"file '{last_img}'\n")
+
+    logger.debug(f"[{job_id}] Concat file created: {concat_file}")
+
+    # Build encoder options
+    if use_gpu and is_nvenc_available():
+        encoder_opts = [
+            "-c:v", "h264_nvenc",
+            "-preset", "p4",
+            "-cq", "20",
+            "-b:v", "10M",
+        ]
+        encoder_name = "h264_nvenc"
+    else:
+        encoder_opts = [
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "18",
+        ]
+        encoder_name = "libx264"
+
+    # FFmpeg command: concat demuxer -> scale -> encode
+    # Using scale filter to ensure consistent output size
+    cmd = [
+        ffmpeg, "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", concat_file,
+        "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}",
+        *encoder_opts,
+        "-an",  # No audio yet
+        "-r", str(fps),
+        output_path,
+    ]
+
+    _log_ffmpeg_cmd(cmd, job_id)
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        elapsed = time.time() - start_time
+
+        if proc.returncode != 0:
+            error_msg = stderr.decode()
+            logger.error(f"[{job_id}] Image sequence FAILED ({elapsed:.1f}s): {error_msg[-1000:]}")
+            return False
+
+        if os.path.exists(output_path):
+            size_mb = os.path.getsize(output_path) / (1024 * 1024)
+            speed = num_clips / elapsed
+            logger.info(f"[{job_id}] ✓ Video created: {size_mb:.1f}MB in {elapsed:.1f}s ({speed:.1f} clips/sec, {encoder_name})")
+
+        return True
+
+    finally:
+        # Cleanup concat file
+        if os.path.exists(concat_file):
+            os.remove(concat_file)
 
 
 async def final_encode(

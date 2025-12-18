@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { Users, Music } from "lucide-react";
+import { Users, Music, Trash2 } from "lucide-react";
 
 const settingsTabs = [
   {
@@ -20,6 +20,13 @@ const settingsTabs = [
     icon: Music,
     labelKo: "아티스트 관리",
     labelEn: "Artists",
+  },
+  {
+    id: "facebook-data-deletion",
+    href: "/settings/facebook-data-deletion",
+    icon: Trash2,
+    labelKo: "Facebook 데이터 삭제",
+    labelEn: "Facebook Data Deletion",
   },
 ];
 

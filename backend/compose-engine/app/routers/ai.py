@@ -4,8 +4,7 @@ Provides endpoints for:
 - Image generation (Gemini 3 Pro Image)
 - Video generation (Veo 3.1)
 - Image-to-Video generation (Veo 3.1 with reference image)
-
-This replaces AWS Batch AI worker functionality with direct EC2 execution.
+- Audio overlay with FFmpeg
 """
 
 import os
@@ -22,7 +21,7 @@ from ..models.ai_job import (
     AIJobResponse,
     AIJobStatus,
     AIJobType,
-    AIJobCallback,
+    AudioOverlaySettings,
 )
 from ..models.responses import JobStatus
 from ..services.vertex_ai import (
@@ -84,30 +83,237 @@ async def download_image(url: str) -> tuple[bytes, str]:
 
 
 # ============================================================
-# Job Processing Functions
+# Audio Overlay Processing (FFmpeg)
 # ============================================================
 
-async def send_callback(
-    callback_url: str,
-    callback_secret: Optional[str],
-    payload: AIJobCallback
-):
-    """Send callback notification when job completes."""
-    headers = {"Content-Type": "application/json"}
-    if callback_secret:
-        headers["X-Callback-Secret"] = callback_secret
+def _seconds_to_ass_time(seconds: float) -> str:
+    """Convert seconds to ASS time format (H:MM:SS.cc)."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    centisecs = int((seconds % 1) * 100)
+    return f"{hours}:{minutes:02d}:{secs:02d}.{centisecs:02d}"
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                callback_url,
-                headers=headers,
-                json=payload.model_dump()
-            )
-            logger.info(f"Callback sent: {response.status_code}")
-    except Exception as e:
-        logger.error(f"Callback failed: {e}")
 
+def _generate_ass_subtitles(
+    subtitles: list,
+    width: int,
+    height: int,
+    job_id: str = "",
+) -> str:
+    """Generate ASS subtitle file content for audio overlay subtitles.
+
+    Args:
+        subtitles: List of SubtitleEntry objects with text, start, end
+        width: Video width
+        height: Video height
+        job_id: Job ID for logging
+
+    Returns:
+        ASS file content as string
+    """
+    # Calculate font size (5% of height)
+    font_size = max(36, int(height * 0.05))
+
+    # ASS uses numpad alignment: 2 = bottom-center
+    alignment = 2
+
+    ass_header = f"""[Script Info]
+Title: AI Video Subtitles
+ScriptType: v4.00+
+PlayResX: {width}
+PlayResY: {height}
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Noto Sans CJK KR,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,{alignment},20,20,30,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    dialogue_lines = []
+    for i, sub in enumerate(subtitles):
+        start_time = _seconds_to_ass_time(sub.start)
+        end_time = _seconds_to_ass_time(sub.end)
+
+        # Escape special ASS characters
+        text = sub.text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+
+        # Add fade effect (300ms in, 300ms out)
+        text_with_fade = f"{{\\fad(300,300)}}{text}"
+
+        dialogue_lines.append(
+            f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text_with_fade}"
+        )
+        logger.debug(f"[{job_id}] ASS subtitle {i}: '{text[:30]}...' @ {start_time}->{end_time}")
+
+    return ass_header + "\n".join(dialogue_lines) + "\n"
+
+
+async def apply_audio_overlay(
+    video_data: bytes,
+    audio_overlay: AudioOverlaySettings,
+    job_id: str,
+) -> bytes:
+    """
+    Apply audio overlay to video using FFmpeg.
+
+    Args:
+        video_data: Raw video bytes
+        audio_overlay: Audio overlay settings
+        job_id: Job ID for logging
+
+    Returns:
+        Composed video bytes with audio overlay
+    """
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    logger.info(f"[{job_id}] Starting audio overlay composition...")
+
+    # FFmpeg paths
+    ffmpeg_path = os.environ.get("FFMPEG_BINARY", "/usr/bin/ffmpeg")
+    ffprobe_path = os.environ.get("FFPROBE_BINARY", "/usr/bin/ffprobe")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_dir = Path(temp_dir)
+        video_path = temp_dir / "input_video.mp4"
+        audio_path = temp_dir / "input_audio.mp3"
+        output_path = temp_dir / "output.mp4"
+
+        # Write video data to temp file
+        video_path.write_bytes(video_data)
+        logger.info(f"[{job_id}] Video written: {len(video_data)} bytes")
+
+        # Download audio
+        logger.info(f"[{job_id}] Downloading audio from {audio_overlay.audio_url[:50]}...")
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.get(audio_overlay.audio_url, follow_redirects=True)
+            response.raise_for_status()
+            audio_path.write_bytes(response.content)
+            logger.info(f"[{job_id}] Audio downloaded: {len(response.content)} bytes")
+
+        # Get video duration using ffprobe
+        probe_cmd = [
+            ffprobe_path, "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(video_path)
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        video_duration = float(result.stdout.strip()) if result.stdout.strip() else 0
+        logger.info(f"[{job_id}] Video duration: {video_duration}s")
+
+        # Build audio filters
+        audio_filters = []
+
+        # Trim audio if start time specified
+        if audio_overlay.audio_start_time > 0:
+            audio_filters.append(f"atrim=start={audio_overlay.audio_start_time}")
+            audio_filters.append("asetpts=PTS-STARTPTS")
+
+        # Apply volume
+        if audio_overlay.audio_volume != 1.0:
+            audio_filters.append(f"volume={audio_overlay.audio_volume}")
+
+        # Apply fade in
+        if audio_overlay.fade_in > 0:
+            audio_filters.append(f"afade=t=in:st=0:d={audio_overlay.fade_in}")
+
+        # Apply fade out
+        if audio_overlay.fade_out > 0:
+            fade_out_start = max(0, video_duration - audio_overlay.fade_out)
+            audio_filters.append(f"afade=t=out:st={fade_out_start}:d={audio_overlay.fade_out}")
+
+        # Trim audio to video duration
+        audio_filters.append(f"atrim=duration={video_duration}")
+
+        # Build complex filter
+        if audio_overlay.mix_original_audio:
+            complex_filter = f"[0:a]volume={audio_overlay.original_audio_volume}[oa];[1:a]{','.join(audio_filters)}[na];[oa][na]amix=inputs=2:duration=first[aout]"
+        else:
+            complex_filter = f"[1:a]{','.join(audio_filters)}[aout]"
+
+        # Build ASS subtitle file if subtitles provided
+        ass_path = None
+        if audio_overlay.subtitles and len(audio_overlay.subtitles) > 0:
+            logger.info(f"[{job_id}] Generating ASS subtitle file for {len(audio_overlay.subtitles)} lines")
+            ass_path = temp_dir / "subtitles.ass"
+            ass_content = _generate_ass_subtitles(audio_overlay.subtitles, 1080, 1920, job_id)
+            ass_path.write_text(ass_content, encoding="utf-8")
+            logger.info(f"[{job_id}] ASS file written: {len(ass_content)} bytes")
+
+        # Build FFmpeg command
+        if ass_path:
+            # With subtitles - use ASS filter (requires re-encoding)
+            escaped_ass = str(ass_path).replace(":", "\\:")
+            video_filter = f"ass='{escaped_ass}'"
+
+            cmd = [
+                ffmpeg_path, "-y",
+                "-i", str(video_path),
+                "-i", str(audio_path),
+                "-filter_complex", f"[0:v]{video_filter}[vout];{complex_filter}",
+                "-map", "[vout]",
+                "-map", "[aout]",
+                "-c:v", "h264_nvenc",  # GPU encoding
+                "-preset", "p4",
+                "-cq", "23",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+                str(output_path)
+            ]
+        else:
+            # No subtitles - copy video stream (fast)
+            cmd = [
+                ffmpeg_path, "-y",
+                "-i", str(video_path),
+                "-i", str(audio_path),
+                "-filter_complex", complex_filter,
+                "-map", "0:v",
+                "-map", "[aout]",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+                str(output_path)
+            ]
+
+        logger.info(f"[{job_id}] Running FFmpeg for audio overlay...")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            logger.error(f"[{job_id}] FFmpeg error: {result.stderr}")
+            # Fallback to CPU encoding if GPU fails
+            if "h264_nvenc" in str(cmd):
+                logger.info(f"[{job_id}] Retrying with CPU encoding...")
+                cmd = [c.replace("h264_nvenc", "libx264").replace("-cq", "-crf") for c in cmd]
+                cmd = [c for c in cmd if c not in ["-preset", "p4"]]
+                # Re-add CPU preset
+                for i, c in enumerate(cmd):
+                    if c == "-c:v":
+                        cmd.insert(i + 2, "-preset")
+                        cmd.insert(i + 3, "fast")
+                        break
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    raise RuntimeError(f"FFmpeg failed: {result.stderr[:500]}")
+            else:
+                raise RuntimeError(f"FFmpeg failed: {result.stderr[:500]}")
+
+        logger.info(f"[{job_id}] Audio overlay composition completed")
+
+        # Read output file
+        return output_path.read_bytes()
+
+
+# ============================================================
+# Job Processing Functions
+# ============================================================
 
 async def process_image_generation(
     request: AIJobRequest,
@@ -185,20 +391,6 @@ async def process_image_generation(
 
         logger.info(f"[{job_id}] Image generation completed in {duration_ms}ms")
 
-        # Send callback if configured
-        if request.callback_url:
-            await send_callback(
-                request.callback_url,
-                request.callback_secret,
-                AIJobCallback(
-                    job_id=job_id,
-                    job_type=AIJobType.IMAGE_GENERATION,
-                    status=AIJobStatus.COMPLETED,
-                    output_url=output_url,
-                    duration_ms=duration_ms,
-                )
-            )
-
     except Exception as e:
         logger.error(f"[{job_id}] Image generation failed: {e}")
         duration_ms = int((time.time() - start_time) * 1000)
@@ -208,19 +400,6 @@ async def process_image_generation(
                 job_id,
                 status=JobStatus.FAILED,
                 error=str(e)
-            )
-
-        if request.callback_url:
-            await send_callback(
-                request.callback_url,
-                request.callback_secret,
-                AIJobCallback(
-                    job_id=job_id,
-                    job_type=AIJobType.IMAGE_GENERATION,
-                    status=AIJobStatus.FAILED,
-                    error=str(e),
-                    duration_ms=duration_ms,
-                )
             )
 
 
@@ -289,12 +468,53 @@ async def process_video_generation(
             )
 
         # Download from GCS and upload to S3
+        # Use the actual video URI returned by Veo (may differ from our requested storageUri)
         from google.cloud import storage
+
+        actual_video_uri = result.video_uri or output_gcs_uri
+        logger.info(f"[{job_id}] Downloading video from: {actual_video_uri}")
+
+        # Parse GCS URI (gs://bucket/path)
+        if actual_video_uri.startswith("gs://"):
+            uri_parts = actual_video_uri[5:].split("/", 1)
+            actual_bucket = uri_parts[0]
+            actual_key = uri_parts[1] if len(uri_parts) > 1 else gcs_key
+        else:
+            actual_bucket = gcs_bucket
+            actual_key = gcs_key
+
         gcs_client = storage.Client()
-        bucket = gcs_client.bucket(gcs_bucket)
-        blob = bucket.blob(gcs_key)
+        bucket = gcs_client.bucket(actual_bucket)
+        blob = bucket.blob(actual_key)
 
         video_bytes = blob.download_as_bytes()
+
+        # Handle audio overlay if configured
+        if settings.audio_overlay:
+            if job_queue:
+                await job_queue.update_job(
+                    job_id,
+                    progress=85,
+                    current_step="Applying audio overlay"
+                )
+            logger.info(f"[{job_id}] Applying audio overlay...")
+            try:
+                video_bytes = await apply_audio_overlay(
+                    video_data=video_bytes,
+                    audio_overlay=settings.audio_overlay,
+                    job_id=job_id,
+                )
+                logger.info(f"[{job_id}] Audio overlay applied: {len(video_bytes)} bytes")
+            except Exception as e:
+                logger.error(f"[{job_id}] Audio overlay failed: {e}")
+                raise RuntimeError(f"Audio overlay failed: {e}")
+
+        if job_queue:
+            await job_queue.update_job(
+                job_id,
+                progress=95,
+                current_step="Uploading to S3"
+            )
 
         output_url = await upload_to_s3(
             video_bytes,
@@ -302,17 +522,6 @@ async def process_video_generation(
             request.output.s3_key,
             content_type="video/mp4"
         )
-
-        # Handle audio overlay if configured
-        if settings.audio_overlay:
-            if job_queue:
-                await job_queue.update_job(
-                    job_id,
-                    progress=90,
-                    current_step="Applying audio overlay"
-                )
-            # TODO: Implement FFmpeg audio overlay
-            logger.info(f"[{job_id}] Audio overlay requested but not yet implemented")
 
         duration_ms = int((time.time() - start_time) * 1000)
 
@@ -327,19 +536,6 @@ async def process_video_generation(
 
         logger.info(f"[{job_id}] Video generation completed in {duration_ms}ms")
 
-        if request.callback_url:
-            await send_callback(
-                request.callback_url,
-                request.callback_secret,
-                AIJobCallback(
-                    job_id=job_id,
-                    job_type=AIJobType.VIDEO_GENERATION,
-                    status=AIJobStatus.COMPLETED,
-                    output_url=output_url,
-                    duration_ms=duration_ms,
-                )
-            )
-
     except Exception as e:
         logger.error(f"[{job_id}] Video generation failed: {e}")
         duration_ms = int((time.time() - start_time) * 1000)
@@ -349,19 +545,6 @@ async def process_video_generation(
                 job_id,
                 status=JobStatus.FAILED,
                 error=str(e)
-            )
-
-        if request.callback_url:
-            await send_callback(
-                request.callback_url,
-                request.callback_secret,
-                AIJobCallback(
-                    job_id=job_id,
-                    job_type=AIJobType.VIDEO_GENERATION,
-                    status=AIJobStatus.FAILED,
-                    error=str(e),
-                    duration_ms=duration_ms,
-                )
             )
 
 
@@ -451,12 +634,53 @@ async def process_image_to_video(
             )
 
         # Download from GCS and upload to S3
+        # Use the actual video URI returned by Veo (may differ from our requested storageUri)
         from google.cloud import storage
+
+        actual_video_uri = result.video_uri or output_gcs_uri
+        logger.info(f"[{job_id}] Downloading video from: {actual_video_uri}")
+
+        # Parse GCS URI (gs://bucket/path)
+        if actual_video_uri.startswith("gs://"):
+            uri_parts = actual_video_uri[5:].split("/", 1)
+            actual_bucket = uri_parts[0]
+            actual_key = uri_parts[1] if len(uri_parts) > 1 else gcs_key
+        else:
+            actual_bucket = gcs_bucket
+            actual_key = gcs_key
+
         gcs_client = storage.Client()
-        bucket = gcs_client.bucket(gcs_bucket)
-        blob = bucket.blob(gcs_key)
+        bucket = gcs_client.bucket(actual_bucket)
+        blob = bucket.blob(actual_key)
 
         video_bytes = blob.download_as_bytes()
+
+        # Handle audio overlay if configured
+        if settings.audio_overlay:
+            if job_queue:
+                await job_queue.update_job(
+                    job_id,
+                    progress=85,
+                    current_step="Applying audio overlay"
+                )
+            logger.info(f"[{job_id}] Applying audio overlay...")
+            try:
+                video_bytes = await apply_audio_overlay(
+                    video_data=video_bytes,
+                    audio_overlay=settings.audio_overlay,
+                    job_id=job_id,
+                )
+                logger.info(f"[{job_id}] Audio overlay applied: {len(video_bytes)} bytes")
+            except Exception as e:
+                logger.error(f"[{job_id}] Audio overlay failed: {e}")
+                raise RuntimeError(f"Audio overlay failed: {e}")
+
+        if job_queue:
+            await job_queue.update_job(
+                job_id,
+                progress=95,
+                current_step="Uploading to S3"
+            )
 
         output_url = await upload_to_s3(
             video_bytes,
@@ -464,17 +688,6 @@ async def process_image_to_video(
             request.output.s3_key,
             content_type="video/mp4"
         )
-
-        # Handle audio overlay if configured
-        if settings.audio_overlay:
-            if job_queue:
-                await job_queue.update_job(
-                    job_id,
-                    progress=90,
-                    current_step="Applying audio overlay"
-                )
-            # TODO: Implement FFmpeg audio overlay
-            logger.info(f"[{job_id}] Audio overlay requested but not yet implemented")
 
         duration_ms = int((time.time() - start_time) * 1000)
 
@@ -489,19 +702,6 @@ async def process_image_to_video(
 
         logger.info(f"[{job_id}] Image-to-video generation completed in {duration_ms}ms")
 
-        if request.callback_url:
-            await send_callback(
-                request.callback_url,
-                request.callback_secret,
-                AIJobCallback(
-                    job_id=job_id,
-                    job_type=AIJobType.IMAGE_TO_VIDEO,
-                    status=AIJobStatus.COMPLETED,
-                    output_url=output_url,
-                    duration_ms=duration_ms,
-                )
-            )
-
     except Exception as e:
         logger.error(f"[{job_id}] Image-to-video generation failed: {e}")
         duration_ms = int((time.time() - start_time) * 1000)
@@ -511,19 +711,6 @@ async def process_image_to_video(
                 job_id,
                 status=JobStatus.FAILED,
                 error=str(e)
-            )
-
-        if request.callback_url:
-            await send_callback(
-                request.callback_url,
-                request.callback_secret,
-                AIJobCallback(
-                    job_id=job_id,
-                    job_type=AIJobType.IMAGE_TO_VIDEO,
-                    status=AIJobStatus.FAILED,
-                    error=str(e),
-                    duration_ms=duration_ms,
-                )
             )
 
 
@@ -541,7 +728,6 @@ async def submit_ai_job(
 
     The job runs asynchronously in the background.
     Poll /ai/job/{job_id}/status for status updates.
-    Optionally provide callback_url to receive completion notification.
     """
     job_queue = get_job_queue()
 

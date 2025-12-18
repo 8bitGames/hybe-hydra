@@ -255,130 +255,109 @@ class FFmpegRenderer:
             logger.info(f"[{job_id}] [STEP 4/11] Looped {len(processed_paths)} images into {num_clips} clips")
 
             # =================================================================
-            # STEP 5: CREATE IMAGE CLIPS (FFmpeg - Ken Burns)
-            # =================================================================
-            step_start = time.time()
-            await self._update_progress(progress_callback, job_id, 35, "Creating video clips")
-            logger.info(f"[{job_id}] [STEP 5/11] Creating {num_clips} video clips with Ken Burns effect...")
-
-            output_size = self._get_output_size(request.settings.aspect_ratio.value)
-            logger.info(f"[{job_id}] [STEP 5/11] Output size: {output_size[0]}x{output_size[1]}")
-            # OVERRIDE: Force all images to be static (no zoom/pan motion)
-            # This ensures beat-synced cuts without distracting motion effects
-            motion_styles = ["static"] * num_clips
-            logger.info(f"[{job_id}] [STEP 5/11] Motion styles: ALL STATIC (no zoom/pan) for {num_clips} clips")
-
-            # Build clip specifications with variable durations
-            clip_specs = []
-            cumulative_time = 0.0
-            for i in range(num_clips):
-                clip_duration = clip_durations[i]
-                spec = ImageClipSpec(
-                    image_path=looped_paths[i],
-                    duration=clip_duration,
-                    motion_style=motion_styles[i],
-                    start_time=cumulative_time,
-                )
-                clip_specs.append(spec)
-                cumulative_time += clip_duration
-                if i < 3 or i >= num_clips - 3:  # Log first/last 3
-                    logger.info(f"[{job_id}] [STEP 5/11] Clip {i+1}: {clip_duration:.3f}s")
-
-            # Create clips using FFmpeg in parallel with GPU
-            use_gpu = is_nvenc_available()
-            logger.info(f"[{job_id}] [STEP 5/11] ========================================")
-            logger.info(f"[{job_id}] [STEP 5/11] GPU ENCODING CONFIGURATION")
-            logger.info(f"[{job_id}] [STEP 5/11] ========================================")
-            logger.info(f"[{job_id}] [STEP 5/11] GPU available: {use_gpu}")
-            if use_gpu:
-                logger.info(f"[{job_id}] [STEP 5/11] ✓ Using NVIDIA NVENC H.264 hardware encoder")
-                logger.info(f"[{job_id}] [STEP 5/11] ✓ Encoder: h264_nvenc")
-                logger.info(f"[{job_id}] [STEP 5/11] ✓ Preset: p4 (balanced quality/speed)")
-            else:
-                logger.info(f"[{job_id}] [STEP 5/11] ⚠️  GPU not available, using CPU encoding")
-                logger.info(f"[{job_id}] [STEP 5/11] Encoder: libx264 (software)")
-            logger.info(f"[{job_id}] [STEP 5/11] Parallel workers: 4")
-            logger.info(f"[{job_id}] [STEP 5/11] ========================================")
-            logger.info(f"[{job_id}] [STEP 5/11] Creating clips...")
-            clip_paths = await create_clips_parallel(
-                specs=clip_specs,
-                output_dir=job_dir,
-                output_size=output_size,
-                fps=30,
-                use_gpu=use_gpu,
-                max_workers=4,
-                job_id=job_id,
-            )
-            step_time = time.time() - step_start
-
-            # Check if any clips were created
-            if not clip_paths:
-                raise RuntimeError(f"All {num_clips} clip creations failed. Check FFmpeg logs above for details.")
-
-            logger.info(f"[{job_id}] [STEP 5/11] Created {len(clip_paths)} video clips in {step_time:.1f}s ({step_time/len(clip_paths):.2f}s per clip)")
-
-            # =================================================================
-            # STEP 6: GET AI EFFECTS
+            # STEP 5: GET AI EFFECTS (moved up to check for transitions)
             # =================================================================
             has_preset_effects = request.settings.ai_effects is not None
-            logger.info(f"[{job_id}] [STEP 6/11] AI effects: use_ai_effects={request.settings.use_ai_effects}, has_preset_effects={has_preset_effects}")
+            logger.info(f"[{job_id}] [STEP 5/11] AI effects: use_ai_effects={request.settings.use_ai_effects}, has_preset_effects={has_preset_effects}")
             ai_effects = None
 
-            # First: Check if pre-defined effects are provided (from style sets)
             if request.settings.ai_effects:
                 ai_effects = request.settings.ai_effects
-                logger.info(f"[{job_id}] [STEP 6/11] Using pre-defined AI effects from style set:")
-                logger.info(f"[{job_id}] [STEP 6/11]   Transitions: {ai_effects.transitions}")
-                logger.info(f"[{job_id}] [STEP 6/11]   Motions: {ai_effects.motions}")
-                logger.info(f"[{job_id}] [STEP 6/11]   Filters: {ai_effects.filters}")
-            # Second: If no preset effects and use_ai_effects is True, dynamically select
+                logger.info(f"[{job_id}] [STEP 5/11] Using pre-defined AI effects from style set:")
+                logger.info(f"[{job_id}] [STEP 5/11]   Transitions: {ai_effects.transitions}")
             elif request.settings.use_ai_effects:
-                step_start = time.time()
                 ai_effects = await self._get_ai_effects(
                     settings=request.settings,
                     num_images=len(image_paths),
                     bpm=audio_analysis.bpm,
                     job_id=job_id,
                 )
-                step_time = time.time() - step_start
                 if ai_effects:
-                    logger.info(f"[{job_id}] [STEP 6/11] AI effects dynamically selected in {step_time:.1f}s:")
-                    logger.info(f"[{job_id}] [STEP 6/11]   Transitions: {ai_effects.transitions}")
-                    logger.info(f"[{job_id}] [STEP 6/11]   Motions: {ai_effects.motions}")
-                    logger.info(f"[{job_id}] [STEP 6/11]   Filters: {ai_effects.filters}")
-                else:
-                    logger.info(f"[{job_id}] [STEP 6/11] AI effects selection failed, using defaults")
-            else:
-                logger.info(f"[{job_id}] [STEP 6/11] No AI effects (no preset and use_ai_effects=false)")
+                    logger.info(f"[{job_id}] [STEP 5/11] AI effects selected: Transitions={ai_effects.transitions}")
 
             # =================================================================
-            # STEP 7: CONCATENATE CLIPS (with xfade transitions if available)
+            # STEP 6+7: CREATE VIDEO (OPTIMIZED - ONE PASS for static clips)
             # =================================================================
             step_start = time.time()
-            await self._update_progress(progress_callback, job_id, 55, "Concatenating clips")
+            await self._update_progress(progress_callback, job_id, 35, "Creating video")
 
-            # Check if we have transitions to apply
-            transitions_to_apply = []
-            if ai_effects and ai_effects.transitions:
-                transitions_to_apply = ai_effects.transitions
-                logger.info(f"[{job_id}] [STEP 7/11] Concatenating {len(clip_paths)} clips with xfade transitions: {transitions_to_apply}")
+            output_size = self._get_output_size(request.settings.aspect_ratio.value)
+            use_gpu = is_nvenc_available()
+            logger.info(f"[{job_id}] [STEP 6/11] Output size: {output_size[0]}x{output_size[1]}, GPU: {use_gpu}")
+
+            # Check if we need transitions (xfade)
+            has_transitions = ai_effects and ai_effects.transitions and len(ai_effects.transitions) > 0
+
+            if has_transitions:
+                # OLD PATH: Individual clips + xfade transitions
+                logger.info(f"[{job_id}] [STEP 6/11] Using INDIVIDUAL CLIPS path (transitions requested)")
+
+                motion_styles = ["static"] * num_clips
+                clip_specs = []
+                cumulative_time = 0.0
+                for i in range(num_clips):
+                    clip_duration = clip_durations[i]
+                    spec = ImageClipSpec(
+                        image_path=looped_paths[i],
+                        duration=clip_duration,
+                        motion_style=motion_styles[i],
+                        start_time=cumulative_time,
+                    )
+                    clip_specs.append(spec)
+                    cumulative_time += clip_duration
+
+                clip_paths = await create_clips_parallel(
+                    specs=clip_specs,
+                    output_dir=job_dir,
+                    output_size=output_size,
+                    fps=30,
+                    use_gpu=use_gpu,
+                    max_workers=4,
+                    job_id=job_id,
+                )
+
+                if not clip_paths:
+                    raise RuntimeError(f"All {num_clips} clip creations failed.")
+
+                logger.info(f"[{job_id}] [STEP 6/11] Created {len(clip_paths)} clips, now concatenating with transitions...")
+
+                # STEP 7: Concatenate with transitions
+                await self._update_progress(progress_callback, job_id, 55, "Adding transitions")
+                video_path = await self._concatenate_clips(
+                    clip_paths=clip_paths,
+                    clip_durations=clip_durations,
+                    job_dir=job_dir,
+                    job_id=job_id,
+                    transitions=ai_effects.transitions,
+                    output_size=output_size,
+                )
             else:
-                logger.info(f"[{job_id}] [STEP 7/11] Concatenating {len(clip_paths)} clips (direct cuts, no transitions)")
+                # NEW OPTIMIZED PATH: Single FFmpeg call for all images
+                logger.info(f"[{job_id}] [STEP 6/11] 🚀 Using OPTIMIZED SINGLE-PASS path (no transitions)")
+                logger.info(f"[{job_id}] [STEP 6/11] Creating {num_clips} clips in ONE FFmpeg call...")
 
-            video_path = await self._concatenate_clips(
-                clip_paths=clip_paths,
-                clip_durations=clip_durations,
-                job_dir=job_dir,
-                job_id=job_id,
-                transitions=transitions_to_apply,
-                output_size=output_size,
-            )
+                from .ffmpeg_pipeline import create_video_from_image_sequence
+
+                video_path = os.path.join(job_dir, f"{job_id}_concat.mp4")
+                success = await create_video_from_image_sequence(
+                    image_paths=looped_paths,
+                    durations=clip_durations,
+                    output_path=video_path,
+                    output_size=output_size,
+                    fps=30,
+                    use_gpu=use_gpu,
+                    job_id=job_id,
+                )
+
+                if not success:
+                    raise RuntimeError("Failed to create video from image sequence")
+
             step_time = time.time() - step_start
             if os.path.exists(video_path):
                 video_size = os.path.getsize(video_path) / (1024 * 1024)
-                logger.info(f"[{job_id}] [STEP 7/11] Concatenation complete in {step_time:.1f}s, output: {video_path} ({video_size:.1f}MB)")
+                logger.info(f"[{job_id}] [STEP 7/11] Video created in {step_time:.1f}s ({video_size:.1f}MB)")
             else:
-                logger.error(f"[{job_id}] [STEP 7/11] Concatenation output missing: {video_path}")
+                raise RuntimeError(f"Video output missing: {video_path}")
 
             # =================================================================
             # STEP 8: COLOR GRADING & OVERLAY EFFECTS (FFmpeg)
@@ -575,7 +554,7 @@ class FFmpegRenderer:
             logger.info(f"[{job_id}] 📊 RENDER SUMMARY:")
             logger.info(f"[{job_id}]   ⏱️  Total time: {total_time:.1f}s ({total_time/60:.1f}min)")
             logger.info(f"[{job_id}]   📁 Output size: {final_size:.1f}MB")
-            logger.info(f"[{job_id}]   🎬 Clips created: {len(clip_paths)}")
+            logger.info(f"[{job_id}]   🎬 Clips created: {num_clips}")
             logger.info(f"[{job_id}]   🖥️  GPU encoding: {'✓ NVENC' if is_nvenc_available() else '✗ CPU only'}")
             logger.info(f"[{job_id}]   🎵 BPM: {audio_analysis.bpm if audio_analysis and audio_analysis.bpm else 'N/A'}")
             logger.info(f"[{job_id}]   🎯 Smart beat-sync: {'✓ Used' if (audio_analysis and audio_analysis.bpm and len(beat_times) > 0) else '✗ Fallback'}")

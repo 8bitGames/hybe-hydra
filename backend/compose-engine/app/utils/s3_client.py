@@ -140,7 +140,7 @@ class S3Client:
         print(f"[S3Client] Access key (first 4 chars): {settings.aws_access_key_id[:4] if settings.aws_access_key_id else 'EMPTY (using IAM role)'}")
 
         # Build kwargs - only include credentials if explicitly set
-        # This allows IAM role to be used on AWS Batch/EC2
+        # This allows IAM role to be used on EC2
         client_kwargs = {
             "region_name": settings.aws_region,
             "config": Config(

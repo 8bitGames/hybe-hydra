@@ -61,7 +61,7 @@ ENV PATH=/usr/local/cuda/bin:${PATH}
 # The actual encoding uses libnvidia-encode.so at runtime on GPU instances
 # IMPORTANT: drawtext filter requires libfreetype AND libfontconfig
 # We explicitly enable the drawtext filter to ensure it's compiled in
-# Cache bust: v2 - added drawtext debug
+# Cache bust: v3 - force drawtext filter
 RUN git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg \
     && cd /tmp/ffmpeg \
     && echo "=== Checking freetype2 pkg-config ===" \
@@ -88,6 +88,7 @@ RUN git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git /tmp/ffm
         --enable-libfontconfig \
         --enable-libfribidi \
         --enable-openssl \
+        --enable-filter=drawtext \
     && echo "=== Checking ffbuild/config.mak for drawtext ===" \
     && grep -i "drawtext\|freetype" ffbuild/config.mak || echo "No drawtext/freetype in config.mak" \
     && make -j$(nproc) \
@@ -252,6 +253,10 @@ RUN pip3 install --no-cache-dir \
     PyJWT>=2.8.0 \
     cryptography>=42.0.0
 
+# GCP Storage for Vertex AI video output (Veo downloads from GCS)
+RUN pip3 install --no-cache-dir \
+    google-cloud-storage>=2.18.0
+
 # =============================================================================
 # STEP 5: Verify all installations work together
 # =============================================================================
@@ -296,29 +301,23 @@ COPY app/ /root/app/
 COPY aws-batch/batch_worker.py /root/batch_worker.py
 COPY aws-batch/ai_worker.py /root/ai_worker.py
 
-# Copy GCP WIF credential config files (for Vertex AI authentication)
-# This file is used by google-auth to exchange AWS credentials for GCP tokens
+# Copy GCP Service Account credentials (for Vertex AI authentication)
 #
-# Code-based 1-hop Authentication Flow:
-#   WIF (STS only) → Central SA (code impersonation) → Vertex AI
+# Direct Service Account Authentication:
+#   Service Account JSON → Vertex AI (no WIF, no impersonation)
 #
-# Project: poised-time-480910-r2
-# WIF Pool: aws-batch-pool
-# WIF Provider: aws-batch-provider
-# Service Account: sa-wif-aws-batch@poised-time-480910-r2.iam.gserviceaccount.com
+# Project: hyb-hydra-dev
+# Service Account: sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com
 #
-# WIF-only config (no service_account_impersonation_url) - code handles SA impersonation
-COPY clientLibraryConfig-poised-time.json /root/clientLibraryConfig.json
-ENV GOOGLE_APPLICATION_CREDENTIALS=/root/clientLibraryConfig.json
+COPY hyb-hydra-dev-d2dc3a95cc1b.json /root/gcp-service-account.json
+ENV GOOGLE_APPLICATION_CREDENTIALS=/root/gcp-service-account.json
 
 # GCP Project and Authentication Settings
-ENV GCP_PROJECT_ID=poised-time-480910-r2
+ENV GCP_PROJECT_ID=hyb-hydra-dev
 ENV GCP_LOCATION=us-central1
 
-# 1-hop authentication: WIF → Central SA (code-based impersonation)
-# Central SA is the service account that WIF will impersonate via code
-ENV GCP_CENTRAL_SERVICE_ACCOUNT=sa-wif-aws-batch@poised-time-480910-r2.iam.gserviceaccount.com
-# Skip 2nd hop (Target SA) - use 1-hop mode only
+# Direct service account - no impersonation needed
+ENV GCP_CENTRAL_SERVICE_ACCOUNT=
 ENV GCP_TARGET_SERVICE_ACCOUNT=skip
 
 EXPOSE 8000
