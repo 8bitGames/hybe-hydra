@@ -69,6 +69,20 @@ enum PublishStatus {
   CANCELLED
 }
 
+// Project type enum
+enum ProjectType {
+  AI_VIDEO
+  FAST_CUT
+}
+
+// Project status enum
+enum ProjectStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
 // User model
 model User {
   id             String   @id @default(uuid())
@@ -146,10 +160,41 @@ model Campaign {
   artist           Artist            @relation(fields: [artistId], references: [id])
   creator          User              @relation(fields: [createdBy], references: [id])
   assets           Asset[]
+  projects         Project[]
   videoGenerations VideoGeneration[]
   scheduledPosts   ScheduledPost[]
 
   @@map("campaigns")
+}
+
+// Project model - for AI Video and Fast Cut workflows
+model Project {
+  id              String        @id @default(uuid())
+  campaignId      String        @map("campaign_id")
+  type            ProjectType
+  name            String
+  status          ProjectStatus @default(DRAFT)
+  coverImageUrl   String?       @map("cover_image_url")
+  audioAssetId    String?       @map("audio_asset_id")
+  aiVideoData     Json?         @map("ai_video_data")
+  fastCutData     Json?         @map("fast_cut_data")
+  currentStep     String        @default("start") @map("current_step")
+  completedSteps  String[]      @default([]) @map("completed_steps")
+  createdBy       String        @map("created_by")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  deletedAt       DateTime?     @map("deleted_at")
+
+  // Relations
+  campaign         Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  audioAsset       Asset?            @relation("ProjectAudioAsset", fields: [audioAssetId], references: [id], onDelete: SetNull)
+  videoGenerations VideoGeneration[]
+
+  @@index([campaignId])
+  @@index([type])
+  @@index([status])
+  @@index([createdBy])
+  @@map("projects")
 }
 
 // Asset model
@@ -175,6 +220,7 @@ model Asset {
   referenceVideoGenerations VideoGeneration[] @relation("ReferenceImage")
   outputVideoGenerations    VideoGeneration[] @relation("OutputAsset")
   audioVideoGenerations     VideoGeneration[] @relation("AudioAsset")
+  projectAudioAssets        Project[]         @relation("ProjectAudioAsset")
 
   @@map("assets")
 }
@@ -199,6 +245,7 @@ model StylePreset {
 model VideoGeneration {
   id                  String                @id @default(uuid())
   campaignId          String?               @map("campaign_id") // Nullable for Quick Create
+  projectId           String?               @map("project_id") // Link to Project
   isQuickCreate       Boolean               @default(false) @map("is_quick_create")
   generationType      VideoGenerationType   @default(AI) @map("generation_type") // AI or COMPOSE
   prompt              String
@@ -214,6 +261,8 @@ model VideoGeneration {
   vertexRequestId     String?               @map("vertex_request_id")
   outputAssetId       String?               @map("output_asset_id")
   outputUrl           String?               @map("output_url")
+  gcsUri              String?               @map("gcs_uri") // GCS URI of the video (required for video extension)
+  extensionCount      Int                   @default(0) @map("extension_count") // Number of times extended (max 20)
   qualityScore        Float?                @map("quality_score")
   qualityMetadata     Json?                 @map("quality_metadata")
 
@@ -247,6 +296,7 @@ model VideoGeneration {
 
   // Relations
   campaign              Campaign?               @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  project               Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
   creator               User                    @relation(fields: [createdBy], references: [id])
   referenceImage        Asset?                  @relation("ReferenceImage", fields: [referenceImageId], references: [id], onDelete: SetNull)
   outputAsset           Asset?                  @relation("OutputAsset", fields: [outputAssetId], references: [id], onDelete: SetNull)
@@ -254,6 +304,7 @@ model VideoGeneration {
   merchandiseReferences GenerationMerchandise[]
   scheduledPosts        ScheduledPost[]
 
+  @@index([projectId])
   @@map("video_generations")
 }
 

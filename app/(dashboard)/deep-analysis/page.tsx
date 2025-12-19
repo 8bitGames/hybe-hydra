@@ -3033,8 +3033,8 @@ export default function DeepAnalysisPage() {
                 {t.noSavedReports}
               </div>
             ) : (
-              <ScrollArea className="max-h-64">
-                <div className="space-y-2">
+              <ScrollArea className="h-[300px]">
+                <div className="space-y-2 pr-4">
                   {savedReports.map((report) => (
                     <div
                       key={report.id}

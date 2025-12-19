@@ -51,6 +51,7 @@ export default function FastCutEffectsPage() {
   const {
     scriptData,
     setScriptData,
+    hasSceneAnalysis,
     selectedImages,
     selectedAudio,
     musicSkipped,
@@ -67,6 +68,7 @@ export default function FastCutEffectsPage() {
     prompt,
     editableKeywords,
     audioStartTime,
+    videoDuration,
     setError,
     isHydrated,
     subtitleMode,
@@ -77,24 +79,34 @@ export default function FastCutEffectsPage() {
   const initSession = useProcessingSessionStore((state) => state.initSession);
   const updateOriginalVideo = useProcessingSessionStore((state) => state.updateOriginalVideo);
 
+  // Check if we have valid data (from script step OR scene analysis from Start page)
+  const hasValidData = scriptData !== null || hasSceneAnalysis;
+
   // Redirect if prerequisites not met (only after hydration)
   useEffect(() => {
     if (!isHydrated) return;
-    if (!scriptData) {
-      router.replace("/fast-cut/script");
+    if (!hasValidData) {
+      router.replace("/start");
     } else if (selectedImages.length < 3) {
       router.replace("/fast-cut/images");
     } else if (!selectedAudio && !musicSkipped) {
       router.replace("/fast-cut/music");
     }
-  }, [isHydrated, scriptData, selectedImages, selectedAudio, musicSkipped, router]);
+  }, [isHydrated, hasValidData, selectedImages, selectedAudio, musicSkipped, router]);
 
   const handleStartRender = async () => {
     const hasValidMusicChoice = selectedAudio !== null || musicSkipped;
-    if (!hasValidMusicChoice || selectedImages.length < 3 || !generationId || !scriptData) {
+    // Allow rendering without scriptData if we have scene analysis (skip script step flow)
+    if (!hasValidMusicChoice || selectedImages.length < 3 || !generationId || (!scriptData && !hasSceneAnalysis)) {
       setError(language === "ko" ? "최소 3개의 이미지가 필요합니다" : "At least 3 images required");
       return;
     }
+
+    // Create fallback script lines when coming from scene analysis (no script step)
+    const scriptLines = scriptData?.script?.lines || [];
+    const displayScript = scriptLines.length > 0
+      ? scriptLines.map(l => l.text).join("\n")
+      : "";
 
     setRendering(true);
     setError(null);
@@ -127,15 +139,17 @@ export default function FastCutEffectsPage() {
 
       // Start render
       console.log("[FastCut Effects] 🎤 Subtitle mode:", subtitleMode, "→ useAudioLyrics:", subtitleMode === "lyrics");
+      console.log("[FastCut Effects] 📏 Video duration:", videoDuration, "s");
+      console.log("[FastCut Effects] 📝 Script lines count:", scriptLines.length);
       const renderResult = await fastCutApi.startRender({
         generationId,
         campaignId: campaignId || "",
         audioAssetId: selectedAudio?.id || "",
         images: proxiedImages,
-        script: { lines: scriptData.script.lines },
+        script: { lines: scriptLines },
         styleSetId,
         aspectRatio,
-        targetDuration: 0,
+        targetDuration: videoDuration || 15,
         audioStartTime: musicSkipped ? 0 : audioStartTime,
         prompt,
         searchKeywords: editableKeywords,
@@ -153,10 +167,8 @@ export default function FastCutEffectsPage() {
       console.log("[FastCut Effects] renderResult:", renderResult);
 
       // Initialize the session
-      // Use lyrics text for display when subtitleMode is "lyrics", otherwise use AI script
-      const displayScript = subtitleMode === "lyrics" && audioLyricsText
-        ? audioLyricsText
-        : scriptData.script.lines.map(l => l.text).join("\n");
+      // Use selected subtitles from scriptData.script.lines (what actually appears in video)
+      // displayScript is already defined at the start of this function
 
       console.log("[FastCut Effects] 🎤 initSession script source:", {
         subtitleMode,
@@ -274,6 +286,7 @@ export default function FastCutEffectsPage() {
               setTiktokSEO={setTiktokSEO}
               rendering={rendering}
               onStartRender={handleStartRender}
+              videoDuration={videoDuration}
             />
           </div>
         </div>

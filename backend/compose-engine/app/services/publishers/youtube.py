@@ -5,10 +5,14 @@ For YouTube Shorts (<= 60 seconds vertical videos)
 
 import httpx
 import asyncio
+import tempfile
+import os
 from typing import Optional, Dict, Any, Literal
 from dataclasses import dataclass, field
 import logging
 import json
+
+from ...utils.s3_client import S3Client
 
 logger = logging.getLogger(__name__)
 
@@ -70,28 +74,56 @@ class YouTubePublisher:
             }
 
     async def _download_video(self, video_url: str) -> Dict[str, Any]:
-        """Download video from URL"""
+        """Download video from URL (supports S3 URLs with credentials)"""
         try:
             logger.info(f"[YouTube] Downloading video from: {video_url[:100]}...")
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.get(video_url)
 
-                if response.status_code != 200:
+            # Check if it's an S3 URL - use S3Client for authenticated download
+            if ".s3." in video_url and ".amazonaws.com" in video_url:
+                logger.info("[YouTube] Detected S3 URL, using S3Client for download")
+                s3_client = S3Client()
+
+                # Download to temp file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+                    temp_path = tmp.name
+
+                try:
+                    await s3_client.download_file(video_url, temp_path)
+
+                    with open(temp_path, "rb") as f:
+                        video_data = f.read()
+
+                    logger.info(f"[YouTube] Downloaded {len(video_data)} bytes from S3")
                     return {
-                        "success": False,
-                        "error": f"Failed to download video: {response.status_code}",
+                        "success": True,
+                        "data": video_data,
+                        "size": len(video_data),
+                        "content_type": "video/mp4",
                     }
+                finally:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+            else:
+                # Regular HTTP download for non-S3 URLs
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.get(video_url)
 
-                video_data = response.content
-                content_type = response.headers.get("content-type", "video/mp4")
-                logger.info(f"[YouTube] Downloaded {len(video_data)} bytes")
+                    if response.status_code != 200:
+                        return {
+                            "success": False,
+                            "error": f"Failed to download video: {response.status_code}",
+                        }
 
-                return {
-                    "success": True,
-                    "data": video_data,
-                    "size": len(video_data),
-                    "content_type": content_type,
-                }
+                    video_data = response.content
+                    content_type = response.headers.get("content-type", "video/mp4")
+                    logger.info(f"[YouTube] Downloaded {len(video_data)} bytes")
+
+                    return {
+                        "success": True,
+                        "data": video_data,
+                        "size": len(video_data),
+                        "content_type": content_type,
+                    }
         except Exception as e:
             logger.error(f"[YouTube] Download error: {e}")
             return {"success": False, "error": str(e)}

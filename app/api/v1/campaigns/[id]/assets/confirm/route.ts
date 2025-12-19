@@ -174,6 +174,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         id: asset.id,
         filename: asset.filename,
         s3_url: asset.s3Url,
+        s3_key: asset.s3Key,
         type: asset.type.toLowerCase(),
         merchandise_type: asset.merchandiseType?.toLowerCase() || null,
         metadata: asset.metadata || null,

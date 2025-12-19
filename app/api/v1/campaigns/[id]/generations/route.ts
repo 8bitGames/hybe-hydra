@@ -327,6 +327,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         prompt_analysis: gen.promptAnalysis,
         is_favorite: gen.isFavorite,
         tags: gen.tags,
+        tiktok_seo: gen.tiktokSEO || null,
         created_by: gen.createdBy,
         created_at: gen.createdAt.toISOString(),
         updated_at: gen.updatedAt.toISOString(),
@@ -618,6 +619,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
 
         console.log(`[Generation] Converted to ${subtitles.length} subtitle entries for video`);
+        // Log actual subtitles for debugging
+        if (subtitles.length > 0) {
+          console.log(`[Generation] ═══════════════════════════════════════════════════════`);
+          console.log(`[Generation] 🎵 SUBTITLES PREVIEW (will appear in video):`);
+          subtitles.forEach((sub, i) => {
+            console.log(`[Generation]   [${i + 1}] ${sub.start.toFixed(1)}s - ${sub.end.toFixed(1)}s: "${sub.text}"`);
+          });
+          console.log(`[Generation] ═══════════════════════════════════════════════════════`);
+        }
       } else if (lyricsData?.isInstrumental) {
         console.log(`[Generation] Audio is instrumental, no lyrics to extract`);
       } else {

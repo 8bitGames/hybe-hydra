@@ -78,6 +78,9 @@ export interface VideoGeneration {
   output_url: string | null;
   output_asset_id: string | null;
   quality_score: number | null;
+  // Video Extension fields (Veo 3.1)
+  gcs_uri?: string | null;
+  extension_count?: number;
   // Bridge context fields
   original_input: string | null;
   trend_keywords: string[];
@@ -85,6 +88,14 @@ export interface VideoGeneration {
   prompt_analysis: PromptAnalysis | null;
   is_favorite: boolean;
   tags: string[];
+  tiktok_seo?: {
+    description?: string;
+    hashtags?: string[];
+    keywords?: string[];
+    searchIntent?: string;
+    suggestedPostingTimes?: string[];
+    textOverlayKeywords?: string[];
+  } | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -792,6 +803,95 @@ export const composeVariationsApi = {
     ),
 };
 
+// Video Edit Types
+export interface SubtitleLine {
+  text: string;
+  start: number;
+  end: number;
+}
+
+export interface SubtitleStyle {
+  font_size?: "small" | "medium" | "large";
+  font_style?: "bold" | "modern" | "minimal" | "classic";
+  color?: string;
+  stroke_color?: string;
+  stroke_width?: number;
+  animation?: "fade" | "typewriter" | "karaoke" | "slide_up" | "scale_pop" | "bounce" | "glitch" | "wave";
+  position?: "top" | "center" | "bottom";
+  bottom_margin?: number;
+}
+
+export interface VideoEditAudioSettings {
+  asset_id: string;
+  start_time?: number;
+  volume?: number;
+  fade_in?: number;
+  fade_out?: number;
+}
+
+export interface VideoEditSubtitleSettings {
+  lines: SubtitleLine[];
+  style?: SubtitleStyle;
+}
+
+export interface VideoEditRequest {
+  audio?: VideoEditAudioSettings;
+  subtitles?: VideoEditSubtitleSettings;
+}
+
+export interface VideoEditResponse {
+  id: string;
+  job_id: string;
+  original_generation_id: string;
+  status: string;
+  message: string;
+  edit_options: {
+    has_audio: boolean;
+    has_subtitles: boolean;
+    audio_asset_name?: string;
+    subtitle_line_count: number;
+  };
+}
+
+export interface VideoEditInfoResponse {
+  id: string;
+  has_output_video: boolean;
+  output_url: string | null;
+  is_edited: boolean;
+  status: string;
+  progress: number;
+  error_message: string | null;
+  audio_asset: {
+    id: string;
+    filename: string;
+    original_filename: string;
+  } | null;
+  video_edit: {
+    original_generation_id: string;
+    original_output_url: string;
+    edited_at: string;
+    edit_type: string[];
+    audio_asset_id?: string;
+    audio_asset_name?: string;
+    has_subtitles: boolean;
+    subtitle_line_count: number;
+  } | null;
+}
+
+// Video Edit API - Add audio and subtitles to existing videos
+export const videoEditApi = {
+  // Edit video with audio and/or subtitles (creates new generation)
+  edit: (generationId: string, options: VideoEditRequest) =>
+    api.post<VideoEditResponse>(
+      `/api/v1/generations/${generationId}/edit`,
+      options as unknown as Record<string, unknown>
+    ),
+
+  // Get edit info/status
+  getInfo: (generationId: string) =>
+    api.get<VideoEditInfoResponse>(`/api/v1/generations/${generationId}/edit`),
+};
+
 // Quick Create Types
 export interface QuickCreateRequest {
   prompt: string;
@@ -868,4 +968,64 @@ export const quickCreateApi = {
       `/api/v1/quick-create/${generationId}/save-to-campaign`,
       { campaign_id: campaignId }
     ),
+};
+
+// Video Extension Types (Veo 3.1)
+export interface VideoExtendRequest {
+  prompt?: string; // Optional prompt describing how to continue the video
+  apply_audio_after?: boolean; // Apply original audio after extension
+  audio_asset_id?: string; // Audio asset to apply after extension
+}
+
+export interface VideoExtendInfo {
+  current_extension_count: number;
+  max_extensions: number;
+  remaining_extensions: number;
+  has_gcs_uri?: boolean;
+  is_ai_generated?: boolean;
+  is_completed?: boolean;
+}
+
+export interface VideoExtendResponse {
+  id: string;
+  job_id: string;
+  original_generation_id: string;
+  status: string;
+  message: string;
+  extension_info: VideoExtendInfo & {
+    estimated_duration_seconds: number;
+  };
+}
+
+export interface VideoExtendInfoResponse {
+  id: string;
+  can_extend: boolean;
+  // Original prompt for continuation context
+  original_prompt?: string;
+  negative_prompt?: string | null;
+  duration_seconds?: number;
+  aspect_ratio?: string;
+  // Audio info for post-extension overlay
+  audio_asset_id?: string | null;
+  extension_info: VideoExtendInfo;
+  reasons_cannot_extend: {
+    not_completed?: boolean;
+    not_ai_generated?: boolean;
+    no_gcs_uri?: boolean;
+    max_extensions_reached?: boolean;
+  } | null;
+}
+
+// Video Extension API - Extend AI-generated videos by up to 7 seconds (Veo 3.1)
+export const videoExtendApi = {
+  // Extend an AI-generated video
+  extend: (generationId: string, options?: VideoExtendRequest) =>
+    api.post<VideoExtendResponse>(
+      `/api/v1/generations/${generationId}/extend`,
+      (options || {}) as unknown as Record<string, unknown>
+    ),
+
+  // Get extension info for a generation
+  getInfo: (generationId: string) =>
+    api.get<VideoExtendInfoResponse>(`/api/v1/generations/${generationId}/extend`),
 };

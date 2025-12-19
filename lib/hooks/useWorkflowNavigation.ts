@@ -133,7 +133,8 @@ const STAGE_CONFIG: Record<
 };
 
 const STAGE_ORDER: WorkflowStage[] = ["start", "analyze", "create", "processing", "publish"];
-const FAST_CUT_STAGE_ORDER: WorkflowStage[] = ["start", "script", "images", "music", "effects", "render", "publish"];
+// Script step removed - keywords come from scene analysis on Start page
+const FAST_CUT_STAGE_ORDER: WorkflowStage[] = ["start", "images", "music", "effects", "render", "publish"];
 
 export function useWorkflowNavigation(): WorkflowNavigationResult {
   const router = useRouter();

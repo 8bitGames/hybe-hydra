@@ -31,6 +31,14 @@ class JobStatusResponse(BaseModel):
     error: Optional[str] = None
 
 
+class ClimaxCandidate(BaseModel):
+    """A climax candidate with scoring."""
+    start_time: float = Field(..., description="Suggested start time (before the climax)")
+    drop_time: float = Field(..., description="Actual climax/drop time")
+    score: float = Field(..., description="Confidence score 0-1")
+    type: str = Field(..., description="Type: 'drop', 'energy_peak', 'onset_burst'")
+
+
 class AudioAnalysis(BaseModel):
     """Audio analysis result."""
     bpm: int = Field(..., description="Beats per minute")
@@ -44,6 +52,23 @@ class AudioAnalysis(BaseModel):
     best_15s_start: float = Field(
         default=0.0,
         description="Best starting point for 15s segment (highest energy)"
+    )
+    # New fields for improved climax detection
+    climax_candidates: list[ClimaxCandidate] = Field(
+        default_factory=list,
+        description="Multiple climax candidates with scores"
+    )
+    drops: list[float] = Field(
+        default_factory=list,
+        description="Detected drop times (sudden energy increases)"
+    )
+    builds: list[tuple[float, float]] = Field(
+        default_factory=list,
+        description="Build-up sections as (start, end) pairs before drops"
+    )
+    best_hook_start: float = Field(
+        default=0.0,
+        description="Optimal hook start point (considers drops and energy)"
     )
 
 

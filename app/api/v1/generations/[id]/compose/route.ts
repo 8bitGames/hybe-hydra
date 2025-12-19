@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { composeVideoWithAudio, checkFFmpeg } from "@/lib/ffmpeg";
-import { uploadToS3, generateS3Key } from "@/lib/storage";
+import { uploadToS3, generateS3Key, getPresignedUrlFromS3Url } from "@/lib/storage";
 import fs from "fs/promises";
 
 // Use Modal for FFmpeg by default (production)
@@ -126,11 +126,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const s3Folder = generation.campaignId || `quick-create/${user.id}`;
     const composedS3Key = `${s3Folder}/composed_${generationId}.mp4`;
 
+    // Generate fresh presigned URL for audio (stored s3Url may be expired)
+    let audioPresignedUrl: string;
+    try {
+      audioPresignedUrl = await getPresignedUrlFromS3Url(audioAsset.s3Url, 172800);
+      console.log(`Generated fresh audio presigned URL for composition`);
+    } catch (presignError) {
+      console.error(`Failed to generate audio presigned URL:`, presignError);
+      audioPresignedUrl = audioAsset.s3Url; // Fallback to original
+    }
+
     // Compose video with audio (Modal or local based on USE_MODAL_FFMPEG)
     console.log(`Starting video composition (Modal: ${USE_MODAL_FFMPEG})...`);
     const result = await composeVideoWithAudio({
       videoUrl: generation.outputUrl,
-      audioUrl: audioAsset.s3Url,
+      audioUrl: audioPresignedUrl,
       audioStartTime: audio_start_time,
       audioVolume: audio_volume,
       fadeIn: fade_in,

@@ -5,7 +5,6 @@ import { useI18n } from "@/lib/i18n";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -20,6 +19,7 @@ import {
   ThumbsDown,
   Star,
   ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 import {
   useProcessingSessionStore,
@@ -59,6 +59,9 @@ export function CompareApproveView({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
+  // Track video load errors
+  const [videoErrors, setVideoErrors] = useState<Record<string, string>>({});
+
   // Video refs - original + variations
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
 
@@ -67,18 +70,6 @@ export function CompareApproveView({
 
   // Get completed variations only
   const completedVariations = variations.filter((v) => v.status === "completed" && v.outputUrl);
-
-  // Debug: Log variations state
-  console.log("[CompareApproveView] variations:", {
-    total: variations.length,
-    completed: completedVariations.length,
-    all: variations.map(v => ({
-      id: v.id.substring(0, 30) + '...',
-      status: v.status,
-      hasOutputUrl: !!v.outputUrl,
-      outputUrl: v.outputUrl ? v.outputUrl.substring(0, 50) + '...' : null,
-    })),
-  });
 
   // Total videos (original + completed variations)
   const totalVideos = 1 + completedVariations.length;
@@ -216,117 +207,110 @@ export function CompareApproveView({
         </div>
       </div>
 
-      {/* Video comparison grid */}
-      <div className="flex-1 min-h-0">
-        <ScrollArea className="h-full">
-          <div className="flex gap-4 pb-4">
-            {/* Original video card */}
-            <div className="shrink-0 w-64">
-              <Card
-                className={cn(
-                  "overflow-hidden border-2 transition-all",
-                  originalApproved ? "border-emerald-300 bg-emerald-50/50" : "border-neutral-200"
-                )}
-              >
-                <CardContent className="p-0">
-                  {/* Video */}
-                  <div className="aspect-[9/16] bg-black relative">
-                    {originalVideo.outputUrl ? (
-                      <video
-                        ref={(el) => {
-                          videoRefs.current[0] = el;
-                        }}
-                        src={originalVideo.outputUrl}
-                        className="w-full h-full object-contain cursor-pointer"
-                        loop
-                        playsInline
-                        muted={isMuted}
-                        onTimeUpdate={handleTimeUpdate}
-                        onLoadedMetadata={handleLoadedMetadata}
-                        onClick={togglePlay}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-neutral-500">
-                        {isKorean ? "영상 없음" : "No video"}
+      {/* Video comparison grid - wrapping layout */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex flex-wrap gap-4 pb-4">
+          {/* Original video card */}
+          <div className="w-56">
+            <Card
+              className={cn(
+                "overflow-hidden border-2 transition-all",
+                originalApproved ? "border-emerald-300 bg-emerald-50/50" : "border-neutral-200"
+              )}
+            >
+              <CardContent className="p-0">
+                {/* Video */}
+                <div className="aspect-[9/16] bg-black relative">
+                  {originalVideo.outputUrl ? (
+                    <video
+                      ref={(el) => {
+                        videoRefs.current[0] = el;
+                      }}
+                      src={originalVideo.outputUrl}
+                      className="w-full h-full object-contain cursor-pointer"
+                      loop
+                      playsInline
+                      muted={isMuted}
+                      onTimeUpdate={handleTimeUpdate}
+                      onLoadedMetadata={handleLoadedMetadata}
+                      onClick={togglePlay}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-neutral-500">
+                      {isKorean ? "영상 없음" : "No video"}
+                    </div>
+                  )}
+
+                  {/* Original badge */}
+                  <Badge className="absolute top-2 left-2 bg-amber-500/90 text-white gap-1">
+                    <Star className="w-3 h-3 fill-white" />
+                    {isKorean ? "원본" : "Original"}
+                  </Badge>
+
+                  {/* Approval status badge */}
+                  {originalApproved && (
+                    <div className="absolute top-2 right-2">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+                        <Check className="w-4 h-4 text-white" />
                       </div>
-                    )}
+                    </div>
+                  )}
+                </div>
 
-                    {/* Original badge */}
-                    <Badge className="absolute top-2 left-2 bg-amber-500/90 text-white gap-1">
-                      <Star className="w-3 h-3 fill-white" />
-                      {isKorean ? "원본" : "Original"}
-                    </Badge>
-
-                    {/* Approval status badge */}
-                    {originalApproved && (
-                      <div className="absolute top-2 right-2">
-                        <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
-                          <Check className="w-4 h-4 text-white" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Approval buttons */}
-                  <div className="p-3 flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant={originalApproved ? "default" : "outline"}
-                      className={cn(
-                        "flex-1 h-9",
-                        originalApproved
-                          ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                          : "border-emerald-300 text-emerald-600 hover:bg-emerald-50"
-                      )}
-                      onClick={() => setOriginalApproved(true)}
-                    >
-                      <ThumbsUp className="w-3.5 h-3.5 mr-1" />
-                      {isKorean ? "승인" : "Approve"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={!originalApproved ? "default" : "outline"}
-                      className={cn(
-                        "flex-1 h-9",
-                        !originalApproved
-                          ? "bg-neutral-600 hover:bg-neutral-700 text-white"
-                          : "border-neutral-300 text-neutral-600 hover:bg-neutral-50"
-                      )}
-                      onClick={() => setOriginalApproved(false)}
-                    >
-                      <ThumbsDown className="w-3.5 h-3.5 mr-1" />
-                      {isKorean ? "거부" : "Reject"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Variation video cards */}
-            {completedVariations.map((variation, index) => {
-              const isApproved = variation.approval === "approved";
-              const isRejected = variation.approval === "rejected";
-
-              // Debug: Log each variation being rendered
-              console.log(`[CompareApproveView] Rendering variation ${index}:`, {
-                id: variation.id,
-                status: variation.status,
-                outputUrl: variation.outputUrl || 'MISSING!',
-              });
-
-              return (
-                <div key={variation.id} className="shrink-0 w-64">
-                  <Card
+                {/* Approval buttons */}
+                <div className="p-3 flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={originalApproved ? "default" : "outline"}
                     className={cn(
-                      "overflow-hidden border-2 transition-all",
-                      isApproved && "border-emerald-300 bg-emerald-50/50",
-                      isRejected && "border-neutral-300 bg-neutral-50/50 opacity-60",
-                      !isApproved && !isRejected && "border-neutral-200"
+                      "flex-1 h-9",
+                      originalApproved
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                        : "border-emerald-300 text-emerald-600 hover:bg-emerald-50"
                     )}
+                    onClick={() => setOriginalApproved(true)}
                   >
-                    <CardContent className="p-0">
-                      {/* Video */}
-                      <div className="aspect-[9/16] bg-black relative">
+                    <ThumbsUp className="w-3.5 h-3.5 mr-1" />
+                    {isKorean ? "승인" : "Approve"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={!originalApproved ? "default" : "outline"}
+                    className={cn(
+                      "flex-1 h-9",
+                      !originalApproved
+                        ? "bg-neutral-600 hover:bg-neutral-700 text-white"
+                        : "border-neutral-300 text-neutral-600 hover:bg-neutral-50"
+                    )}
+                    onClick={() => setOriginalApproved(false)}
+                  >
+                    <ThumbsDown className="w-3.5 h-3.5 mr-1" />
+                    {isKorean ? "거부" : "Reject"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Variation video cards */}
+          {completedVariations.map((variation, index) => {
+            const isApproved = variation.approval === "approved";
+            const isRejected = variation.approval === "rejected";
+
+            return (
+              <div key={variation.id} className="w-56">
+                <Card
+                  className={cn(
+                    "overflow-hidden border-2 transition-all",
+                    isApproved && "border-emerald-300 bg-emerald-50/50",
+                    isRejected && "border-neutral-300 bg-neutral-50/50 opacity-60",
+                    !isApproved && !isRejected && "border-neutral-200"
+                  )}
+                >
+                  <CardContent className="p-0">
+                    {/* Video */}
+                    <div className="aspect-[9/16] bg-black relative">
+                      {variation.outputUrl ? (
                         <video
                           ref={(el) => {
                             videoRefs.current[index + 1] = el;
@@ -336,83 +320,110 @@ export function CompareApproveView({
                           loop
                           playsInline
                           muted={isMuted}
+                          crossOrigin="anonymous"
                           onLoadedMetadata={handleLoadedMetadata}
                           onClick={togglePlay}
                           onError={(e) => {
-                            console.error(`[CompareApproveView] Video load error for ${variation.id}:`, {
-                              src: variation.outputUrl,
-                              error: e.currentTarget.error?.message || 'Unknown error',
+                            const mediaError = e.currentTarget.error;
+                            const errorCodes: Record<number, string> = {
+                              1: 'MEDIA_ERR_ABORTED',
+                              2: 'MEDIA_ERR_NETWORK',
+                              3: 'MEDIA_ERR_DECODE',
+                              4: 'MEDIA_ERR_SRC_NOT_SUPPORTED',
+                            };
+                            const errorType = mediaError?.code ? errorCodes[mediaError.code] : 'Unknown';
+                            console.error(`[CompareApproveView] Video load error:`, {
+                              errorType,
+                              errorMessage: mediaError?.message || 'No message',
                             });
-                          }}
-                          onLoadStart={() => {
-                            console.log(`[CompareApproveView] Video load started for ${variation.id}:`, variation.outputUrl?.substring(0, 80));
+                            setVideoErrors(prev => ({
+                              ...prev,
+                              [variation.id]: errorType,
+                            }));
                           }}
                         />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-neutral-500">
+                          <AlertTriangle className="w-8 h-8 mb-2 text-amber-500" />
+                          <p className="text-sm">{isKorean ? "영상 URL 없음" : "No video URL"}</p>
+                        </div>
+                      )}
 
-                        {/* Style badge */}
-                        <Badge
-                          variant="secondary"
-                          className="absolute top-2 left-2 bg-neutral-800/80 text-white"
-                        >
-                          {isKorean ? variation.styleNameKo : variation.styleName}
-                        </Badge>
+                      {/* Video error overlay */}
+                      {videoErrors[variation.id] && (
+                        <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-white p-4">
+                          <AlertTriangle className="w-8 h-8 text-amber-500 mb-2" />
+                          <p className="text-sm font-medium text-center">
+                            {isKorean ? "영상 로드 실패" : "Video load failed"}
+                          </p>
+                          <p className="text-xs text-neutral-400 mt-1 text-center">
+                            {videoErrors[variation.id]}
+                          </p>
+                        </div>
+                      )}
 
-                        {/* Approval status */}
-                        {isApproved && (
-                          <div className="absolute top-2 right-2">
-                            <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
-                              <Check className="w-4 h-4 text-white" />
-                            </div>
+                      {/* Style badge */}
+                      <Badge
+                        variant="secondary"
+                        className="absolute top-2 left-2 bg-neutral-800/80 text-white"
+                      >
+                        {isKorean ? variation.styleNameKo : variation.styleName}
+                      </Badge>
+
+                      {/* Approval status */}
+                      {isApproved && (
+                        <div className="absolute top-2 right-2">
+                          <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+                            <Check className="w-4 h-4 text-white" />
                           </div>
-                        )}
-                        {isRejected && (
-                          <div className="absolute top-2 right-2">
-                            <div className="w-6 h-6 rounded-full bg-neutral-500 flex items-center justify-center">
-                              <X className="w-4 h-4 text-white" />
-                            </div>
+                        </div>
+                      )}
+                      {isRejected && (
+                        <div className="absolute top-2 right-2">
+                          <div className="w-6 h-6 rounded-full bg-neutral-500 flex items-center justify-center">
+                            <X className="w-4 h-4 text-white" />
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
+                    </div>
 
-                      {/* Approval buttons */}
-                      <div className="p-3 flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant={isApproved ? "default" : "outline"}
-                          className={cn(
-                            "flex-1 h-9",
-                            isApproved
-                              ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                              : "border-emerald-300 text-emerald-600 hover:bg-emerald-50"
-                          )}
-                          onClick={() => approveVideo(variation.id)}
-                        >
-                          <ThumbsUp className="w-3.5 h-3.5 mr-1" />
-                          {isKorean ? "승인" : "Approve"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={isRejected ? "default" : "outline"}
-                          className={cn(
-                            "flex-1 h-9",
-                            isRejected
-                              ? "bg-neutral-600 hover:bg-neutral-700 text-white"
-                              : "border-neutral-300 text-neutral-600 hover:bg-neutral-50"
-                          )}
-                          onClick={() => rejectVideo(variation.id)}
-                        >
-                          <ThumbsDown className="w-3.5 h-3.5 mr-1" />
-                          {isKorean ? "거부" : "Reject"}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              );
-            })}
-          </div>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
+                    {/* Approval buttons */}
+                    <div className="p-3 flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant={isApproved ? "default" : "outline"}
+                        className={cn(
+                          "flex-1 h-9",
+                          isApproved
+                            ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                            : "border-emerald-300 text-emerald-600 hover:bg-emerald-50"
+                        )}
+                        onClick={() => approveVideo(variation.id)}
+                      >
+                        <ThumbsUp className="w-3.5 h-3.5 mr-1" />
+                        {isKorean ? "승인" : "Approve"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={isRejected ? "default" : "outline"}
+                        className={cn(
+                          "flex-1 h-9",
+                          isRejected
+                            ? "bg-neutral-600 hover:bg-neutral-700 text-white"
+                            : "border-neutral-300 text-neutral-600 hover:bg-neutral-50"
+                        )}
+                        onClick={() => rejectVideo(variation.id)}
+                      >
+                        <ThumbsDown className="w-3.5 h-3.5 mr-1" />
+                        {isKorean ? "거부" : "Reject"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Playback controls */}

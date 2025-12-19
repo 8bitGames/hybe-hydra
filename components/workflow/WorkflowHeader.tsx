@@ -8,7 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import { useWorkflowStore, ContentType } from "@/lib/stores/workflow-store";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { ArrowLeft, ArrowRight, Zap, Sparkles, Clapperboard, Settings2, Upload, Lightbulb, FileText, Image, Music, Wand2, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Zap, Sparkles, Clapperboard, Settings2, Upload, Lightbulb, Image, Music, Wand2, Check } from "lucide-react";
 
 // AI Video stage configuration
 export const AI_VIDEO_STAGES = [
@@ -19,10 +19,9 @@ export const AI_VIDEO_STAGES = [
   { id: "publish", route: "/publish", icon: Upload, label: { ko: "발행", en: "Publish" }, description: { ko: "콘텐츠 발행", en: "Publish content" } },
 ];
 
-// Fast Cut stage configuration
+// Fast Cut stage configuration (Script step removed - keywords come from scene analysis on Start page)
 export const FAST_CUT_STAGES = [
   { id: "start", route: "/start", icon: Zap, label: { ko: "시작", en: "Start" }, description: { ko: "새 콘텐츠 시작", en: "Start new content" } },
-  { id: "script", route: "/fast-cut/script", icon: FileText, label: { ko: "스크립트", en: "Script" }, description: { ko: "스크립트 작성", en: "Write script" } },
   { id: "images", route: "/fast-cut/images", icon: Image, label: { ko: "이미지", en: "Images" }, description: { ko: "이미지 선택", en: "Select images" } },
   { id: "music", route: "/fast-cut/music", icon: Music, label: { ko: "음악", en: "Music" }, description: { ko: "음악 선택", en: "Select music" } },
   { id: "effects", route: "/fast-cut/effects", icon: Wand2, label: { ko: "효과", en: "Effects" }, description: { ko: "효과 적용", en: "Apply effects" } },

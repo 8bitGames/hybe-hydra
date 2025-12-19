@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useAllAssets, useCampaigns } from "@/lib/queries";
@@ -111,6 +111,17 @@ export default function AssetsPage() {
   const assets = assetsData?.items || [];
   const totalPages = assetsData?.pages || 1;
   const stats = assetsData?.stats || { total: 0, images: 0, audio: 0, videos: 0, goods: 0 };
+
+  // Update selectedAudioAsset when assets data changes (after refetch)
+  const selectedAssetId = selectedAudioAsset?.id;
+  useEffect(() => {
+    if (selectedAssetId && assets.length > 0) {
+      const updatedAsset = assets.find((a) => a.id === selectedAssetId);
+      if (updatedAsset) {
+        setSelectedAudioAsset(updatedAsset);
+      }
+    }
+  }, [assets, selectedAssetId]);
 
   const formatFileSize = (bytes: number | null): string => {
     if (!bytes) return "-";

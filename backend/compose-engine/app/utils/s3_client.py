@@ -219,31 +219,44 @@ class S3Client:
                     print(f"[S3Client] WARNING: S3 file may not be a valid image: {key} (size={file_size})")
         elif ".s3." in url and ".amazonaws.com" in url:
             # S3 URL from any bucket - parse and use SDK download for IAM role access
-            # URL format: https://BUCKET.s3.REGION.amazonaws.com/KEY
+            # URL formats:
+            #   - https://BUCKET.s3.REGION.amazonaws.com/KEY (with region)
+            #   - https://BUCKET.s3.amazonaws.com/KEY (without region, uses us-east-1)
             import re
+            # Try with region first
             match = re.match(r'https://([^.]+)\.s3\.([^.]+)\.amazonaws\.com/(.+)', url)
-            if match:
+            if match and match.group(2) != 'amazonaws':
                 other_bucket = match.group(1)
                 other_region = match.group(2)
                 other_key = match.group(3)
                 print(f"[S3Client] Cross-bucket S3 download: bucket={other_bucket}, region={other_region}, key={other_key[:50]}...")
-                # Use S3 SDK with the other bucket (relies on IAM role permissions)
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(
-                    get_s3_executor(),
-                    lambda b=other_bucket, k=other_key: self.client.download_file(b, k, local_path)
-                )
-                file_size = os.path.getsize(local_path) if os.path.exists(local_path) else 0
-                print(f"[S3Client] Downloaded {file_size} bytes from {other_bucket}")
             else:
-                # Fallback to HTTP for unparseable S3 URLs
-                print(f"[S3Client] S3 URL pattern not matched, falling back to HTTP download")
-                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-                client = await self._get_http_client()
-                response = await client.get(url, headers=headers)
-                response.raise_for_status()
-                async with aiofiles.open(local_path, "wb") as f:
-                    await f.write(response.content)
+                # Try without region (bucket.s3.amazonaws.com format)
+                match_no_region = re.match(r'https://([^.]+)\.s3\.amazonaws\.com/(.+)', url)
+                if match_no_region:
+                    other_bucket = match_no_region.group(1)
+                    other_region = self.region  # Use configured region as default
+                    other_key = match_no_region.group(2)
+                    print(f"[S3Client] Cross-bucket S3 download (no region in URL): bucket={other_bucket}, using region={other_region}, key={other_key[:50]}...")
+                else:
+                    # Fallback to HTTP for unparseable S3 URLs
+                    print(f"[S3Client] S3 URL pattern not matched, falling back to HTTP download")
+                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                    client = await self._get_http_client()
+                    response = await client.get(url, headers=headers)
+                    response.raise_for_status()
+                    async with aiofiles.open(local_path, "wb") as f:
+                        await f.write(response.content)
+                    return local_path
+
+            # Use S3 SDK with the other bucket (relies on IAM role permissions or configured credentials)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                get_s3_executor(),
+                lambda b=other_bucket, k=other_key: self.client.download_file(b, k, local_path)
+            )
+            file_size = os.path.getsize(local_path) if os.path.exists(local_path) else 0
+            print(f"[S3Client] Downloaded {file_size} bytes from {other_bucket}")
         else:
             # External URL - download via HTTP with browser-like headers
             headers = {

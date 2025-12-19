@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Prisma } from "@prisma/client";
 import { submitAutoCompose, AutoComposeRequest, getComposeRenderStatus } from "@/lib/compose/client";
 import { getSettingsFromStylePresets, getStyleSetById } from "@/lib/constants/style-presets";
+import { getPresignedUrlFromS3Url } from "@/lib/storage";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -284,16 +285,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Get original compose metadata
     const originalMetadata = seedGeneration.qualityMetadata as Record<string, unknown> | null;
     const originalComposeData = originalMetadata?.composeData as Record<string, unknown> | null;
+    // Fast-cut stores data in fastCutData instead of composeData
+    const originalFastCutData = originalMetadata?.fastCutData as Record<string, unknown> | null;
 
     // Get search tags from metadata (for image search)
     const searchTags = getVariationKeywords(originalMetadata, seedGeneration.prompt);
 
-    // Get script lines from original compose data (for subtitles/captions)
-    const originalScriptLines = originalComposeData?.script as Array<{
+    // Get script lines from original data (composeData for compose, fastCutData for fast-cut)
+    // Fast-cut stores script as array directly, compose stores it with lines property
+    const rawScript = originalComposeData?.script || originalFastCutData?.script;
+    const originalScriptLines = (Array.isArray(rawScript) ? rawScript : undefined) as Array<{
       text: string;
       timing: number;
       duration: number;
     }> | undefined;
+
+    console.log(`[Compose Variations] Script lookup:`, {
+      hasComposeData: !!originalComposeData,
+      hasFastCutData: !!originalFastCutData,
+      composeDataScript: originalComposeData?.script ? 'present' : 'missing',
+      fastCutDataScript: originalFastCutData?.script ? 'present' : 'missing',
+      scriptLinesFound: originalScriptLines?.length || 0,
+    });
 
     // Generate settings based on input format
     let settingsCombinations: VariationSettings[];
@@ -404,6 +417,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
     );
 
+    // Generate fresh presigned URL for audio before sending to EC2
+    // This is CRITICAL: stored s3Urls may be expired presigned URLs (7-day default expiry)
+    let audioPresignedUrl: string | null = null;
+    if (seedGeneration.audioAsset?.s3Url) {
+      try {
+        // Generate fresh presigned URL with 48 hour expiry (enough for EC2 queue time)
+        audioPresignedUrl = await getPresignedUrlFromS3Url(seedGeneration.audioAsset.s3Url, 172800);
+        console.log(`[Compose Variations] Generated fresh audio presigned URL for: ${seedGeneration.audioAsset.originalFilename || seedGeneration.audioAsset.filename}`);
+      } catch (error) {
+        console.error(`[Compose Variations] Failed to generate audio presigned URL:`, error);
+        // Don't fail - audio might be optional for some variations
+      }
+    }
+
     // Prepare auto-compose requests for each variation
     // Auto-compose handles image search internally based on search_tags
     // NOTE: Using polling (not callback) to check job status - GET endpoint polls EC2
@@ -412,7 +439,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         job_id: generation.id,
         search_query: seedGeneration.prompt,
         search_tags: searchTags,
-        audio_url: seedGeneration.audioAsset?.s3Url || null,
+        audio_url: audioPresignedUrl,
         vibe: settings.vibe,
         effect_preset: settings.effectPreset,
         color_grade: settings.colorGrade,
@@ -720,16 +747,28 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     );
 
     // Format response to match VariationsBatchStatus interface
-    const variations = updatedGenerations.map((gen) => {
+    // Convert S3 URLs to presigned URLs for browser access (bucket blocks public access)
+    const variations = await Promise.all(updatedGenerations.map(async (gen) => {
       const metadata = gen.qualityMetadata as Record<string, unknown> | null;
-      const outputUrl = gen.composedOutputUrl || gen.outputUrl || undefined;
+      const rawOutputUrl = gen.composedOutputUrl || gen.outputUrl || undefined;
+
+      // Convert direct S3 URL to presigned URL for browser access
+      let outputUrl: string | undefined;
+      if (rawOutputUrl) {
+        try {
+          outputUrl = await getPresignedUrlFromS3Url(rawOutputUrl);
+        } catch (err) {
+          console.error(`[Compose Variations] Failed to generate presigned URL for ${gen.id}:`, err);
+          outputUrl = rawOutputUrl; // Fall back to raw URL
+        }
+      }
 
       // Debug log for each variation
       console.log(`[Compose Variations] Response for ${gen.id}:`, {
         status: gen.status,
         hasComposedOutputUrl: !!gen.composedOutputUrl,
         hasOutputUrl: !!gen.outputUrl,
-        finalOutputUrl: outputUrl ? 'present' : 'missing',
+        presignedUrl: outputUrl ? 'generated' : 'missing',
       });
 
       return {
@@ -741,7 +780,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         thumbnail_url: undefined, // Compose videos don't have separate thumbnails
         error_message: gen.errorMessage || undefined,
       };
-    });
+    }));
 
     console.log(`[Compose Variations] Returning ${variations.length} variations, ${completedCount} completed with URLs`);
 

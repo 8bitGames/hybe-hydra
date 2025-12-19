@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
       filename: asset.filename,
       original_filename: asset.originalFilename,
       s3_url: asset.s3Url,
+      s3_key: asset.s3Key,
       file_size: asset.fileSize,
       mime_type: asset.mimeType,
       thumbnail_url: asset.thumbnailUrl,

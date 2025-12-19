@@ -17,9 +17,9 @@ import { GoogleGenAI } from '@google/genai';
 
 ---
 
-## 🚨 Do Not Modify Backend Locally
+## 🚨 Backend Modification Rules
 
-Do not modify the `backend/` folder locally. Edit directly on EC2 server.
+By default, do not modify the `backend/` folder locally. However, if the user explicitly requests backend modification, you may modify locally and deploy to EC2.
 
 ```bash
 ssh hydra-compose          # connect
@@ -43,7 +43,48 @@ const ai = new GoogleGenAI({ apiKey });
 await ai.models.generateContent(...);
 ```
 
-Agent prompts are managed in DB (`agent_prompts` table). Do not modify in code.
+---
+
+## 🚨 Agent Prompt Management Rules
+
+**All agent prompts MUST be managed in DB (`agent_prompts` table).**
+
+### New Agent Checklist
+
+1. **Create Config Object** - Export `XxxConfig` in agent file
+   ```typescript
+   export const MyAgentConfig: AgentConfig = {
+     id: 'my-agent',
+     name: 'My Agent',
+     category: 'analyzer',
+     prompts: { system: SYSTEM_PROMPT, templates: { ... } },
+     model: { provider: 'gemini', name: 'gemini-2.5-flash', options: {} }
+   };
+   ```
+
+2. **Register in Seed API** - Add to `app/api/v1/admin/prompts/seed/route.ts`
+   ```typescript
+   import { MyAgentConfig } from '@/lib/agents/xxx/my-agent';
+   const AGENT_CONFIGS = [..., MyAgentConfig];
+   ```
+
+3. **Sync to DB** - Call sync API
+   ```bash
+   POST /api/v1/admin/prompts/sync?mode=sync
+   # or
+   POST /api/v1/admin/prompts/seed
+   ```
+
+### Prompt Update Workflow
+
+```
+Code 수정 → POST /api/v1/admin/prompts/sync → DB 자동 업데이트 (버전++)
+```
+
+### Admin UI
+
+- View/Edit prompts: `/admin/prompts`
+- Sync status: `/admin/prompts` (Sync 버튼)
 
 ---
 

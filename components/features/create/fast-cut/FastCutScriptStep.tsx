@@ -376,6 +376,21 @@ export function FastCutScriptStep({
                   <p className="text-xs">{translate("fastCut.tooltips.script.bpmRange")}</p>
                 </TooltipContent>
               </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge className="text-xs bg-neutral-900 text-white cursor-help">
+                    <Timer className="h-3 w-3 mr-1" />
+                    {scriptData.script.totalDuration}s
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[240px]">
+                  <p className="text-xs">
+                    {language === "ko"
+                      ? "AI가 추천한 영상 길이입니다. 음악 단계에서 조정할 수 있습니다."
+                      : "AI recommended video duration. You can adjust this in the music step."}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
             </div>
           </div>
 

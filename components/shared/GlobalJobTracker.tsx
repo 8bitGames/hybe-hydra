@@ -63,22 +63,52 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
 
   // Poll for job updates only when authenticated
   useEffect(() => {
-    if (!isAuthenticated || !accessToken) return;
+    // Strict authentication check
+    if (!isAuthenticated || !accessToken || accessToken.trim() === "") {
+      return;
+    }
+
+    let isPollingActive = true;
+    let consecutiveFailures = 0;
+    const MAX_FAILURES = 3;
 
     const fetchJobs = async () => {
+      // Double-check auth state before each request
+      if (!isPollingActive || !useAuthStore.getState().isAuthenticated) {
+        return;
+      }
+
       try {
         const response = await fetch("/api/v1/jobs", {
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
         });
+
+        if (response.status === 401 || response.status === 403) {
+          // Auth failed - stop polling to prevent spam
+          console.warn("[GlobalJobTracker] Auth failed, stopping poll");
+          isPollingActive = false;
+          return;
+        }
+
         if (response.ok) {
+          consecutiveFailures = 0; // Reset on success
           const data = await response.json();
           useJobStore.getState().setJobs(data.active || []);
           useJobStore.getState().setRecentJobs(data.recent || []);
+        } else {
+          consecutiveFailures++;
+          if (consecutiveFailures >= MAX_FAILURES) {
+            console.warn("[GlobalJobTracker] Too many failures, stopping poll");
+            isPollingActive = false;
+          }
         }
       } catch {
-        // Silent fail for polling
+        consecutiveFailures++;
+        if (consecutiveFailures >= MAX_FAILURES) {
+          isPollingActive = false;
+        }
       }
     };
 
@@ -88,7 +118,10 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
     // Poll every 5 seconds (reduced from 2s to minimize requests)
     const interval = setInterval(fetchJobs, 5000);
 
-    return () => clearInterval(interval);
+    return () => {
+      isPollingActive = false;
+      clearInterval(interval);
+    };
   }, [isAuthenticated, accessToken]);
 
   const hasActiveJobs = activeJobs.length > 0;

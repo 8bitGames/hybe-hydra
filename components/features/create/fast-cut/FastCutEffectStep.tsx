@@ -63,6 +63,7 @@ interface FastCutEffectStepProps {
   setTiktokSEO: (seo: TikTokSEO | null) => void;
   rendering: boolean;
   onStartRender: () => void;
+  videoDuration: number;
 }
 
 // Format seconds to mm:ss.s
@@ -79,6 +80,7 @@ interface SubtitleTimelineEditorProps {
   onUpdateScript: (lines: ScriptGenerationResponse["script"]["lines"]) => void;
   selectedStyleSet: StyleSetSummary | undefined;
   language: string;
+  videoDuration: number;
 }
 
 function SubtitleTimelineEditor({
@@ -87,6 +89,7 @@ function SubtitleTimelineEditor({
   onUpdateScript,
   selectedStyleSet,
   language,
+  videoDuration,
 }: SubtitleTimelineEditorProps) {
   const [selectedSubtitleIndex, setSelectedSubtitleIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
@@ -98,13 +101,15 @@ function SubtitleTimelineEditor({
     return selectedStyleSet?.cutDuration ?? 1.5;
   }, [selectedStyleSet?.cutDuration]);
 
-  // Total duration comes from script (fixed by prompt), not from images
+  // Total duration comes from videoDuration prop (user setting)
+  // Falls back to script calculation if videoDuration is 0 or not set
   const totalDuration = useMemo(() => {
+    if (videoDuration > 0) return videoDuration;
     if (!scriptData?.script.lines.length) return 10; // fallback
     const lines = scriptData.script.lines;
     const lastLine = lines[lines.length - 1];
     return lastLine.timing + lastLine.duration;
-  }, [scriptData?.script.lines]);
+  }, [videoDuration, scriptData?.script.lines]);
 
   // Calculate how images will loop to fill the total duration
   const imageLoopInfo = useMemo(() => {
@@ -598,6 +603,7 @@ export function FastCutEffectStep({
   setTiktokSEO,
   rendering,
   onStartRender,
+  videoDuration,
 }: FastCutEffectStepProps) {
   const { language, translate } = useI18n();
 
@@ -983,6 +989,7 @@ export function FastCutEffectStep({
           onUpdateScript={handleUpdateScriptLines}
           selectedStyleSet={selectedStyleSet}
           language={language}
+          videoDuration={videoDuration}
         />
       )}
 

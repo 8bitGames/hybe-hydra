@@ -28,3 +28,17 @@ export {
   type CopywriterInput,
   type CopywriterOutput,
 } from './copywriter';
+
+// GEO/AEO Optimizer - AI search engine optimized content
+export {
+  GeoAeoOptimizerAgent,
+  createGeoAeoOptimizerAgent,
+  GeoAeoOptimizerConfig,
+  GeoAeoInputSchema,
+  GeoAeoOutputSchema,
+  GeoOptimizedContentSchema,
+  AeoOptimizedContentSchema,
+  OptimizedHashtagsSchema,
+  type GeoAeoInput,
+  type GeoAeoOutput,
+} from './geo-aeo-optimizer';

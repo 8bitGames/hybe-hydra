@@ -769,6 +769,7 @@ export function useAllAIVideos() {
                 updated_at: video.updated_at,
                 generation_type: "AI" as const,
                 quality_score: video.quality_score,
+                tiktok_seo: video.tiktok_seo || null,
               }));
             }
             return [];

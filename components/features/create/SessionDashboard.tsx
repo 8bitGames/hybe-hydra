@@ -45,10 +45,13 @@ import {
   CheckCircle2,
   AlertCircle,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Sparkles,
   Loader2,
 } from "lucide-react";
 import { useJobStore } from "@/lib/stores/job-store";
+import { SessionDetailModal } from "./SessionDetailModal";
 
 // ============================================================================
 // Types
@@ -82,10 +85,11 @@ function SessionCard({
 
   // Use different stage lists based on content type
   // AI Video: start → analyze → create → processing → publish (5 stages)
-  // Fast Cut: start → script → images → music → effects → render → publish (7 stages)
+  // Fast Cut: start → images → music → effects → render → publish (6 stages) - Script step removed
 
   // Infer contentType from currentStage if metadata is missing or inconsistent
   // This handles cases where sessions were created before contentType was properly tracked
+  // Note: "script" kept in detection list for backward compatibility with legacy sessions
   const FAST_CUT_ONLY_STAGES = ["script", "images", "music", "effects", "render"];
   const inferredIsFastCut =
     session.metadata.contentType === "fast-cut" ||
@@ -93,8 +97,9 @@ function SessionCard({
     session.completedStages?.some(stage => FAST_CUT_ONLY_STAGES.includes(stage));
 
   const isFastCut = inferredIsFastCut;
+  // Script step removed - keywords now come from scene analysis on Start page
   const stages: readonly string[] = isFastCut
-    ? ["start", "script", "images", "music", "effects", "render", "publish"]
+    ? ["start", "images", "music", "effects", "render", "publish"]
     : ["start", "analyze", "create", "processing", "publish"];
   const currentStageIndex = stages.indexOf(session.currentStage);
 
@@ -392,6 +397,70 @@ function SessionCard({
 }
 
 // ============================================================================
+// Completed Session Card (Simplified)
+// ============================================================================
+
+interface CompletedCardProps {
+  session: SessionSummary;
+  onClick: () => void;
+}
+
+function CompletedSessionCard({ session, onClick }: CompletedCardProps) {
+  const { language } = useI18n();
+
+  // Infer content type
+  const FAST_CUT_ONLY_STAGES = ["script", "images", "music", "effects", "render"];
+  const isFastCut =
+    session.metadata.contentType === "fast-cut" ||
+    FAST_CUT_ONLY_STAGES.includes(session.currentStage) ||
+    session.completedStages?.some(stage => FAST_CUT_ONLY_STAGES.includes(stage));
+
+  const title =
+    session.metadata.title ||
+    (language === "ko" ? "이름 없는 프로젝트" : "Untitled Project");
+
+  return (
+    <div
+      className="group border border-neutral-200 rounded-lg p-3 bg-white hover:border-neutral-300 hover:shadow-sm cursor-pointer transition-all"
+      onClick={onClick}
+    >
+      <div className="flex items-center gap-3">
+        {/* Icon */}
+        <div className={cn(
+          "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
+          isFastCut ? "bg-purple-100" : "bg-neutral-900"
+        )}>
+          {isFastCut ? (
+            <Sparkles className="h-4 w-4 text-purple-600" />
+          ) : (
+            <Video className="h-4 w-4 text-white" />
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-medium text-neutral-900 truncate">
+            {title}
+          </h3>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-xs text-neutral-500">
+              {isFastCut ? "Fast Cut" : (language === "ko" ? "AI 영상" : "AI Video")}
+            </span>
+            <span className="text-neutral-300">·</span>
+            <span className="text-xs text-neutral-400">
+              {formatRelativeTime(session.updatedAt)}
+            </span>
+          </div>
+        </div>
+
+        {/* Arrow */}
+        <ChevronRight className="h-4 w-4 text-neutral-300 group-hover:text-neutral-500 transition-colors flex-shrink-0" />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Empty State Component
 // ============================================================================
 
@@ -467,6 +536,8 @@ export function SessionDashboard() {
   // Local state
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCompletedExpanded, setIsCompletedExpanded] = useState(false);
+  const [selectedDetailSessionId, setSelectedDetailSessionId] = useState<string | null>(null);
 
   // Fetch sessions on mount - wait for auth hydration
   useEffect(() => {
@@ -493,8 +564,8 @@ export function SessionDashboard() {
     create: "/create/workflow",
     processing: "/processing",
     publish: "/publish",
-    // Fast Cut stages
-    script: "/fast-cut/script",
+    // Fast Cut stages (script now redirects to images for legacy sessions)
+    script: "/fast-cut/images",
     images: "/fast-cut/images",
     music: "/fast-cut/music",
     effects: "/fast-cut/effects",
@@ -686,7 +757,10 @@ export function SessionDashboard() {
             {/* Completed Sessions */}
             {completedSessions.length > 0 && (
               <section>
-                <div className="flex items-center gap-2 mb-4">
+                <button
+                  onClick={() => setIsCompletedExpanded(!isCompletedExpanded)}
+                  className="flex items-center gap-2 mb-4 w-full group"
+                >
                   <div className="w-2 h-2 rounded-full bg-green-500" />
                   <h2 className="text-sm font-semibold text-neutral-700 uppercase tracking-wide">
                     {language === "ko" ? "완료됨" : "Completed"}
@@ -694,32 +768,51 @@ export function SessionDashboard() {
                   <Badge variant="secondary" className="text-xs">
                     {completedSessions.length}
                   </Badge>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {completedSessions.slice(0, 6).map((session) => (
-                    <SessionCard
-                      key={session.id}
-                      session={session}
-                      onResume={handleResume}
-                      onPause={handlePause}
-                      onDelete={handleDelete}
-                      hasActiveJobs={hasActiveJobs}
-                      isDeleting={isDeleting}
-                    />
-                  ))}
-                </div>
-                {completedSessions.length > 6 && (
-                  <Button variant="ghost" className="mt-4 w-full text-neutral-500">
-                    {language === "ko"
-                      ? `${completedSessions.length - 6}개 더 보기`
-                      : `View ${completedSessions.length - 6} more`}
-                  </Button>
+                  <div className="ml-auto flex items-center gap-1 text-neutral-400 group-hover:text-neutral-600 transition-colors">
+                    <span className="text-xs">
+                      {isCompletedExpanded
+                        ? (language === "ko" ? "접기" : "Collapse")
+                        : (language === "ko" ? "펼치기" : "Expand")}
+                    </span>
+                    {isCompletedExpanded ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </button>
+                {isCompletedExpanded && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {completedSessions.slice(0, 6).map((session) => (
+                        <CompletedSessionCard
+                          key={session.id}
+                          session={session}
+                          onClick={() => setSelectedDetailSessionId(session.id)}
+                        />
+                      ))}
+                    </div>
+                    {completedSessions.length > 6 && (
+                      <p className="mt-3 text-center text-xs text-neutral-400">
+                        {language === "ko"
+                          ? `최근 6개만 표시됩니다. (전체 ${completedSessions.length}개)`
+                          : `Showing 6 most recent. (${completedSessions.length} total)`}
+                      </p>
+                    )}
+                  </>
                 )}
               </section>
             )}
           </div>
         )}
       </div>
+
+      {/* Session Detail Modal */}
+      <SessionDetailModal
+        sessionId={selectedDetailSessionId}
+        open={!!selectedDetailSessionId}
+        onClose={() => setSelectedDetailSessionId(null)}
+      />
     </div>
   );
 }

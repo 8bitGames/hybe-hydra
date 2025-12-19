@@ -233,11 +233,14 @@ export async function getPresignedUrlFromS3Url(
   // Decode the key in case it was URL-encoded (handles double-encoding issues)
   const key = decodeURIComponent(rawKey);
 
-  // Create cache key from S3 bucket + key (unique identifier for this object)
-  const cacheKey = CacheKeys.presignedUrl(createCacheHash({ bucket, key }));
+  // Create cache key from S3 bucket + key + expiresIn (different expiry = different cache)
+  const cacheKey = CacheKeys.presignedUrl(createCacheHash({ bucket, key, expiresIn }));
 
-  // Use cached presigned URL if available (6 days TTL, URL valid for 7 days)
-  return cached<string>(cacheKey, CacheTTL.PRESIGNED_URL, async () => {
+  // Cache TTL should be shorter than URL expiry to prevent serving expired URLs
+  // Use 90% of expiresIn as cache TTL (e.g., 48h URL -> 43.2h cache)
+  const cacheTTL = Math.floor(expiresIn * 0.9);
+
+  return cached<string>(cacheKey, cacheTTL, async () => {
     // Create a new S3 client for this specific bucket/region
     const accessKey = process.env.AWS_ACCESS_KEY_ID;
     const secretKey = process.env.AWS_SECRET_ACCESS_KEY;

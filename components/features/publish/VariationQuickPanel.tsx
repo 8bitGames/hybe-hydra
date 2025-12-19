@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles, Wand2, Film } from "lucide-react";
+import { Sparkles, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProcessingVideo } from "@/lib/stores/workflow-store";
 import { useI18n } from "@/lib/i18n";
@@ -8,17 +8,14 @@ import { useI18n } from "@/lib/i18n";
 interface VariationQuickPanelProps {
   video: ProcessingVideo;
   onCreateAIVariation: () => void;
-  onCreateComposeVariation: () => void;
 }
 
 export function VariationQuickPanel({
   video,
   onCreateAIVariation,
-  onCreateComposeVariation,
 }: VariationQuickPanelProps) {
   const { t } = useI18n();
   const isAI = video.generationType === "AI";
-  const isCompose = video.generationType === "COMPOSE";
 
   return (
     <div className="bg-neutral-50 rounded-xl p-4 mt-4 border border-neutral-200">
@@ -47,22 +44,6 @@ export function VariationQuickPanel({
         </Button>
       )}
 
-      {isCompose && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onCreateComposeVariation}
-          className="w-full flex flex-col h-auto py-3 hover:bg-neutral-100"
-        >
-          <Film className="w-4 h-4 mb-1" />
-          <span className="text-xs font-medium">
-            {t.publish.variation.fastCutVariation}
-          </span>
-          <span className="text-[10px] text-neutral-500">
-            {t.publish.variation.musicEffects}
-          </span>
-        </Button>
-      )}
     </div>
   );
 }

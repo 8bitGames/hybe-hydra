@@ -11,7 +11,6 @@ import {
   Sparkles,
   Settings2,
   Upload,
-  FileText,
   Image,
   Music,
   Wand2,
@@ -27,10 +26,9 @@ const AI_VIDEO_STAGES = [
   { id: "publish", route: "/publish", icon: Upload, label: { ko: "발행", en: "Publish" } },
 ];
 
-// Fast Cut workflow stages
+// Fast Cut workflow stages (Script step removed - keywords come from scene analysis on Start page)
 const FAST_CUT_STAGES = [
   { id: "start", route: "/start", icon: Zap, label: { ko: "시작", en: "Start" } },
-  { id: "script", route: "/fast-cut/script", icon: FileText, label: { ko: "스크립트", en: "Script" } },
   { id: "images", route: "/fast-cut/images", icon: Image, label: { ko: "이미지", en: "Images" } },
   { id: "music", route: "/fast-cut/music", icon: Music, label: { ko: "음악", en: "Music" } },
   { id: "effects", route: "/fast-cut/effects", icon: Wand2, label: { ko: "효과", en: "Effects" } },

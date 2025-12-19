@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useToast } from "@/components/ui/toast";
 import { useFastCutVideos, useAllAIVideos } from "@/lib/queries";
+import { trendsApi } from "@/lib/trends-api";
 import {
   Card,
   CardContent,
@@ -61,7 +62,11 @@ import {
   ChevronRight,
   Wand2,
   Loader2,
+  Send,
+  Clock,
+  User,
 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 interface VideoItem {
@@ -86,6 +91,23 @@ interface VideoItem {
   createdBy: string;
 }
 
+interface SocialAccount {
+  id: string;
+  platform: "TIKTOK" | "YOUTUBE" | "INSTAGRAM";
+  account_name: string;
+  account_id: string;
+  profile_url: string | null;
+  is_active: boolean;
+  is_token_valid: boolean;
+}
+
+// Platform icons
+const PLATFORM_ICONS: Record<string, string> = {
+  TIKTOK: "🎵",
+  YOUTUBE: "▶️",
+  INSTAGRAM: "📷",
+};
+
 // Safely convert to array
 const toArray = (value: unknown): string[] => {
   if (Array.isArray(value)) return value;
@@ -98,13 +120,12 @@ const getVideoTags = (video: VideoItem): string[] => {
   return toArray(video.tiktokSeo?.hashtags) || toArray(video.tags) || [];
 };
 
-// Sanitize filename - remove special chars
+// Sanitize filename - remove only invalid chars, keep spaces
 const sanitizeFilename = (str: string): string => {
   return str
-    .replace(/[<>:"/\\|?*]/g, "")
-    .replace(/\s+/g, "_")
-    .replace(/_+/g, "_")
-    .substring(0, 100);
+    .replace(/[<>:"/\\|?*]/g, "")  // Remove invalid filename chars
+    .replace(/\s+/g, " ")          // Normalize multiple spaces to single space
+    .trim();
 };
 
 // Get description for publishing (not prompt)
@@ -112,17 +133,30 @@ const getVideoDescription = (video: VideoItem): string => {
   return video.tiktokSeo?.description || "";
 };
 
-// Generate filename from description
+// Generate filename from description and tags
 const generateFilename = (video: VideoItem): string => {
   const description = getVideoDescription(video);
+  const tags = getVideoTags(video);
 
   // If no description, use video id
   if (!description) {
     return `video_${video.id.substring(0, 8)}.mp4`;
   }
 
-  // Use description as filename (max 100 chars)
-  const filename = sanitizeFilename(description.substring(0, 100));
+  // Build filename: description + hashtags
+  let filename = sanitizeFilename(description);
+
+  // Add hashtags if available
+  if (tags.length > 0) {
+    const hashtagStr = tags.map(t => `#${t.replace(/^#/, "")}`).join(" ");
+    filename = `${filename} ${hashtagStr}`;
+  }
+
+  // Limit to 200 chars (safe for most OS, leaving room for path)
+  if (filename.length > 200) {
+    filename = filename.substring(0, 200).trim();
+  }
+
   return `${filename}.mp4`;
 };
 
@@ -192,11 +226,59 @@ export default function PublishManagerPage() {
   // Generating description state
   const [generatingId, setGeneratingId] = useState<string | null>(null);
 
+  // Quick publish modal state
+  const [publishVideo, setPublishVideo] = useState<VideoItem | null>(null);
+  const [publishCaption, setPublishCaption] = useState("");
+  const [publishHashtags, setPublishHashtags] = useState<string[]>([]);
+  const [publishAccountId, setPublishAccountId] = useState<string>("");
+  const [publishScheduleType, setPublishScheduleType] = useState<"now" | "scheduled">("now");
+  const [publishScheduledAt, setPublishScheduledAt] = useState("");
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  // YouTube-specific settings
+  const [youtubeTitle, setYoutubeTitle] = useState("");
+  const [youtubePrivacy, setYoutubePrivacy] = useState<"public" | "unlisted" | "private">("public");
+
+  // Get the selected account's platform
+  const selectedPlatform = useMemo(() => {
+    if (!publishAccountId) return null;
+    const account = socialAccounts.find((a) => a.id === publishAccountId);
+    return account?.platform || null;
+  }, [publishAccountId, socialAccounts]);
+
   useEffect(() => {
     if (accessToken) {
       api.setAccessToken(accessToken);
     }
   }, [accessToken]);
+
+  // Fetch social accounts when modal opens
+  useEffect(() => {
+    const fetchSocialAccounts = async () => {
+      if (!publishVideo) return;
+      setLoadingAccounts(true);
+      try {
+        const response = await api.get<{ accounts: SocialAccount[] }>("/api/v1/publishing/accounts");
+        if (response.data?.accounts) {
+          // Filter only active accounts with valid tokens
+          const validAccounts = response.data.accounts.filter(
+            (a) => a.is_active && a.is_token_valid
+          );
+          setSocialAccounts(validAccounts);
+          // Auto-select first account if available
+          if (validAccounts.length > 0 && !publishAccountId) {
+            setPublishAccountId(validAccounts[0].id);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch social accounts:", err);
+      } finally {
+        setLoadingAccounts(false);
+      }
+    };
+    fetchSocialAccounts();
+  }, [publishVideo]);
 
   // Map compose videos to VideoItem format
   const composeVideos: VideoItem[] = useMemo(() => {
@@ -351,8 +433,8 @@ export default function PublishManagerPage() {
     }
   };
 
-  // Generate TikTok description using AI
-  const handleGenerateDescription = async (video: VideoItem) => {
+  // Generate TikTok description using AI (short or long version)
+  const handleGenerateDescription = async (video: VideoItem, version: "short" | "long" = "short") => {
     if (!video.prompt) {
       toast.error(
         isKorean ? "오류" : "Error",
@@ -363,15 +445,35 @@ export default function PublishManagerPage() {
 
     setGeneratingId(video.id);
     try {
+      // Fetch trending keywords for better hashtag suggestions
+      let trendKeywords: string[] = [];
+      try {
+        const trendResponse = await trendsApi.getSuggestions({
+          platform: "TIKTOK",
+          limit: 10,
+        });
+        if (trendResponse.data?.suggestions) {
+          // Extract hashtags from trend suggestions
+          trendKeywords = trendResponse.data.suggestions
+            .flatMap(s => s.hashtags)
+            .filter((h, i, arr) => arr.indexOf(h) === i) // unique
+            .slice(0, 15);
+        }
+      } catch (trendErr) {
+        console.warn("Failed to fetch trends, continuing without:", trendErr);
+      }
+
       const response = await api.post<{
         success: boolean;
+        version: "short" | "long";
         description: string;
         hashtags: string[];
       }>("/api/v1/ai/generate-tiktok-description", {
         prompt: video.prompt,
         campaignName: video.campaignName,
-        trendKeywords: video.trendKeywords,
+        trendKeywords,
         language: isKorean ? "ko" : "en",
+        version,
       });
 
       if (response.data?.success && response.data.description) {
@@ -390,8 +492,11 @@ export default function PublishManagerPage() {
         if (updateResponse.data && !updateResponse.error) {
           // Refetch data to update UI
           loadVideos();
+          const versionLabel = version === "short"
+            ? (isKorean ? "Short" : "Short")
+            : (isKorean ? "Long" : "Long");
           toast.success(
-            isKorean ? "생성 완료" : "Generated",
+            isKorean ? `${versionLabel} 버전 생성 완료` : `${versionLabel} version generated`,
             isKorean ? "발행 설명이 생성되었습니다" : "Publishing description generated"
           );
         }
@@ -429,6 +534,114 @@ export default function PublishManagerPage() {
     for (const video of selectedVideos) {
       await downloadVideo(video);
       await new Promise(resolve => setTimeout(resolve, 500)); // Delay between downloads
+    }
+  };
+
+  // Open quick publish modal
+  const handleOpenPublishModal = (video: VideoItem) => {
+    // Pre-fill from tiktokSeo
+    const description = video.tiktokSeo?.description || "";
+    const hashtags = toArray(video.tiktokSeo?.hashtags || video.tags);
+
+    setPublishVideo(video);
+    setPublishCaption(description);
+    setPublishHashtags(hashtags);
+    setPublishAccountId("");
+    setPublishScheduleType("now");
+    setPublishScheduledAt("");
+    // YouTube defaults
+    setYoutubeTitle(description.slice(0, 100) || video.prompt?.slice(0, 100) || "");
+    setYoutubePrivacy("public");
+  };
+
+  // Close publish modal
+  const handleClosePublishModal = () => {
+    setPublishVideo(null);
+    setPublishCaption("");
+    setPublishHashtags([]);
+    setPublishAccountId("");
+    setPublishScheduleType("now");
+    setPublishScheduledAt("");
+    setSocialAccounts([]);
+    // Reset YouTube settings
+    setYoutubeTitle("");
+    setYoutubePrivacy("public");
+  };
+
+  // Quick publish
+  const handleQuickPublish = async () => {
+    if (!publishVideo || !publishAccountId) {
+      toast.error(
+        isKorean ? "오류" : "Error",
+        isKorean ? "계정을 선택해주세요" : "Please select an account"
+      );
+      return;
+    }
+
+    if (!publishVideo.campaignId) {
+      toast.error(
+        isKorean ? "오류" : "Error",
+        isKorean ? "캠페인이 없는 영상은 발행할 수 없습니다" : "Cannot publish video without campaign"
+      );
+      return;
+    }
+
+    setIsPublishing(true);
+    try {
+      // Build the full caption with hashtags
+      const hashtagStr = publishHashtags.map(h => `#${h.replace(/^#/, "")}`).join(" ");
+      const fullCaption = publishCaption
+        ? `${publishCaption}\n\n${hashtagStr}`.trim()
+        : hashtagStr;
+
+      // Build platform-specific settings
+      let platform_settings: Record<string, unknown> = {};
+      if (selectedPlatform === "YOUTUBE") {
+        platform_settings = {
+          title: youtubeTitle || fullCaption.slice(0, 100) || "Untitled Short",
+          privacy_status: youtubePrivacy,
+          made_for_kids: false,
+          tags: publishHashtags,
+        };
+      }
+
+      const payload = {
+        campaign_id: publishVideo.campaignId,
+        generation_id: publishVideo.id,
+        social_account_id: publishAccountId,
+        caption: fullCaption,
+        hashtags: publishHashtags,
+        scheduled_at: publishScheduleType === "scheduled" && publishScheduledAt
+          ? new Date(publishScheduledAt).toISOString()
+          : undefined,
+        platform_settings,
+      };
+
+      const response = await api.post("/api/v1/publishing/schedule", payload);
+
+      if (response.data && !response.error) {
+        const isNow = publishScheduleType === "now";
+        toast.success(
+          isKorean ? "발행 성공" : "Publish Success",
+          isNow
+            ? (isKorean ? "발행이 시작되었습니다" : "Publishing started")
+            : (isKorean ? "발행이 예약되었습니다" : "Post scheduled successfully")
+        );
+        handleClosePublishModal();
+      } else {
+        const errorMsg = typeof response.error === "string"
+          ? response.error
+          : (response.error as { message?: string })?.message || "Failed to publish";
+        throw new Error(errorMsg);
+      }
+    } catch (err) {
+      console.error("Publish failed:", err);
+      toast.error(
+        isKorean ? "발행 실패" : "Publish Failed",
+        isKorean ? "발행 중 오류가 발생했습니다" : "An error occurred while publishing"
+      );
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -579,9 +792,41 @@ export default function PublishManagerPage() {
                       </TableCell>
                       <TableCell className="max-w-[400px]">
                         {getVideoDescription(video) ? (
-                          <p className="text-sm line-clamp-3 break-words">
-                            {getVideoDescription(video)}
-                          </p>
+                          <div className="space-y-1">
+                            <p className="text-sm line-clamp-3 break-words">
+                              {getVideoDescription(video)}
+                            </p>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-[10px] px-2 text-muted-foreground hover:text-foreground"
+                                onClick={() => handleGenerateDescription(video, "short")}
+                                disabled={generatingId === video.id}
+                              >
+                                {generatingId === video.id ? (
+                                  <Loader2 className="h-2.5 w-2.5 mr-1 animate-spin" />
+                                ) : (
+                                  <Wand2 className="h-2.5 w-2.5 mr-1" />
+                                )}
+                                Short
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-[10px] px-2 text-muted-foreground hover:text-foreground"
+                                onClick={() => handleGenerateDescription(video, "long")}
+                                disabled={generatingId === video.id}
+                              >
+                                {generatingId === video.id ? (
+                                  <Loader2 className="h-2.5 w-2.5 mr-1 animate-spin" />
+                                ) : (
+                                  <Wand2 className="h-2.5 w-2.5 mr-1" />
+                                )}
+                                Long
+                              </Button>
+                            </div>
+                          </div>
                         ) : (
                           <div className="flex items-center gap-2">
                             <span className="text-sm text-muted-foreground italic">
@@ -591,7 +836,7 @@ export default function PublishManagerPage() {
                               variant="outline"
                               size="sm"
                               className="h-7 text-xs"
-                              onClick={() => handleGenerateDescription(video)}
+                              onClick={() => handleGenerateDescription(video, "short")}
                               disabled={generatingId === video.id}
                             >
                               {generatingId === video.id ? (
@@ -599,23 +844,32 @@ export default function PublishManagerPage() {
                               ) : (
                                 <Wand2 className="h-3 w-3 mr-1" />
                               )}
-                              {isKorean ? "AI 생성" : "Generate"}
+                              Short
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => handleGenerateDescription(video, "long")}
+                              disabled={generatingId === video.id}
+                            >
+                              {generatingId === video.id ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : (
+                                <Wand2 className="h-3 w-3 mr-1" />
+                              )}
+                              Long
                             </Button>
                           </div>
                         )}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {getVideoTags(video).slice(0, 3).map((tag, i) => (
+                          {getVideoTags(video).map((tag, i) => (
                             <Badge key={i} variant="secondary" className="text-xs">
                               #{tag.replace(/^#/, "")}
                             </Badge>
                           ))}
-                          {getVideoTags(video).length > 3 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{getVideoTags(video).length - 3}
-                            </Badge>
-                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -635,6 +889,16 @@ export default function PublishManagerPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleOpenPublishModal(video)}
+                            disabled={!video.outputUrl || !video.campaignId}
+                            title={isKorean ? "바로 발행" : "Quick Publish"}
+                            className="text-primary hover:text-primary"
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -702,9 +966,43 @@ export default function PublishManagerPage() {
                   </div>
                   <CardContent className="p-3">
                     {getVideoDescription(video) ? (
-                      <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-                        {getVideoDescription(video)}
-                      </p>
+                      <div className="mb-2">
+                        <p className="text-xs text-muted-foreground line-clamp-2 mb-1">
+                          {getVideoDescription(video)}
+                        </p>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 text-[10px] px-1.5"
+                            onClick={() => handleGenerateDescription(video, "short")}
+                            disabled={generatingId === video.id}
+                            title="Short: 15단어 이하 + 태그 5개"
+                          >
+                            {generatingId === video.id ? (
+                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                            ) : (
+                              <Wand2 className="h-2.5 w-2.5 mr-0.5" />
+                            )}
+                            S
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 text-[10px] px-1.5"
+                            onClick={() => handleGenerateDescription(video, "long")}
+                            disabled={generatingId === video.id}
+                            title="Long: SEO 최적화 + 태그 10개+"
+                          >
+                            {generatingId === video.id ? (
+                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                            ) : (
+                              <Wand2 className="h-2.5 w-2.5 mr-0.5" />
+                            )}
+                            L
+                          </Button>
+                        </div>
+                      </div>
                     ) : (
                       <div className="flex items-center gap-1 mb-2">
                         <span className="text-xs text-muted-foreground italic">
@@ -714,19 +1012,36 @@ export default function PublishManagerPage() {
                           variant="outline"
                           size="sm"
                           className="h-5 text-[10px] px-1.5"
-                          onClick={() => handleGenerateDescription(video)}
+                          onClick={() => handleGenerateDescription(video, "short")}
                           disabled={generatingId === video.id}
+                          title="Short"
                         >
                           {generatingId === video.id ? (
                             <Loader2 className="h-2.5 w-2.5 animate-spin" />
                           ) : (
-                            <Wand2 className="h-2.5 w-2.5" />
+                            <Wand2 className="h-2.5 w-2.5 mr-0.5" />
                           )}
+                          S
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-5 text-[10px] px-1.5"
+                          onClick={() => handleGenerateDescription(video, "long")}
+                          disabled={generatingId === video.id}
+                          title="Long"
+                        >
+                          {generatingId === video.id ? (
+                            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                          ) : (
+                            <Wand2 className="h-2.5 w-2.5 mr-0.5" />
+                          )}
+                          L
                         </Button>
                       </div>
                     )}
                     <div className="flex flex-wrap gap-1 mb-3">
-                      {getVideoTags(video).slice(0, 2).map((tag, i) => (
+                      {getVideoTags(video).map((tag, i) => (
                         <Badge key={i} variant="outline" className="text-[10px]">
                           #{tag.replace(/^#/, "")}
                         </Badge>
@@ -759,6 +1074,13 @@ export default function PublishManagerPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => handleOpenPublishModal(video)}
+                            disabled={!video.outputUrl || !video.campaignId}
+                          >
+                            <Send className="h-4 w-4 mr-2" />
+                            {isKorean ? "바로 발행" : "Quick Publish"}
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleEdit(video)}>
                             <Edit className="h-4 w-4 mr-2" />
                             {isKorean ? "편집" : "Edit"}
@@ -985,6 +1307,242 @@ export default function PublishManagerPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Publish Modal */}
+      <Dialog open={!!publishVideo} onOpenChange={(open) => !open && handleClosePublishModal()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5" />
+              {isKorean ? "바로 발행" : "Quick Publish"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {publishVideo && (
+            <div className="space-y-4 py-2">
+              {/* Video Preview */}
+              <div className="flex gap-3 p-3 bg-muted/50 rounded-lg">
+                <div className="w-16 aspect-[9/16] bg-black rounded overflow-hidden shrink-0">
+                  {publishVideo.outputUrl && (
+                    <video
+                      src={publishVideo.outputUrl}
+                      className="w-full h-full object-cover"
+                      muted
+                      preload="metadata"
+                    />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {publishVideo.campaignName || "Quick Create"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {publishVideo.durationSeconds}s • {publishVideo.aspectRatio}
+                  </p>
+                </div>
+              </div>
+
+              {/* Account Selection */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  {isKorean ? "발행 계정" : "Account"}
+                </label>
+                {loadingAccounts ? (
+                  <div className="flex items-center gap-2 py-2">
+                    <Spinner className="h-4 w-4" />
+                    <span className="text-sm text-muted-foreground">
+                      {isKorean ? "계정 로딩 중..." : "Loading accounts..."}
+                    </span>
+                  </div>
+                ) : socialAccounts.length === 0 ? (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                    {isKorean
+                      ? "연결된 소셜 계정이 없습니다. 설정에서 계정을 연결해주세요."
+                      : "No connected accounts. Please connect an account in settings."}
+                  </div>
+                ) : (
+                  <Select value={publishAccountId} onValueChange={setPublishAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={isKorean ? "계정 선택" : "Select account"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {socialAccounts.map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          <div className="flex items-center gap-2">
+                            <span>{PLATFORM_ICONS[account.platform] || "📱"}</span>
+                            <span>{account.account_name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ({account.platform})
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* Caption */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  {isKorean ? "캡션" : "Caption"}
+                </label>
+                <Textarea
+                  value={publishCaption}
+                  onChange={(e) => setPublishCaption(e.target.value)}
+                  placeholder={isKorean ? "캡션을 입력하세요..." : "Enter caption..."}
+                  rows={3}
+                  className="resize-none"
+                />
+                <p className="text-xs text-muted-foreground text-right">
+                  {publishCaption.length}/2200
+                </p>
+              </div>
+
+              {/* Hashtags */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <Hash className="h-4 w-4" />
+                  {isKorean ? "해시태그" : "Hashtags"}
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {publishHashtags.map((tag, i) => (
+                    <Badge
+                      key={i}
+                      variant="secondary"
+                      className="cursor-pointer hover:bg-destructive/20"
+                      onClick={() => setPublishHashtags(publishHashtags.filter((_, idx) => idx !== i))}
+                    >
+                      #{tag.replace(/^#/, "")} ×
+                    </Badge>
+                  ))}
+                </div>
+                <Input
+                  placeholder={isKorean ? "해시태그 추가 (Enter)" : "Add hashtag (Enter)"}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const value = (e.target as HTMLInputElement).value.trim().replace(/^#/, "");
+                      if (value && !publishHashtags.includes(value)) {
+                        setPublishHashtags([...publishHashtags, value]);
+                        (e.target as HTMLInputElement).value = "";
+                      }
+                    }
+                  }}
+                />
+              </div>
+
+              {/* YouTube Settings (only shown for YouTube accounts) */}
+              {selectedPlatform === "YOUTUBE" && (
+                <div className="space-y-3 p-3 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
+                  <p className="text-sm font-medium flex items-center gap-2 text-red-700 dark:text-red-400">
+                    📺 {isKorean ? "YouTube Shorts 설정" : "YouTube Shorts Settings"}
+                  </p>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">
+                      {isKorean ? "제목 (최대 100자)" : "Title (max 100 chars)"}
+                    </label>
+                    <Input
+                      value={youtubeTitle}
+                      onChange={(e) => setYoutubeTitle(e.target.value.slice(0, 100))}
+                      placeholder={isKorean ? "YouTube 제목..." : "YouTube title..."}
+                      maxLength={100}
+                    />
+                    <p className="text-xs text-muted-foreground text-right">
+                      {youtubeTitle.length}/100
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">
+                      {isKorean ? "공개 설정" : "Privacy"}
+                    </label>
+                    <Select value={youtubePrivacy} onValueChange={(v) => setYoutubePrivacy(v as "public" | "unlisted" | "private")}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="public">
+                          🌐 {isKorean ? "공개" : "Public"}
+                        </SelectItem>
+                        <SelectItem value="unlisted">
+                          🔗 {isKorean ? "일부공개 (링크 공유)" : "Unlisted"}
+                        </SelectItem>
+                        <SelectItem value="private">
+                          🔒 {isKorean ? "비공개" : "Private"}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              {/* Schedule Options */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  {isKorean ? "발행 시간" : "Publish Time"}
+                </label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={publishScheduleType === "now" ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setPublishScheduleType("now")}
+                  >
+                    {isKorean ? "지금 발행" : "Publish Now"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={publishScheduleType === "scheduled" ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setPublishScheduleType("scheduled")}
+                  >
+                    <Calendar className="h-3.5 w-3.5 mr-1.5" />
+                    {isKorean ? "예약" : "Schedule"}
+                  </Button>
+                </div>
+                {publishScheduleType === "scheduled" && (
+                  <Input
+                    type="datetime-local"
+                    value={publishScheduledAt}
+                    onChange={(e) => setPublishScheduledAt(e.target.value)}
+                    min={new Date().toISOString().slice(0, 16)}
+                    className="mt-2"
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleClosePublishModal}>
+              {isKorean ? "취소" : "Cancel"}
+            </Button>
+            <Button
+              onClick={handleQuickPublish}
+              disabled={isPublishing || !publishAccountId || socialAccounts.length === 0}
+            >
+              {isPublishing ? (
+                <>
+                  <Spinner className="h-4 w-4 mr-2" />
+                  {isKorean ? "발행 중..." : "Publishing..."}
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  {publishScheduleType === "now"
+                    ? (isKorean ? "바로 발행" : "Publish Now")
+                    : (isKorean ? "예약하기" : "Schedule")}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

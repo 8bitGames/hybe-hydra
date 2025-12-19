@@ -4,6 +4,7 @@ import { getUserFromHeader } from "@/lib/auth";
 import { PublishPlatform } from "@prisma/client";
 import { CacheTTL, invalidatePattern } from "@/lib/cache";
 import { refreshAccessToken } from "@/lib/tiktok";
+import { refreshYouTubeAccessToken } from "@/lib/youtube";
 
 // Buffer time before token expiry to trigger refresh (5 minutes)
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -53,6 +54,48 @@ async function refreshTikTokToken(
     return { success: true, newExpiresAt };
   } catch (error) {
     console.error(`[TikTok Token Refresh] Error refreshing token for account ${accountId}:`, error);
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+  }
+}
+
+// Refresh YouTube token and update database
+async function refreshYouTubeToken(
+  accountId: string,
+  refreshToken: string
+): Promise<{ success: boolean; newExpiresAt?: Date; error?: string }> {
+  try {
+    const clientId = process.env.YOUTUBE_CLIENT_ID;
+    const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return { success: false, error: "YouTube credentials not configured" };
+    }
+
+    const result = await refreshYouTubeAccessToken(clientId, clientSecret, refreshToken);
+
+    if (!result.success || !result.accessToken || !result.expiresIn) {
+      return { success: false, error: result.error || "Token refresh failed" };
+    }
+
+    const newExpiresAt = new Date(Date.now() + result.expiresIn * 1000);
+
+    // Update database with new tokens (YouTube doesn't return a new refresh token)
+    await prisma.socialAccount.update({
+      where: { id: accountId },
+      data: {
+        accessToken: result.accessToken,
+        tokenExpiresAt: newExpiresAt,
+        updatedAt: new Date(),
+      },
+    });
+
+    // Invalidate cache since we updated tokens
+    await invalidatePattern("publishing:accounts:*");
+
+    console.log(`[YouTube Token Refresh] Successfully refreshed token for account ${accountId}`);
+    return { success: true, newExpiresAt };
+  } catch (error) {
+    console.error(`[YouTube Token Refresh] Error refreshing token for account ${accountId}:`, error);
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
@@ -116,25 +159,34 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Process accounts and auto-refresh TikTok tokens if needed
+    // Process accounts and auto-refresh tokens if needed (TikTok and YouTube)
     const processedAccounts = await Promise.all(
       accounts.map(async (account) => {
         let tokenExpiresAt = account.tokenExpiresAt;
         let isTokenValid = tokenExpiresAt ? tokenExpiresAt > new Date() : false;
 
-        // Auto-refresh TikTok tokens if expired/expiring and not skipped
+        // Auto-refresh tokens if expired/expiring and not skipped
         if (
           !skipRefresh &&
-          account.platform === "TIKTOK" &&
           account.refreshToken &&
           needsTokenRefresh(account.tokenExpiresAt)
         ) {
-          console.log(`[TikTok Token Refresh] Attempting refresh for ${account.accountName}...`);
-          const refreshResult = await refreshTikTokToken(account.id, account.refreshToken);
+          if (account.platform === "TIKTOK") {
+            console.log(`[TikTok Token Refresh] Attempting refresh for ${account.accountName}...`);
+            const refreshResult = await refreshTikTokToken(account.id, account.refreshToken);
 
-          if (refreshResult.success && refreshResult.newExpiresAt) {
-            tokenExpiresAt = refreshResult.newExpiresAt;
-            isTokenValid = true;
+            if (refreshResult.success && refreshResult.newExpiresAt) {
+              tokenExpiresAt = refreshResult.newExpiresAt;
+              isTokenValid = true;
+            }
+          } else if (account.platform === "YOUTUBE") {
+            console.log(`[YouTube Token Refresh] Attempting refresh for ${account.accountName}...`);
+            const refreshResult = await refreshYouTubeToken(account.id, account.refreshToken);
+
+            if (refreshResult.success && refreshResult.newExpiresAt) {
+              tokenExpiresAt = refreshResult.newExpiresAt;
+              isTokenValid = true;
+            }
           }
         }
 

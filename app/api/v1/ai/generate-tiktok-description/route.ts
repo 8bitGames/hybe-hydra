@@ -1,8 +1,14 @@
 /**
  * Generate TikTok Description API
  * ================================
- * Uses CopywriterAgent to generate TikTok-optimized descriptions
+ * Uses CopywriterAgent.writeTikTokDescription() to generate TikTok-optimized descriptions
  * from video generation prompts
+ *
+ * Supports two versions:
+ * - short: 15 words or less impactful hook + 5-8 hashtags
+ * - long: short hook + additional context + 8-12 SEO hashtags
+ *
+ * Prompts are managed in DB (agent_prompts table) via tiktok_short/tiktok_long templates
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -26,12 +32,14 @@ export async function POST(request: NextRequest) {
       artistName,
       language = "ko",
       trendKeywords = [],
+      version = "short",
     }: {
       prompt: string;
       campaignName?: string;
       artistName?: string;
       language?: "ko" | "en";
       trendKeywords?: string[];
+      version?: "short" | "long";
     } = body;
 
     if (!prompt) {
@@ -53,29 +61,14 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    // Build key messages from prompt and trend keywords
-    const keyMessages = [prompt];
-    if (trendKeywords.length > 0) {
-      keyMessages.push(`Trending: ${trendKeywords.slice(0, 5).join(", ")}`);
-    }
-
-    // Execute copywriter agent
-    const result = await copywriter.execute(
-      {
-        contentBrief: {
-          topic: prompt,
-          keyMessages,
-          emotionalTone: "engaging and trendy",
-          targetAction: "watch and engage",
-        },
-        platform: "tiktok",
-        language,
-        style: "casual",
-        includeHashtags: true,
-        maxLength: 150,
-      },
-      agentContext
-    );
+    // Use specialized TikTok description method
+    // Templates (tiktok_short, tiktok_long) are loaded from DB with code fallback
+    const result = await copywriter.writeTikTokDescription(prompt, agentContext, {
+      version,
+      language,
+      trendKeywords,
+      keyMessages: [prompt],
+    });
 
     if (!result.success || !result.data) {
       console.error("Copywriter agent failed:", result.error);
@@ -85,24 +78,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const output = result.data;
-
-    // Combine all hashtags
-    const allHashtags = [
-      ...(output.hashtags.primary || []),
-      ...(output.hashtags.secondary || []),
-      ...(output.hashtags.trending || []),
-    ]
-      .map((h) => h.replace(/^#/, ""))
-      .slice(0, 10);
-
     return NextResponse.json({
       success: true,
-      description: output.primaryCaption.text,
-      hashtags: allHashtags,
-      hook: output.primaryCaption.hook,
-      cta: output.primaryCaption.cta,
-      alternatives: output.alternativeVersions.map((v) => v.text),
+      version: result.data.version,
+      description: result.data.description,
+      hashtags: result.data.hashtags,
+      hook: result.data.hook,
+      cta: result.data.cta,
+      alternatives: result.data.alternatives,
+      seoKeywords: result.data.seoKeywords,
     });
   } catch (error) {
     console.error("Generate TikTok description error:", error);

@@ -32,6 +32,27 @@ export interface StartFromTrends {
   selectedHashtags?: string[];
 }
 
+// Fast Cut Scene Analysis Type (from scene-analyzer agent)
+export interface FastCutSceneAnalysis {
+  scenes: {
+    sceneNumber: number;
+    description: string;
+    visualElements: string[];
+    mood: string;
+    imageKeywords: string[];
+  }[];
+  overallStyle: {
+    colorPalette: string[];
+    lighting: string;
+    mood: string;
+    vibe: 'Exciting' | 'Emotional' | 'Pop' | 'Minimal';
+  };
+  totalSceneCount: number;
+  isSmooth: boolean;
+  recommendedImageCount: number;
+  allImageKeywords: string[];
+}
+
 // From Video: Single video selection for deep analysis
 export interface StartFromVideo {
   type: "video";
@@ -77,6 +98,8 @@ export interface StartFromVideo {
       props?: string[];
       clothingStyle?: string;
     };
+    // Fast Cut scene-by-scene analysis (generated when contentType === "fast-cut")
+    sceneAnalysis?: FastCutSceneAnalysis;
   };
 }
 
@@ -1146,7 +1169,7 @@ export const useWorkflowStore = create<WorkflowState>()(
             userIdea = startSource.idea;
             optimizedPrompt = startSource.idea; // Use idea as optimizedPrompt
           } else if (startSource?.type === "video") {
-            userIdea = startSource.description || "";
+            userIdea = "";  // Leave "Your Idea" empty - don't transfer video description
             hashtags = startSource.hashtags || hashtags;
             // Transfer AI analysis suggestedApproach as optimizedPrompt for fast-cut
             optimizedPrompt = startSource.aiAnalysis?.suggestedApproach || startSource.description || "";

@@ -128,6 +128,7 @@ export interface ImagesStageData {
   imageCandidates: unknown[];
   selectedImages: unknown[];
   generationId: string | null;
+  hasSceneAnalysis?: boolean;  // Track if using scene analysis flow (no script step)
 }
 
 export interface MusicStageData {
@@ -488,9 +489,16 @@ const buildFastCutStateFromSession = (session: CreationSession): Record<string, 
   const { stageData, campaignId, metadata } = session;
   const { script, images, music, effects } = stageData;
 
-  // If no script data, cannot restore Fast Cut state
-  if (!script?.scriptData) {
-    console.log("[SessionStore] Cannot restore Fast Cut state: no script data");
+  // For scene-analysis-only flow (no script step), we can still restore state
+  // if we have images data (meaning user went Start → Images directly)
+  const hasScriptData = !!script?.scriptData;
+  const hasImageData = images && (images.selectedImages?.length > 0 || images.imageCandidates?.length > 0);
+  // Check hasSceneAnalysis from multiple locations (script, images, or metadata)
+  const hasSceneAnalysis = !!script?.hasSceneAnalysis || !!(images as ImagesStageData)?.hasSceneAnalysis || metadata?.hasSceneAnalysis;
+
+  // If no script data AND no images AND no scene analysis, cannot restore
+  if (!hasScriptData && !hasImageData && !hasSceneAnalysis) {
+    console.log("[SessionStore] Cannot restore Fast Cut state: no script data, images, or scene analysis");
     return null;
   }
 
@@ -510,29 +518,32 @@ const buildFastCutStateFromSession = (session: CreationSession): Record<string, 
     // Session ID for validation (prevents loading stale data from different sessions)
     _sessionId: session.id,
 
-    // Current step
-    currentStep,
+    // Current step (for scene-analysis flow, default to "images" if no script step)
+    currentStep: hasScriptData ? currentStep : (currentStep === "script" ? "images" : currentStep),
 
     // Campaign info
     campaignId: campaignId || null,
     campaignName: metadata.title || "",
 
-    // Script step
-    prompt: script.prompt || "",
-    aspectRatio: script.aspectRatio || "9:16",
-    editableKeywords: script.editableKeywords || [],
+    // Scene analysis flag (for flows that skip script step)
+    hasSceneAnalysis: hasSceneAnalysis,
+
+    // Script step (use optional chaining since script may be undefined in scene-analysis flow)
+    prompt: script?.prompt || "",
+    aspectRatio: script?.aspectRatio || "9:16",
+    editableKeywords: script?.editableKeywords || [],
     // Note: selectedSearchKeywords is stored as Array in sessionStorage
-    selectedSearchKeywords: script.selectedSearchKeywords || [],
+    selectedSearchKeywords: script?.selectedSearchKeywords || [],
     generatingScript: false,
-    scriptData: script.scriptData,
-    tiktokSEO: script.tiktokSEO || null,
+    scriptData: script?.scriptData || null,
+    tiktokSEO: script?.tiktokSEO || null,
 
     // Images step
     searchingImages: false,
     imageCandidates: images?.imageCandidates || [],
     selectedImages: images?.selectedImages || [],
     // generationId can come from script stage (created there) or images stage (saved there)
-    generationId: images?.generationId || script.generationId || null,
+    generationId: images?.generationId || script?.generationId || null,
 
     // Music step
     matchingMusic: false,

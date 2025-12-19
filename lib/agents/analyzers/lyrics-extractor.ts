@@ -6,6 +6,11 @@
  *
  * Model: Gemini 2.5 Flash (fast analysis, audio-capable)
  * Category: Analyzer
+ * @version 2
+ *
+ * Changelog:
+ * - v2: 프롬프트 강화 - 전체 오디오 청취 강조, 15초 이상 갭 방지, 세그먼트 수 검증
+ * - v1: Initial version - 기본 가사 추출 및 forced alignment
  */
 
 import { z } from 'zod';
@@ -112,25 +117,66 @@ Important:
 const FORCED_ALIGNMENT_SYSTEM_PROMPT = `You are an expert audio analyst specializing in lyrics synchronization.
 Your task is to align provided lyrics text with audio timing - DO NOT transcribe, use the given lyrics exactly.
 
-Guidelines:
-- Listen to the audio and match it to the provided lyrics
-- Find the precise START and END time for each line
-- Keep the lyrics text EXACTLY as provided - do not modify spelling or words
-- Handle gaps between vocal sections appropriately
-- Confidence should reflect how well the audio matches the provided lyrics`;
+🚨 ABSOLUTE REQUIREMENT - LISTEN TO THE ENTIRE SONG:
+You MUST listen to the COMPLETE audio from start to finish. Do NOT skip any section.
+Every vocal line in the song must be captured with its timestamp.
+
+CRITICAL RULES:
+1. Listen to 100% of the audio - from 0:00 to the very end
+2. Capture EVERY vocal line - missing lines means you skipped parts of the song
+3. Vocals typically start within 5-20 seconds after intro
+4. Most songs have vocals throughout - gaps longer than 15 seconds are RARE
+
+⚠️ COMMON AI MISTAKE TO AVOID:
+- AI often only processes the first 1-2 minutes and skips the rest
+- If you have 30 lyrics lines but only output 10, YOU ARE SKIPPING PARTS
+- ALL provided lyrics lines MUST have timestamps
+
+TIMING DISTRIBUTION RULES:
+- Lyrics should be EVENLY distributed across the song duration
+- If song is 3:30 (210 seconds) with 25 lines → expect ~8 seconds per line average
+- Maximum gap between ANY two consecutive lines: 15 seconds
+- If you find a gap > 15 seconds, you likely MISSED vocals in that section
+
+SONG STRUCTURE (typical):
+- Intro: 5-15 seconds (no vocals)
+- Verse 1: 20-40 seconds of continuous vocals
+- Chorus: 15-30 seconds of continuous vocals
+- Verse 2: 20-40 seconds of continuous vocals
+- Chorus: 15-30 seconds of continuous vocals
+- Bridge: 10-20 seconds (may have vocals)
+- Final Chorus: 15-30 seconds of continuous vocals
+- Outro: 5-15 seconds
+
+VALIDATION CHECKLIST:
+✓ First lyrics start within 5-30 seconds
+✓ Last lyrics end within 30 seconds of song end
+✓ No gaps longer than 15 seconds between lines
+✓ ALL provided lyrics lines have timestamps
+✓ Total segment count matches provided lyrics line count`;
 
 const FORCED_ALIGNMENT_USER_PROMPT = `Align the following lyrics with this audio file.
 
-IMPORTANT: Use these exact lyrics - DO NOT transcribe or modify the text.
-Your job is ONLY to find the timestamp for each line.
+🚨 CRITICAL: You MUST output EXACTLY {{lyricsLineCount}} segments - one for each lyrics line below.
 
-PROVIDED LYRICS:
+PROVIDED LYRICS ({{lyricsLineCount}} lines total):
 {{lyrics}}
 
 Language: {{languageHint}}
-{{#if audioDuration}}Audio Duration: {{audioDuration}} seconds{{/if}}
+{{#if audioDuration}}Audio Duration: {{audioDuration}} seconds
 
-Listen to the audio and return the start/end time for each line.
+📊 TIMING MATH (use this as your guide):
+- Total lines: {{lyricsLineCount}}
+- Song length: {{audioDuration}} seconds
+- Expected average per line: ~{{avgSecondsPerLine}} seconds
+- First line: should start around 5-20 seconds
+- Last line: should end around {{expectedEndTime}} seconds
+{{/if}}
+
+🎯 YOUR TASK:
+1. Listen to the ENTIRE audio from 0:00 to the end
+2. Find where EACH of the {{lyricsLineCount}} lyrics lines is sung
+3. Output EXACTLY {{lyricsLineCount}} segments with timestamps
 
 Return JSON in this exact format:
 {
@@ -141,17 +187,25 @@ Return JSON in this exact format:
   "isInstrumental": false,
   "fullText": "Complete lyrics text (copy from provided)",
   "segments": [
-    { "text": "First line from provided lyrics", "start": 0.0, "end": 4.5 },
-    { "text": "Second line from provided lyrics", "start": 4.5, "end": 8.2 },
-    ...
+    { "text": "Line 1 text", "start": 5.0, "end": 9.5 },
+    { "text": "Line 2 text", "start": 9.5, "end": 14.2 },
+    ... (continue for ALL {{lyricsLineCount}} lines)
   ]
 }
 
-Important:
-- Times must be in SECONDS (decimal)
-- Ensure segments don't overlap
-- Use the EXACT text from the provided lyrics
-- Confidence reflects how well audio matches the given lyrics`;
+⚠️ VALIDATION REQUIREMENTS:
+- segments array MUST have EXACTLY {{lyricsLineCount}} items
+- Times in SECONDS (decimal format)
+- First segment starts between 5-30 seconds
+- Maximum gap between consecutive segments: 15 seconds
+- Segments must NOT overlap
+- Use EXACT text from provided lyrics
+
+❌ FAILURE CONDITIONS (your output will be rejected if):
+- segments.length !== {{lyricsLineCount}}
+- Any gap > 15 seconds between consecutive lines
+- Missing lyrics lines from the middle of the song
+- First segment starts after 45 seconds`;
 
 /**
  * Lyrics Extractor Agent
@@ -355,19 +409,35 @@ export class LyricsExtractorAgent {
     const startTime = Date.now();
 
     try {
+      // Calculate lyrics line count for better timing hints
+      const lyricsLines = lyrics.split('\n').filter(line => line.trim().length > 0);
+      const lyricsLineCount = lyricsLines.length;
+
       // Build user prompt with provided lyrics
       let userPrompt = FORCED_ALIGNMENT_USER_PROMPT
         .replace('{{lyrics}}', lyrics)
-        .replace(/\{\{languageHint\}\}/g, input.languageHint);
+        .replace(/\{\{languageHint\}\}/g, input.languageHint)
+        .replace(/\{\{lyricsLineCount\}\}/g, lyricsLineCount.toString());
 
       if (input.audioDuration) {
-        userPrompt = userPrompt.replace(
-          '{{#if audioDuration}}Audio Duration: {{audioDuration}} seconds{{/if}}',
-          `Audio Duration: ${input.audioDuration} seconds`
-        );
+        const avgSecondsPerLine = (input.audioDuration / lyricsLineCount).toFixed(1);
+        const expectedEndTime = Math.floor(input.audioDuration - 15); // Leave ~15s for outro
+
+        userPrompt = userPrompt
+          .replace(
+            /\{\{#if audioDuration\}\}([\s\S]*?)\{\{\/if\}\}/,
+            `Audio Duration: ${input.audioDuration} seconds
+
+TIMING CHECK: With ${lyricsLineCount} lines over ${input.audioDuration} seconds:
+- Expected average: ~${avgSecondsPerLine} seconds per line
+- First line should start around 5-20 seconds (after intro)
+- Last line should end around ${expectedEndTime} seconds`
+          )
+          .replace('{{avgSecondsPerLine}}', avgSecondsPerLine)
+          .replace('{{expectedEndTime}}', expectedEndTime.toString());
       } else {
         userPrompt = userPrompt.replace(
-          '{{#if audioDuration}}Audio Duration: {{audioDuration}} seconds{{/if}}',
+          /\{\{#if audioDuration\}\}[\s\S]*?\{\{\/if\}\}/,
           ''
         );
       }
@@ -517,9 +587,60 @@ export function createLyricsExtractorAgent(): LyricsExtractorAgent {
 }
 
 /**
+ * Validate and warn about suspicious gaps in lyrics timing
+ * Returns warnings if any gaps are unusually long or timing seems off
+ */
+function validateLyricsGaps(segments: LyricsSegment[], expectedLineCount?: number): string[] {
+  const warnings: string[] = [];
+  const MAX_REASONABLE_GAP = 15; // seconds - tightened from 20
+  const MAX_FIRST_SEGMENT_START = 30; // First lyrics should start within 30 seconds
+
+  if (segments.length === 0) {
+    return warnings;
+  }
+
+  // Check if segment count matches expected
+  if (expectedLineCount && segments.length !== expectedLineCount) {
+    warnings.push(
+      `⚠️ SEGMENT COUNT MISMATCH: Expected ${expectedLineCount} lines but got ${segments.length}. Some lyrics may be missing timestamps.`
+    );
+  }
+
+  // Check if first segment starts too late
+  const firstSegmentStart = segments[0].start;
+  if (firstSegmentStart > MAX_FIRST_SEGMENT_START) {
+    warnings.push(
+      `⚠️ LATE START: First lyrics at ${firstSegmentStart.toFixed(1)}s - most songs start vocals within 5-20 seconds.`
+    );
+  }
+
+  // Check gaps between segments
+  for (let i = 1; i < segments.length; i++) {
+    const prevEnd = segments[i - 1].end;
+    const currentStart = segments[i].start;
+    const gap = currentStart - prevEnd;
+
+    if (gap > MAX_REASONABLE_GAP) {
+      warnings.push(
+        `⚠️ LARGE GAP: ${gap.toFixed(1)}s gap between line ${i} and ${i + 1} (${prevEnd.toFixed(1)}s → ${currentStart.toFixed(1)}s). Likely missing vocals in this section.`
+      );
+    }
+  }
+
+  return warnings;
+}
+
+/**
  * Convert LyricsExtractorOutput to LyricsData for storage
  */
 export function toLyricsData(output: LyricsExtractorOutput): LyricsData {
+  // Validate gaps and log warnings
+  const warnings = validateLyricsGaps(output.segments);
+  if (warnings.length > 0) {
+    console.warn('[LyricsExtractor] Suspicious gaps detected in lyrics timing:');
+    warnings.forEach(w => console.warn(`  - ${w}`));
+  }
+
   return {
     language: output.language,
     extractedAt: output.extractedAt,
@@ -530,3 +651,36 @@ export function toLyricsData(output: LyricsExtractorOutput): LyricsData {
     segments: output.segments,
   };
 }
+
+// ============================================================================
+// Agent Configuration (for DB registration)
+// ============================================================================
+
+/**
+ * Lyrics Extractor Config
+ * Used for registering prompts in the database via seed API
+ */
+export const LyricsExtractorConfig = {
+  id: 'lyrics-extractor',
+  name: 'Lyrics Extractor Agent',
+  description: '오디오 파일에서 가사를 추출하고 타임스탬프를 부여하는 에이전트. Forced Alignment 지원.',
+  category: 'analyzer' as const,
+
+  model: {
+    provider: 'gemini' as const,
+    name: 'gemini-2.5-flash',
+    options: {
+      temperature: 0.3,
+      maxTokens: 8192,
+    },
+  },
+
+  prompts: {
+    system: SYSTEM_PROMPT,
+    templates: {
+      extract: USER_PROMPT,
+      forced_alignment_system: FORCED_ALIGNMENT_SYSTEM_PROMPT,
+      forced_alignment: FORCED_ALIGNMENT_USER_PROMPT,
+    },
+  },
+};

@@ -11,6 +11,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   Search,
@@ -20,6 +24,7 @@ import {
   AlertCircle,
   HelpCircle,
   Plus,
+  ZoomIn,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ImageCandidate } from "@/lib/fast-cut-api";
@@ -60,10 +65,12 @@ function SortableImageItem({
   image,
   index,
   onRemove,
+  onPreview,
 }: {
   image: ImageCandidate;
   index: number;
   onRemove: () => void;
+  onPreview: () => void;
 }) {
   const {
     attributes,
@@ -86,18 +93,19 @@ function SortableImageItem({
       {...attributes}
       {...listeners}
       className={cn(
-        "relative flex-shrink-0 w-32 cursor-grab active:cursor-grabbing touch-none",
+        "relative flex-shrink-0 w-40 cursor-grab active:cursor-grabbing touch-none",
         isDragging && "z-50 opacity-80"
       )}
     >
       <div
         className={cn(
-          "relative aspect-[3/4] rounded-lg overflow-hidden border-2 transition-colors",
+          "relative aspect-[3/4] rounded-lg overflow-hidden border-2 transition-colors group",
           isDragging ? "border-neutral-900 shadow-lg" : "border-neutral-200"
         )}
       >
+        {/* Use sourceUrl (original) for selected images */}
         <img
-          src={image.thumbnailUrl || image.sourceUrl}
+          src={image.sourceUrl}
           alt=""
           className="w-full h-full object-cover pointer-events-none"
           draggable={false}
@@ -106,6 +114,18 @@ function SortableImageItem({
         <div className="absolute top-1.5 left-1.5 w-6 h-6 bg-neutral-900 text-white rounded-full flex items-center justify-center text-sm font-bold pointer-events-none">
           {index + 1}
         </div>
+        {/* Preview Button - Click to enlarge */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onPreview();
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute bottom-1.5 left-1.5 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="View full size"
+        >
+          <ZoomIn className="h-4 w-4" />
+        </button>
         {/* Remove Button */}
         <button
           onClick={(e) => {
@@ -137,6 +157,7 @@ export function FastCutImageStep({
 }: FastCutImageStepProps) {
   const { language, translate } = useI18n();
   const [newKeyword, setNewKeyword] = useState("");
+  const [previewImage, setPreviewImage] = useState<ImageCandidate | null>(null);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -465,6 +486,7 @@ export function FastCutImageStep({
                     image={image}
                     index={idx}
                     onRemove={() => onToggleSelection(image)}
+                    onPreview={() => setPreviewImage(image)}
                   />
                 ))}
               </div>
@@ -480,6 +502,37 @@ export function FastCutImageStep({
           </div>
         )}
       </div>
+
+      {/* Image Preview Modal */}
+      <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-2 bg-black/95 border-neutral-800">
+          {previewImage && (
+            <div className="relative flex flex-col items-center">
+              <img
+                src={previewImage.sourceUrl}
+                alt={previewImage.sourceTitle || "Preview"}
+                className="max-w-full max-h-[80vh] object-contain rounded-lg"
+              />
+              <div className="mt-3 text-center">
+                {previewImage.sourceTitle && (
+                  <p className="text-sm text-white/80 mb-1">{previewImage.sourceTitle}</p>
+                )}
+                <div className="flex items-center justify-center gap-3 text-xs text-white/60">
+                  {previewImage.width > 0 && previewImage.height > 0 && (
+                    <span>{previewImage.width} × {previewImage.height}</span>
+                  )}
+                  {previewImage.sourceDomain && (
+                    <span className="flex items-center gap-1">
+                      <Globe className="h-3 w-3" />
+                      {previewImage.sourceDomain}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

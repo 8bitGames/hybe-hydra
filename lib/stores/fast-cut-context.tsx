@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useSessionStore } from "@/lib/stores/session-store";
+import { useAuthStore } from "@/lib/auth-store";
 import { useShallow } from "zustand/react/shallow";
 import {
   fastCutApi,
@@ -29,7 +30,7 @@ interface FastCutState {
   campaignId: string | null;
   campaignName: string;
 
-  // Script step
+  // Script step (legacy - now optional, can skip to images with sceneAnalysis)
   prompt: string;
   aspectRatio: string;
   editableKeywords: string[];
@@ -37,6 +38,9 @@ interface FastCutState {
   generatingScript: boolean;
   scriptData: ScriptGenerationResponse | null;
   tiktokSEO: TikTokSEO | null;
+
+  // Scene analysis data (from video analysis on Start page)
+  hasSceneAnalysis: boolean;
 
   // Images step
   searchingImages: boolean;
@@ -135,6 +139,7 @@ const initialState: FastCutState = {
   generatingScript: false,
   scriptData: null,
   tiktokSEO: null,
+  hasSceneAnalysis: false,
   searchingImages: false,
   imageCandidates: [],
   selectedImages: [],
@@ -166,6 +171,7 @@ const STORAGE_KEY = "fast-cut-state";
 interface StoredFastCutState extends Omit<FastCutState, "selectedSearchKeywords"> {
   selectedSearchKeywords: string[];
   _sessionId?: string; // Track which session this data belongs to
+  hasSceneAnalysis?: boolean; // Track if we have scene analysis (for restoring from storage)
 }
 
 function saveToSessionStorage(state: FastCutState, sessionId?: string | null) {
@@ -262,6 +268,14 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
   // Get current session ID for state validation
   const activeSessionId = useSessionStore((state) => state.activeSession?.id);
 
+  // Get auth state to check if user is authenticated
+  const { isAuthenticated, _hasHydrated: authHydrated } = useAuthStore(
+    useShallow((state) => ({
+      isAuthenticated: state.isAuthenticated,
+      _hasHydrated: state._hasHydrated,
+    }))
+  );
+
   // Track which session ID was used for hydration
   // This allows re-hydration when switching between sessions
   const [hydratedForSessionId, setHydratedForSessionId] = useState<string | null>(null);
@@ -304,8 +318,14 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
     // CRITICAL: Pass current session ID to validate stored state
     // This prevents loading stale data from previous sessions
     const storedState = loadFromSessionStorage(activeSessionId);
-    if (storedState && storedState.scriptData) {
-      // We have valid stored state with script data that matches current session
+    // Restore from sessionStorage if we have valid state with script data OR scene analysis
+    const hasValidStoredState = storedState && (
+      storedState.scriptData ||
+      storedState.hasSceneAnalysis ||
+      (storedState.selectedImages && storedState.selectedImages.length > 0)
+    );
+    if (hasValidStoredState) {
+      // We have valid stored state that matches current session
       console.log("[FastCutProvider] Restoring state from sessionStorage for session:", activeSessionId);
       setState({
         ...initialState,
@@ -317,9 +337,20 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
       console.log("[FastCutProvider] Initializing fresh state for session:", activeSessionId);
       const initialPrompt = analyze.optimizedPrompt || analyze.selectedIdea?.description || "";
       const fastCutData = analyze.selectedIdea?.fastCutData;
-      const initialKeywords = fastCutData?.searchKeywords?.length
-        ? fastCutData.searchKeywords
-        : discover.keywords;
+
+      // Check for scene analysis keywords from Start page (new Fast Cut flow)
+      const sceneAnalysis = start.source?.type === "video" ? start.source.aiAnalysis?.sceneAnalysis : null;
+      const sceneKeywords = sceneAnalysis?.allImageKeywords || [];
+
+      // Priority: sceneAnalysis keywords > fastCutData keywords > discover keywords
+      const initialKeywords = sceneKeywords.length > 0
+        ? sceneKeywords
+        : fastCutData?.searchKeywords?.length
+          ? fastCutData.searchKeywords
+          : discover.keywords;
+
+      console.log("[FastCutProvider] Keywords source:", sceneKeywords.length > 0 ? "sceneAnalysis" : (fastCutData?.searchKeywords?.length ? "fastCutData" : "discover"));
+      console.log("[FastCutProvider] Initial keywords count:", initialKeywords.length);
 
       setState({
         ...initialState,
@@ -328,13 +359,14 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
         selectedSearchKeywords: new Set(initialKeywords),
         campaignId: analyze.campaignId || null,  // CRITICAL: Also sync campaignId from workflow
         campaignName: analyze.campaignName || "",
+        hasSceneAnalysis: sceneKeywords.length > 0,  // Track if we have scene analysis
         isHydrated: true,
       });
     }
 
     // Mark that we've hydrated for this specific session
     setHydratedForSessionId(activeSessionId);
-  }, [hydratedForSessionId, activeSessionId, analyze.optimizedPrompt, analyze.selectedIdea, analyze.campaignId, analyze.campaignName, discover.keywords]);
+  }, [hydratedForSessionId, activeSessionId, analyze.optimizedPrompt, analyze.selectedIdea, analyze.campaignId, analyze.campaignName, discover.keywords, start.source]);
 
   // Save state to sessionStorage whenever it changes (only after hydration)
   // Include session ID for future validation
@@ -369,8 +401,13 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
     }
   }, [state.isHydrated, state.prompt, hydratedForSessionId, activeSessionId, analyze.optimizedPrompt]);
 
-  // Fetch style sets on mount
+  // Fetch style sets when authenticated
   useEffect(() => {
+    // Only fetch when auth has hydrated and user is authenticated
+    if (!authHydrated || !isAuthenticated) {
+      return;
+    }
+
     const fetchStyleSets = async () => {
       try {
         const result = await fastCutApi.getStyleSets();
@@ -380,7 +417,7 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
       }
     };
     fetchStyleSets();
-  }, []);
+  }, [authHydrated, isAuthenticated]);
 
   // Actions
   const setCurrentStep = useCallback((step: FastCutStep) => {
@@ -390,7 +427,8 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
   const canProceed = useCallback(() => {
     switch (state.currentStep) {
       case "script":
-        return state.scriptData !== null;
+        // Script step can be bypassed if we have scene analysis from Start page
+        return state.scriptData !== null || state.hasSceneAnalysis;
       case "images":
         return state.selectedImages.length >= 3;
       case "music":
@@ -400,7 +438,7 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
       default:
         return false;
     }
-  }, [state.currentStep, state.scriptData, state.selectedImages, state.selectedAudio, state.musicSkipped]);
+  }, [state.currentStep, state.scriptData, state.hasSceneAnalysis, state.selectedImages, state.selectedAudio, state.musicSkipped]);
 
   const setCampaignId = useCallback((id: string | null) => {
     setState((prev) => ({ ...prev, campaignId: id }));

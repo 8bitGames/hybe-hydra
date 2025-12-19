@@ -1,5 +1,14 @@
 /**
- * GEO/AEO Optimization Generator
+ * @deprecated This file is deprecated. Use the GeoAeoOptimizerAgent instead.
+ *
+ * Import from: import { createGeoAeoOptimizerAgent } from '@/lib/agents/publishers';
+ *
+ * This file will be removed in a future version.
+ * All AI calls should go through the Agent System as per CLAUDE.md rules.
+ *
+ * ============================================================================
+ *
+ * GEO/AEO Optimization Generator (DEPRECATED)
  *
  * GEO (Generative Engine Optimization):
  * - AI 검색 엔진 최적화 (Google AI Overview, ChatGPT, Perplexity 등)

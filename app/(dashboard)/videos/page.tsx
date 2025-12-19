@@ -39,7 +39,18 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Edit3,
+  Expand,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,6 +62,8 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { VideoGeneration as FullVideoGeneration } from "@/lib/video-api";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { VideoEditModal } from "@/components/features/video-edit-modal";
+import { VideoExtendPanel } from "@/components/features/processing/VideoExtendPanel";
 
 // Lazy Video Component - only loads when in viewport
 function LazyVideo({
@@ -195,7 +208,13 @@ export default function AllVideosPage() {
   const [videoType, setVideoType] = useState<VideoType>("all");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [page, setPage] = useState(1);
-  const pageSize = 12;
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("videos-page-size");
+      return saved ? Number(saved) : 20;
+    }
+    return 20;
+  });
 
   // Side panel state
   const [panelOpen, setPanelOpen] = useState(false);
@@ -206,25 +225,30 @@ export default function AllVideosPage() {
   const [deleteVideoId, setDeleteVideoId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Fetch videos
+  // Edit state
+  const [editVideo, setEditVideo] = useState<UnifiedVideo | null>(null);
+
+  // Extend state
+  const [extendVideo, setExtendVideo] = useState<UnifiedVideo | null>(null);
+
+  // Fetch ALL videos (client-side pagination)
   const { data: composeData, isLoading: loadingCompose, refetch: refetchCompose } = useFastCutVideos({
-    page,
-    page_size: pageSize,
+    page_size: 500, // Fetch all at once for client-side pagination
   });
   const { data: aiData, isLoading: loadingAI, refetch: refetchAI } = useAllAIVideos();
 
   const composeVideos = composeData?.items || [];
   const aiVideos = aiData?.items || [];
-  const totalPages = composeData?.pages || 1;
 
   // Helper to check if video is displayable (completed with output URL)
   // Note: status can be "completed" or "COMPLETED" depending on source
   const isVideoDisplayable = (video: { status: string; output_url: string | null; composed_output_url: string | null }) =>
     video.status.toLowerCase() === "completed" && (video.output_url || video.composed_output_url);
 
-  // Calculate totals only for completed videos with URLs
+  // Calculate totals - use API total for Fast Cut (paginated), filter count for AI (not paginated)
+  // Fast Cut API already filters for COMPLETED and composedOutputUrl not null
   const aiTotal = aiVideos.filter(isVideoDisplayable).length;
-  const composeTotal = composeVideos.filter(isVideoDisplayable).length;
+  const composeTotal = composeData?.total || 0;  // Use API total instead of counting current page
   const totalAll = aiTotal + composeTotal;
 
   // Translations
@@ -253,6 +277,30 @@ export default function AllVideosPage() {
     cancel: language === "ko" ? "취소" : "Cancel",
     previous: language === "ko" ? "이전" : "Previous",
     next: language === "ko" ? "다음" : "Next",
+    editVideo: language === "ko" ? "영상 편집" : "Edit Video",
+    extendVideo: language === "ko" ? "영상 확장" : "Extend Video",
+    perPage: language === "ko" ? "개씩 보기" : "per page",
+    showing: language === "ko" ? "표시" : "Showing",
+    to: language === "ko" ? "~" : "to",
+    ofTotal: language === "ko" ? "/ 총" : "of",
+  };
+
+  // Reset page when tab or page size changes
+  const handleVideoTypeChange = (v: VideoType) => {
+    setVideoType(v);
+    setPage(1);
+  };
+
+  const handlePageSizeChange = (v: string) => {
+    const newSize = Number(v);
+    setPageSize(newSize);
+    setPage(1);
+    localStorage.setItem("videos-page-size", v);
+  };
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    setPage(1);
   };
 
   // Convert to unified format
@@ -288,8 +336,8 @@ export default function AllVideosPage() {
     generation_type: "AI" as const,
   }));
 
-  // Filter videos
-  const filteredVideos = useMemo(() => {
+  // Filter videos (all filtered, before pagination)
+  const allFilteredVideos = useMemo(() => {
     let baseVideos: UnifiedVideo[] = [];
 
     if (videoType === "all") {
@@ -320,6 +368,13 @@ export default function AllVideosPage() {
 
     return baseVideos;
   }, [unifiedAIVideos, unifiedComposeVideos, searchQuery, videoType]);
+
+  // Pagination calculations
+  const totalFiltered = allFilteredVideos.length;
+  const totalPages = Math.ceil(totalFiltered / pageSize);
+  const startIndex = (page - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const filteredVideos = allFilteredVideos.slice(startIndex, endIndex);
 
   // Helpers
   const getVideoUrl = (video: UnifiedVideo) => video.composed_output_url || video.output_url;
@@ -357,27 +412,34 @@ export default function AllVideosPage() {
     }
   };
 
-  // Open video in side panel
-  const openVideo = (video: UnifiedVideo, index: number) => {
+  // Open video in side panel (index is relative to current page)
+  const openVideo = (video: UnifiedVideo, indexInPage: number) => {
     setSelectedVideo(video);
-    setSelectedIndex(index);
+    // Convert page-relative index to global index
+    setSelectedIndex(startIndex + indexInPage);
     setPanelOpen(true);
   };
 
-  // Navigate to prev/next video
+  // Navigate to prev/next video (uses allFilteredVideos for full navigation)
   const goToPrevious = () => {
     if (selectedIndex > 0) {
       const newIndex = selectedIndex - 1;
-      setSelectedVideo(filteredVideos[newIndex]);
+      setSelectedVideo(allFilteredVideos[newIndex]);
       setSelectedIndex(newIndex);
+      // Update page if needed
+      const newPage = Math.floor(newIndex / pageSize) + 1;
+      if (newPage !== page) setPage(newPage);
     }
   };
 
   const goToNext = () => {
-    if (selectedIndex < filteredVideos.length - 1) {
+    if (selectedIndex < allFilteredVideos.length - 1) {
       const newIndex = selectedIndex + 1;
-      setSelectedVideo(filteredVideos[newIndex]);
+      setSelectedVideo(allFilteredVideos[newIndex]);
       setSelectedIndex(newIndex);
+      // Update page if needed
+      const newPage = Math.floor(newIndex / pageSize) + 1;
+      if (newPage !== page) setPage(newPage);
     }
   };
 
@@ -399,7 +461,7 @@ export default function AllVideosPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [panelOpen, selectedIndex, filteredVideos]);
+  }, [panelOpen, selectedIndex, allFilteredVideos, pageSize, page]);
 
   const loading = loadingCompose || loadingAI;
   const videoUrl = selectedVideo ? getVideoUrl(selectedVideo) : null;
@@ -421,7 +483,7 @@ export default function AllVideosPage() {
       {/* Filters */}
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <Tabs value={videoType} onValueChange={(v) => { setVideoType(v as VideoType); setPage(1); }}>
+          <Tabs value={videoType} onValueChange={(v) => handleVideoTypeChange(v as VideoType)}>
             <TabsList>
               <TabsTrigger value="all" className="gap-2">
                 <Film className="h-4 w-4" />
@@ -447,7 +509,7 @@ export default function AllVideosPage() {
               <Input
                 placeholder={t.searchPlaceholder}
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-9"
               />
             </div>
@@ -544,6 +606,16 @@ export default function AllVideosPage() {
                             <Eye className="h-4 w-4 mr-2" />
                             {t.viewDetails}
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setEditVideo(video); }}>
+                            <Edit3 className="h-4 w-4 mr-2" />
+                            {t.editVideo}
+                          </DropdownMenuItem>
+                          {video.generation_type === "AI" && (
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setExtendVideo(video); }}>
+                              <Expand className="h-4 w-4 mr-2" />
+                              {t.extendVideo}
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/campaigns/${video.campaign_id}/curation`); }}>
                             <ExternalLink className="h-4 w-4 mr-2" />
                             {t.viewInCampaign}
@@ -573,17 +645,72 @@ export default function AllVideosPage() {
           </div>
 
           {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 pt-4">
-              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                {page} {t.of} {totalPages} {t.page}
-              </span>
-              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+          {totalFiltered > 0 && (
+            <div className="flex items-center justify-between pt-4 border-t">
+              {/* Left: Page size selector */}
+              <div className="flex items-center gap-2">
+                <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
+                  <SelectTrigger className="w-[100px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">{t.perPage}</span>
+              </div>
+
+              {/* Center: Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setPage(1)}
+                    disabled={page === 1}
+                  >
+                    <ChevronsLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm text-muted-foreground px-3 min-w-[80px] text-center">
+                    {page} {t.of} {totalPages} {t.page}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setPage(totalPages)}
+                    disabled={page === totalPages}
+                  >
+                    <ChevronsRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Right: Showing count */}
+              <div className="text-sm text-muted-foreground min-w-[140px] text-right">
+                {t.showing} {startIndex + 1} {t.to} {Math.min(endIndex, totalFiltered)} {t.ofTotal} {totalFiltered}
+              </div>
             </div>
           )}
         </>
@@ -621,7 +748,7 @@ export default function AllVideosPage() {
                 <ChevronLeft className="h-6 w-6" />
               </Button>
             )}
-            {selectedIndex < filteredVideos.length - 1 && (
+            {selectedIndex < allFilteredVideos.length - 1 && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -666,16 +793,31 @@ export default function AllVideosPage() {
                     {selectedVideo.generation_type === "AI" ? "AI" : "Fast Cut"}
                   </Badge>
                 </div>
-                {videoUrl && (
-                  <Button
-                    size="sm"
-                    className="bg-black text-white hover:bg-zinc-800 border border-zinc-700"
-                    onClick={() => handleDownload(videoUrl, `video-${selectedVideo.id}.mp4`)}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    {t.download}
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {selectedVideo.generation_type === "AI" && (
+                    <Button
+                      size="sm"
+                      className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700"
+                      onClick={() => {
+                        setPanelOpen(false);
+                        setExtendVideo(selectedVideo);
+                      }}
+                    >
+                      <Expand className="h-4 w-4 mr-2" />
+                      {t.extendVideo}
+                    </Button>
+                  )}
+                  {videoUrl && (
+                    <Button
+                      size="sm"
+                      className="bg-black text-white hover:bg-zinc-800 border border-zinc-700"
+                      onClick={() => handleDownload(videoUrl, `video-${selectedVideo.id}.mp4`)}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      {t.download}
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {/* Scrollable Content */}
@@ -689,7 +831,7 @@ export default function AllVideosPage() {
                 <span>{selectedVideo.duration_seconds}s</span>
                 <span>{selectedVideo.aspect_ratio}</span>
                 <span>{formatDate(selectedVideo.created_at)}</span>
-                <span className="ml-auto">{selectedIndex + 1} / {filteredVideos.length}</span>
+                <span className="ml-auto">{selectedIndex + 1} / {allFilteredVideos.length}</span>
               </div>
             </div>
           </div>
@@ -715,6 +857,51 @@ export default function AllVideosPage() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Video Edit Modal */}
+      {editVideo && (
+        <VideoEditModal
+          open={!!editVideo}
+          onOpenChange={(open) => !open && setEditVideo(null)}
+          generationId={editVideo.id}
+          campaignId={editVideo.campaign_id}
+          videoUrl={getVideoUrl(editVideo) || ""}
+          onEditStarted={(newGenerationId) => {
+            setEditVideo(null);
+            // Optionally navigate to the new generation or refresh the list
+            refetchCompose();
+            refetchAI();
+          }}
+        />
+      )}
+
+      {/* Video Extend Dialog */}
+      <Dialog open={!!extendVideo} onOpenChange={(open) => !open && setExtendVideo(null)}>
+        <DialogContent className="max-w-2xl p-0 overflow-hidden">
+          <VisuallyHidden>
+            <DialogTitle>{t.extendVideo}</DialogTitle>
+            <DialogDescription>
+              {language === "ko"
+                ? "AI 영상을 7초 연장합니다"
+                : "Extend AI video by 7 seconds"}
+            </DialogDescription>
+          </VisuallyHidden>
+          {extendVideo && (
+            <VideoExtendPanel
+              generationId={extendVideo.id}
+              videoUrl={getVideoUrl(extendVideo) || undefined}
+              currentDuration={extendVideo.duration_seconds}
+              aspectRatio={extendVideo.aspect_ratio}
+              onClose={() => setExtendVideo(null)}
+              onExtendStarted={(newGenerationId) => {
+                setExtendVideo(null);
+                // Refresh the video list to show the new generation in progress
+                refetchAI();
+              }}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

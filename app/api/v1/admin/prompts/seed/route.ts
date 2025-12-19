@@ -20,6 +20,7 @@ import { TikTokVisionConfig } from '@/lib/agents/analyzers/tiktok-vision';
 import { Veo3PersonalizeConfig } from '@/lib/agents/analyzers/veo3-personalize';
 import { ExpansionAnalyzerConfig } from '@/lib/agents/analyzers/expansion-analyzer';
 import { TrendInsightConfig } from '@/lib/agents/analyzers/trend-insight-agent';
+import { LyricsExtractorConfig } from '@/lib/agents/analyzers/lyrics-extractor';
 // Creators
 import { CreativeDirectorConfig } from '@/lib/agents/creators/creative-director';
 import { ScriptWriterConfig } from '@/lib/agents/creators/script-writer';
@@ -43,7 +44,7 @@ import { ComparativeAnalysisConfig } from '@/lib/agents/deep-analysis/comparativ
 
 // All agent configs to seed
 const AGENT_CONFIGS = [
-  // Analyzers (9)
+  // Analyzers (10)
   VisionAnalyzerConfig,
   TextPatternConfig,
   VisualTrendConfig,
@@ -53,6 +54,7 @@ const AGENT_CONFIGS = [
   Veo3PersonalizeConfig,
   ExpansionAnalyzerConfig,
   TrendInsightConfig,
+  LyricsExtractorConfig,
   // Creators (4)
   CreativeDirectorConfig,
   ScriptWriterConfig,

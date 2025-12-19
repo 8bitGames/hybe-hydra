@@ -1,18 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserFromHeader } from "@/lib/auth";
 import {
-  generateGeoAeoContent,
-  generateGeoAeoHashtags,
-  GeoAeoInput,
-  ContentLanguage,
-  Platform,
-  ContentVibe,
-} from "@/lib/geo-aeo-generator";
+  createGeoAeoOptimizerAgent,
+  type GeoAeoInput,
+} from "@/lib/agents/publishers";
+import type { AgentContext } from "@/lib/agents/types";
 
 /**
  * POST /api/v1/publishing/geo-aeo
  *
- * Generate GEO/AEO optimized caption and hashtags
+ * Generate GEO/AEO optimized caption and hashtags using Agent System
  *
  * Body:
  * - keywords: string[] (required) - Main keywords for the content
@@ -55,53 +52,91 @@ export async function POST(request: NextRequest) {
       artistName: body.artist_name,
       groupName: body.group_name,
       campaignName: body.campaign_name,
-      vibe: body.vibe as ContentVibe | undefined,
-      language: (body.language || "ko") as ContentLanguage,
-      platform: (body.platform || "tiktok") as Platform,
+      vibe: body.vibe,
+      language: body.language || "ko",
+      platform: body.platform || "tiktok",
       trendKeywords: body.trend_keywords,
     };
 
-    // Check if only hashtags are requested (faster)
-    if (body.hashtags_only) {
-      const hashtags = await generateGeoAeoHashtags(input);
-      return NextResponse.json({
-        hashtags,
-        combined: [
-          ...hashtags.primary,
-          ...hashtags.entity,
-          ...hashtags.niche,
-          ...hashtags.trending,
-          ...hashtags.longTail,
-        ].slice(0, body.platform === "instagram" ? 30 : body.platform === "youtube" ? 15 : 5),
-      });
+    // Build agent context
+    const context: AgentContext = {
+      workflow: {
+        campaignId: body.campaign_id,
+        artistName: body.artist_name || "Unknown Artist",
+        language: body.language || "ko",
+        platform: body.platform || "tiktok",
+      },
+    };
+
+    // Create and execute agent
+    const agent = createGeoAeoOptimizerAgent();
+    const result = await agent.execute(input, context);
+
+    if (!result.success || !result.data) {
+      return NextResponse.json(
+        { detail: result.error || "Failed to generate GEO/AEO content" },
+        { status: 500 }
+      );
     }
 
-    // Generate full GEO/AEO content
-    const result = await generateGeoAeoContent(input);
+    const { geo, aeo, hashtags, structuredData, scores } = result.data;
+
+    // Platform config for combining hashtags
+    const platformConfig: Record<string, { maxHashtags: number; maxCaption: number }> = {
+      tiktok: { maxHashtags: 5, maxCaption: 2200 },
+      youtube: { maxHashtags: 15, maxCaption: 5000 },
+      instagram: { maxHashtags: 30, maxCaption: 2200 },
+    };
+    const platform = input.platform || "tiktok";
+    const config = platformConfig[platform];
+
+    // Combine all hashtags for easy use (respecting platform limits)
+    const combinedHashtags = [
+      ...hashtags.primary,
+      ...hashtags.entity,
+      ...hashtags.niche,
+      ...hashtags.trending,
+      ...hashtags.longTail,
+    ].slice(0, config.maxHashtags);
+
+    // Build combined caption with hook + main content + CTA
+    const combinedCaption = `${geo.hookLine}\n\n${geo.caption}\n\n${geo.callToAction}`.slice(
+      0,
+      config.maxCaption
+    );
 
     return NextResponse.json({
       // Primary outputs for easy access
-      caption: result.combinedCaption,
-      hashtags: result.combinedHashtags,
-      score: result.scores.overallScore,
+      caption: combinedCaption,
+      hashtags: combinedHashtags,
+      score: scores.overallScore,
 
       // Detailed GEO content
-      geo: result.geo,
+      geo,
 
       // Detailed AEO content
-      aeo: result.aeo,
+      aeo,
 
       // Categorized hashtags
-      hashtags_categorized: result.hashtags,
+      hashtags_categorized: hashtags,
 
       // Structured data for SEO
-      structured_data: result.structuredData,
+      structured_data: structuredData,
 
       // Quality scores
-      scores: result.scores,
+      scores,
 
       // Metadata
-      metadata: result.metadata,
+      metadata: {
+        language: input.language,
+        platform: input.platform,
+        generatedAt: new Date().toISOString(),
+        inputKeywords: input.keywords,
+        agentId: result.metadata.agentId,
+        model: result.metadata.model,
+        latencyMs: result.metadata.latencyMs,
+        tokenUsage: result.metadata.tokenUsage,
+      },
     });
   } catch (error) {
     console.error("[GEO/AEO] Generation error:", error);

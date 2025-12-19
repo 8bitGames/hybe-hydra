@@ -6,6 +6,7 @@ import { generateVideo, VeoGenerationParams, getVeoConfig } from "@/lib/veo";
 import { generateImage, convertAspectRatioForGeminiImage } from "@/lib/imagen";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import { composeVideoWithAudio } from "@/lib/compose/client";
+import { getPresignedUrlFromS3Url } from "@/lib/storage";
 import type { AgentContext } from "@/lib/agents/types";
 
 interface RouteParams {
@@ -228,13 +229,23 @@ function startVariationVideoGeneration(
           });
 
           try {
+            // Generate fresh presigned URL for audio (stored s3Url may be expired)
+            let audioPresignedUrl: string;
+            try {
+              audioPresignedUrl = await getPresignedUrlFromS3Url(params.audioAsset.s3Url, 172800);
+              console.log(`[Variation ${generationId}] Generated fresh audio presigned URL`);
+            } catch (presignError) {
+              console.error(`[Variation ${generationId}] Failed to generate audio presigned URL:`, presignError);
+              audioPresignedUrl = params.audioAsset.s3Url; // Fallback to original
+            }
+
             // Build S3 output key for composed video
             const s3Folder = params.campaignId || `quick-create/${params.userId}`;
             const outputS3Key = `${s3Folder}/composed_${generationId}.mp4`;
 
             const composeResult = await composeVideoWithAudio({
               video_url: result.videoUrl,
-              audio_url: params.audioAsset.s3Url,
+              audio_url: audioPresignedUrl,
               audio_start_time: params.audioStartTime || 0,
               audio_volume: 1.0,
               fade_in: 0.5,

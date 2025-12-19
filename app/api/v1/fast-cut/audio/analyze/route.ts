@@ -8,6 +8,13 @@ interface AnalyzeRequest {
   targetDuration?: number;
 }
 
+interface ClimaxCandidate {
+  start_time: number;
+  drop_time: number;
+  score: number;
+  type: string;  // 'drop', 'energy_peak', 'onset_burst', 'combined', etc.
+}
+
 interface AudioAnalysisResponse {
   bpm: number;
   beat_times: number[];
@@ -15,6 +22,11 @@ interface AudioAnalysisResponse {
   duration: number;
   suggested_vibe: string;
   best_15s_start: number;
+  // New advanced climax detection fields
+  climax_candidates?: ClimaxCandidate[];
+  drops?: number[];
+  builds?: [number, number][];
+  best_hook_start?: number;
 }
 
 /**
@@ -56,8 +68,11 @@ async function analyzeAudio(s3Url: string, jobId: string, targetDuration: number
       duration: data.duration,
       vibe: data.suggested_vibe,
       best_15s_start: data.best_15s_start,
+      best_hook_start: data.best_hook_start,
       beatCount: data.beat_times?.length,
-      energyPoints: data.energy_curve?.length
+      energyPoints: data.energy_curve?.length,
+      dropsFound: data.drops?.length ?? 0,
+      climaxCandidates: data.climax_candidates?.length ?? 0
     });
 
     return {
@@ -67,6 +82,11 @@ async function analyzeAudio(s3Url: string, jobId: string, targetDuration: number
       duration: data.duration,
       suggested_vibe: data.suggested_vibe,
       best_15s_start: data.best_15s_start ?? 0,
+      // New advanced climax detection fields
+      climax_candidates: data.climax_candidates || [],
+      drops: data.drops || [],
+      builds: data.builds || [],
+      best_hook_start: data.best_hook_start ?? 0,
     };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
@@ -130,6 +150,11 @@ export async function POST(request: NextRequest) {
         audioVibe: analysisResult.suggested_vibe,
         energyCurve: analysisResult.energy_curve,
         beatTimes: analysisResult.beat_times,
+        // Store advanced analysis data
+        climaxCandidates: analysisResult.climax_candidates,
+        drops: analysisResult.drops,
+        builds: analysisResult.builds,
+        bestHookStart: analysisResult.best_hook_start,
         analyzed: true,
         analyzedAt: new Date().toISOString()
       };
@@ -139,22 +164,46 @@ export async function POST(request: NextRequest) {
         data: { metadata: updatedMetadata }
       });
 
-      // Use best 15s start from analysis
-      let suggestedStart = analysisResult.best_15s_start ?? 0;
+      // Determine best start time from climax candidates
+      let suggestedStart = 0;
+      const candidates = analysisResult.climax_candidates || [];
 
-      // If analysis returned 0 but audio is long enough, use heuristics as fallback
+      if (candidates.length > 0) {
+        // Use the highest scored candidate
+        const topCandidate = candidates[0];
+        suggestedStart = topCandidate.start_time;
+
+        console.log('[Fast Cut AudioAnalyze] Using climax candidate:', {
+          type: topCandidate.type,
+          score: topCandidate.score.toFixed(2),
+          startTime: topCandidate.start_time.toFixed(2),
+          dropTime: topCandidate.drop_time.toFixed(2)
+        });
+      } else if (analysisResult.best_hook_start && analysisResult.best_hook_start > 0) {
+        // Fallback to best hook start
+        suggestedStart = analysisResult.best_hook_start;
+        console.log('[Fast Cut AudioAnalyze] Using best hook start:', suggestedStart.toFixed(2));
+      } else if (analysisResult.best_15s_start && analysisResult.best_15s_start > 0) {
+        // Fallback to best 15s (energy-based)
+        suggestedStart = analysisResult.best_15s_start;
+        console.log('[Fast Cut AudioAnalyze] Using best 15s start:', suggestedStart.toFixed(2));
+      }
+
+      // Final fallback to heuristics
       if (suggestedStart === 0 && analysisResult.duration > targetDuration * 1.5) {
-        console.log('[Fast Cut AudioAnalyze] Analysis returned 0, using heuristics fallback');
+        console.log('[Fast Cut AudioAnalyze] No good candidates, using heuristics fallback');
         suggestedStart = calculateFallbackStart(analysisResult.duration, targetDuration, analysisResult.bpm);
       }
 
       const suggestedEnd = Math.min(suggestedStart + targetDuration, analysisResult.duration);
 
-      console.log('[Fast Cut AudioAnalyze] Using best segment:', {
-        suggestedStart,
-        suggestedEnd,
+      console.log('[Fast Cut AudioAnalyze] Final segment selection:', {
+        suggestedStart: suggestedStart.toFixed(2),
+        suggestedEnd: suggestedEnd.toFixed(2),
         targetDuration,
-        totalDuration: analysisResult.duration,
+        totalDuration: analysisResult.duration.toFixed(2),
+        candidatesCount: candidates.length,
+        dropsFound: analysisResult.drops?.length ?? 0
       });
 
       return NextResponse.json({
@@ -166,6 +215,16 @@ export async function POST(request: NextRequest) {
         beatTimes: analysisResult.beat_times,
         suggestedStartTime: suggestedStart,
         suggestedEndTime: suggestedEnd,
+        // New: provide all candidates for user selection
+        climaxCandidates: candidates.map(c => ({
+          startTime: c.start_time,
+          dropTime: c.drop_time,
+          score: c.score,
+          type: c.type
+        })),
+        drops: analysisResult.drops,
+        builds: analysisResult.builds,
+        bestHookStart: analysisResult.best_hook_start,
         analyzed: true
       });
     }

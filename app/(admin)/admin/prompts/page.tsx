@@ -45,6 +45,8 @@ import {
   TrendingUp,
   TrendingDown,
   MessageSquare,
+  RefreshCw,
+  GitCompare,
 } from 'lucide-react';
 import { PromptRefinerChat } from '@/components/admin/prompt-refiner-chat';
 
@@ -97,6 +99,35 @@ interface AgentExecution {
   }>;
 }
 
+interface SyncResult {
+  agentId: string;
+  name: string;
+  status: 'unchanged' | 'updated' | 'created' | 'error';
+  changes?: {
+    system_prompt: boolean;
+    templates: boolean;
+    model_options: boolean;
+  };
+  oldVersion?: number;
+  newVersion?: number;
+  error?: string;
+}
+
+interface SyncResponse {
+  mode: 'scan' | 'sync';
+  success?: boolean;
+  summary: {
+    total: number;
+    unchanged: number;
+    changed?: number;
+    updated?: number;
+    created?: number;
+    new?: number;
+    errors?: number;
+  };
+  results: SyncResult[];
+}
+
 const CATEGORIES = [
   { value: 'analyzer', label: 'Analyzer', color: 'bg-blue-500' },
   { value: 'creator', label: 'Creator', color: 'bg-purple-500' },
@@ -133,6 +164,11 @@ export default function PromptsAdminPage() {
   const [metrics, setMetrics] = useState<AgentMetrics | null>(null);
   const [executions, setExecutions] = useState<AgentExecution[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
+
+  // Sync state
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResults, setSyncResults] = useState<SyncResponse | null>(null);
 
   // Fetch prompts
   const fetchPrompts = useCallback(async () => {
@@ -199,6 +235,46 @@ export default function PromptsAdminPage() {
       setExecutions(data.executions || []);
     } catch (error) {
       console.error('Error fetching executions:', error);
+    }
+  };
+
+  // Scan for code changes (dry-run)
+  const scanCodeChanges = async () => {
+    setSyncLoading(true);
+    setSyncResults(null);
+    try {
+      const res = await fetch('/api/v1/admin/prompts/sync');
+      const data = await res.json();
+      setSyncResults(data);
+      setSyncDialogOpen(true);
+    } catch (error) {
+      console.error('Error scanning changes:', error);
+      setMessage({ type: 'error', text: 'Failed to scan for changes' });
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  // Apply sync from code to DB
+  const applySyncFromCode = async () => {
+    setSyncLoading(true);
+    try {
+      const res = await fetch('/api/v1/admin/prompts/sync', {
+        method: 'POST',
+      });
+      const data = await res.json();
+      setSyncResults(data);
+      if (data.success) {
+        setMessage({ type: 'success', text: `Sync complete: ${data.summary.updated || 0} updated, ${data.summary.created || 0} created` });
+        fetchPrompts(); // Refresh prompt list
+      } else {
+        setMessage({ type: 'error', text: `Sync had ${data.summary.errors} errors` });
+      }
+    } catch (error) {
+      console.error('Error syncing:', error);
+      setMessage({ type: 'error', text: 'Failed to sync prompts' });
+    } finally {
+      setSyncLoading(false);
     }
   };
 
@@ -351,9 +427,23 @@ export default function PromptsAdminPage() {
     <div className="min-h-screen bg-black text-white p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Agent Prompts Manager</h1>
-          <p className="text-gray-400">Manage AI agent system prompts and templates</p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Agent Prompts Manager</h1>
+            <p className="text-gray-400">Manage AI agent system prompts and templates</p>
+          </div>
+          <Button
+            onClick={scanCodeChanges}
+            disabled={syncLoading}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {syncLoading ? (
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <GitCompare className="w-4 h-4 mr-2" />
+            )}
+            Sync from Code
+          </Button>
         </div>
 
         {/* Message */}
@@ -941,6 +1031,149 @@ export default function PromptsAdminPage() {
               ))
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sync Dialog */}
+      <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
+        <DialogContent className="bg-gray-900 border-gray-800 max-w-3xl max-h-[80vh] overflow-y-auto text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <GitCompare className="w-5 h-5" />
+              {syncResults?.mode === 'sync' ? 'Sync Results' : 'Code Changes Detected'}
+            </DialogTitle>
+          </DialogHeader>
+
+          {syncResults && (
+            <div className="space-y-6 mt-4">
+              {/* Summary */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 text-center">
+                  <div className="text-2xl font-bold text-white">{syncResults.summary.total}</div>
+                  <div className="text-xs text-gray-400">Total</div>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 text-center">
+                  <div className="text-2xl font-bold text-gray-400">{syncResults.summary.unchanged}</div>
+                  <div className="text-xs text-gray-400">Unchanged</div>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4 border border-yellow-600/30 text-center">
+                  <div className="text-2xl font-bold text-yellow-400">
+                    {syncResults.summary.changed ?? syncResults.summary.updated ?? 0}
+                  </div>
+                  <div className="text-xs text-gray-400">Updated</div>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4 border border-green-600/30 text-center">
+                  <div className="text-2xl font-bold text-green-400">
+                    {syncResults.summary.new ?? syncResults.summary.created ?? 0}
+                  </div>
+                  <div className="text-xs text-gray-400">New</div>
+                </div>
+              </div>
+
+              {/* Changed Items */}
+              {syncResults.results.filter(r => r.status !== 'unchanged').length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-300 mb-3">Changes</h3>
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {syncResults.results
+                      .filter(r => r.status !== 'unchanged')
+                      .map(result => (
+                        <div
+                          key={result.agentId}
+                          className={`bg-gray-800 rounded-lg p-3 border ${
+                            result.status === 'error'
+                              ? 'border-red-600/50'
+                              : result.status === 'created'
+                              ? 'border-green-600/50'
+                              : 'border-yellow-600/50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                className={`text-xs ${
+                                  result.status === 'error'
+                                    ? 'bg-red-600'
+                                    : result.status === 'created'
+                                    ? 'bg-green-600'
+                                    : 'bg-yellow-600'
+                                }`}
+                              >
+                                {result.status}
+                              </Badge>
+                              <span className="font-medium text-white">{result.name}</span>
+                              <span className="text-sm text-gray-400">({result.agentId})</span>
+                            </div>
+                            {result.newVersion && (
+                              <span className="text-xs text-gray-400">
+                                v{result.oldVersion ?? 0} → v{result.newVersion}
+                              </span>
+                            )}
+                          </div>
+
+                          {result.changes && (
+                            <div className="flex gap-2 mt-2">
+                              {result.changes.system_prompt && (
+                                <Badge variant="outline" className="text-xs border-gray-600 text-gray-300">
+                                  system_prompt
+                                </Badge>
+                              )}
+                              {result.changes.templates && (
+                                <Badge variant="outline" className="text-xs border-gray-600 text-gray-300">
+                                  templates
+                                </Badge>
+                              )}
+                              {result.changes.model_options && (
+                                <Badge variant="outline" className="text-xs border-gray-600 text-gray-300">
+                                  model_options
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+
+                          {result.error && (
+                            <p className="text-sm text-red-400 mt-2">{result.error}</p>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* No Changes Message */}
+              {syncResults.results.filter(r => r.status !== 'unchanged').length === 0 && (
+                <div className="text-center py-8 text-gray-400">
+                  <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-500" />
+                  <p>All prompts are in sync with code!</p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-700">
+                <Button
+                  variant="outline"
+                  onClick={() => setSyncDialogOpen(false)}
+                  className="bg-gray-800 border-gray-700 text-white hover:bg-gray-700"
+                >
+                  Close
+                </Button>
+                {syncResults.mode === 'scan' && syncResults.results.some(r => r.status !== 'unchanged') && (
+                  <Button
+                    onClick={applySyncFromCode}
+                    disabled={syncLoading}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {syncLoading ? (
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                    )}
+                    Apply Changes
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

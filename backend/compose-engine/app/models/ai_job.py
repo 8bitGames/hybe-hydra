@@ -10,6 +10,7 @@ class AIJobType(str, Enum):
     VIDEO_GENERATION = "video_generation"  # Veo 3 (with optional audio overlay)
     IMAGE_GENERATION = "image_generation"  # Imagen 3
     IMAGE_TO_VIDEO = "image_to_video"  # Veo 3 with reference image
+    VIDEO_EXTEND = "video_extend"  # Veo 3.1 video extension
 
 
 class VideoAspectRatio(str, Enum):
@@ -149,6 +150,48 @@ class ImageToVideoSettings(VideoGenerationSettings):
 
 
 # ============================================================
+# Video Extension Models (Veo 3.1)
+# ============================================================
+
+class VideoExtendSettings(BaseModel):
+    """
+    Settings for extending a previously generated Veo video.
+
+    Veo 3.1 supports extending videos by up to 7 seconds per extension,
+    with a maximum of 20 extensions total.
+
+    Requirements:
+    - Source video must be a Veo-generated video (GCS URI required)
+    - Resolution is fixed at 720p for extensions
+    - Last 1 second of video should contain audio for best results
+    """
+    source_gcs_uri: str = Field(
+        ...,
+        description="GCS URI of the source video to extend (gs://bucket/path.mp4)"
+    )
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Optional prompt describing how to continue the video"
+    )
+    aspect_ratio: VideoAspectRatio = Field(
+        default=VideoAspectRatio.PORTRAIT,
+        description="Video aspect ratio (must match source video)"
+    )
+    # Extension-specific fields
+    extension_count: int = Field(
+        default=0,
+        ge=0,
+        le=20,
+        description="Current extension count (0-20, used for validation)"
+    )
+    # Optional audio overlay - if provided, FFmpeg will compose audio after extension
+    audio_overlay: Optional[AudioOverlaySettings] = Field(
+        default=None,
+        description="Optional audio overlay settings (FFmpeg composition after extension)"
+    )
+
+
+# ============================================================
 # Image Generation Models (Imagen 3)
 # ============================================================
 
@@ -223,6 +266,10 @@ class AIJobRequest(BaseModel):
         default=None,
         description="Image-to-video settings (for image_to_video)"
     )
+    extend_settings: Optional[VideoExtendSettings] = Field(
+        default=None,
+        description="Video extension settings (for video_extend)"
+    )
 
     # Output configuration
     output: AIOutputSettings = Field(..., description="Output settings")
@@ -251,6 +298,8 @@ class AIJobRequest(BaseModel):
             return self.image_settings
         elif self.job_type == AIJobType.IMAGE_TO_VIDEO:
             return self.i2v_settings
+        elif self.job_type == AIJobType.VIDEO_EXTEND:
+            return self.extend_settings
         raise ValueError(f"Unknown job type: {self.job_type}")
 
 

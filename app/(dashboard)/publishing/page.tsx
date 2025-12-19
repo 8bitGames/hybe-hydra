@@ -376,7 +376,9 @@ export default function PublishingPage() {
                           {post.publishedAt
                             ? `${language === "ko" ? "발행: " : "Published "}${new Date(post.publishedAt).toLocaleDateString()}`
                             : post.status === "PUBLISHING"
-                            ? (language === "ko" ? "TikTok 인박스로 전송 중..." : "Sending to TikTok inbox...")
+                            ? (language === "ko"
+                                ? `${post.platform === "YOUTUBE" ? "YouTube" : post.platform === "INSTAGRAM" ? "Instagram" : "TikTok"}에 업로드 중...`
+                                : `Uploading to ${post.platform === "YOUTUBE" ? "YouTube" : post.platform === "INSTAGRAM" ? "Instagram" : "TikTok"}...`)
                             : post.scheduledAt
                             ? `${language === "ko" ? "예약: " : "Scheduled "}${new Date(post.scheduledAt).toLocaleString()}`
                             : language === "ko" ? "즉시 발행" : "Immediate publish"}
@@ -501,7 +503,9 @@ export default function PublishingPage() {
                         </div>
                         <p className="text-sm text-muted-foreground">
                           {post.campaignName} •{" "}
-                          {language === "ko" ? "TikTok 인박스로 전송 중..." : "Sending to TikTok inbox..."}
+                          {language === "ko"
+                            ? `${post.platform === "YOUTUBE" ? "YouTube에 업로드 중..." : post.platform === "INSTAGRAM" ? "Instagram에 업로드 중..." : "TikTok 인박스로 전송 중..."}`
+                            : `${post.platform === "YOUTUBE" ? "Uploading to YouTube..." : post.platform === "INSTAGRAM" ? "Uploading to Instagram..." : "Sending to TikTok inbox..."}`}
                         </p>
                       </div>
                       <Button
@@ -804,9 +808,17 @@ export default function PublishingPage() {
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground bg-blue-500/10 p-3 rounded-lg">
-                    {language === "ko"
-                      ? "영상이 TikTok 인박스로 전송되고 있습니다. 완료되면 TikTok 앱에서 영상을 확인하고 발행할 수 있습니다."
-                      : "Video is being sent to your TikTok inbox. Once complete, you can review and publish it from the TikTok app."}
+                    {selectedPost.platform === "YOUTUBE"
+                      ? (language === "ko"
+                          ? "영상이 YouTube에 업로드되고 있습니다. 완료되면 YouTube Studio에서 영상을 확인할 수 있습니다."
+                          : "Video is being uploaded to YouTube. Once complete, you can view it in YouTube Studio.")
+                      : selectedPost.platform === "INSTAGRAM"
+                      ? (language === "ko"
+                          ? "영상이 Instagram에 업로드되고 있습니다. 완료되면 Instagram 프로필에서 확인할 수 있습니다."
+                          : "Video is being uploaded to Instagram. Once complete, you can view it on your Instagram profile.")
+                      : (language === "ko"
+                          ? "영상이 TikTok 인박스로 전송되고 있습니다. 완료되면 TikTok 앱에서 영상을 확인하고 발행할 수 있습니다."
+                          : "Video is being sent to your TikTok inbox. Once complete, you can review and publish it from the TikTok app.")}
                   </p>
                 </div>
               )}

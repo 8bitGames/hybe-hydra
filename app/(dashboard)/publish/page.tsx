@@ -60,9 +60,14 @@ import {
   MessageSquare,
   Share2,
   Settings,
+  Youtube,
+  Instagram,
+  Globe,
+  Lock,
+  Baby,
 } from "lucide-react";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
-import { VariationQuickPanel, PublishSuccessDialog } from "@/components/features/publish";
+import { PublishSuccessDialog } from "@/components/features/publish";
 import { VariationModal, VariationConfig } from "@/components/features/variation-modal";
 import type { VideoGeneration, StylePreset } from "@/lib/video-api";
 
@@ -86,6 +91,18 @@ interface TikTokSettings {
   disable_duet: boolean;
   disable_stitch: boolean;
   disable_comment: boolean;
+}
+
+// YouTube platform settings
+interface YouTubeSettings {
+  privacy_status: "public" | "unlisted" | "private";
+  made_for_kids: boolean;
+  title: string;
+}
+
+// Instagram platform settings
+interface InstagramSettings {
+  share_to_feed: boolean;
 }
 
 // Platform icons
@@ -117,10 +134,12 @@ export default function PublishPage() {
   const processingSession = useProcessingSessionStore(selectSession);
   const getApprovedVideosFromSession = useProcessingSessionStore((state) => state.getApprovedVideos);
 
-  // Check if coming from fast-cut flow (sessionId in URL)
+  // Check if coming from processing-session flow (sessionId in URL)
   // Use URL parameter as primary indicator since it's immediately available
   const sessionIdParam = searchParams.get("sessionId");
-  const isFastCutFlow = !!sessionIdParam; // FastCut flow always has sessionId in URL
+  const isProcessingSessionFlow = !!sessionIdParam; // Both AI Video and Fast Cut use sessionId in URL
+  // Determine if this is Fast Cut based on contentType, not just sessionId presence
+  const isFastCutFlow = isProcessingSessionFlow && processingSession?.contentType === "fast-cut";
 
   // Sync workflow stage
   useWorkflowSync("publish");
@@ -174,6 +193,18 @@ export default function PublishPage() {
     disable_duet: false,
     disable_stitch: false,
     disable_comment: false,
+  });
+
+  // YouTube specific settings
+  const [youtubeSettings, setYoutubeSettings] = useState<YouTubeSettings>({
+    privacy_status: "public",
+    made_for_kids: false,
+    title: "",
+  });
+
+  // Instagram specific settings
+  const [instagramSettings, setInstagramSettings] = useState<InstagramSettings>({
+    share_to_feed: true,
   });
 
   // Variation modal state
@@ -255,11 +286,16 @@ export default function PublishPage() {
         );
         if (response.data?.accounts) {
           setSocialAccounts(response.data.accounts);
-          const validTikTokAccount = response.data.accounts.find(
+          // Auto-select first valid account (prioritize TikTok, then YouTube, then Instagram)
+          const validAccount = response.data.accounts.find(
             (a) => a.platform === "TIKTOK" && a.is_token_valid
+          ) || response.data.accounts.find(
+            (a) => a.platform === "YOUTUBE" && a.is_token_valid
+          ) || response.data.accounts.find(
+            (a) => a.platform === "INSTAGRAM" && a.is_token_valid
           );
-          if (validTikTokAccount) {
-            setSelectedAccountId(validTikTokAccount.id);
+          if (validAccount) {
+            setSelectedAccountId(validAccount.id);
           }
         }
       } catch (error) {
@@ -292,11 +328,13 @@ export default function PublishPage() {
   }, [socialAccounts, selectedAccountId]);
 
   // Get videos for publishing based on current selection
-  // Priority: Fast-cut flow (processing-session-store) > AI Video flow (workflow-store)
+  // Priority: Processing-session flow (processing-session-store) > Legacy workflow-store
   const approvedVideos = useMemo((): ProcessingVideo[] => {
-    // If coming from fast-cut flow, use processing-session-store
-    if (isFastCutFlow && processingSession) {
+    // If coming from processing-session flow (both AI Video and Fast Cut), use processing-session-store
+    if (isProcessingSessionFlow && processingSession) {
       const sessionApproved = getApprovedVideosFromSession();
+      // Determine generationType based on contentType
+      const generationType: "AI" | "COMPOSE" = processingSession.contentType === "ai_video" ? "AI" : "COMPOSE";
       // Convert to ProcessingVideo format
       // Note: Only original video has a real generationId, variations have temp client IDs
       return sessionApproved
@@ -323,14 +361,14 @@ export default function PublishPage() {
           duration: 15, // Default duration
           aspectRatio: "9:16",
           qualityScore: null,
-          generationType: "COMPOSE",
+          generationType,
           createdAt: processingSession.createdAt,
           completedAt: new Date().toISOString(),
           metadata: {},
         }));
     }
 
-    // AI Video flow: use workflow-store
+    // Legacy AI Video flow: use workflow-store
     // If there are selected videos, use them as source of truth
     if (processing.selectedVideos.length > 0) {
       return processing.videos.filter(
@@ -340,7 +378,7 @@ export default function PublishPage() {
     }
     // Fallback: show all approved videos if no selection
     return processing.videos.filter((v) => v.status === "approved");
-  }, [isFastCutFlow, processingSession, getApprovedVideosFromSession, processing.videos, processing.selectedVideos]);
+  }, [isProcessingSessionFlow, processingSession, getApprovedVideosFromSession, processing.videos, processing.selectedVideos]);
 
   // Current video
   const currentVideo = approvedVideos[currentVideoIndex] || null;
@@ -505,12 +543,26 @@ export default function PublishPage() {
         scheduledAt = scheduledDate.toISOString();
       }
 
-      const platformSettings = selectedAccount?.platform === "TIKTOK" ? {
-        privacy_level: tiktokSettings.privacy_level,
-        disable_duet: tiktokSettings.disable_duet,
-        disable_stitch: tiktokSettings.disable_stitch,
-        disable_comment: tiktokSettings.disable_comment,
-      } : {};
+      let platformSettings = {};
+      if (selectedAccount?.platform === "TIKTOK") {
+        platformSettings = {
+          privacy_level: tiktokSettings.privacy_level,
+          disable_duet: tiktokSettings.disable_duet,
+          disable_stitch: tiktokSettings.disable_stitch,
+          disable_comment: tiktokSettings.disable_comment,
+        };
+      } else if (selectedAccount?.platform === "YOUTUBE") {
+        platformSettings = {
+          title: youtubeSettings.title || publish.caption.slice(0, 100),
+          privacy_status: youtubeSettings.privacy_status,
+          made_for_kids: youtubeSettings.made_for_kids,
+          tags: publish.hashtags,
+        };
+      } else if (selectedAccount?.platform === "INSTAGRAM") {
+        platformSettings = {
+          share_to_feed: instagramSettings.share_to_feed,
+        };
+      }
 
       const results = await Promise.all(
         approvedVideos.map(async (video) => {
@@ -837,14 +889,6 @@ export default function PublishPage() {
             </div>
           )}
 
-          {/* Variation Quick Panel */}
-          {currentVideo && (
-            <VariationQuickPanel
-              video={currentVideo}
-              onCreateAIVariation={() => handleOpenVariationModal("ai")}
-              onCreateComposeVariation={() => handleOpenVariationModal("compose")}
-            />
-          )}
         </div>
 
         {/* Center: Caption & Hashtags */}
@@ -956,10 +1000,23 @@ export default function PublishPage() {
                   {socialAccounts.map((account) => (
                     <SelectItem key={account.id} value={account.id}>
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-black flex items-center justify-center">
-                          <TikTokIcon className="w-3.5 h-3.5 text-white" />
+                        <div className={cn(
+                          "w-6 h-6 rounded-full flex items-center justify-center",
+                          account.platform === "TIKTOK" ? "bg-black" :
+                          account.platform === "YOUTUBE" ? "bg-red-600" :
+                          account.platform === "INSTAGRAM" ? "bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600" :
+                          "bg-neutral-600"
+                        )}>
+                          {account.platform === "TIKTOK" && <TikTokIcon className="w-3.5 h-3.5 text-white" />}
+                          {account.platform === "YOUTUBE" && <Youtube className="w-3.5 h-3.5 text-white" />}
+                          {account.platform === "INSTAGRAM" && <Instagram className="w-3.5 h-3.5 text-white" />}
                         </div>
                         <span className="font-medium">{account.account_name}</span>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {account.platform === "TIKTOK" ? "TikTok" :
+                           account.platform === "YOUTUBE" ? "YouTube" :
+                           account.platform === "INSTAGRAM" ? "Instagram" : account.platform}
+                        </Badge>
                         {!account.is_token_valid && (
                           <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-300">!</Badge>
                         )}
@@ -1021,6 +1078,87 @@ export default function PublishPage() {
                     />
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* YouTube Settings */}
+            {selectedAccount?.platform === "YOUTUBE" && (
+              <div className="mt-4 pt-4 border-t border-neutral-100 space-y-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <Youtube className="h-3.5 w-3.5 text-red-600" />
+                  <span className="text-xs font-medium text-neutral-500">{isKorean ? "YouTube Shorts 설정" : "YouTube Shorts Settings"}</span>
+                </div>
+                <div>
+                  <Label className="text-xs text-neutral-500 mb-1 block">{isKorean ? "영상 제목" : "Video Title"}</Label>
+                  <Input
+                    value={youtubeSettings.title}
+                    onChange={(e) => setYoutubeSettings((prev) => ({ ...prev, title: e.target.value }))}
+                    placeholder={isKorean ? "제목 (비워두면 캡션 사용)" : "Title (uses caption if empty)"}
+                    className="h-9 text-sm bg-neutral-50"
+                    maxLength={100}
+                  />
+                </div>
+                <Select
+                  value={youtubeSettings.privacy_status}
+                  onValueChange={(value: YouTubeSettings["privacy_status"]) =>
+                    setYoutubeSettings((prev) => ({ ...prev, privacy_status: value }))
+                  }
+                >
+                  <SelectTrigger className="h-9 text-sm bg-neutral-50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">
+                      <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5" />{isKorean ? "공개" : "Public"}</div>
+                    </SelectItem>
+                    <SelectItem value="unlisted">
+                      <div className="flex items-center gap-2"><Link2 className="h-3.5 w-3.5" />{isKorean ? "미등록" : "Unlisted"}</div>
+                    </SelectItem>
+                    <SelectItem value="private">
+                      <div className="flex items-center gap-2"><Lock className="h-3.5 w-3.5" />{isKorean ? "비공개" : "Private"}</div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Baby className="h-3.5 w-3.5 text-neutral-500" />
+                    <span className="text-xs text-neutral-600">{isKorean ? "아동용 콘텐츠" : "Made for Kids"}</span>
+                  </div>
+                  <Switch
+                    checked={youtubeSettings.made_for_kids}
+                    onCheckedChange={(checked) => setYoutubeSettings((prev) => ({ ...prev, made_for_kids: checked }))}
+                  />
+                </div>
+                <p className="text-[10px] text-neutral-400">
+                  {isKorean
+                    ? "* #Shorts 해시태그가 자동으로 추가됩니다"
+                    : "* #Shorts hashtag will be added automatically"}
+                </p>
+              </div>
+            )}
+
+            {/* Instagram Settings */}
+            {selectedAccount?.platform === "INSTAGRAM" && (
+              <div className="mt-4 pt-4 border-t border-neutral-100 space-y-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <Instagram className="h-3.5 w-3.5 text-pink-600" />
+                  <span className="text-xs font-medium text-neutral-500">{isKorean ? "Instagram Reels 설정" : "Instagram Reels Settings"}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Share2 className="h-3.5 w-3.5 text-neutral-500" />
+                    <span className="text-xs text-neutral-600">{isKorean ? "피드에도 공유" : "Share to Feed"}</span>
+                  </div>
+                  <Switch
+                    checked={instagramSettings.share_to_feed}
+                    onCheckedChange={(checked) => setInstagramSettings((prev) => ({ ...prev, share_to_feed: checked }))}
+                  />
+                </div>
+                <p className="text-[10px] text-neutral-400">
+                  {isKorean
+                    ? "* Instagram Business/Creator 계정이 필요합니다"
+                    : "* Requires Instagram Business/Creator account"}
+                </p>
               </div>
             )}
           </div>
@@ -1158,8 +1296,16 @@ export default function PublishPage() {
               <>
                 <div className="h-4 w-px bg-neutral-200" />
                 <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full bg-black flex items-center justify-center">
-                    <TikTokIcon className="w-3 h-3 text-white" />
+                  <div className={cn(
+                    "w-5 h-5 rounded-full flex items-center justify-center",
+                    selectedAccount.platform === "TIKTOK" ? "bg-black" :
+                    selectedAccount.platform === "YOUTUBE" ? "bg-red-600" :
+                    selectedAccount.platform === "INSTAGRAM" ? "bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600" :
+                    "bg-neutral-600"
+                  )}>
+                    {selectedAccount.platform === "TIKTOK" && <TikTokIcon className="w-3 h-3 text-white" />}
+                    {selectedAccount.platform === "YOUTUBE" && <Youtube className="w-3 h-3 text-white" />}
+                    {selectedAccount.platform === "INSTAGRAM" && <Instagram className="w-3 h-3 text-white" />}
                   </div>
                   <span className="text-neutral-600">@{selectedAccount.account_name}</span>
                 </div>

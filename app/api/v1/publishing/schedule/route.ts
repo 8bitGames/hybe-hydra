@@ -3,7 +3,11 @@ import { prisma } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
 import { getUserFromHeader } from "@/lib/auth";
 import { PublishPlatform, PublishStatus } from "@prisma/client";
-import { inngest } from "@/lib/inngest";
+import { v4 as uuidv4 } from "uuid";
+
+// EC2 Backend URL
+const getComposeEngineUrl = () =>
+  process.env.COMPOSE_ENGINE_URL || "http://15.164.236.53:8000";
 
 // GET /api/v1/publishing/schedule - List scheduled posts
 export async function GET(request: NextRequest) {
@@ -269,19 +273,125 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // If NOW (immediate publish), trigger Inngest function
-    if (isNow && socialAccount.platform === "TIKTOK") {
-      console.log("[Schedule API] Triggering immediate publish for post:", post.id);
-      await inngest.send({
-        name: "publish/tiktok",
-        data: {
-          videoId: generation_id,
-          userId: user.id,
-          accountId: social_account_id,
-          caption: caption || "",
-          hashtags: hashtags || [],
-        },
-      });
+    // If NOW (immediate publish), call EC2 backend
+    if (isNow) {
+      console.log("[Schedule API] Triggering immediate publish for post:", post.id, "platform:", socialAccount.platform);
+
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      const callbackUrl = `${baseUrl}/api/v1/jobs/callback?type=publish&postId=${post.id}`;
+      const publishingUrl = `${getComposeEngineUrl()}/api/v1/publish`;
+      const jobId = uuidv4(); // Generate unique job ID for EC2 backend
+
+      // Get video URL
+      const videoUrl = generation.composedOutputUrl || generation.outputUrl;
+
+      try {
+        let endpoint: string;
+        let publishRequest: Record<string, unknown>;
+
+        switch (socialAccount.platform) {
+          case "TIKTOK":
+            endpoint = `${publishingUrl}/tiktok`;
+            publishRequest = {
+              job_id: jobId,
+              video_url: videoUrl,
+              caption: caption || "",
+              hashtags: hashtags || [],
+              credentials: {
+                access_token: socialAccount.accessToken,
+                refresh_token: socialAccount.refreshToken,
+                open_id: socialAccount.accountId,
+              },
+              settings: {
+                privacy_level: platform_settings?.privacy_level || "PUBLIC_TO_EVERYONE",
+                disable_duet: platform_settings?.disable_duet,
+                disable_comment: platform_settings?.disable_comment,
+                disable_stitch: platform_settings?.disable_stitch,
+              },
+              callback_url: callbackUrl,
+              metadata: {
+                post_id: post.id,
+                user_id: user.id,
+                account_id: socialAccount.id,
+              },
+            };
+            break;
+
+          case "YOUTUBE":
+            endpoint = `${publishingUrl}/youtube`;
+            publishRequest = {
+              job_id: jobId,
+              video_url: videoUrl,
+              caption: caption || "",
+              hashtags: hashtags || [],
+              credentials: {
+                access_token: socialAccount.accessToken,
+                refresh_token: socialAccount.refreshToken,
+              },
+              settings: {
+                title: platform_settings?.title || caption?.slice(0, 100) || "Untitled Short",
+                privacy_status: platform_settings?.privacy_status || "public",
+                made_for_kids: platform_settings?.made_for_kids ?? false,
+                tags: platform_settings?.tags || [],
+              },
+              callback_url: callbackUrl,
+              metadata: {
+                post_id: post.id,
+                user_id: user.id,
+                account_id: socialAccount.id,
+              },
+            };
+            break;
+
+          case "INSTAGRAM":
+            endpoint = `${publishingUrl}/instagram`;
+            publishRequest = {
+              job_id: jobId,
+              video_url: videoUrl,
+              caption: caption || "",
+              hashtags: hashtags || [],
+              credentials: {
+                access_token: socialAccount.accessToken,
+                instagram_account_id: socialAccount.accountId,
+              },
+              settings: {
+                share_to_feed: platform_settings?.share_to_feed ?? true,
+                cover_url: platform_settings?.cover_url,
+                location_id: platform_settings?.location_id,
+                collaborator_usernames: platform_settings?.collaborators,
+              },
+              callback_url: callbackUrl,
+              metadata: {
+                post_id: post.id,
+                user_id: user.id,
+                account_id: socialAccount.id,
+              },
+            };
+            break;
+
+          default:
+            console.warn("[Schedule API] Unsupported platform for immediate publish:", socialAccount.platform);
+            endpoint = "";
+            publishRequest = {};
+        }
+
+        if (endpoint) {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(publishRequest),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error("[Schedule API] EC2 publish request failed:", errorText);
+          } else {
+            console.log("[Schedule API] EC2 publish request sent successfully");
+          }
+        }
+      } catch (publishError) {
+        console.error("[Schedule API] Failed to send publish request to EC2:", publishError);
+      }
     }
 
     return NextResponse.json({

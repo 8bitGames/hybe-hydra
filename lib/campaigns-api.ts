@@ -63,6 +63,7 @@ export interface Asset {
   filename: string;
   original_filename: string;
   s3_url: string;
+  s3_key?: string;
   file_size: number | null;
   mime_type: string | null;
   vector_embedding_id: string | null;

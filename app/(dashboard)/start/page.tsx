@@ -196,7 +196,10 @@ export default function StartPage() {
             "Content-Type": "application/json",
             ...(token && { Authorization: `Bearer ${token}` }),
           },
-          body: JSON.stringify({ url: startSource.videoUrl }),
+          body: JSON.stringify({
+            url: startSource.videoUrl,
+            contentType: start.contentType, // Pass contentType for scene analysis
+          }),
         });
 
         const data = await response.json();
@@ -206,7 +209,7 @@ export default function StartPage() {
         }
 
         // Map API response to store's aiAnalysis format
-        const { style_analysis, content_analysis, suggested_prompt, isComposeVideo, imageCount, conceptDetails } = data.data;
+        const { style_analysis, content_analysis, suggested_prompt, isComposeVideo, imageCount, conceptDetails, sceneAnalysis } = data.data;
 
         const aiAnalysis: {
           hookAnalysis?: string;
@@ -229,6 +232,14 @@ export default function StartPage() {
             setting?: string;
             props?: string[];
             clothingStyle?: string;
+          };
+          sceneAnalysis?: {
+            scenes: { sceneNumber: number; description: string; visualElements: string[]; mood: string; imageKeywords: string[] }[];
+            overallStyle: { colorPalette: string[]; lighting: string; mood: string; vibe: string };
+            totalSceneCount: number;
+            isSmooth: boolean;
+            recommendedImageCount: number;
+            allImageKeywords: string[];
           };
         } = {};
 
@@ -289,6 +300,12 @@ export default function StartPage() {
           aiAnalysis.conceptDetails = conceptDetails;
         }
 
+        // Add scene analysis for Fast Cut mode
+        if (sceneAnalysis) {
+          aiAnalysis.sceneAnalysis = sceneAnalysis;
+          console.log("[START] Scene analysis received:", sceneAnalysis.totalSceneCount, "scenes,", sceneAnalysis.allImageKeywords.length, "keywords");
+        }
+
         // Update the store
         updateVideoAiAnalysis(aiAnalysis);
         console.log("[START] Video analysis complete:", aiAnalysis);
@@ -318,7 +335,11 @@ export default function StartPage() {
       setInputType("tiktok");
       setIsAnalyzingVideo(true);
       setAnalysisError(null);
+      const savedContentType = start.contentType; // Preserve content type selection
       clearStartData();
+      if (savedContentType) {
+        setStartContentType(savedContentType);
+      }
 
       try {
         const token = getAccessToken();
@@ -328,7 +349,7 @@ export default function StartPage() {
             "Content-Type": "application/json",
             ...(token && { Authorization: `Bearer ${token}` }),
           },
-          body: JSON.stringify({ url }),
+          body: JSON.stringify({ url, contentType: savedContentType }),
         });
 
         const data = await response.json();
@@ -338,7 +359,7 @@ export default function StartPage() {
         }
 
         // Extract video metadata and analysis
-        const { metadata, style_analysis, content_analysis, suggested_prompt, isComposeVideo, imageCount, conceptDetails } = data.data;
+        const { metadata, style_analysis, content_analysis, suggested_prompt, isComposeVideo, imageCount, conceptDetails, sceneAnalysis } = data.data;
 
         // Set video source with all data
         setStartFromVideo({
@@ -361,7 +382,7 @@ export default function StartPage() {
             name: metadata.author?.nickname || metadata.author?.username || "Unknown",
             avatar: metadata.author?.avatar,
           },
-          aiAnalysis: buildAiAnalysis(style_analysis, content_analysis, suggested_prompt, isComposeVideo, imageCount, conceptDetails),
+          aiAnalysis: buildAiAnalysis(style_analysis, content_analysis, suggested_prompt, isComposeVideo, imageCount, conceptDetails, sceneAnalysis),
         });
 
         setIdeaInput("");
@@ -377,7 +398,11 @@ export default function StartPage() {
       setInputType("text");
       setIsAnalyzingIdea(true);
       setAnalysisError(null);
+      const savedContentType = start.contentType; // Preserve content type selection
       clearStartData();
+      if (savedContentType) {
+        setStartContentType(savedContentType);
+      }
 
       try {
         const token = getAccessToken();
@@ -471,10 +496,15 @@ export default function StartPage() {
         setIdeaInput("");
         // CRITICAL: Sync to save title before navigating
         syncNow();
-        // For simple ideas without trend data, go directly to analyze
+        // Route based on content type
         transferToAnalyze();
-        setCurrentStage("analyze");
-        router.push("/analyze");
+        if (start.contentType === "fast-cut") {
+          const sessionParam = activeSession?.id ? `?session=${activeSession.id}` : "";
+          router.push(`/fast-cut/images${sessionParam}`);
+        } else {
+          setCurrentStage("analyze");
+          router.push("/analyze");
+        }
       } catch (error) {
         console.error("[START] Idea analysis failed:", error);
         // Fallback: just set the idea and proceed
@@ -483,8 +513,14 @@ export default function StartPage() {
         // CRITICAL: Sync to save title before navigating
         syncNow();
         transferToAnalyze();
-        setCurrentStage("analyze");
-        router.push("/analyze");
+        // Route based on content type
+        if (start.contentType === "fast-cut") {
+          const sessionParam = activeSession?.id ? `?session=${activeSession.id}` : "";
+          router.push(`/fast-cut/images${sessionParam}`);
+        } else {
+          setCurrentStage("analyze");
+          router.push("/analyze");
+        }
       } finally {
         setIsAnalyzingIdea(false);
       }
@@ -527,7 +563,15 @@ export default function StartPage() {
       setting?: string;
       props?: string[];
       clothingStyle?: string;
-    } | undefined
+    } | undefined,
+    sceneAnalysis?: {
+      scenes: { sceneNumber: number; description: string; visualElements: string[]; mood: string; imageKeywords: string[] }[];
+      overallStyle: { colorPalette: string[]; lighting: string; mood: string; vibe: string };
+      totalSceneCount: number;
+      isSmooth: boolean;
+      recommendedImageCount: number;
+      allImageKeywords: string[];
+    }
   ) => {
     const aiAnalysis: {
       hookAnalysis?: string;
@@ -537,6 +581,7 @@ export default function StartPage() {
       isComposeVideo?: boolean;
       imageCount?: number;
       conceptDetails?: typeof conceptDetails;
+      sceneAnalysis?: typeof sceneAnalysis;
     } = {};
 
     // Build styleAnalysis from style_analysis
@@ -592,6 +637,11 @@ export default function StartPage() {
       aiAnalysis.conceptDetails = conceptDetails;
     }
 
+    if (sceneAnalysis) {
+      aiAnalysis.sceneAnalysis = sceneAnalysis;
+      console.log("[START] Scene analysis added to aiAnalysis:", sceneAnalysis.totalSceneCount, "scenes,", sceneAnalysis.allImageKeywords.length, "keywords");
+    }
+
     return aiAnalysis;
   };
 
@@ -625,7 +675,7 @@ export default function StartPage() {
       // Fast Cut has its own step indicator, just navigate
       // Pass session ID in URL so it can be loaded after page refresh
       const sessionParam = activeSession?.id ? `?session=${activeSession.id}` : "";
-      router.push(`/fast-cut/script${sessionParam}`);
+      router.push(`/fast-cut/images${sessionParam}`);
     } else {
       // Default: AI Video flow
       setCurrentStage("analyze");
@@ -659,9 +709,11 @@ export default function StartPage() {
   }
 
   // Check if we can proceed to analyze (not during loading)
+  // Must have: content type selected AND (has source OR has input)
   const canProceedToAnalyze =
     !isAnalyzingVideo &&
     !isAnalyzingIdea &&
+    start.contentType !== null &&
     (startSource !== null || ideaInput.trim().length > 0);
 
   // Handle proceed action
@@ -1047,121 +1099,57 @@ export default function StartPage() {
                   </Card>
                 )}
 
-                {/* Content Type Selection - shown after AI analysis completes */}
-                {startSource.aiAnalysis && !isAnalyzingVideo && (
-                  <Card className="border-2 border-neutral-300 bg-white">
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center gap-2">
-                        <CardTitle className="text-sm font-medium">
-                          {language === "ko" ? "콘텐츠 타입 선택" : "Select Content Type"}
-                        </CardTitle>
-                        <InfoButton
-                          content={language === "ko"
-                            ? "AI Video는 AI가 이미지와 영상을 생성합니다. Fast Cut은 기존 이미지를 조합해 빠르게 편집 영상을 만듭니다."
-                            : "AI Video generates images and videos with AI. Fast Cut quickly creates edited videos by combining existing images."}
-                          side="right"
-                        />
-                        {startSource.aiAnalysis.isComposeVideo && (
-                          <Badge variant="secondary" className="text-xs bg-neutral-100">
-                            {language === "ko" ? "슬라이드쇼 감지됨" : "Slideshow Detected"}
-                          </Badge>
-                        )}
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-2">
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* AI Video Option */}
-                        <button
-                          onClick={() => setStartContentType("ai_video")}
-                          className={cn(
-                            "relative p-4 rounded-lg border-2 text-left transition-all",
-                            start.contentType === "ai_video"
-                              ? "border-neutral-900 bg-neutral-50"
-                              : "border-neutral-200 hover:border-neutral-300 bg-white"
-                          )}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className={cn(
-                              "p-2 rounded-lg",
-                              start.contentType === "ai_video" ? "bg-neutral-900" : "bg-neutral-100"
-                            )}>
-                              <Video className={cn(
-                                "h-5 w-5",
-                                start.contentType === "ai_video" ? "text-white" : "text-neutral-600"
-                              )} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm">AI Video</p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {language === "ko"
-                                  ? "AI가 이미지/영상 생성"
-                                  : "AI generates visuals"}
-                              </p>
-                            </div>
+                {/* Selected Content Type Display - shows what was already selected */}
+                {start.contentType && !isAnalyzingVideo && (
+                  <Card className="border border-neutral-200 bg-neutral-50">
+                    <CardContent className="py-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-neutral-900">
+                            {start.contentType === "ai_video" ? (
+                              <Sparkles className="h-4 w-4 text-white" />
+                            ) : (
+                              <Layers className="h-4 w-4 text-white" />
+                            )}
                           </div>
-                          {start.contentType === "ai_video" && (
-                            <div className="absolute top-2 right-2 w-5 h-5 bg-neutral-900 rounded-full flex items-center justify-center">
-                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            </div>
-                          )}
-                        </button>
-
-                        {/* Fast Cut Option */}
-                        <button
-                          onClick={() => setStartContentType("fast-cut")}
-                          className={cn(
-                            "relative p-4 rounded-lg border-2 text-left transition-all",
-                            start.contentType === "fast-cut"
-                              ? "border-neutral-900 bg-neutral-50"
-                              : "border-neutral-200 hover:border-neutral-300 bg-white"
-                          )}
-                        >
-                          {startSource.aiAnalysis.isComposeVideo && (
-                            <Badge className="absolute -top-2 -right-2 text-[10px] bg-neutral-700">
-                              {language === "ko" ? "추천" : "Recommended"}
-                            </Badge>
-                          )}
-                          <div className="flex items-start gap-3">
-                            <div className={cn(
-                              "p-2 rounded-lg",
-                              start.contentType === "fast-cut" ? "bg-neutral-900" : "bg-neutral-100"
-                            )}>
-                              <Layers className={cn(
-                                "h-5 w-5",
-                                start.contentType === "fast-cut" ? "text-white" : "text-neutral-600"
-                              )} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm">Fast Cut</p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {language === "ko"
-                                  ? "이미지 조합 빠른 편집"
-                                  : "Quick image-based editing"}
-                              </p>
-                            </div>
+                          <div>
+                            <p className="font-medium text-sm">
+                              {start.contentType === "ai_video" ? "AI Video" : "Fast Cut"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {start.contentType === "ai_video"
+                                ? (language === "ko" ? "AI가 이미지와 영상을 생성합니다" : "AI generates images and videos")
+                                : (language === "ko" ? "이미지를 조합해 빠르게 편집합니다" : "Quick editing with image combinations")}
+                            </p>
                           </div>
-                          {start.contentType === "fast-cut" && (
-                            <div className="absolute top-2 right-2 w-5 h-5 bg-neutral-900 rounded-full flex items-center justify-center">
-                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            </div>
-                          )}
-                        </button>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleClearSource}
+                          className="text-xs text-muted-foreground"
+                        >
+                          {language === "ko" ? "변경" : "Change"}
+                        </Button>
                       </div>
-
-                      {/* Info about detected slideshow */}
-                      {startSource.aiAnalysis.isComposeVideo && startSource.aiAnalysis.imageCount && (
-                        <div className="mt-3 p-2 rounded bg-neutral-50 border border-neutral-200">
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {/* Slideshow recommendation if detected */}
+                      {startSource.aiAnalysis?.isComposeVideo && start.contentType === "ai_video" && (
+                        <div className="mt-2 p-2 rounded bg-amber-50 border border-amber-200">
+                          <div className="flex items-center gap-2 text-xs text-amber-700">
                             <ImageIcon className="h-3.5 w-3.5" />
                             <span>
                               {language === "ko"
-                                ? `${startSource.aiAnalysis.imageCount}개 이미지가 감지되어 Fast Cut이 추천됩니다`
-                                : `${startSource.aiAnalysis.imageCount} images detected, Fast Cut recommended`}
+                                ? `슬라이드쇼 영상이 감지되었습니다. Fast Cut을 추천합니다.`
+                                : `Slideshow video detected. Fast Cut is recommended.`}
                             </span>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              onClick={() => setStartContentType("fast-cut")}
+                              className="h-auto p-0 text-xs text-amber-700 underline"
+                            >
+                              {language === "ko" ? "Fast Cut으로 변경" : "Switch to Fast Cut"}
+                            </Button>
                           </div>
                         </div>
                       )}
@@ -1227,7 +1215,8 @@ export default function StartPage() {
                           <p className="text-sm">{startSource.aiAnalysis.structureAnalysis}</p>
                         </div>
                       )}
-                      {startSource.aiAnalysis.suggestedApproach && (
+                      {/* Only show AI Video suggested approach when AI Video is selected */}
+                      {startSource.aiAnalysis.suggestedApproach && start.contentType === "ai_video" && (
                         <div>
                           <div className="flex items-center gap-1.5 mb-1">
                             <p className="text-xs font-medium text-muted-foreground">
@@ -1241,12 +1230,28 @@ export default function StartPage() {
                           <p className="text-sm">{startSource.aiAnalysis.suggestedApproach}</p>
                         </div>
                       )}
+                      {/* Fast Cut specific guidance */}
+                      {start.contentType === "fast-cut" && (
+                        <div className="p-3 rounded-lg bg-neutral-50 border border-neutral-200">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Layers className="h-4 w-4 text-neutral-600" />
+                            <p className="text-xs font-medium text-neutral-700">
+                              {language === "ko" ? "Fast Cut 모드" : "Fast Cut Mode"}
+                            </p>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {language === "ko"
+                              ? "영상의 스타일과 분위기를 분석했습니다. 다음 단계에서 AI가 스크립트와 이미지 키워드를 생성합니다."
+                              : "Video style and mood analyzed. In the next step, AI will generate scripts and image keywords."}
+                          </p>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 )}
 
-                {/* Detailed Concept for Recreation - if available */}
-                {startSource.aiAnalysis?.conceptDetails && (
+                {/* Detailed Concept for Recreation - only for AI Video mode */}
+                {startSource.aiAnalysis?.conceptDetails && start.contentType === "ai_video" && (
                   <Card className="border border-neutral-200">
                     <CardHeader className="pb-2">
                       <div className="flex items-center gap-2">
@@ -1456,6 +1461,136 @@ export default function StartPage() {
       {/* Content Area */}
       <div className="flex-1 overflow-auto min-h-0">
         <div className="container max-w-4xl mx-auto py-8 px-4">
+          {/* Content Type Selection - Must select before proceeding */}
+          <Card className="mb-6 border-2 border-neutral-300 bg-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <Video className="h-5 w-5 text-neutral-600" />
+                <CardTitle className="text-base font-medium">
+                  {language === "ko" ? "콘텐츠 타입 선택" : "Select Content Type"}
+                </CardTitle>
+                <Badge variant="outline" className="text-xs text-red-500 border-red-200">
+                  {language === "ko" ? "필수" : "Required"}
+                </Badge>
+              </div>
+              <CardDescription className="text-xs">
+                {language === "ko"
+                  ? "어떤 방식으로 영상을 만들지 선택해주세요"
+                  : "Choose how you want to create your video"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <div className="grid grid-cols-2 gap-3">
+                {/* AI Video Option */}
+                <button
+                  onClick={() => setStartContentType("ai_video")}
+                  className={cn(
+                    "relative p-4 rounded-lg border-2 text-left transition-all",
+                    start.contentType === "ai_video"
+                      ? "border-neutral-900 bg-neutral-50"
+                      : "border-neutral-200 hover:border-neutral-300 bg-white"
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={cn(
+                      "p-2 rounded-lg",
+                      start.contentType === "ai_video" ? "bg-neutral-900" : "bg-neutral-100"
+                    )}>
+                      <Sparkles className={cn(
+                        "h-5 w-5",
+                        start.contentType === "ai_video" ? "text-white" : "text-neutral-600"
+                      )} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">AI Video</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {language === "ko"
+                          ? "AI가 이미지와 영상을 생성합니다"
+                          : "AI generates images and videos"}
+                      </p>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        <Badge variant="secondary" className="text-[10px]">
+                          {language === "ko" ? "고품질" : "High Quality"}
+                        </Badge>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {language === "ko" ? "창작 영상" : "Creative"}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  {start.contentType === "ai_video" && (
+                    <div className="absolute top-2 right-2 w-5 h-5 bg-neutral-900 rounded-full flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  )}
+                </button>
+
+                {/* Fast Cut Option */}
+                <button
+                  onClick={() => setStartContentType("fast-cut")}
+                  className={cn(
+                    "relative p-4 rounded-lg border-2 text-left transition-all",
+                    start.contentType === "fast-cut"
+                      ? "border-neutral-900 bg-neutral-50"
+                      : "border-neutral-200 hover:border-neutral-300 bg-white"
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={cn(
+                      "p-2 rounded-lg",
+                      start.contentType === "fast-cut" ? "bg-neutral-900" : "bg-neutral-100"
+                    )}>
+                      <Layers className={cn(
+                        "h-5 w-5",
+                        start.contentType === "fast-cut" ? "text-white" : "text-neutral-600"
+                      )} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">Fast Cut</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {language === "ko"
+                          ? "이미지를 조합해 빠르게 편집합니다"
+                          : "Quick editing with image combinations"}
+                      </p>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        <Badge variant="secondary" className="text-[10px]">
+                          {language === "ko" ? "빠른 제작" : "Fast"}
+                        </Badge>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {language === "ko" ? "슬라이드쇼" : "Slideshow"}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  {start.contentType === "fast-cut" && (
+                    <div className="absolute top-2 right-2 w-5 h-5 bg-neutral-900 rounded-full flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  )}
+                </button>
+              </div>
+
+              {/* Help text based on selection */}
+              {start.contentType && (
+                <div className="mt-3 p-2 rounded bg-neutral-50 border border-neutral-200">
+                  <p className="text-xs text-muted-foreground">
+                    {start.contentType === "ai_video"
+                      ? (language === "ko"
+                          ? "💡 AI Video: 프롬프트를 기반으로 AI가 새로운 이미지와 영상을 생성합니다. 고품질 창작 콘텐츠에 적합합니다."
+                          : "💡 AI Video: AI generates new images and videos based on your prompt. Best for high-quality creative content.")
+                      : (language === "ko"
+                          ? "💡 Fast Cut: 기존 이미지를 활용해 빠르게 슬라이드쇼 스타일 영상을 만듭니다. 빠른 제작에 적합합니다."
+                          : "💡 Fast Cut: Quickly create slideshow-style videos using existing images. Best for fast production.")}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Direct Idea Input */}
           <Card className="mb-8 border border-neutral-200">
             <CardContent className="pt-6">

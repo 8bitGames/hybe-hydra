@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
-import { inngest } from "@/lib/inngest";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -172,26 +171,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const results = await Promise.all(generationPromises);
 
-    // Trigger video generation via Inngest for each item
-    await Promise.all(
-      results.map(({ generation, preset }) =>
-        inngest.send({
-          name: "video/generate",
-          data: {
-            generationId: generation.id,
-            campaignId,
-            userId: user.id,
-            prompt: generation.prompt,
-            options: {
-              negativePrompt: generation.negativePrompt || undefined,
-              duration: generation.durationSeconds,
-              aspectRatio: generation.aspectRatio,
-              stylePreset: preset.name,
-            },
-          },
-        })
-      )
-    );
+    // Note: Video generation will be triggered separately via compose-engine
+    // Generations are created in PENDING status
 
     // Format response
     const generations = results.map(({ generation, preset }) => ({

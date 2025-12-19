@@ -192,7 +192,7 @@ export default function AccountsSettingsPage() {
     loadAccounts();
   }, [loadAccounts]);
 
-  const handleConnectTikTok = async () => {
+  const handleConnectPlatform = async (platform: "TIKTOK" | "YOUTUBE" | "INSTAGRAM") => {
     // Use user's label_id or selected label (for ADMIN)
     const labelId = user?.label_ids?.[0] || selectedLabelId;
 
@@ -204,35 +204,44 @@ export default function AccountsSettingsPage() {
       return;
     }
 
-    setConnecting("TIKTOK");
+    setConnecting(platform);
     try {
       const redirectUrl = `${window.location.origin}/settings/accounts`;
+      const oauthEndpoint = platform === "TIKTOK"
+        ? "/api/v1/publishing/oauth/tiktok"
+        : platform === "YOUTUBE"
+        ? "/api/v1/publishing/oauth/youtube"
+        : "/api/v1/publishing/oauth/instagram";
 
       const response = await api.get<{ authorization_url: string; state: string; detail?: string }>(
-        `/api/v1/publishing/oauth/tiktok?label_id=${labelId}&redirect_url=${encodeURIComponent(redirectUrl)}`
+        `${oauthEndpoint}?label_id=${labelId}&redirect_url=${encodeURIComponent(redirectUrl)}`
       );
 
-      console.log("OAuth API response:", response);
-      console.log("OAuth API response.data:", response.data);
+      console.log(`${platform} OAuth API response:`, response);
+      console.log(`${platform} OAuth API response.data:`, response.data);
 
       if (response.data?.authorization_url) {
         // Store state in sessionStorage for callback verification
-        sessionStorage.setItem("tiktok_oauth_state", response.data.state);
-        // Redirect to TikTok OAuth
+        sessionStorage.setItem(`${platform.toLowerCase()}_oauth_state`, response.data.state);
+        // Redirect to platform OAuth
         window.location.href = response.data.authorization_url;
       } else {
         console.error("No authorization_url in response:", response.data);
         throw new Error(response.data?.detail || "Failed to get authorization URL");
       }
     } catch (err: any) {
-      console.error("Failed to start TikTok OAuth:", err);
+      console.error(`Failed to start ${platform} OAuth:`, err);
       console.error("Response data:", err?.response?.data);
       console.error("Response status:", err?.response?.status);
-      const errorDetail = err?.response?.data?.detail || err?.message || (isKorean ? "TikTok 연결을 시작하지 못했습니다" : "Failed to start TikTok connection");
+      const errorDetail = err?.response?.data?.detail || err?.message || (isKorean ? `${platform} 연결을 시작하지 못했습니다` : `Failed to start ${platform} connection`);
       toast.error(isKorean ? "연결 실패" : "Connection Failed", errorDetail);
       setConnecting(null);
     }
   };
+
+  const handleConnectTikTok = () => handleConnectPlatform("TIKTOK");
+  const handleConnectYouTube = () => handleConnectPlatform("YOUTUBE");
+  const handleConnectInstagram = () => handleConnectPlatform("INSTAGRAM");
 
   const handleDisconnect = async (accountId: string) => {
     setDisconnecting(accountId);
@@ -255,7 +264,9 @@ export default function AccountsSettingsPage() {
   };
 
   const tiktokAccounts = accounts.filter((a) => a.platform === "TIKTOK");
-  const otherAccounts = accounts.filter((a) => a.platform !== "TIKTOK");
+  const youtubeAccounts = accounts.filter((a) => a.platform === "YOUTUBE");
+  const instagramAccounts = accounts.filter((a) => a.platform === "INSTAGRAM");
+  const otherAccounts = accounts.filter((a) => !["TIKTOK", "YOUTUBE", "INSTAGRAM"].includes(a.platform));
 
   return (
     <div className="space-y-6">
@@ -364,6 +375,139 @@ export default function AccountsSettingsPage() {
         </CardContent>
       </Card>
 
+      {/* YouTube Section */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
+                <Youtube className="h-6 w-6" />
+              </div>
+              <div>
+                <CardTitle>{isKorean ? "YouTube 계정" : "YouTube Accounts"}</CardTitle>
+                <CardDescription>
+                  {isKorean
+                    ? "YouTube 계정을 연결하여 Shorts 영상 게시"
+                    : "Connect YouTube accounts to publish Shorts videos"}
+                </CardDescription>
+              </div>
+            </div>
+            <Button onClick={handleConnectYouTube} disabled={connecting === "YOUTUBE"}>
+              {connecting === "YOUTUBE" ? (
+                <Spinner className="h-4 w-4 mr-2" />
+              ) : (
+                <Plus className="h-4 w-4 mr-2" />
+              )}
+              {isKorean ? "YouTube 연결" : "Connect YouTube"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner className="h-8 w-8" />
+            </div>
+          ) : youtubeAccounts.length === 0 ? (
+            <div className="text-center py-8 border-2 border-dashed rounded-lg">
+              <Youtube className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+              <h3 className="font-medium mb-1">
+                {isKorean ? "연결된 YouTube 계정이 없습니다" : "No YouTube accounts connected"}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {isKorean
+                  ? "YouTube 계정을 연결하여 Shorts 영상 게시를 시작하세요"
+                  : "Connect your YouTube account to start publishing Shorts"}
+              </p>
+              <Button onClick={handleConnectYouTube} disabled={connecting === "YOUTUBE"}>
+                <Plus className="h-4 w-4 mr-2" />
+                {isKorean ? "YouTube 연결" : "Connect YouTube"}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {youtubeAccounts.map((account) => (
+                <AccountCard
+                  key={account.id}
+                  account={account}
+                  onDisconnect={handleDisconnect}
+                  disconnecting={disconnecting === account.id}
+                  isKorean={isKorean}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Instagram Section */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
+                <Instagram className="h-6 w-6" />
+              </div>
+              <div>
+                <CardTitle>{isKorean ? "Instagram 계정" : "Instagram Accounts"}</CardTitle>
+                <CardDescription>
+                  {isKorean
+                    ? "Instagram Business 계정을 연결하여 Reels 영상 게시"
+                    : "Connect Instagram Business accounts to publish Reels videos"}
+                </CardDescription>
+              </div>
+            </div>
+            <Button onClick={handleConnectInstagram} disabled={connecting === "INSTAGRAM"}>
+              {connecting === "INSTAGRAM" ? (
+                <Spinner className="h-4 w-4 mr-2" />
+              ) : (
+                <Plus className="h-4 w-4 mr-2" />
+              )}
+              {isKorean ? "Instagram 연결" : "Connect Instagram"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner className="h-8 w-8" />
+            </div>
+          ) : instagramAccounts.length === 0 ? (
+            <div className="text-center py-8 border-2 border-dashed rounded-lg">
+              <Instagram className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+              <h3 className="font-medium mb-1">
+                {isKorean ? "연결된 Instagram 계정이 없습니다" : "No Instagram accounts connected"}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {isKorean
+                  ? "Instagram Business 계정을 연결하여 Reels 게시를 시작하세요"
+                  : "Connect your Instagram Business account to start publishing Reels"}
+              </p>
+              <p className="text-xs text-muted-foreground mb-4">
+                {isKorean
+                  ? "* Instagram Business 또는 Creator 계정이 필요하며, Facebook 페이지와 연결되어야 합니다"
+                  : "* Requires Instagram Business or Creator account connected to a Facebook Page"}
+              </p>
+              <Button onClick={handleConnectInstagram} disabled={connecting === "INSTAGRAM"}>
+                <Plus className="h-4 w-4 mr-2" />
+                {isKorean ? "Instagram 연결" : "Connect Instagram"}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {instagramAccounts.map((account) => (
+                <AccountCard
+                  key={account.id}
+                  account={account}
+                  onDisconnect={handleDisconnect}
+                  disconnecting={disconnecting === account.id}
+                  isKorean={isKorean}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Other Platforms (Coming Soon) */}
       <Card>
         <CardHeader>
@@ -373,29 +517,20 @@ export default function AccountsSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[
-              { platform: "YOUTUBE", name: "YouTube Shorts", Icon: Youtube, status: isKorean ? "곧 제공" : "Coming Soon" },
-              { platform: "INSTAGRAM", name: "Instagram Reels", Icon: Instagram, status: isKorean ? "곧 제공" : "Coming Soon" },
-              { platform: "TWITTER", name: "Twitter/X", Icon: Twitter, status: isKorean ? "곧 제공" : "Coming Soon" },
-            ].map((item) => (
-              <div
-                key={item.platform}
-                className="p-4 border rounded-lg opacity-60"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-zinc-100 dark:bg-zinc-800">
-                    <item.Icon className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="font-medium">{item.name}</p>
-                    <Badge variant="outline" className="text-xs mt-1">
-                      {item.status}
-                    </Badge>
-                  </div>
+          <div className="grid grid-cols-1 gap-4">
+            <div className="p-4 border rounded-lg opacity-60">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-zinc-100 dark:bg-zinc-800">
+                  <Twitter className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="font-medium">Twitter/X</p>
+                  <Badge variant="outline" className="text-xs mt-1">
+                    {isKorean ? "곧 제공" : "Coming Soon"}
+                  </Badge>
                 </div>
               </div>
-            ))}
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -22,12 +22,14 @@ from ..models.ai_job import (
     AIJobStatus,
     AIJobType,
     AudioOverlaySettings,
+    VideoExtendSettings,
 )
 from ..models.responses import JobStatus
 from ..services.vertex_ai import (
     create_vertex_ai_client,
     VideoGenerationConfig,
     ImageGenerationConfig,
+    VideoExtendConfig,
     VideoAspectRatio,
     ImageAspectRatio,
     GenerationResult,
@@ -506,8 +508,7 @@ async def process_video_generation(
                 )
                 logger.info(f"[{job_id}] Audio overlay applied: {len(video_bytes)} bytes")
             except Exception as e:
-                logger.error(f"[{job_id}] Audio overlay failed: {e}")
-                raise RuntimeError(f"Audio overlay failed: {e}")
+                logger.warning(f"[{job_id}] Audio overlay failed, saving video without audio: {e}")
 
         if job_queue:
             await job_queue.update_job(
@@ -525,16 +526,23 @@ async def process_video_generation(
 
         duration_ms = int((time.time() - start_time) * 1000)
 
+        # Include GCS URI in metadata for future video extensions
+        generation_metadata = {
+            "gcs_uri": actual_video_uri,
+            "extension_count": 0,
+        }
+
         if job_queue:
             await job_queue.update_job(
                 job_id,
                 status=JobStatus.COMPLETED,
                 progress=100,
                 current_step="Completed",
-                output_url=output_url
+                output_url=output_url,
+                metadata=generation_metadata,
             )
 
-        logger.info(f"[{job_id}] Video generation completed in {duration_ms}ms")
+        logger.info(f"[{job_id}] Video generation completed in {duration_ms}ms (gcs_uri: {actual_video_uri})")
 
     except Exception as e:
         logger.error(f"[{job_id}] Video generation failed: {e}")
@@ -672,8 +680,7 @@ async def process_image_to_video(
                 )
                 logger.info(f"[{job_id}] Audio overlay applied: {len(video_bytes)} bytes")
             except Exception as e:
-                logger.error(f"[{job_id}] Audio overlay failed: {e}")
-                raise RuntimeError(f"Audio overlay failed: {e}")
+                logger.warning(f"[{job_id}] Audio overlay failed, saving video without audio: {e}")
 
         if job_queue:
             await job_queue.update_job(
@@ -691,19 +698,181 @@ async def process_image_to_video(
 
         duration_ms = int((time.time() - start_time) * 1000)
 
+        # Include GCS URI in metadata for future video extensions
+        generation_metadata = {
+            "gcs_uri": actual_video_uri,
+            "extension_count": 0,
+        }
+
         if job_queue:
             await job_queue.update_job(
                 job_id,
                 status=JobStatus.COMPLETED,
                 progress=100,
                 current_step="Completed",
-                output_url=output_url
+                output_url=output_url,
+                metadata=generation_metadata,
             )
 
-        logger.info(f"[{job_id}] Image-to-video generation completed in {duration_ms}ms")
+        logger.info(f"[{job_id}] Image-to-video generation completed in {duration_ms}ms (gcs_uri: {actual_video_uri})")
 
     except Exception as e:
         logger.error(f"[{job_id}] Image-to-video generation failed: {e}")
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        if job_queue:
+            await job_queue.update_job(
+                job_id,
+                status=JobStatus.FAILED,
+                error=str(e)
+            )
+
+
+async def process_video_extend(
+    request: AIJobRequest,
+    job_queue: Optional[JobQueue]
+):
+    """
+    Process video extension job using Vertex AI Veo 3.1.
+
+    Extends a previously generated Veo video by up to 7 seconds.
+    """
+    job_id = request.job_id
+    start_time = time.time()
+
+    try:
+        if job_queue:
+            await job_queue.update_job(
+                job_id,
+                status=JobStatus.PROCESSING,
+                progress=5,
+                current_step="Starting video extension"
+            )
+
+        settings = request.extend_settings
+        if not settings:
+            raise ValueError("extend_settings is required for video_extend job")
+
+        # Validate extension count
+        if settings.extension_count >= 20:
+            raise ValueError("Maximum extension limit (20) reached for this video")
+
+        # Create Vertex AI client
+        client = create_vertex_ai_client()
+
+        # Build GCS output URI
+        gcs_bucket = request.output.gcs_bucket or os.environ.get('GCS_OUTPUT_BUCKET', 'hydra-ai-outputs')
+        gcs_key = f"videos/extended/{job_id}.mp4"
+        output_gcs_uri = f"gs://{gcs_bucket}/{gcs_key}"
+
+        config = VideoExtendConfig(
+            source_video_gcs_uri=settings.source_gcs_uri,
+            prompt=settings.prompt,
+            aspect_ratio=VideoAspectRatio(settings.aspect_ratio.value),
+        )
+
+        if job_queue:
+            await job_queue.update_job(
+                job_id,
+                progress=10,
+                current_step="Extending video with Veo 3.1"
+            )
+
+        # Extend video (this polls until completion)
+        result = await client.extend_video(
+            config,
+            output_gcs_uri=output_gcs_uri,
+            poll_interval=10.0,
+            max_wait_time=600.0,  # 10 minutes
+        )
+
+        if not result.success:
+            raise RuntimeError(result.error or "Video extension failed")
+
+        if job_queue:
+            await job_queue.update_job(
+                job_id,
+                progress=80,
+                current_step="Downloading from GCS and uploading to S3"
+            )
+
+        # Download from GCS and upload to S3
+        from google.cloud import storage
+
+        actual_video_uri = result.video_uri or output_gcs_uri
+        logger.info(f"[{job_id}] Downloading extended video from: {actual_video_uri}")
+
+        # Parse GCS URI (gs://bucket/path)
+        if actual_video_uri.startswith("gs://"):
+            uri_parts = actual_video_uri[5:].split("/", 1)
+            actual_bucket = uri_parts[0]
+            actual_key = uri_parts[1] if len(uri_parts) > 1 else gcs_key
+        else:
+            actual_bucket = gcs_bucket
+            actual_key = gcs_key
+
+        gcs_client = storage.Client()
+        bucket = gcs_client.bucket(actual_bucket)
+        blob = bucket.blob(actual_key)
+
+        video_bytes = blob.download_as_bytes()
+
+        # Apply audio overlay if configured
+        if settings.audio_overlay:
+            if job_queue:
+                await job_queue.update_job(
+                    job_id,
+                    progress=85,
+                    current_step="Applying audio overlay"
+                )
+            logger.info(f"[{job_id}] Applying audio overlay to extended video...")
+            try:
+                video_bytes = await apply_audio_overlay(
+                    video_data=video_bytes,
+                    audio_overlay=settings.audio_overlay,
+                    job_id=job_id,
+                )
+                logger.info(f"[{job_id}] Audio overlay applied: {len(video_bytes)} bytes")
+            except Exception as e:
+                logger.warning(f"[{job_id}] Audio overlay failed, saving video without audio: {e}")
+
+        if job_queue:
+            await job_queue.update_job(
+                job_id,
+                progress=95,
+                current_step="Uploading to S3"
+            )
+
+        output_url = await upload_to_s3(
+            video_bytes,
+            request.output.s3_bucket,
+            request.output.s3_key,
+            content_type="video/mp4"
+        )
+
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        # Include the new GCS URI in metadata for future extensions
+        extended_metadata = {
+            "gcs_uri": actual_video_uri,
+            "extension_count": settings.extension_count + 1,
+            "source_gcs_uri": settings.source_gcs_uri,
+        }
+
+        if job_queue:
+            await job_queue.update_job(
+                job_id,
+                status=JobStatus.COMPLETED,
+                progress=100,
+                current_step="Completed",
+                output_url=output_url,
+                metadata=extended_metadata,
+            )
+
+        logger.info(f"[{job_id}] Video extension completed in {duration_ms}ms (extension #{settings.extension_count + 1})")
+
+    except Exception as e:
+        logger.error(f"[{job_id}] Video extension failed: {e}")
         duration_ms = int((time.time() - start_time) * 1000)
 
         if job_queue:
@@ -747,6 +916,10 @@ async def submit_ai_job(
     elif request.job_type == AIJobType.IMAGE_TO_VIDEO:
         background_tasks.add_task(process_image_to_video, request, job_queue)
         message = "Image-to-video job queued"
+
+    elif request.job_type == AIJobType.VIDEO_EXTEND:
+        background_tasks.add_task(process_video_extend, request, job_queue)
+        message = "Video extension job queued"
 
     else:
         raise HTTPException(
@@ -822,6 +995,48 @@ async def generate_image_to_video(
         raise HTTPException(
             status_code=400,
             detail="i2v_settings is required for image-to-video generation"
+        )
+
+    return await submit_ai_job(request, background_tasks)
+
+
+@router.post("/video/extend", response_model=AIJobResponse)
+async def extend_video(
+    request: AIJobRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Extend a previously generated Veo video by up to 7 seconds.
+
+    Requirements:
+    - Source video must be a Veo-generated video (requires GCS URI)
+    - Maximum 20 extensions per video
+    - Resolution fixed at 720p for extensions
+    - Supports only 9:16 or 16:9 aspect ratios
+
+    The extended video will be saved to a new S3 location and the
+    new GCS URI will be returned in metadata for future extensions.
+    """
+    request.job_type = AIJobType.VIDEO_EXTEND
+
+    if not request.extend_settings:
+        raise HTTPException(
+            status_code=400,
+            detail="extend_settings is required for video extension"
+        )
+
+    # Validate GCS URI format
+    if not request.extend_settings.source_gcs_uri.startswith("gs://"):
+        raise HTTPException(
+            status_code=400,
+            detail="source_gcs_uri must be a valid GCS URI (gs://bucket/path)"
+        )
+
+    # Validate extension count
+    if request.extend_settings.extension_count >= 20:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum extension limit (20) reached for this video"
         )
 
     return await submit_ai_job(request, background_tasks)

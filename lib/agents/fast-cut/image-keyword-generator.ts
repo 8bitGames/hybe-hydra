@@ -98,7 +98,7 @@ export const ImageKeywordGeneratorConfig: AgentConfig<ImageKeywordGeneratorInput
     name: 'gemini-2.5-flash',
     options: {
       temperature: 0.6,
-      maxTokens: 2048,
+      maxTokens: 8192, // Increased for thinking model - reasoning uses significant tokens
     },
   },
 

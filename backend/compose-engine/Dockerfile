@@ -297,9 +297,9 @@ RUN mkdir -p /tmp/compose
 # Modal uses add_local_dir() instead, so this is optional
 COPY app/ /root/app/
 
-# Copy AWS Batch worker scripts
-COPY aws-batch/batch_worker.py /root/batch_worker.py
-COPY aws-batch/ai_worker.py /root/ai_worker.py
+# Copy AWS Batch worker scripts (disabled - files not present)
+# COPY aws-batch/batch_worker.py /root/batch_worker.py
+# COPY aws-batch/ai_worker.py /root/ai_worker.py
 
 # Copy GCP Service Account credentials (for Vertex AI authentication)
 #

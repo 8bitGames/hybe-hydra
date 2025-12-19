@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { generateGeoAeoContent } from "@/lib/geo-aeo-generator";
+import { createGeoAeoOptimizerAgent } from "@/lib/agents/publishers";
+import type { AgentContext } from "@/lib/agents/types";
 
 interface CallbackPayload {
   job_id: string;
@@ -8,6 +9,33 @@ interface CallbackPayload {
   output_url?: string;
   error?: string;
   progress?: number;
+  metadata?: {
+    generation_id?: string;
+    gcs_uri?: string;
+    extension_count?: number;
+    original_generation_id?: string;
+    extension_number?: number;
+  };
+}
+
+// Publishing callback from EC2 backend
+interface PublishCallbackPayload {
+  job_id: string;
+  post_id: string;
+  platform: "tiktok" | "youtube" | "instagram";
+  status: "completed" | "failed";
+  result?: {
+    // TikTok
+    publish_id?: string;
+    // YouTube
+    video_id?: string;
+    video_url?: string;
+    channel_id?: string;
+    // Instagram
+    media_id?: string;
+    permalink?: string;
+  };
+  error?: string;
 }
 
 interface AutoPublishSettings {
@@ -43,9 +71,82 @@ function mapStatusToPrisma(status: string): string {
   }
 }
 
+// Handle publishing callback from EC2 backend
+async function handlePublishCallback(body: PublishCallbackPayload): Promise<NextResponse> {
+  const { job_id, post_id, platform, status, result, error } = body;
+
+  console.log(`[Publish Callback] Received callback for post ${post_id}: ${platform} ${status}`);
+
+  try {
+    // Map status to Prisma enum
+    const prismaStatus = status === "completed" ? "PUBLISHED" : "FAILED";
+
+    // Build update data with platform-specific results
+    const updateData: Record<string, unknown> = {
+      status: prismaStatus,
+      publishedAt: status === "completed" ? new Date() : null,
+      updatedAt: new Date(),
+    };
+
+    if (error) {
+      updateData.errorMessage = error;
+    }
+
+    // Store platform-specific result data in metadata
+    if (result) {
+      const publishResult: Record<string, unknown> = {
+        platform,
+        publishedAt: new Date().toISOString(),
+      };
+
+      if (platform === "tiktok" && result.publish_id) {
+        publishResult.publishId = result.publish_id;
+        publishResult.videoUrl = `https://www.tiktok.com/@user/video/${result.publish_id}`;
+      } else if (platform === "youtube" && result.video_id) {
+        publishResult.videoId = result.video_id;
+        publishResult.videoUrl = result.video_url || `https://youtube.com/shorts/${result.video_id}`;
+        publishResult.channelId = result.channel_id;
+      } else if (platform === "instagram" && result.media_id) {
+        publishResult.mediaId = result.media_id;
+        publishResult.permalink = result.permalink;
+      }
+
+      updateData.publishResult = publishResult;
+    }
+
+    // Update the scheduled post
+    await prisma.scheduledPost.update({
+      where: { id: post_id },
+      data: updateData,
+    });
+
+    console.log(`[Publish Callback] Updated post ${post_id}: ${platform} → ${prismaStatus}`);
+
+    return NextResponse.json({ success: true, post_id, platform, status });
+  } catch (dbError) {
+    console.error(`[Publish Callback] Database error for post ${post_id}:`, dbError);
+    return NextResponse.json(
+      { detail: "Failed to update post status" },
+      { status: 500 }
+    );
+  }
+}
+
 // POST /api/v1/jobs/callback - Receive job status callbacks from compose-engine
 export async function POST(request: NextRequest) {
   try {
+    // Check if this is a publishing callback
+    const { searchParams } = new URL(request.url);
+    const callbackType = searchParams.get("type");
+    const postId = searchParams.get("postId");
+
+    if (callbackType === "publish" && postId) {
+      const body: PublishCallbackPayload = await request.json();
+      body.post_id = postId; // Ensure post_id is set from query param
+      return handlePublishCallback(body);
+    }
+
+    // Default: video generation callback
     const body: CallbackPayload = await request.json();
     const { job_id, status, output_url, error, progress } = body;
 
@@ -68,6 +169,20 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       updateData.errorMessage = error;
+    }
+
+    // Handle metadata from video generation/extension jobs
+    const metadata = body.metadata;
+    if (metadata) {
+      // Update GCS URI if provided (required for video extension)
+      if (metadata.gcs_uri) {
+        updateData.gcsUri = metadata.gcs_uri;
+      }
+
+      // Update extension count if this was an extension job
+      if (typeof metadata.extension_count === "number") {
+        updateData.extensionCount = metadata.extension_count;
+      }
     }
 
     await prisma.videoGeneration.update({
@@ -101,22 +216,47 @@ export async function POST(request: NextRequest) {
         let caption = autoPublish.caption || "";
         let hashtags = autoPublish.hashtags || [];
 
-        // Generate GEO/AEO content if enabled
+        // Generate GEO/AEO content if enabled (using Agent System)
         if (autoPublish.generateGeoAeo && searchTags && searchTags.length > 0) {
           console.log(`[Job Callback] Generating GEO/AEO content for job ${job_id}`);
           try {
-            const geoAeoResult = await generateGeoAeoContent({
+            const agent = createGeoAeoOptimizerAgent();
+            const agentContext: AgentContext = {
+              workflow: {
+                campaignId: generation.campaignId || undefined,
+                artistName: "Unknown Artist",
+                language: "ko",
+                platform: "tiktok",
+              },
+            };
+
+            const agentResult = await agent.execute({
               keywords: searchTags,
               prompt: originalPrompt,
               vibe: settings?.vibe as "Exciting" | "Emotional" | "Pop" | "Minimal" | undefined,
               language: "ko",
               platform: "tiktok",
-            });
+            }, agentContext);
 
-            caption = geoAeoResult.combinedCaption;
-            hashtags = geoAeoResult.combinedHashtags.map(tag => tag.replace(/^#/, ""));
+            if (!agentResult.success || !agentResult.data) {
+              throw new Error(agentResult.error || "Agent execution failed");
+            }
 
-            console.log(`[Job Callback] GEO/AEO content generated. Score: ${geoAeoResult.scores.overallScore}`);
+            const { geo, hashtags: hashtagsData, scores } = agentResult.data;
+
+            // Build combined caption
+            caption = `${geo.hookLine}\n\n${geo.caption}\n\n${geo.callToAction}`.slice(0, 2200);
+
+            // Combine all hashtags
+            hashtags = [
+              ...hashtagsData.primary,
+              ...hashtagsData.entity,
+              ...hashtagsData.niche,
+              ...hashtagsData.trending,
+              ...hashtagsData.longTail,
+            ].slice(0, 5).map(tag => tag.replace(/^#/, ""));
+
+            console.log(`[Job Callback] GEO/AEO content generated. Score: ${scores.overallScore}`);
 
             // Update metadata with generated content
             await prisma.videoGeneration.update({
@@ -127,7 +267,7 @@ export async function POST(request: NextRequest) {
                   geoAeoContent: {
                     caption,
                     hashtags,
-                    score: geoAeoResult.scores.overallScore,
+                    score: scores.overallScore,
                     generatedAt: new Date().toISOString(),
                   },
                 },

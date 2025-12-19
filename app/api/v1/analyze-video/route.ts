@@ -2,6 +2,10 @@
  * Video Analysis API
  * Analyzes TikTok videos to extract style and content for prompt generation
  * Includes caching to avoid repeated analysis of the same video
+ *
+ * Supports two content types:
+ * - ai_video: Standard style analysis for AI video recreation
+ * - fast-cut: Scene-by-scene analysis with image search keywords
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -10,6 +14,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { analyzeTikTokVideo, isValidTikTokUrl, TikTokAnalysisResult } from "@/lib/tiktok-analyzer";
 import { cacheImageToS3 } from "@/lib/storage";
+import { getFastCutSceneAnalyzerAgent, type FastCutSceneAnalyzerOutput } from "@/lib/agents/fast-cut";
 
 export const maxDuration = 60; // Allow longer execution for video analysis
 
@@ -48,7 +53,8 @@ function buildResponseData(
   promptElements: TikTokAnalysisResult["prompt_elements"],
   isComposeVideo: boolean,
   imageCount: number,
-  conceptDetails: Record<string, unknown>
+  conceptDetails: Record<string, unknown>,
+  sceneAnalysis?: FastCutSceneAnalyzerOutput | null
 ) {
   return {
     metadata,
@@ -59,6 +65,8 @@ function buildResponseData(
     isComposeVideo,
     imageCount,
     conceptDetails,
+    // Fast Cut specific data
+    sceneAnalysis: sceneAnalysis || null,
   };
 }
 
@@ -66,7 +74,7 @@ function buildResponseData(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { url, skipCache = false } = body;
+    const { url, skipCache = false, contentType = "ai_video" } = body;
 
     if (!url) {
       return NextResponse.json(
@@ -138,6 +146,32 @@ export async function POST(request: NextRequest) {
             image_urls: cached.imageUrls,
           };
 
+          // For Fast Cut, run scene analysis even for cached videos
+          let sceneAnalysis: FastCutSceneAnalyzerOutput | null = null;
+          if (contentType === "fast-cut") {
+            try {
+              console.log("[API] Running scene analysis for Fast Cut (cached video)");
+              const sceneAgent = getFastCutSceneAnalyzerAgent();
+              const sceneResult = await sceneAgent.execute({
+                videoDescription: cached.description || "",
+                hashtags: cached.hashtags || [],
+                musicTitle: cached.musicTitle || undefined,
+                musicAuthor: cached.musicAuthor || undefined,
+                videoDuration: cached.duration || undefined,
+                isPhotoPost: cached.isPhotoPost || false,
+                imageCount: cached.imageCount || undefined,
+                language: "ko",
+              }, { sessionId: `analyze-${urlHash}` });
+
+              if (sceneResult.success && sceneResult.data) {
+                sceneAnalysis = sceneResult.data;
+                console.log("[API] Scene analysis complete:", sceneAnalysis.totalSceneCount, "scenes");
+              }
+            } catch (sceneError) {
+              console.error("[API] Scene analysis failed:", sceneError);
+            }
+          }
+
           const responseData = buildResponseData(
             cachedMetadata,
             cached.styleAnalysis as unknown as TikTokAnalysisResult["style_analysis"],
@@ -146,7 +180,8 @@ export async function POST(request: NextRequest) {
             cached.promptElements as unknown as TikTokAnalysisResult["prompt_elements"],
             cached.isPhotoPost || (cached.imageUrls && cached.imageUrls.length > 1),
             cached.imageCount,
-            (cached.conceptDetails as unknown as Record<string, unknown>) || {}
+            (cached.conceptDetails as unknown as Record<string, unknown>) || {},
+            sceneAnalysis
           );
 
           return NextResponse.json({
@@ -284,6 +319,32 @@ export async function POST(request: NextRequest) {
     // Wait for cache to complete (to ensure data is saved before response)
     await cachePromise;
 
+    // For Fast Cut, run scene analysis
+    let sceneAnalysis: FastCutSceneAnalyzerOutput | null = null;
+    if (contentType === "fast-cut") {
+      try {
+        console.log("[API] Running scene analysis for Fast Cut (fresh video)");
+        const sceneAgent = getFastCutSceneAnalyzerAgent();
+        const sceneResult = await sceneAgent.execute({
+          videoDescription: result.metadata?.description || "",
+          hashtags: result.metadata?.hashtags || [],
+          musicTitle: result.metadata?.music?.title,
+          musicAuthor: result.metadata?.music?.author,
+          videoDuration: result.metadata?.duration,
+          isPhotoPost: result.metadata?.is_photo_post || false,
+          imageCount: result.metadata?.image_urls?.length,
+          language: "ko",
+        }, { sessionId: `analyze-${urlHash}` });
+
+        if (sceneResult.success && sceneResult.data) {
+          sceneAnalysis = sceneResult.data;
+          console.log("[API] Scene analysis complete:", sceneAnalysis.totalSceneCount, "scenes,", sceneAnalysis.allImageKeywords.length, "keywords");
+        }
+      } catch (sceneError) {
+        console.error("[API] Scene analysis failed:", sceneError);
+      }
+    }
+
     const responseData = buildResponseData(
       result.metadata,
       result.style_analysis,
@@ -292,7 +353,8 @@ export async function POST(request: NextRequest) {
       result.prompt_elements,
       isComposeVideo,
       result.metadata?.image_urls?.length || 0,
-      conceptDetails
+      conceptDetails,
+      sceneAnalysis
     );
 
     return NextResponse.json({

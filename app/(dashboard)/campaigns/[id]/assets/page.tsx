@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { assetsApi, Asset } from "@/lib/campaigns-api";
 import {
@@ -112,6 +112,17 @@ export default function CampaignAssetsPage() {
   const assets = assetsData?.items || [];
   const totalPages = assetsData?.pages || 1;
   const loading = campaignLoading || assetsLoading;
+
+  // Update selectedAudioAsset when assets data changes (after refetch)
+  const selectedAssetId = selectedAudioAsset?.id;
+  useEffect(() => {
+    if (selectedAssetId && assets.length > 0) {
+      const updatedAsset = assets.find((a) => a.id === selectedAssetId);
+      if (updatedAsset) {
+        setSelectedAudioAsset(updatedAsset);
+      }
+    }
+  }, [assets, selectedAssetId]);
 
   // Redirect if campaign not found
   if (campaignError) {

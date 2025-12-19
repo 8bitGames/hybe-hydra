@@ -71,6 +71,25 @@ class ImageGenerationConfig:
 
 
 @dataclass
+class VideoExtendConfig:
+    """
+    Configuration for video extension.
+
+    Veo 3.1 supports extending previously generated videos by up to 7 seconds
+    per extension, with a maximum of 20 extensions total.
+
+    Requirements:
+    - Source video must be from a previous Veo generation (GCS URI)
+    - Resolution is fixed at 720p for extensions
+    - Aspect ratio must be 9:16 or 16:9
+    - Last 1 second of video should contain audio for best results
+    """
+    source_video_gcs_uri: str  # GCS URI of the video to extend
+    prompt: Optional[str] = None  # Optional prompt for continuation
+    aspect_ratio: VideoAspectRatio = VideoAspectRatio.PORTRAIT_9_16
+
+
+@dataclass
 class GenerationResult:
     """Result of a generation operation."""
     success: bool
@@ -282,6 +301,135 @@ class VertexAIClient:
 
         except Exception as e:
             logger.error(f"Video generation failed: {e}")
+            return GenerationResult(
+                success=False,
+                error=str(e),
+            )
+
+    async def extend_video(
+        self,
+        config: VideoExtendConfig,
+        output_gcs_uri: str,
+        poll_interval: float = 10.0,
+        max_wait_time: float = 600.0,  # 10 minutes
+    ) -> GenerationResult:
+        """
+        Extend a previously generated Veo video by up to 7 seconds.
+
+        Uses the same generate_videos endpoint but with a 'video' parameter
+        instead of 'image' to reference the source video.
+
+        Args:
+            config: Video extension configuration
+            output_gcs_uri: GCS URI for output video (gs://bucket/path/video.mp4)
+            poll_interval: Seconds between status checks
+            max_wait_time: Maximum wait time for completion
+
+        Returns:
+            GenerationResult with extended video URI or error
+
+        Note:
+            - Source video must be from a previous Veo generation
+            - Extensions are fixed at 720p resolution
+            - Maximum 20 extensions per video chain
+            - Last 1 second should have audio for best results
+        """
+        logger.info(f"Starting video extension from: {config.source_video_gcs_uri[:50]}...")
+
+        # Build request payload for video extension
+        # Key difference: use 'video' parameter instead of 'image'
+        instances = [{
+            "video": {
+                "gcsUri": config.source_video_gcs_uri,
+            }
+        }]
+
+        # Add optional continuation prompt
+        if config.prompt:
+            instances[0]["prompt"] = config.prompt
+            logger.info(f"Extension prompt: {config.prompt[:50]}...")
+
+        parameters = {
+            "aspectRatio": config.aspect_ratio.value,
+            "resolution": "720p",  # Extension only supports 720p
+            "storageUri": output_gcs_uri,
+            "sampleCount": 1,
+        }
+
+        request_body = {
+            "instances": instances,
+            "parameters": parameters,
+        }
+
+        try:
+            # Start extension (returns long-running operation)
+            endpoint = self._get_model_endpoint(self.VEO_MODEL, "predictLongRunning")
+            logger.info(f"Calling Veo extend endpoint: {endpoint}")
+
+            response = await self._make_request("POST", endpoint, request_body)
+
+            # Get operation name for polling
+            operation_name = response.get("name")
+            if not operation_name:
+                return GenerationResult(
+                    success=False,
+                    error="No operation name returned from Veo API for extension",
+                )
+
+            logger.info(f"Video extension started: {operation_name}")
+
+            # Poll for completion
+            result = await self._poll_operation(
+                operation_name,
+                poll_interval=poll_interval,
+                max_wait_time=max_wait_time,
+            )
+
+            if result.get("done"):
+                if "error" in result:
+                    error_msg = str(result["error"])
+                    logger.error(f"Video extension error: {error_msg}")
+                    return GenerationResult(
+                        success=False,
+                        operation_name=operation_name,
+                        error=error_msg,
+                    )
+
+                # Extract video URI from response
+                response_data = result.get("response", {})
+                videos = response_data.get("videos", [])
+
+                logger.info(f"Veo extension response data: {response_data}")
+
+                if videos and len(videos) > 0:
+                    video_uri = videos[0].get("gcsUri", output_gcs_uri)
+                    logger.info(f"Extended video URI: {video_uri}")
+                    return GenerationResult(
+                        success=True,
+                        operation_name=operation_name,
+                        video_uri=video_uri,
+                        metadata=response_data,
+                    )
+
+                # No videos returned - check for content filter
+                logger.error(f"No videos in extension response. Full result: {result}")
+                rai_result = response_data.get("raiMediaFilteredReasons", [])
+                if rai_result:
+                    return GenerationResult(
+                        success=False,
+                        operation_name=operation_name,
+                        error=f"Video extension blocked by content filter: {rai_result}",
+                        metadata=response_data,
+                    )
+
+            return GenerationResult(
+                success=False,
+                operation_name=operation_name,
+                error=f"Video extension did not complete. Response: {result}",
+            )
+
+        except Exception as e:
+            logger.error(f"Video extension failed: {e}")
             return GenerationResult(
                 success=False,
                 error=str(e),

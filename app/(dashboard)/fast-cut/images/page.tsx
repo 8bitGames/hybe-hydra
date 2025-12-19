@@ -59,17 +59,32 @@ export default function FastCutImagesPage() {
     selectedSearchKeywords,
     setSelectedSearchKeywords,
     generationId,
+    setGenerationId,
     scriptData,
+    hasSceneAnalysis,
     setError,
     isHydrated,
   } = useFastCut();
 
-  // Redirect if no script data (only after hydration)
+  // Check if we have valid data to proceed (either from script step or scene analysis from Start page)
+  const hasValidData = scriptData !== null || hasSceneAnalysis || editableKeywords.length > 0;
+
+  // Redirect if no valid data (only after hydration)
   useEffect(() => {
-    if (isHydrated && !scriptData) {
-      router.replace("/fast-cut/script");
+    if (isHydrated && !hasValidData) {
+      console.log("[FastCut Images] No valid data found, redirecting to start page");
+      router.replace("/start");
     }
-  }, [isHydrated, scriptData, router]);
+  }, [isHydrated, hasValidData, router]);
+
+  // Generate generationId if we have scene analysis but no generationId (skipped script step)
+  useEffect(() => {
+    if (isHydrated && hasSceneAnalysis && !generationId) {
+      const newGenerationId = `compose-${Date.now()}`;
+      console.log("[FastCut Images] Generating ID for scene analysis flow:", newGenerationId);
+      setGenerationId(newGenerationId);
+    }
+  }, [isHydrated, hasSceneAnalysis, generationId, setGenerationId]);
 
   // Auto-search images on mount if we have keywords and no candidates
   const keywordCount = selectedSearchKeywords?.size ?? 0;
@@ -148,11 +163,12 @@ export default function FastCutImagesPage() {
     const currentSession = useSessionStore.getState().activeSession;
 
     if (currentSession) {
-      // Save images stage data
+      // Save images stage data (include hasSceneAnalysis for session restoration)
       setStageData("images", {
         imageCandidates,
         selectedImages,
         generationId,
+        hasSceneAnalysis,  // Track if using scene analysis flow
       });
 
       // Proceed to music stage (saves to DB)
@@ -166,12 +182,13 @@ export default function FastCutImagesPage() {
   };
 
   const handleBack = () => {
+    // Go back to Start page (since we now skip the script step)
     const sessionParam = activeSession?.id || sessionIdFromUrl ? `?session=${activeSession?.id || sessionIdFromUrl}` : "";
-    router.push(`/fast-cut/script${sessionParam}`);
+    router.push(`/start${sessionParam}`);
   };
 
   // Show nothing while hydrating or if prerequisites not met
-  if (!isHydrated || !scriptData) {
+  if (!isHydrated || !hasValidData) {
     return null;
   }
 

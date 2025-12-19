@@ -29,12 +29,16 @@ export default function FastCutMusicPage() {
   const { language } = useI18n();
   const toast = useToast();
 
-  // Workflow store for campaign data fallback
-  const { analyze } = useWorkflowStore(
+  // Workflow store for campaign data and scene analysis fallback
+  const { analyze, start } = useWorkflowStore(
     useShallow((state) => ({
       analyze: state.analyze,
+      start: state.start,
     }))
   );
+
+  // Get scene analysis from workflow store (for new flow without script step)
+  const sceneAnalysis = start.source?.type === "video" ? start.source.aiAnalysis?.sceneAnalysis : null;
 
   // Get session ID from URL
   const searchParams = useSearchParams();
@@ -67,6 +71,7 @@ export default function FastCutMusicPage() {
 
   const {
     scriptData,
+    hasSceneAnalysis,
     audioMatches,
     setAudioMatches,
     selectedAudio,
@@ -93,15 +98,19 @@ export default function FastCutMusicPage() {
     setAudioLyricsText,
   } = useFastCut();
 
-  // Redirect if no script data or images (only after hydration)
+  // Check if we have valid data (from script step OR scene analysis from Start page)
+  // Note: Check both hasSceneAnalysis from context AND sceneAnalysis from workflow store
+  const hasValidData = scriptData !== null || hasSceneAnalysis || sceneAnalysis !== null;
+
+  // Redirect if no valid data or images (only after hydration)
   useEffect(() => {
     if (!isHydrated) return;
-    if (!scriptData) {
-      router.replace("/fast-cut/script");
+    if (!hasValidData) {
+      router.replace("/start");
     } else if (selectedImages.length < 3) {
       router.replace("/fast-cut/images");
     }
-  }, [isHydrated, scriptData, selectedImages, router]);
+  }, [isHydrated, hasValidData, selectedImages, router]);
 
   // Sync campaignId from workflow store if not set (fallback for direct navigation)
   useEffect(() => {
@@ -123,15 +132,20 @@ export default function FastCutMusicPage() {
     }
   }, [isHydrated, hasInitializedDuration, scriptData?.script?.totalDuration, setVideoDuration, videoDuration]);
 
-  // Auto-match music on mount
+  // Auto-match music on mount (works with scriptData OR sceneAnalysis)
   useEffect(() => {
-    if (scriptData && audioMatches.length === 0 && !matchingMusic && !musicSkipped) {
+    const hasVibeSource = scriptData || sceneAnalysis;
+    if (hasVibeSource && audioMatches.length === 0 && !matchingMusic && !musicSkipped) {
       handleMatchMusic();
     }
-  }, [scriptData]);
+  }, [scriptData, sceneAnalysis]);
 
   const handleMatchMusic = async () => {
-    if (!scriptData || !campaignId) return;
+    // Get vibe from scriptData or scene analysis
+    const vibe = scriptData?.vibe || sceneAnalysis?.overallStyle?.vibe || 'Pop';
+    const bpmRange = scriptData?.suggestedBpmRange || { min: 90, max: 150 }; // Default BPM range
+
+    if (!campaignId) return;
 
     setMatchingMusic(true);
     setError(null);
@@ -139,8 +153,8 @@ export default function FastCutMusicPage() {
     try {
       const result = await fastCutApi.matchMusic({
         campaignId,
-        vibe: scriptData.vibe,
-        bpmRange: scriptData.suggestedBpmRange,
+        vibe,
+        bpmRange,
         minDuration: 10,
       });
 
@@ -184,7 +198,8 @@ export default function FastCutMusicPage() {
 
   const handleUnskipMusic = () => {
     setMusicSkipped(false);
-    if (scriptData && audioMatches.length === 0) {
+    const hasVibeSource = scriptData || sceneAnalysis;
+    if (hasVibeSource && audioMatches.length === 0) {
       handleMatchMusic();
     }
   };
@@ -280,7 +295,8 @@ export default function FastCutMusicPage() {
   };
 
   // Show nothing while hydrating or if prerequisites not met
-  if (!isHydrated || !scriptData || selectedImages.length < 3) {
+  // Allow proceeding with either scriptData OR hasSceneAnalysis (new flow skips script step)
+  if (!isHydrated || !hasValidData || selectedImages.length < 3) {
     return null;
   }
 
