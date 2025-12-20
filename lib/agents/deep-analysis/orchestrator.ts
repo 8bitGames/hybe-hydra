@@ -6,6 +6,7 @@
  */
 
 import type { AgentContext, AgentResult } from '../types';
+import { GEMINI_FLASH } from '../constants';
 import {
   VideoClassifierAgent,
   type VideoClassifierInput,
@@ -510,7 +511,7 @@ export class DeepAnalysisOrchestrator {
       error: lastError || 'Max retries exceeded',
       metadata: {
         agentId,
-        model: 'gemini-2.5-flash',
+        model: GEMINI_FLASH,
         tokenUsage: { input: 0, output: 0, total: 0 },
         latencyMs: 0,
         timestamp: new Date().toISOString(),

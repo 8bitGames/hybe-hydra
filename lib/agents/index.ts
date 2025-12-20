@@ -29,6 +29,7 @@
 
 export * from './types';
 export { BaseAgent, type MemoryConfig, type AutoFeedbackConfig } from './base-agent';
+export { GEMINI_FLASH, GEMINI_PRO, GPT_DEFAULT, GPT_MINI, type GeminiModelName, type OpenAIModelName } from './constants';
 
 // ============================================================================
 // Memory Service
@@ -362,32 +363,35 @@ export const AgentCategories = {
 
 /**
  * Model assignments by agent
+ * Import from './constants' for centralized model name management
  */
+import { GEMINI_FLASH, GEMINI_PRO, GPT_DEFAULT } from './constants';
+
 export const AgentModels = {
-  // Gemini 2.5 Flash - Fast analysis
-  'vision-analyzer': 'gemini-2.5-flash',
-  'text-pattern': 'gemini-2.5-flash',
-  'visual-trend': 'gemini-2.5-flash',
-  'strategy-synthesizer': 'gemini-2.5-flash',
-  'tiktok-vision': 'gemini-2.5-flash',
-  'veo3-personalize': 'gemini-2.5-flash',
-  'script-writer': 'gemini-2.5-flash',
-  'prompt-engineer': 'gemini-2.5-flash',
-  'i2v-specialist': 'gemini-2.5-flash',
+  // Gemini Flash - Fast analysis
+  'vision-analyzer': GEMINI_FLASH,
+  'text-pattern': GEMINI_FLASH,
+  'visual-trend': GEMINI_FLASH,
+  'strategy-synthesizer': GEMINI_FLASH,
+  'tiktok-vision': GEMINI_FLASH,
+  'veo3-personalize': GEMINI_FLASH,
+  'script-writer': GEMINI_FLASH,
+  'prompt-engineer': GEMINI_FLASH,
+  'i2v-specialist': GEMINI_FLASH,
 
-  // Gemini 3 Pro - Deep reasoning
-  'creative-director': 'gemini-3-pro-preview',
-  'keyword-insights': 'gemini-3-pro-preview',
+  // Gemini Pro - Deep reasoning
+  'creative-director': GEMINI_PRO,
+  'keyword-insights': GEMINI_PRO,
 
-  // Gemini 2.5 Flash - Fast Cut Idea (creator)
-  'fast-cut-idea': 'gemini-2.5-flash',
+  // Gemini Flash - Fast Cut Idea (creator)
+  'fast-cut-idea': GEMINI_FLASH,
 
-  // GPT-5.1 - Copywriting
-  'publish-optimizer': 'gpt-5.1',
-  'copywriter': 'gpt-5.1',
+  // GPT - Copywriting
+  'publish-optimizer': GPT_DEFAULT,
+  'copywriter': GPT_DEFAULT,
 
-  // Fast Cut Agents - Gemini 2.5 Flash
-  'fast-cut-script-generator': 'gemini-2.5-flash',
-  'fast-cut-effect-analyzer': 'gemini-2.5-flash',
-  'fast-cut-conductor': 'gemini-2.5-flash',
+  // Fast Cut Agents - Gemini Flash
+  'fast-cut-script-generator': GEMINI_FLASH,
+  'fast-cut-effect-analyzer': GEMINI_FLASH,
+  'fast-cut-conductor': GEMINI_FLASH,
 } as const;

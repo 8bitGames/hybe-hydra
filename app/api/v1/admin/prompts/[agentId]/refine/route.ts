@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
+import { GEMINI_FLASH } from '@/lib/agents/constants';
 
 interface RouteParams {
   params: Promise<{ agentId: string }>;
@@ -260,7 +261,7 @@ ${Object.entries(currentPrompt.templates)
 
     // Generate response
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: GEMINI_FLASH,
       config: {
         systemInstruction: REFINER_SYSTEM_PROMPT,
         temperature: 0.7,

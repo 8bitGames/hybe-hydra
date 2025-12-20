@@ -113,6 +113,8 @@ export async function GET(request: NextRequest) {
         created_at: gen.createdAt.toISOString(),
         updated_at: gen.updatedAt.toISOString(),
         tiktok_seo: gen.tiktokSEO || null,
+        tags: gen.tags || [],
+        quality_metadata: gen.qualityMetadata || null,
       };
     }));
 

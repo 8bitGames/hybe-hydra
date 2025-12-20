@@ -43,6 +43,8 @@ import {
   Expand,
   ChevronsLeft,
   ChevronsRight,
+  GitMerge,
+  Link2,
 } from "lucide-react";
 import {
   Select,
@@ -181,6 +183,18 @@ function VideoCardSkeleton() {
   );
 }
 
+// Video edit metadata type
+interface VideoEditMetadata {
+  originalGenerationId: string;
+  originalOutputUrl: string;
+  editedAt: string;
+  editType: string[];
+  audioAssetId?: string;
+  audioAssetName?: string;
+  hasSubtitles: boolean;
+  subtitleLineCount: number;
+}
+
 // Unified video type
 type UnifiedVideo = {
   id: string;
@@ -196,9 +210,15 @@ type UnifiedVideo = {
   created_at: string;
   updated_at: string;
   generation_type: "AI" | "COMPOSE";
+  tags?: string[];
+  quality_metadata?: {
+    videoEdit?: VideoEditMetadata;
+    [key: string]: unknown;
+  } | null;
 };
 
 type VideoType = "all" | "ai" | "fast-cut";
+type EditedFilter = "all" | "edited" | "original";
 
 export default function AllVideosPage() {
   const router = useRouter();
@@ -206,6 +226,7 @@ export default function AllVideosPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [videoType, setVideoType] = useState<VideoType>("all");
+  const [editedFilter, setEditedFilter] = useState<EditedFilter>("all");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(() => {
@@ -283,6 +304,13 @@ export default function AllVideosPage() {
     showing: language === "ko" ? "표시" : "Showing",
     to: language === "ko" ? "~" : "to",
     ofTotal: language === "ko" ? "/ 총" : "of",
+    edited: language === "ko" ? "편집됨" : "Edited",
+    editedFilter: language === "ko" ? "편집 필터" : "Edit Filter",
+    editedFilterAll: language === "ko" ? "전체" : "All",
+    editedFilterEdited: language === "ko" ? "편집됨" : "Edited",
+    editedFilterOriginal: language === "ko" ? "원본만" : "Originals",
+    viewOriginal: language === "ko" ? "원본 영상 보기" : "View Original",
+    originalVideo: language === "ko" ? "원본 영상" : "Original Video",
   };
 
   // Reset page when tab or page size changes
@@ -318,6 +346,8 @@ export default function AllVideosPage() {
     created_at: video.created_at,
     updated_at: video.updated_at,
     generation_type: "COMPOSE" as const,
+    tags: video.tags,
+    quality_metadata: video.quality_metadata,
   }));
 
   const unifiedAIVideos: UnifiedVideo[] = aiVideos.map((video) => ({
@@ -334,7 +364,14 @@ export default function AllVideosPage() {
     created_at: video.created_at,
     updated_at: video.updated_at,
     generation_type: "AI" as const,
+    tags: video.tags,
+    quality_metadata: video.quality_metadata,
   }));
+
+  // Helper to check if video is edited
+  const isEditedVideo = (video: UnifiedVideo) => {
+    return video.tags?.includes("edited") || !!video.quality_metadata?.videoEdit;
+  };
 
   // Filter videos (all filtered, before pagination)
   const allFilteredVideos = useMemo(() => {
@@ -356,6 +393,13 @@ export default function AllVideosPage() {
       (video) => video.status.toLowerCase() === "completed" && (video.output_url || video.composed_output_url)
     );
 
+    // Apply edited filter
+    if (editedFilter === "edited") {
+      baseVideos = baseVideos.filter(isEditedVideo);
+    } else if (editedFilter === "original") {
+      baseVideos = baseVideos.filter((video) => !isEditedVideo(video));
+    }
+
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       return baseVideos.filter(
@@ -367,7 +411,7 @@ export default function AllVideosPage() {
     }
 
     return baseVideos;
-  }, [unifiedAIVideos, unifiedComposeVideos, searchQuery, videoType]);
+  }, [unifiedAIVideos, unifiedComposeVideos, searchQuery, videoType, editedFilter]);
 
   // Pagination calculations
   const totalFiltered = allFilteredVideos.length;
@@ -513,6 +557,23 @@ export default function AllVideosPage() {
                 className="pl-9"
               />
             </div>
+            <Select
+              value={editedFilter}
+              onValueChange={(v: EditedFilter) => {
+                setEditedFilter(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[140px] h-9">
+                <GitMerge className="h-4 w-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t.editedFilterAll}</SelectItem>
+                <SelectItem value="edited">{t.editedFilterEdited}</SelectItem>
+                <SelectItem value="original">{t.editedFilterOriginal}</SelectItem>
+              </SelectContent>
+            </Select>
             <Button
               variant={soundEnabled ? "default" : "outline"}
               size="icon"
@@ -584,6 +645,14 @@ export default function AllVideosPage() {
                       <><Layers className="h-3 w-3 mr-1" />Fast Cut</>
                     )}
                   </Badge>
+                  {isEditedVideo(video) && (
+                    <Badge
+                      variant="secondary"
+                      className="absolute top-2 right-2 bg-purple-600/90 text-white text-[10px]"
+                    >
+                      <GitMerge className="h-3 w-3 mr-1" />{t.edited}
+                    </Badge>
+                  )}
                 </div>
 
                 <CardContent className="p-3">
@@ -606,6 +675,24 @@ export default function AllVideosPage() {
                             <Eye className="h-4 w-4 mr-2" />
                             {t.viewDetails}
                           </DropdownMenuItem>
+                          {isEditedVideo(video) && video.quality_metadata?.videoEdit?.originalGenerationId && (
+                            <DropdownMenuItem onClick={(e) => {
+                              e.stopPropagation();
+                              // Find the original video and open it
+                              const originalId = video.quality_metadata?.videoEdit?.originalGenerationId;
+                              const originalVideo = allFilteredVideos.find(v => v.id === originalId);
+                              if (originalVideo) {
+                                const originalIndex = allFilteredVideos.indexOf(originalVideo);
+                                openVideo(originalVideo, originalIndex);
+                              } else {
+                                // If not in current filter, navigate to the video
+                                router.push(`/campaigns/${video.campaign_id}/curation?video=${originalId}`);
+                              }
+                            }}>
+                              <Link2 className="h-4 w-4 mr-2" />
+                              {t.viewOriginal}
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setEditVideo(video); }}>
                             <Edit3 className="h-4 w-4 mr-2" />
                             {t.editVideo}
@@ -792,8 +879,38 @@ export default function AllVideosPage() {
                   <Badge variant="outline" className="text-xs border-zinc-700 text-zinc-300">
                     {selectedVideo.generation_type === "AI" ? "AI" : "Fast Cut"}
                   </Badge>
+                  {isEditedVideo(selectedVideo) && (
+                    <Badge className="text-xs bg-purple-600/90 text-white">
+                      <GitMerge className="h-3 w-3 mr-1" />
+                      {t.edited}
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* View Original button for edited videos */}
+                  {isEditedVideo(selectedVideo) && selectedVideo.quality_metadata?.videoEdit?.originalGenerationId && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                      onClick={() => {
+                        const originalId = selectedVideo.quality_metadata?.videoEdit?.originalGenerationId;
+                        const originalVideo = allFilteredVideos.find(v => v.id === originalId);
+                        if (originalVideo) {
+                          const originalIndex = allFilteredVideos.indexOf(originalVideo);
+                          setSelectedVideo(originalVideo);
+                          setSelectedIndex(originalIndex);
+                        } else {
+                          // Navigate to the campaign curation page with the video
+                          setPanelOpen(false);
+                          router.push(`/campaigns/${selectedVideo.campaign_id}/curation?video=${originalId}`);
+                        }
+                      }}
+                    >
+                      <Link2 className="h-4 w-4 mr-2" />
+                      {t.viewOriginal}
+                    </Button>
+                  )}
                   {selectedVideo.generation_type === "AI" && (
                     <Button
                       size="sm"

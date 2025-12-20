@@ -10,6 +10,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentConfig, AgentContext } from '../types';
 
 // Input Schema
@@ -78,7 +79,7 @@ export const VisualTrendConfig: AgentConfig<VisualTrendInput, VisualTrendOutput>
 
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.4,
       maxTokens: 8192,

@@ -22,21 +22,21 @@ import type { AgentConfig, AgentContext } from '../types';
 export const GeoAeoInputSchema = z.object({
   // Video/Content context
   keywords: z.array(z.string()).min(1),
-  searchTags: z.array(z.string()).optional(),
-  prompt: z.string().optional(),
+  searchTags: z.array(z.string()).nullish(),
+  prompt: z.string().nullish(),
 
   // Artist/Campaign context
-  artistName: z.string().optional(),
-  groupName: z.string().optional(),
-  campaignName: z.string().optional(),
+  artistName: z.string().nullish(),
+  groupName: z.string().nullish(),
+  campaignName: z.string().nullish(),
 
   // Content settings
-  vibe: z.enum(['Exciting', 'Emotional', 'Pop', 'Minimal']).optional(),
+  vibe: z.enum(['Exciting', 'Emotional', 'Pop', 'Minimal']).nullish(),
   language: z.enum(['ko', 'en', 'ja']).default('ko'),
   platform: z.enum(['tiktok', 'youtube', 'instagram']).default('tiktok'),
 
   // Trend data
-  trendKeywords: z.array(z.string()).optional(),
+  trendKeywords: z.array(z.string()).nullish(),
 });
 
 export type GeoAeoInput = z.infer<typeof GeoAeoInputSchema>;

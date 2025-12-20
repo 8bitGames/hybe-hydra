@@ -4,7 +4,7 @@
  * Unified client for Gemini 2.5 Flash and Gemini 3 Pro models
  *
  * Models:
- * - gemini-2.5-flash: Fast analysis, pattern recognition (Analyzers, Transformers)
+ * - gemini-3-flash-preview: Fast analysis, pattern recognition (Analyzers, Transformers)
  * - gemini-3-pro-preview: Deep reasoning, strategic thinking (Creative Director)
  */
 
@@ -17,17 +17,18 @@ import type {
   StreamChunk,
   TokenUsage,
 } from './types';
+import { GEMINI_FLASH, GEMINI_PRO, type GeminiModelName } from '../agents/constants';
 
 export interface GeminiClientConfig extends ModelClientConfig {
-  model: 'gemini-2.5-flash' | 'gemini-3-pro-preview';
+  model: GeminiModelName;
   thinkingLevel?: 'low' | 'high';  // Gemini 3 Pro only
   enableGoogleSearch?: boolean;
 }
 
 // Model name mapping - use stable model names
 const MODEL_MAP: Record<string, string> = {
-  'gemini-2.5-flash': 'gemini-2.5-flash',
-  'gemini-3-pro-preview': 'gemini-3-pro-preview',
+  [GEMINI_FLASH]: GEMINI_FLASH,
+  [GEMINI_PRO]: GEMINI_PRO,
 };
 
 export class GeminiClient implements IModelClient {
@@ -81,7 +82,7 @@ export class GeminiClient implements IModelClient {
 
     // Build thinkingConfig for Gemini 3 Pro
     let thinkingConfig: Record<string, unknown> | undefined;
-    if (this.config.thinkingLevel && this.config.model === 'gemini-3-pro-preview') {
+    if (this.config.thinkingLevel && this.config.model === GEMINI_PRO) {
       thinkingConfig = {
         thinkingLevel: this.config.thinkingLevel,
       };
@@ -237,12 +238,12 @@ export function createGeminiClient(
 ): GeminiClient {
   const presets: Record<string, GeminiClientConfig> = {
     flash: {
-      model: 'gemini-2.5-flash',
+      model: GEMINI_FLASH,
       temperature: 0.3,
       maxTokens: 8192,
     },
     pro: {
-      model: 'gemini-3-pro-preview',
+      model: GEMINI_PRO,
       temperature: 0.7,
       maxTokens: 16384,
       thinkingLevel: 'high',

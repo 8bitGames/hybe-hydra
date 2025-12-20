@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentConfig, AgentContext, AgentResult } from '../types';
 import { GeminiClient } from '../../models/gemini-client';
 
@@ -86,7 +87,7 @@ export const FastCutScriptGeneratorConfig: AgentConfig<FastCutScriptGeneratorInp
 
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.7,
       maxTokens: 4096,
@@ -212,7 +213,7 @@ export class FastCutScriptGeneratorAgent extends BaseAgent<FastCutScriptGenerato
   private initGroundingClient(): GeminiClient {
     if (!this.groundingClient) {
       this.groundingClient = new GeminiClient({
-        model: 'gemini-2.5-flash',
+        model: GEMINI_FLASH,
         temperature: 0.3,
         maxTokens: 1024,
         enableGoogleSearch: true,

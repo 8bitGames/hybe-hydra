@@ -70,7 +70,34 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Also support POST for manual triggers
+// POST for manual triggers with optional force clear
 export async function POST(request: NextRequest) {
-  return GET(request);
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { forceAll } = body as { forceAll?: boolean };
+
+    // If forceAll is true, clear ALL search cache (not just expired)
+    if (forceAll) {
+      console.log('[Cache] Force clearing ALL search cache...');
+
+      const { prisma } = await import('@/lib/db/prisma');
+      const result = await prisma.imageSearchCache.deleteMany({});
+
+      return NextResponse.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        message: 'Force cleared all search cache',
+        deletedCount: result.count,
+      });
+    }
+
+    // Otherwise, normal cleanup
+    return GET(request);
+  } catch (error) {
+    console.error('[Cache] Force clear error:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
 }

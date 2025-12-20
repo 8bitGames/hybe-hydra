@@ -162,12 +162,13 @@ export function AudioLyricsModal({
   }, [asset?.s3_key, asset?.s3_url, language]);
 
   // Initialize modal when it opens (useEffect to handle controlled open prop)
+  // IMPORTANT: Only depend on open and asset?.id to prevent infinite re-runs
+  // when callback functions are recreated due to asset object reference changes
   useEffect(() => {
     console.log("[AudioLyricsModal] useEffect triggered - open:", open, "asset:", asset?.id);
 
     if (open && asset) {
       console.log("[AudioLyricsModal] Modal opened, initializing...");
-      loadExistingLyrics();
       // Reset audio state
       setAudioLoaded(false);
       setAudioError(null);
@@ -175,10 +176,12 @@ export function AudioLyricsModal({
       setCurrentTime(0);
       setDuration(0);
       setIsPlaying(false);
-      // Fetch fresh presigned URL
+      // Load existing lyrics and fetch audio URL
+      loadExistingLyrics();
       fetchAudioUrl();
     }
-  }, [open, asset?.id, loadExistingLyrics, fetchAudioUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, asset?.id]);
 
   // Handle modal close (initialization is handled by useEffect)
   const handleOpenChange = (newOpen: boolean) => {

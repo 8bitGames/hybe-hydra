@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentConfig, AgentContext, VisionAnalysisSchema } from '../types';
 
 // Input Schema
@@ -52,7 +53,7 @@ export const VisionAnalyzerConfig: AgentConfig<VisionAnalyzerInput, VisionAnalyz
 
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.3,
       maxTokens: 4096,

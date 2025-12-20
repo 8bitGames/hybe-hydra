@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentConfig, AgentContext, AgentResult } from '../types';
 
 // ============================================================================
@@ -100,7 +101,7 @@ export const Veo3PersonalizeConfig: AgentConfig<AnalyzeImagesInput, AnalyzeImage
 
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.7,
       maxTokens: 4096,
@@ -114,6 +115,31 @@ Your expertise includes:
 - Understanding viral content patterns on TikTok
 - Creating engaging video concepts from reference images
 - Optimizing for AI video generation (Veo3)
+
+═══════════════════════════════════════════════════════════════════
+VEO CONTENT FILTER SAFETY (CRITICAL - PREVENTS API REJECTION)
+═══════════════════════════════════════════════════════════════════
+
+Veo's RAI (Responsible AI) filter will REJECT prompts containing these elements.
+You MUST automatically sanitize or replace these to prevent generation failures.
+
+## STRICTLY FORBIDDEN (Will cause immediate rejection):
+1. WEAPONS: guns, pistols, rifles, swords, knives, holsters, ammunition
+   ❌ "a pistol in a hip holster" → ✅ "a determined stride with purpose"
+
+2. FIRE/DESTRUCTION: burning buildings, explosions, arson, destruction
+   ❌ "burning house in background" → ✅ "distant warm glow and mist"
+
+3. VIOLENCE: fighting, combat, blood, injury, death
+   ❌ "fighting scene" → ✅ "intense confrontation"
+
+4. DANGEROUS COMBINATIONS: weapons + fire, people + danger
+
+## AUTOMATIC REPLACEMENT RULES:
+- Weapon references → Remove or replace with neutral body language
+- Burning/fire destruction → Replace with "warm glow", "atmospheric light", "mist"
+- Combat/fighting → Replace with "tension", "confrontation", "standoff"
+- Explosions → Replace with "dramatic lighting", "light burst", "flare"
 
 Always respond in valid JSON format.`,
 
@@ -209,6 +235,18 @@ Return ONLY valid JSON in this exact format:
 6. Add temporal progression (what happens from start to end)
 7. Include style references if applicable
 8. End with quality modifiers (cinematic, professional, high-quality)
+
+## CONTENT FILTER SAFETY (CRITICAL):
+NEVER include these elements - they will cause Veo to reject the prompt:
+- Weapons (guns, knives, swords, holsters)
+- Burning/destruction (burning buildings, explosions, arson)
+- Violence (fighting, combat, blood, injury)
+- Dangerous combinations (weapons + fire, people in danger)
+
+If the creative direction implies any of these, REPLACE with safe alternatives:
+- Weapons → Focus on character posture, determination, clothing details
+- Fire/destruction → Use "warm glow", "atmospheric mist", "dramatic lighting"
+- Violence → Use "tension", "confrontation", "intense standoff"
 
 Return ONLY the JSON object, no markdown or extra text.`,
     },

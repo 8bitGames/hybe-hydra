@@ -323,6 +323,20 @@ export interface FastCutVideo {
     suggestedPostingTimes?: string[];
     textOverlayKeywords?: string[];
   } | null;
+  tags?: string[];
+  quality_metadata?: {
+    videoEdit?: {
+      originalGenerationId: string;
+      originalOutputUrl: string;
+      editedAt: string;
+      editType: string[];
+      audioAssetId?: string;
+      audioAssetName?: string;
+      hasSubtitles: boolean;
+      subtitleLineCount: number;
+    };
+    [key: string]: unknown;
+  } | null;
 }
 
 export interface FastCutVideosResponse {

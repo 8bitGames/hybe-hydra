@@ -5,6 +5,7 @@ import numpy as np
 import logging
 from typing import Tuple, List, Optional
 from dataclasses import dataclass
+from scipy import signal
 
 from ..models.responses import AudioAnalysis, ClimaxCandidate
 
@@ -18,7 +19,7 @@ class DropInfo:
     time: float
     score: float
     energy_delta: float
-    type: str  # 'energy', 'onset', 'spectral'
+    type: str  # 'energy', 'onset', 'spectral', 'vocal', 'dynamic', 'gentle'
 
 
 class AudioAnalyzer:
@@ -36,9 +37,12 @@ class AudioAnalyzer:
         - Energy-based drop detection (gradient analysis)
         - Onset strength burst detection
         - Spectral flux analysis
+        - Vocal/harmonic peak detection (for ballads)
+        - Dynamic range analysis (for short clips)
         - Multiple climax candidates with scoring
         """
         logger.info(f"[AudioAnalyzer] Starting advanced audio analysis: {audio_path}")
+        logger.info(f"[AudioAnalyzer] Target duration: {target_duration}s")
 
         # Load audio
         logger.info(f"[AudioAnalyzer] Loading audio file...")
@@ -47,7 +51,7 @@ class AudioAnalyzer:
         duration = librosa.get_duration(y=y, sr=sr)
         logger.info(f"[AudioAnalyzer] Duration: {duration:.2f}s")
 
-        # Separate harmonic and percussive for better beat detection
+        # Separate harmonic and percussive for better analysis
         y_harmonic, y_percussive = librosa.effects.hpss(y)
 
         # Detect tempo and beats (use percussive for cleaner beats)
@@ -61,12 +65,18 @@ class AudioAnalyzer:
         logger.info(f"[AudioAnalyzer] Calculating energy curve...")
         hop_length = 512
         rms = librosa.feature.rms(y=y, hop_length=hop_length)[0]
+        rms_harmonic = librosa.feature.rms(y=y_harmonic, hop_length=hop_length)[0]
 
         # Normalize energy to 0-1
         if rms.max() > rms.min():
             rms_normalized = (rms - rms.min()) / (rms.max() - rms.min())
         else:
             rms_normalized = np.zeros_like(rms)
+
+        if rms_harmonic.max() > rms_harmonic.min():
+            rms_harmonic_normalized = (rms_harmonic - rms_harmonic.min()) / (rms_harmonic.max() - rms_harmonic.min())
+        else:
+            rms_harmonic_normalized = np.zeros_like(rms_harmonic)
 
         # Sample energy curve (every 0.25 seconds for better resolution)
         energy_curve = []
@@ -75,11 +85,20 @@ class AudioAnalyzer:
             if idx < len(rms_normalized):
                 energy_curve.append((float(t), float(rms_normalized[idx])))
 
+        # Determine song type for analysis strategy
+        avg_energy = np.mean(rms_normalized)
+        is_slow_song = tempo_val < 100
+        is_short_target = target_duration <= 10
+        harmonic_ratio = np.mean(rms_harmonic) / (np.mean(rms) + 1e-6)
+        is_vocal_focused = harmonic_ratio > 0.6  # High harmonic content suggests vocals
+
+        logger.info(f"[AudioAnalyzer] Song characteristics: slow={is_slow_song}, short_target={is_short_target}, vocal_focused={is_vocal_focused}")
+
         # ============================================
         # ADVANCED CLIMAX DETECTION
         # ============================================
 
-        # 1. Detect drops using energy gradient
+        # 1. Detect drops using energy gradient (good for pop/EDM)
         logger.info(f"[AudioAnalyzer] Detecting drops (energy gradient)...")
         energy_drops = self._detect_energy_drops(rms_normalized, sr, hop_length, duration)
 
@@ -91,26 +110,36 @@ class AudioAnalyzer:
         logger.info(f"[AudioAnalyzer] Analyzing spectral flux...")
         spectral_drops = self._detect_spectral_flux_peaks(y, sr)
 
-        # 4. Merge and score all drop candidates
-        all_drops = self._merge_drop_candidates(
-            energy_drops, onset_drops, spectral_drops, duration
+        # 4. NEW: Detect vocal/harmonic peaks (good for ballads)
+        logger.info(f"[AudioAnalyzer] Detecting vocal peaks...")
+        vocal_drops = self._detect_vocal_peaks(rms_harmonic_normalized, sr, hop_length, duration)
+
+        # 5. NEW: Detect dynamic range peaks (good for short clips)
+        logger.info(f"[AudioAnalyzer] Detecting dynamic moments...")
+        dynamic_drops = self._detect_dynamic_moments(rms_normalized, sr, hop_length, duration, target_duration)
+
+        # 6. Merge and score all drop candidates
+        all_drops = self._merge_drop_candidates_enhanced(
+            energy_drops, onset_drops, spectral_drops, vocal_drops, dynamic_drops,
+            duration, is_slow_song, is_short_target
         )
 
-        # 5. Calculate buildups before drops
+        # 7. Calculate buildups before drops
         builds = self._detect_buildups(all_drops, energy_curve, tempo_val)
 
-        # 6. Generate climax candidates with scoring
-        climax_candidates = self._create_climax_candidates(
-            all_drops, builds, energy_curve, target_duration, duration
+        # 8. Generate climax candidates with scoring
+        climax_candidates = self._create_climax_candidates_enhanced(
+            all_drops, builds, energy_curve, target_duration, duration,
+            is_slow_song, is_short_target, rms_harmonic_normalized, sr, hop_length
         )
 
-        # 7. Find best segment considering drops and energy
-        best_15s_start, best_hook_start = self._find_best_segments(
-            climax_candidates, rms, sr, hop_length, target_duration, duration
+        # 9. Find best segment considering song type
+        best_segment_start, best_hook_start = self._find_best_segments_enhanced(
+            climax_candidates, rms, rms_harmonic, sr, hop_length,
+            target_duration, duration, is_slow_song, is_short_target
         )
 
         # Suggest vibe based on tempo and energy characteristics
-        avg_energy = np.mean(rms_normalized)
         if tempo_val >= 120 and avg_energy > 0.5:
             suggested_vibe = "Exciting"
         elif tempo_val >= 100:
@@ -127,8 +156,11 @@ class AudioAnalyzer:
         logger.info(f"[AudioAnalyzer] Analysis complete:")
         logger.info(f"  - BPM: {int(round(tempo_val))}")
         logger.info(f"  - Duration: {duration:.2f}s")
+        logger.info(f"  - Song type: {'slow/ballad' if is_slow_song else 'upbeat'}")
+        logger.info(f"  - Target: {target_duration}s ({'short clip' if is_short_target else 'standard'})")
         logger.info(f"  - Drops found: {len(all_drops)}")
         logger.info(f"  - Climax candidates: {len(climax_candidates)}")
+        logger.info(f"  - Best segment start: {best_segment_start:.2f}s")
         logger.info(f"  - Best hook start: {best_hook_start:.2f}s")
 
         return AudioAnalysis(
@@ -137,7 +169,7 @@ class AudioAnalyzer:
             energy_curve=energy_curve,
             duration=float(duration),
             suggested_vibe=suggested_vibe,
-            best_15s_start=float(best_15s_start),
+            best_15s_start=float(best_segment_start),
             climax_candidates=climax_candidates,
             drops=drop_times,
             builds=build_pairs,
@@ -560,6 +592,351 @@ class AudioAnalyzer:
                 )
 
         return best_15s_start, best_hook_start
+
+    def _detect_vocal_peaks(
+        self,
+        rms_harmonic: np.ndarray,
+        sr: int,
+        hop_length: int,
+        duration: float
+    ) -> List[DropInfo]:
+        """
+        Detect vocal/harmonic peaks - good for ballads and vocal-focused songs.
+        Uses harmonic component to find where vocals are strongest.
+        """
+        drops = []
+
+        if len(rms_harmonic) < 20:
+            return drops
+
+        # Find sustained high-energy harmonic sections
+        # Smooth the harmonic energy to find sustained peaks (not transients)
+        window_size = int(sr / hop_length)  # ~1 second window
+        if window_size % 2 == 0:
+            window_size += 1
+        smoothed = np.convolve(rms_harmonic, np.ones(window_size) / window_size, mode='same')
+
+        # Find peaks in smoothed harmonic energy
+        threshold = np.percentile(smoothed, 75)
+
+        for i in range(window_size, len(smoothed) - window_size):
+            # Local maximum
+            if (smoothed[i] > smoothed[i-1] and
+                smoothed[i] > smoothed[i+1] and
+                smoothed[i] > threshold):
+
+                time = librosa.frames_to_time(i, sr=sr, hop_length=hop_length)
+
+                if time < 3 or time > duration - 3:
+                    continue
+
+                # Score based on how sustained the peak is (vocal sections are sustained)
+                context_start = max(0, i - window_size // 2)
+                context_end = min(len(smoothed), i + window_size // 2)
+                sustain_score = np.mean(smoothed[context_start:context_end]) / (np.max(smoothed) + 1e-6)
+
+                drops.append(DropInfo(
+                    time=float(time),
+                    score=float(sustain_score),
+                    energy_delta=float(smoothed[i]),
+                    type='vocal'
+                ))
+
+        drops = self._deduplicate_drops(drops, min_gap=3.0)
+        return sorted(drops, key=lambda x: x.score, reverse=True)[:8]
+
+    def _detect_dynamic_moments(
+        self,
+        rms_normalized: np.ndarray,
+        sr: int,
+        hop_length: int,
+        duration: float,
+        target_duration: float
+    ) -> List[DropInfo]:
+        """
+        Detect high dynamic range moments - best for short clips.
+        Finds sections with maximum contrast within the target window.
+        """
+        drops = []
+
+        if len(rms_normalized) < 20:
+            return drops
+
+        # Calculate local dynamic range over target_duration windows
+        window_samples = int(target_duration * sr / hop_length)
+
+        for i in range(0, len(rms_normalized) - window_samples, window_samples // 4):
+            window = rms_normalized[i:i + window_samples]
+
+            # Dynamic range = max - min in window
+            dynamic_range = np.max(window) - np.min(window)
+
+            # Also consider the "story arc" - prefer sections that have clear build
+            first_half = np.mean(window[:len(window)//2])
+            second_half = np.mean(window[len(window)//2:])
+            arc_score = (second_half - first_half + 1) / 2  # Normalize to 0-1
+
+            # Combined score: dynamic range + story arc
+            score = (dynamic_range * 0.6) + (arc_score * 0.4)
+
+            time = librosa.frames_to_time(i, sr=sr, hop_length=hop_length)
+
+            if time < 2 or time > duration - target_duration:
+                continue
+
+            drops.append(DropInfo(
+                time=float(time),
+                score=float(score),
+                energy_delta=float(dynamic_range),
+                type='dynamic'
+            ))
+
+        drops = self._deduplicate_drops(drops, min_gap=target_duration / 2)
+        return sorted(drops, key=lambda x: x.score, reverse=True)[:8]
+
+    def _merge_drop_candidates_enhanced(
+        self,
+        energy_drops: List[DropInfo],
+        onset_drops: List[DropInfo],
+        spectral_drops: List[DropInfo],
+        vocal_drops: List[DropInfo],
+        dynamic_drops: List[DropInfo],
+        duration: float,
+        is_slow_song: bool,
+        is_short_target: bool
+    ) -> List[DropInfo]:
+        """
+        Enhanced merge that considers song type and target duration.
+        """
+        all_drops = []
+        time_tolerance = 1.5  # seconds
+
+        # Determine weighting based on song type
+        if is_slow_song:
+            # For ballads: prioritize vocals and dynamics over energy drops
+            primary_drops = vocal_drops if vocal_drops else energy_drops
+            weight_energy = 0.6
+            weight_vocal = 1.2
+            weight_dynamic = 1.0
+        else:
+            # For upbeat: prioritize energy drops
+            primary_drops = energy_drops
+            weight_energy = 1.0
+            weight_vocal = 0.7
+            weight_dynamic = 0.8
+
+        if is_short_target:
+            # For short clips: boost dynamic drops
+            weight_dynamic *= 1.3
+
+        # Process primary drops
+        for drop in primary_drops:
+            # Check for agreements
+            onset_match = any(abs(d.time - drop.time) < time_tolerance for d in onset_drops)
+            spectral_match = any(abs(d.time - drop.time) < time_tolerance for d in spectral_drops)
+            vocal_match = any(abs(d.time - drop.time) < time_tolerance for d in vocal_drops) if drop.type != 'vocal' else False
+            dynamic_match = any(abs(d.time - drop.time) < time_tolerance for d in dynamic_drops) if drop.type != 'dynamic' else False
+
+            # Calculate boosted score
+            base_weight = weight_vocal if drop.type == 'vocal' else (weight_dynamic if drop.type == 'dynamic' else weight_energy)
+            boost = base_weight
+            if onset_match:
+                boost += 0.2
+            if spectral_match:
+                boost += 0.15
+            if vocal_match:
+                boost += 0.25
+            if dynamic_match:
+                boost += 0.2
+
+            # Determine type
+            match_count = sum([onset_match, spectral_match, vocal_match, dynamic_match])
+            if match_count >= 2:
+                drop_type = 'combined'
+            else:
+                drop_type = drop.type
+
+            all_drops.append(DropInfo(
+                time=drop.time,
+                score=min(1.0, drop.score * boost),
+                energy_delta=drop.energy_delta,
+                type=drop_type
+            ))
+
+        # Add unique drops from other sources
+        for drop_list, weight in [(energy_drops, weight_energy), (onset_drops, 0.8),
+                                    (spectral_drops, 0.7), (vocal_drops, weight_vocal),
+                                    (dynamic_drops, weight_dynamic)]:
+            for drop in drop_list:
+                if not any(abs(d.time - drop.time) < time_tolerance for d in all_drops):
+                    all_drops.append(DropInfo(
+                        time=drop.time,
+                        score=min(1.0, drop.score * weight),
+                        energy_delta=drop.energy_delta,
+                        type=drop.type
+                    ))
+
+        # Final deduplication and sorting
+        all_drops = self._deduplicate_drops(all_drops, min_gap=2.0)
+        return sorted(all_drops, key=lambda x: x.score, reverse=True)
+
+    def _create_climax_candidates_enhanced(
+        self,
+        drops: List[DropInfo],
+        builds: List[Tuple[float, float, float]],
+        energy_curve: List[Tuple[float, float]],
+        target_duration: float,
+        total_duration: float,
+        is_slow_song: bool,
+        is_short_target: bool,
+        rms_harmonic: np.ndarray,
+        sr: int,
+        hop_length: int
+    ) -> List[ClimaxCandidate]:
+        """
+        Enhanced climax candidate creation for different song types.
+        """
+        candidates = []
+
+        # 1. Add drop-based candidates
+        for drop in drops[:7]:
+            build_for_drop = next(
+                (b for b in builds if abs(b[2] - drop.time) < 0.5),
+                None
+            )
+
+            if build_for_drop:
+                start_time = build_for_drop[0]
+            else:
+                # For short clips, center the drop in the segment
+                if is_short_target:
+                    start_time = max(0, drop.time - target_duration * 0.6)
+                else:
+                    start_time = max(0, drop.time - 5)
+
+            # Ensure we have enough room
+            if start_time + target_duration > total_duration:
+                start_time = max(0, total_duration - target_duration)
+
+            candidates.append(ClimaxCandidate(
+                start_time=start_time,
+                drop_time=drop.time,
+                score=drop.score,
+                type=drop.type
+            ))
+
+        # 2. For slow songs, add "gentle peaks" - sections with nice sustained energy
+        if is_slow_song and len(candidates) < 5:
+            # Find sections with smooth, sustained harmonic energy
+            window_samples = int(target_duration * sr / hop_length)
+            for i in range(0, len(rms_harmonic) - window_samples, window_samples // 2):
+                window = rms_harmonic[i:i + window_samples]
+                # Look for sustained, smooth energy (low variance, decent mean)
+                mean_energy = np.mean(window)
+                variance = np.var(window)
+                smoothness_score = mean_energy / (1 + variance * 10)  # Penalize high variance
+
+                if smoothness_score > 0.3:
+                    start_time = librosa.frames_to_time(i, sr=sr, hop_length=hop_length)
+                    if not any(abs(c.start_time - start_time) < 5 for c in candidates):
+                        peak_time = start_time + target_duration / 2
+                        candidates.append(ClimaxCandidate(
+                            start_time=start_time,
+                            drop_time=peak_time,
+                            score=smoothness_score,
+                            type='gentle'
+                        ))
+
+        # 3. For short targets, add high-impact moments
+        if is_short_target and len(candidates) < 5 and energy_curve:
+            energy_values = [e for _, e in energy_curve]
+            energy_times = [t for t, _ in energy_curve]
+            window_samples = int(target_duration / 0.25)
+
+            for i in range(len(energy_values) - window_samples):
+                window = energy_values[i:i + window_samples]
+                # Find sections with quick energy rise (impactful for short clips)
+                if len(window) >= 3:
+                    rise = max(0, window[-1] - window[0])
+                    peak = max(window)
+                    impact_score = (rise * 0.4) + (peak * 0.6)
+
+                    if impact_score > 0.4:
+                        start_time = energy_times[i]
+                        if not any(abs(c.start_time - start_time) < target_duration for c in candidates):
+                            candidates.append(ClimaxCandidate(
+                                start_time=start_time,
+                                drop_time=start_time + target_duration * 0.7,
+                                score=impact_score,
+                                type='impact'
+                            ))
+
+        # Sort by score and return top candidates
+        candidates.sort(key=lambda x: x.score, reverse=True)
+        return candidates[:7]
+
+    def _find_best_segments_enhanced(
+        self,
+        candidates: List[ClimaxCandidate],
+        rms: np.ndarray,
+        rms_harmonic: np.ndarray,
+        sr: int,
+        hop_length: int,
+        target_duration: float,
+        total_duration: float,
+        is_slow_song: bool,
+        is_short_target: bool
+    ) -> Tuple[float, float]:
+        """
+        Enhanced segment finding that considers song characteristics.
+        """
+        # Best hook start: use top candidate if available
+        if candidates:
+            best_hook_start = candidates[0].start_time
+        else:
+            best_hook_start = 0.0
+
+        # Find best segment based on song type
+        if candidates and candidates[0].score > 0.4:
+            best_segment_start = candidates[0].start_time
+        else:
+            if total_duration <= target_duration:
+                best_segment_start = 0.0
+            else:
+                # Choose analysis target based on song type
+                if is_slow_song:
+                    # For ballads, use harmonic energy
+                    rms_target = rms_harmonic
+                else:
+                    rms_target = rms
+
+                samples_per_segment = int(target_duration * sr / hop_length)
+                best_score = 0.0
+                best_start_idx = 0
+
+                for i in range(len(rms_target) - samples_per_segment):
+                    segment = rms_target[i:i + samples_per_segment]
+                    segment_energy = np.mean(segment)
+
+                    # For short clips, prefer sections with dynamic arc
+                    if is_short_target:
+                        first_quarter = np.mean(segment[:len(segment)//4])
+                        last_quarter = np.mean(segment[-len(segment)//4:])
+                        # Prefer build-up to climax pattern
+                        arc_bonus = max(0, (last_quarter - first_quarter) * 0.5)
+                        score = segment_energy + arc_bonus
+                    else:
+                        score = segment_energy
+
+                    if score > best_score:
+                        best_score = score
+                        best_start_idx = i
+
+                best_segment_start = librosa.frames_to_time(
+                    best_start_idx, sr=sr, hop_length=hop_length
+                )
+
+        return best_segment_start, best_hook_start
 
     def find_best_segment(
         self,

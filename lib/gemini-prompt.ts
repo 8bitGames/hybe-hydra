@@ -20,6 +20,7 @@
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GEMINI_FLASH } from "./agents/constants";
 
 // Initialize Gemini client
 const getGeminiClient = () => {
@@ -100,7 +101,7 @@ export async function generateBackgroundPromptForEditing(
 
   try {
     const genAI = getGeminiClient();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: GEMINI_FLASH });
 
     console.log("[GEMINI] Generating background-only prompt for image editing...");
 
@@ -190,7 +191,7 @@ export async function generateSceneWithPlaceholderPrompt(
 
   try {
     const genAI = getGeminiClient();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: GEMINI_FLASH });
 
     console.log("[GEMINI] Generating scene with placeholder prompt...");
 
@@ -288,7 +289,7 @@ export async function generateCompositePrompt(
 
   try {
     const genAI = getGeminiClient();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: GEMINI_FLASH });
 
     console.log("[GEMINI] Generating composite prompt...");
 
@@ -376,7 +377,7 @@ export async function generateImagePromptForI2V(
 
   try {
     const genAI = getGeminiClient();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: GEMINI_FLASH });
 
     console.log("[GEMINI] Generating image prompt for I2V...");
 
@@ -467,7 +468,7 @@ export async function generateVideoPromptForI2V(
 
   try {
     const genAI = getGeminiClient();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: GEMINI_FLASH });
 
     console.log("[GEMINI] Generating video prompt for I2V with animation instructions...");
 

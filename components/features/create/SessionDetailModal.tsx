@@ -38,8 +38,9 @@ import type {
   ImagesStageData,
   MusicStageData,
   EffectsStageData,
+  RenderStageData,
 } from "@/lib/stores/session-store";
-import type { WorkflowStage, StartData, AnalyzeData, CreateData, ProcessingData } from "@/lib/stores/workflow-store";
+import type { WorkflowStage, StartData, AnalyzeData, CreateData, ProcessingData, PublishData } from "@/lib/stores/workflow-store";
 
 // ============================================================================
 // Types
@@ -87,12 +88,12 @@ const dbRowToFullSession = (row: Record<string, unknown>): FullSession => ({
     analyze: row.analyze_data as AnalyzeData | null,
     create: row.create_data as CreateData | null,
     processing: row.processing_data as ProcessingData | null,
-    publish: row.publish_data as unknown | null,
+    publish: row.publish_data as PublishData | null,
     script: row.script_data as ScriptStageData | null,
     images: row.images_data as ImagesStageData | null,
     music: row.music_data as MusicStageData | null,
     effects: row.effects_data as EffectsStageData | null,
-    render: row.render_data as unknown | null,
+    render: row.render_data as RenderStageData | null,
   },
   metadata: {
     entrySource: row.entry_source as EntrySource | null,
@@ -136,7 +137,7 @@ function safeString(value: unknown): string {
   return String(value);
 }
 
-function InfoRow({ label, value, icon: Icon }: { label: string; value: React.ReactNode; icon?: React.ElementType }) {
+function InfoRow({ label, value, icon: Icon }: { label: string; value: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }) {
   if (!value) return null;
   return (
     <div className="flex items-start gap-3 py-2">
@@ -149,7 +150,7 @@ function InfoRow({ label, value, icon: Icon }: { label: string; value: React.Rea
   );
 }
 
-function SectionHeader({ title, icon: Icon }: { title: string; icon: React.ElementType }) {
+function SectionHeader({ title, icon: Icon }: { title: string; icon: React.ComponentType<{ className?: string }> }) {
   return (
     <div className="flex items-center gap-2 mb-3">
       <Icon className="h-4 w-4 text-neutral-600" />
@@ -535,13 +536,13 @@ function AIVideoDetailView({ session, language }: { session: FullSession; langua
                 value={session.metadata.approvedVideos}
               />
             )}
-            {processingData?.processingVideos && processingData.processingVideos.length > 0 && (
+            {processingData?.videos && processingData.videos.length > 0 && (
               <div>
                 <p className="text-xs text-neutral-500 mb-2">
-                  {language === "ko" ? `처리된 영상 (${processingData.processingVideos.length}개)` : `Processed Videos (${processingData.processingVideos.length})`}
+                  {language === "ko" ? `처리된 영상 (${processingData.videos.length}개)` : `Processed Videos (${processingData.videos.length})`}
                 </p>
                 <div className="space-y-2">
-                  {(processingData.processingVideos as Array<{ id: string; status: string; thumbnailUrl?: string; prompt?: string; qualityScore?: number }>).slice(0, 5).map((video, idx) => (
+                  {processingData.videos.slice(0, 5).map((video, idx) => (
                     <div key={idx} className="flex items-center gap-2 p-2 bg-white rounded border">
                       {video.thumbnailUrl && (
                         <div className="w-16 h-9 rounded overflow-hidden bg-neutral-100 flex-shrink-0">
@@ -629,13 +630,13 @@ function FastCutDetailView({ session, language }: { session: FullSession; langua
                     <span className="text-sm whitespace-pre-wrap">{scriptData.prompt}</span>
                   ) : (
                     <div className="text-sm space-y-1">
-                      {(scriptData.prompt as { niche?: unknown }).niche && (
+                      {safeString((scriptData.prompt as { niche?: unknown }).niche) && (
                         <p><strong>Niche:</strong> {safeString((scriptData.prompt as { niche: unknown }).niche)}</p>
                       )}
-                      {(scriptData.prompt as { category?: unknown }).category && (
+                      {safeString((scriptData.prompt as { category?: unknown }).category) && (
                         <p><strong>Category:</strong> {safeString((scriptData.prompt as { category: unknown }).category)}</p>
                       )}
-                      {(scriptData.prompt as { descriptive?: unknown }).descriptive && (
+                      {safeString((scriptData.prompt as { descriptive?: unknown }).descriptive) && (
                         <p><strong>Description:</strong> {safeString((scriptData.prompt as { descriptive: unknown }).descriptive)}</p>
                       )}
                     </div>
@@ -664,7 +665,7 @@ function FastCutDetailView({ session, language }: { session: FullSession; langua
               />
             )}
             {/* Show scriptData content if exists */}
-            {scriptData.scriptData && (
+            {!!scriptData.scriptData && (
               <InfoRow
                 label={language === "ko" ? "생성된 스크립트" : "Generated Script"}
                 value={
@@ -680,18 +681,18 @@ function FastCutDetailView({ session, language }: { session: FullSession; langua
                 }
               />
             )}
-            {scriptData.tiktokSEO && (
+            {!!scriptData.tiktokSEO && (
               <InfoRow
                 label="TikTok SEO"
                 value={
                   <div className="text-xs space-y-1">
-                    {(scriptData.tiktokSEO as { title?: unknown })?.title && (
+                    {safeString((scriptData.tiktokSEO as { title?: unknown })?.title) && (
                       <p><strong>Title:</strong> {safeString((scriptData.tiktokSEO as { title?: unknown }).title)}</p>
                     )}
-                    {(scriptData.tiktokSEO as { description?: unknown })?.description && (
+                    {safeString((scriptData.tiktokSEO as { description?: unknown })?.description) && (
                       <p><strong>Description:</strong> {safeString((scriptData.tiktokSEO as { description?: unknown }).description)}</p>
                     )}
-                    {(scriptData.tiktokSEO as { hashtags?: unknown })?.hashtags && (
+                    {safeString((scriptData.tiktokSEO as { hashtags?: unknown })?.hashtags) && (
                       <p><strong>Hashtags:</strong> {safeString((scriptData.tiktokSEO as { hashtags?: unknown }).hashtags)}</p>
                     )}
                   </div>

@@ -14,6 +14,7 @@
 import type { AgentContext, AgentResult, WorkflowMetadata, ContentIdea } from './types';
 import { preloadAllPrompts } from './prompt-loader';
 import { BaseAgent } from './base-agent';
+import { GEMINI_FLASH } from './constants';
 
 // Agent imports
 import { VisionAnalyzerAgent } from './analyzers/vision-analyzer';
@@ -309,7 +310,7 @@ export class WorkflowOrchestrator {
       error: lastError?.message || 'Max retries exceeded',
       metadata: {
         agentId,
-        model: 'gemini-2.5-flash',
+        model: GEMINI_FLASH,
         tokenUsage: { input: 0, output: 0, total: 0 },
         latencyMs: 0,
         timestamp: new Date().toISOString(),

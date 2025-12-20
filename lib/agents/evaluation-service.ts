@@ -12,6 +12,7 @@
 
 import { getServiceClient } from '@/lib/supabase/service';
 import { GeminiClient } from '../models';
+import { GEMINI_FLASH } from './constants';
 
 // Types
 export interface ExecutionLog {
@@ -98,7 +99,7 @@ export class AgentEvaluationService {
   constructor() {
     // Use Gemini Flash for cost-effective evaluation
     this.judgeClient = new GeminiClient({
-      model: 'gemini-2.5-flash',
+      model: GEMINI_FLASH,
       temperature: 0.3, // Lower temperature for consistent evaluation
       maxTokens: 2048,
     });
@@ -273,7 +274,7 @@ Please evaluate the agent's output based on the above information.`;
           strengths: evaluation.strengths,
           weaknesses: evaluation.weaknesses,
           suggestions: evaluation.suggestions,
-          judge_model: feedbackType === 'llm_judge' ? 'gemini-2.5-flash' : null,
+          judge_model: feedbackType === 'llm_judge' ? GEMINI_FLASH : null,
           raw_evaluation: evaluation,
         })
         .select('id')

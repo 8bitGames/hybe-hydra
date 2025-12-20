@@ -11,6 +11,8 @@
  * 4. Conductor - Plans full video composition
  */
 
+import { GEMINI_FLASH } from '../constants';
+
 // ============================================================================
 // Scene Analyzer
 // ============================================================================
@@ -112,9 +114,9 @@ export const FastCutAgentIds = {
 // ============================================================================
 
 export const FastCutAgentModels = {
-  'fast-cut-scene-analyzer': 'gemini-2.5-flash',
-  'fast-cut-script-generator': 'gemini-2.5-flash',
-  'fast-cut-image-keyword-generator': 'gemini-2.5-flash',
-  'fast-cut-effect-analyzer': 'gemini-2.5-flash',
-  'fast-cut-conductor': 'gemini-2.5-flash',
+  'fast-cut-scene-analyzer': GEMINI_FLASH,
+  'fast-cut-script-generator': GEMINI_FLASH,
+  'fast-cut-image-keyword-generator': GEMINI_FLASH,
+  'fast-cut-effect-analyzer': GEMINI_FLASH,
+  'fast-cut-conductor': GEMINI_FLASH,
 } as const;

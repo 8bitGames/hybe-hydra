@@ -161,7 +161,14 @@ export async function POST(request: NextRequest) {
                 isPhotoPost: cached.isPhotoPost || false,
                 imageCount: cached.imageCount || undefined,
                 language: "ko",
-              }, { sessionId: `analyze-${urlHash}` });
+              }, {
+                workflow: {
+                  artistName: "Unknown",
+                  language: "ko",
+                  platform: "tiktok",
+                  sessionId: `analyze-${urlHash}`,
+                },
+              });
 
               if (sceneResult.success && sceneResult.data) {
                 sceneAnalysis = sceneResult.data;
@@ -334,7 +341,14 @@ export async function POST(request: NextRequest) {
           isPhotoPost: result.metadata?.is_photo_post || false,
           imageCount: result.metadata?.image_urls?.length,
           language: "ko",
-        }, { sessionId: `analyze-${urlHash}` });
+        }, {
+          workflow: {
+            artistName: "Unknown",
+            language: "ko",
+            platform: "tiktok",
+            sessionId: `analyze-${urlHash}`,
+          },
+        });
 
         if (sceneResult.success && sceneResult.data) {
           sceneAnalysis = sceneResult.data;

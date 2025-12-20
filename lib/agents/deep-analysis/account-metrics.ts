@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentContext } from '../types';
 
 // =============================================================================
@@ -258,7 +259,7 @@ export const AccountMetricsConfig = {
   category: 'analyzer',
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.5,
       maxTokens: 12288, // Increased for complete metrics responses

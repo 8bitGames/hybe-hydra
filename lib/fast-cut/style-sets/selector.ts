@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '@/lib/agents/base-agent';
+import { GEMINI_FLASH } from '@/lib/agents/constants';
 import type { AgentConfig, AgentContext } from '@/lib/agents/types';
 import type { FastCutStyleSet, StyleSetSelectionResult } from './types';
 import { ALL_STYLE_SETS, STYLE_SETS_BY_ID, getDefaultStyleSet } from './presets';
@@ -46,7 +47,7 @@ const StyleSetSelectorConfig: AgentConfig<StyleSetSelectorInput, StyleSetSelecto
 
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.2,
       maxTokens: 4096, // Increased for thinking model

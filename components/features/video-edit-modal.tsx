@@ -491,6 +491,7 @@ export function VideoEditModal({
       // Create a temporary asset object to select
       const uploadedAsset: Asset = {
         id: data.id,
+        campaign_id: campaignId,
         filename: data.filename,
         original_filename: file.name,
         s3_url: data.s3_url,
@@ -498,9 +499,11 @@ export function VideoEditModal({
         type: "audio",
         file_size: file.size,
         mime_type: file.type,
+        vector_embedding_id: data.vector_embedding_id || null,
+        thumbnail_url: data.thumbnail_url || null,
         metadata: data.metadata || {},
+        created_by: data.created_by || "",
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       };
 
       handleSelectAsset(uploadedAsset);

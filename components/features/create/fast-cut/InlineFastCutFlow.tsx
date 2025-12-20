@@ -65,6 +65,7 @@ import { FastCutEffectStep } from "./FastCutEffectStep";
 
 // Types
 import type { SubtitleMode } from "@/lib/stores/fast-cut-context";
+import type { LyricsData } from "@/lib/subtitle-styles";
 
 // ============================================================================
 // Types
@@ -536,6 +537,30 @@ export function InlineFastCutFlow({
   const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>("lyrics");
   const [audioLyricsText, setAudioLyricsText] = useState<string | null>(null);
 
+  // Get lyrics data from selected audio asset's metadata
+  const selectedAudioLyrics = useMemo((): LyricsData | null => {
+    if (!selectedAudio || !audioAssetsData?.items) {
+      return null;
+    }
+
+    const fullAsset = audioAssetsData.items.find(
+      (asset) => asset.id === selectedAudio.id
+    );
+
+    if (!fullAsset?.metadata) {
+      return null;
+    }
+
+    const metadata = fullAsset.metadata as Record<string, unknown>;
+    const lyrics = metadata.lyrics as LyricsData | undefined;
+
+    if (lyrics && Array.isArray(lyrics.segments) && lyrics.segments.length > 0) {
+      return lyrics;
+    }
+
+    return null;
+  }, [selectedAudio, audioAssetsData]);
+
   // Step 4: Render state
   const [styleSetId, setStyleSetId] = useState<string>("viral_tiktok");
   const [styleSets, setStyleSets] = useState<import("@/lib/fast-cut-api").StyleSetSummary[]>([]);
@@ -578,6 +603,45 @@ export function InlineFastCutFlow({
       setSelectedSearchKeywords(new Set(fastCutData.searchKeywords));
     }
   }, [fastCutData?.searchKeywords]);
+
+  // Track last analyzed duration to trigger re-analysis when targetDuration changes
+  const [lastAnalyzedDuration, setLastAnalyzedDuration] = useState<number | null>(null);
+
+  // Re-analyze audio when targetDuration changes (e.g., after script generation updates duration)
+  useEffect(() => {
+    // Skip if no audio selected or still analyzing
+    if (!selectedAudio || analyzingAudio) return;
+    // Skip if we haven't done initial analysis yet
+    if (lastAnalyzedDuration === null) return;
+    // Skip if duration hasn't changed
+    if (lastAnalyzedDuration === targetDuration) return;
+
+    console.log("[FastCut Inline] targetDuration changed, re-analyzing audio:", {
+      previous: lastAnalyzedDuration,
+      new: targetDuration,
+      audioId: selectedAudio.id
+    });
+
+    const reAnalyze = async () => {
+      setAnalyzingAudio(true);
+      try {
+        const analysis = await fastCutApi.analyzeAudioBestSegment(selectedAudio.id, targetDuration);
+        setAudioAnalysis(analysis);
+        setAudioStartTime(analysis.suggestedStartTime);
+        setLastAnalyzedDuration(targetDuration);
+        console.log("[FastCut Inline] Re-analysis complete:", {
+          suggestedStartTime: analysis.suggestedStartTime,
+          targetDuration
+        });
+      } catch (err) {
+        console.warn("[FastCut Inline] Re-analysis failed:", err);
+      } finally {
+        setAnalyzingAudio(false);
+      }
+    };
+
+    reAnalyze();
+  }, [targetDuration, selectedAudio, lastAnalyzedDuration, analyzingAudio]);
 
   // ========================================
   // Step 1: Script Generation
@@ -779,6 +843,8 @@ export function InlineFastCutFlow({
       if (analysisResult.status === 'fulfilled') {
         setAudioAnalysis(analysisResult.value);
         setAudioStartTime(analysisResult.value.suggestedStartTime);
+        // Track the duration used for this analysis (for re-analysis on duration change)
+        setLastAnalyzedDuration(targetDuration);
       } else {
         console.warn("Audio analysis failed:", analysisResult.reason);
         setAudioStartTime(0);
@@ -1203,6 +1269,10 @@ export function InlineFastCutFlow({
                 setTiktokSEO={setTiktokSEO}
                 rendering={rendering}
                 onStartRender={handleStartRender}
+                videoDuration={targetDuration}
+                subtitleMode={subtitleMode}
+                lyricsData={selectedAudioLyrics}
+                audioStartTime={audioStartTime}
               />
             )}
           </div>

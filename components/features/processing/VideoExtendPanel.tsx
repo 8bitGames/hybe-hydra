@@ -66,8 +66,10 @@ export function VideoExtendPanel({
       try {
         setLoading(true);
         setError(null);
-        const info = await videoExtendApi.getInfo(generationId);
-        setExtendInfo(info);
+        const response = await videoExtendApi.getInfo(generationId);
+        if (response.data) {
+          setExtendInfo(response.data);
+        }
       } catch (err) {
         console.error("Failed to fetch extend info:", err);
         setError(isKorean ? "확장 정보를 불러올 수 없습니다" : "Failed to load extension info");
@@ -89,7 +91,9 @@ export function VideoExtendPanel({
         apply_audio_after: applyAudioAfter && !!extendInfo?.audio_asset_id,
         audio_asset_id: applyAudioAfter ? extendInfo?.audio_asset_id || undefined : undefined,
       });
-      onExtendStarted?.(response.id, response);
+      if (response.data) {
+        onExtendStarted?.(response.data.id, response.data);
+      }
     } catch (err: unknown) {
       console.error("Failed to extend video:", err);
       const errorMessage = err instanceof Error ? err.message : "Unknown error";

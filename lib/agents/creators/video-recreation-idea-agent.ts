@@ -12,6 +12,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_PRO } from '../constants';
 import type { AgentConfig, AgentContext } from '../types';
 
 // Video Analysis Data Schema (from StartFromVideo.aiAnalysis)
@@ -100,7 +101,7 @@ export const VideoRecreationIdeaConfig: AgentConfig<VideoRecreationIdeaInput, Vi
 
   model: {
     provider: 'gemini',
-    name: 'gemini-3-pro-preview',
+    name: GEMINI_PRO,
     options: {
       temperature: 0.5,  // Lower temperature for more faithful recreation
       maxTokens: 16384,  // Increased for detailed Veo 3.1 prompts

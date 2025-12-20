@@ -756,8 +756,7 @@ export default function PublishManagerPage() {
                   <TableRow className="bg-muted/50">
                     <TableHead className="w-[80px]">{isKorean ? "미리보기" : "Preview"}</TableHead>
                     <TableHead className="min-w-[200px] max-w-[400px]">{isKorean ? "설명 / Description" : "Description"}</TableHead>
-                    <TableHead className="min-w-[150px]">{isKorean ? "태그" : "Tags"}</TableHead>
-                    <TableHead>{isKorean ? "캠페인" : "Campaign"}</TableHead>
+                    <TableHead className="min-w-[280px]">{isKorean ? "태그" : "Tags"}</TableHead>
                     <TableHead className="w-[100px]">{isKorean ? "유형" : "Type"}</TableHead>
                     <TableHead className="w-[100px]">{isKorean ? "생성일" : "Created"}</TableHead>
                     <TableHead className="w-[120px] text-right">{isKorean ? "작업" : "Actions"}</TableHead>
@@ -864,18 +863,13 @@ export default function PublishManagerPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1">
+                        <div className="grid grid-cols-2 gap-x-1.5 gap-y-1">
                           {getVideoTags(video).map((tag, i) => (
-                            <Badge key={i} variant="secondary" className="text-xs">
+                            <Badge key={i} variant="secondary" className="text-[10px] px-1.5 py-0.5">
                               #{tag.replace(/^#/, "")}
                             </Badge>
                           ))}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground">
-                          {video.campaignName || "-"}
-                        </span>
                       </TableCell>
                       <TableCell>
                         <Badge variant={video.generationType === "ai" ? "default" : "secondary"}>

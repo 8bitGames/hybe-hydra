@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
@@ -13,6 +13,8 @@ import { FastCutEffectStep } from "@/components/features/create/fast-cut/FastCut
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sparkles } from "lucide-react";
 import { useProcessingSessionStore } from "@/lib/stores/processing-session-store";
+import { useAssets } from "@/lib/queries";
+import type { LyricsData } from "@/lib/subtitle-styles";
 
 export default function FastCutEffectsPage() {
   const router = useRouter();
@@ -79,6 +81,36 @@ export default function FastCutEffectsPage() {
   const initSession = useProcessingSessionStore((state) => state.initSession);
   const updateOriginalVideo = useProcessingSessionStore((state) => state.updateOriginalVideo);
 
+  // Fetch audio assets to get lyrics data
+  const { data: audioAssetsData } = useAssets(campaignId || "", {
+    type: "audio",
+    page_size: 100,
+  });
+
+  // Get lyrics data from selected audio asset's metadata
+  const selectedAudioLyrics = useMemo((): LyricsData | null => {
+    if (!selectedAudio || !audioAssetsData?.items) {
+      return null;
+    }
+
+    const fullAsset = audioAssetsData.items.find(
+      (asset) => asset.id === selectedAudio.id
+    );
+
+    if (!fullAsset?.metadata) {
+      return null;
+    }
+
+    const metadata = fullAsset.metadata as Record<string, unknown>;
+    const lyrics = metadata.lyrics as LyricsData | undefined;
+
+    if (lyrics && Array.isArray(lyrics.segments) && lyrics.segments.length > 0) {
+      return lyrics;
+    }
+
+    return null;
+  }, [selectedAudio, audioAssetsData]);
+
   // Check if we have valid data (from script step OR scene analysis from Start page)
   const hasValidData = scriptData !== null || hasSceneAnalysis;
 
@@ -96,17 +128,39 @@ export default function FastCutEffectsPage() {
 
   const handleStartRender = async () => {
     const hasValidMusicChoice = selectedAudio !== null || musicSkipped;
-    // Allow rendering without scriptData if we have scene analysis (skip script step flow)
-    if (!hasValidMusicChoice || selectedImages.length < 3 || !generationId || (!scriptData && !hasSceneAnalysis)) {
+    const hasLyricsContent = subtitleMode === "lyrics" && selectedAudioLyrics?.segments?.length;
+    // Allow rendering without scriptData if we have scene analysis (skip script step flow) OR if using lyrics mode
+    if (!hasValidMusicChoice || selectedImages.length < 3 || !generationId || (!scriptData && !hasSceneAnalysis && !hasLyricsContent)) {
       setError(language === "ko" ? "최소 3개의 이미지가 필요합니다" : "At least 3 images required");
       return;
     }
 
-    // Create fallback script lines when coming from scene analysis (no script step)
-    const scriptLines = scriptData?.script?.lines || [];
-    const displayScript = scriptLines.length > 0
-      ? scriptLines.map(l => l.text).join("\n")
-      : "";
+    // Create displayScript and scriptLines based on subtitle mode
+    // When in lyrics mode, use lyrics data; otherwise use script data
+    let displayScript = "";
+    let scriptLines: { text: string; timing: number; duration: number }[] = [];
+
+    if (subtitleMode === "lyrics" && selectedAudioLyrics?.segments?.length) {
+      // Use lyrics for display and convert to script lines format
+      displayScript = selectedAudioLyrics.segments.map(s => s.text).join("\n");
+      // Convert lyrics segments to script lines format for render API
+      scriptLines = selectedAudioLyrics.segments.map((segment) => {
+        const adjustedStart = Math.max(0, segment.start - (musicSkipped ? 0 : audioStartTime));
+        const adjustedEnd = Math.max(0, segment.end - (musicSkipped ? 0 : audioStartTime));
+        const duration = adjustedEnd - adjustedStart;
+        return {
+          text: segment.text,
+          timing: adjustedStart,
+          duration: Math.max(0.5, duration),
+        };
+      }).filter(line => line.timing < (videoDuration || 15) && line.duration > 0);
+    } else {
+      // Use script data (fallback for scene analysis flow)
+      scriptLines = scriptData?.script?.lines || [];
+      displayScript = scriptLines.length > 0
+        ? scriptLines.map(l => l.text).join("\n")
+        : "";
+    }
 
     setRendering(true);
     setError(null);
@@ -172,8 +226,9 @@ export default function FastCutEffectsPage() {
 
       console.log("[FastCut Effects] 🎤 initSession script source:", {
         subtitleMode,
-        hasAudioLyricsText: !!audioLyricsText,
-        usingLyrics: subtitleMode === "lyrics" && !!audioLyricsText,
+        hasLyricsSegments: !!selectedAudioLyrics?.segments?.length,
+        usingLyrics: subtitleMode === "lyrics" && !!selectedAudioLyrics?.segments?.length,
+        scriptLinesCount: scriptLines.length,
         scriptPreview: displayScript.substring(0, 100),
       });
 
@@ -254,9 +309,9 @@ export default function FastCutEffectsPage() {
     router.push(`/fast-cut/music${sessionParam}`);
   };
 
-  // Check prerequisites
+  // Check prerequisites - allow either scriptData OR scene analysis (from Start page skip flow)
   const prerequisitesMet =
-    scriptData &&
+    hasValidData &&
     selectedImages.length >= 3 &&
     (selectedAudio !== null || musicSkipped);
 
@@ -287,6 +342,9 @@ export default function FastCutEffectsPage() {
               rendering={rendering}
               onStartRender={handleStartRender}
               videoDuration={videoDuration}
+              subtitleMode={subtitleMode}
+              lyricsData={selectedAudioLyrics}
+              audioStartTime={audioStartTime}
             />
           </div>
         </div>

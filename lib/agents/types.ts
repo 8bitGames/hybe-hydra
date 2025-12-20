@@ -10,22 +10,20 @@
  */
 
 import { z, ZodSchema } from 'zod';
+import {
+  GeminiModelName,
+  OpenAIModelName,
+  ModelName,
+} from './constants';
+
+// Re-export model types from constants
+export type { GeminiModelName, OpenAIModelName, ModelName };
 
 // ================================
 // Model Configuration Types
 // ================================
 
 export type ModelProvider = 'gemini' | 'openai';
-
-export type GeminiModelName =
-  | 'gemini-2.5-flash'
-  | 'gemini-3-pro-preview';
-
-export type OpenAIModelName =
-  | 'gpt-5.1'
-  | 'gpt-5.1-mini';
-
-export type ModelName = GeminiModelName | OpenAIModelName;
 
 export interface ModelOptions {
   temperature?: number;

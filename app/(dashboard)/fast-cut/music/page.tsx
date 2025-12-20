@@ -132,20 +132,70 @@ export default function FastCutMusicPage() {
     }
   }, [isHydrated, hasInitializedDuration, scriptData?.script?.totalDuration, setVideoDuration, videoDuration]);
 
+  // Track the duration used for last audio analysis to detect changes
+  const [lastAnalyzedDuration, setLastAnalyzedDuration] = useState<number | null>(null);
+
+  // Re-analyze audio when videoDuration changes (only if we have selected audio)
+  useEffect(() => {
+    // Skip if no selected audio or still initializing
+    if (!selectedAudio || !isHydrated || !videoDuration) return;
+
+    // Skip if this is the first analysis (lastAnalyzedDuration will be null)
+    if (lastAnalyzedDuration === null) return;
+
+    // Skip if duration hasn't changed
+    if (lastAnalyzedDuration === videoDuration) return;
+
+    // Skip if currently analyzing
+    if (analyzingAudio) return;
+
+    console.log("[FastCut Music] videoDuration changed from", lastAnalyzedDuration, "to", videoDuration, "- re-analyzing audio");
+
+    // Re-analyze with new duration
+    const reAnalyze = async () => {
+      setAnalyzingAudio(true);
+      try {
+        const analysis = await fastCutApi.analyzeAudioBestSegment(selectedAudio.id, videoDuration);
+        setAudioAnalysis(analysis);
+        // Update start time to new suggested position
+        setAudioStartTime(analysis.suggestedStartTime);
+        setLastAnalyzedDuration(videoDuration);
+        console.log("[FastCut Music] Re-analysis complete, new suggested start:", analysis.suggestedStartTime);
+      } catch (err) {
+        console.warn("[FastCut Music] Re-analysis failed:", err);
+      } finally {
+        setAnalyzingAudio(false);
+      }
+    };
+
+    reAnalyze();
+  }, [videoDuration, selectedAudio, isHydrated, lastAnalyzedDuration, analyzingAudio]);
+
+  // Track if we've checked for music (to show appropriate message)
+  const [hasCheckedMusic, setHasCheckedMusic] = useState(false);
+  const [noCampaignForMusic, setNoCampaignForMusic] = useState(false);
+
   // Auto-match music on mount (works with scriptData OR sceneAnalysis)
+  // Also depends on campaignId so it re-runs when campaign becomes available
   useEffect(() => {
     const hasVibeSource = scriptData || sceneAnalysis;
-    if (hasVibeSource && audioMatches.length === 0 && !matchingMusic && !musicSkipped) {
+    if (hasVibeSource && audioMatches.length === 0 && !matchingMusic && !musicSkipped && !hasCheckedMusic) {
       handleMatchMusic();
     }
-  }, [scriptData, sceneAnalysis]);
+  }, [scriptData, sceneAnalysis, campaignId]);
 
   const handleMatchMusic = async () => {
     // Get vibe from scriptData or scene analysis
     const vibe = scriptData?.vibe || sceneAnalysis?.overallStyle?.vibe || 'Pop';
     const bpmRange = scriptData?.suggestedBpmRange || { min: 90, max: 150 }; // Default BPM range
 
-    if (!campaignId) return;
+    // If no campaign, mark that we can't search music (user must upload)
+    if (!campaignId) {
+      console.log("[FastCut Music] No campaignId available - music search disabled, upload only");
+      setHasCheckedMusic(true);
+      setNoCampaignForMusic(true);
+      return;
+    }
 
     setMatchingMusic(true);
     setError(null);
@@ -159,11 +209,13 @@ export default function FastCutMusicPage() {
       });
 
       setAudioMatches(result.matches);
+      setHasCheckedMusic(true);
       if (result.matches.length > 0) {
         handleSelectAudio(result.matches[0]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Music matching failed");
+      setHasCheckedMusic(true);
     } finally {
       setMatchingMusic(false);
     }
@@ -177,10 +229,14 @@ export default function FastCutMusicPage() {
     setAnalyzingAudio(true);
 
     try {
-      const targetDuration = scriptData?.script?.totalDuration || 15;
+      // Use actual videoDuration (user's selected duration) for optimal segment finding
+      const targetDuration = videoDuration || scriptData?.script?.totalDuration || 15;
+      console.log("[FastCut Music] Analyzing audio with targetDuration:", targetDuration);
       const analysis = await fastCutApi.analyzeAudioBestSegment(audio.id, targetDuration);
       setAudioAnalysis(analysis);
       setAudioStartTime(analysis.suggestedStartTime);
+      // Track the duration used for this analysis
+      setLastAnalyzedDuration(targetDuration);
     } catch (err) {
       console.warn("Audio analysis failed:", err);
       setAudioStartTime(0);
@@ -319,6 +375,7 @@ export default function FastCutMusicPage() {
               campaignId={campaignId || ""}
               musicSkipped={musicSkipped}
               subtitleMode={subtitleMode}
+              noCampaignForMusic={noCampaignForMusic}
               onSelectAudio={handleSelectAudio}
               onSetAudioStartTime={setAudioStartTime}
               onSetVideoDuration={setVideoDuration}

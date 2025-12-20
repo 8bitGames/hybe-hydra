@@ -111,6 +111,7 @@ export interface SessionMetadata {
   totalGenerations: number;
   approvedVideos: number;
   title: string;
+  hasSceneAnalysis?: boolean;  // Track if using scene analysis flow (no script step)
 }
 
 // Fast Cut stage data types (simplified for session persistence)
@@ -122,6 +123,7 @@ export interface ScriptStageData {
   scriptData: unknown | null;
   tiktokSEO: unknown | null;
   generationId: string | null;
+  hasSceneAnalysis?: boolean;  // Track if using scene analysis flow (no script step)
 }
 
 export interface ImagesStageData {

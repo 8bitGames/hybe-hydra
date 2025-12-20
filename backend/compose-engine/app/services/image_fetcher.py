@@ -7,6 +7,34 @@ from urllib.parse import urlparse
 from ..config import get_settings
 from ..models.responses import ImageCandidate, ImageSearchResult
 
+# Domains to block - watermark stock sites and CDNs with auth
+BLOCKED_DOMAINS = [
+    'lookaside.fbsbx.com',  # Facebook CDN with auth
+    'scontent-',           # Facebook/Instagram CDN
+    # Watermark stock sites - completely block
+    'vecteezy.com',
+    'dreamstime.com',
+    '123rf.com',
+    'depositphotos.com',
+    'bigstockphoto.com',
+    'canstockphoto.com',
+    'vectorstock.com',
+    'freepik.com',
+    'stock.adobe.com',
+    'shutterstock.com',
+    'gettyimages.com',
+    'istockphoto.com',
+    'alamy.com',
+    'pond5.com',
+    'envato.com',
+]
+
+
+def is_blocked_domain(url: str) -> bool:
+    """Check if URL is from a blocked domain."""
+    url_lower = url.lower()
+    return any(domain in url_lower for domain in BLOCKED_DOMAINS)
+
 
 class ImageFetcher:
     """Service for fetching images from Google Custom Search."""
@@ -68,6 +96,13 @@ class ImageFetcher:
                         image = item.get("image", {})
                         width = image.get("width", 0)
                         height = image.get("height", 0)
+                        source_url = item.get("link", "")
+
+                        # Filter blocked domains (watermark sites, CDNs with auth)
+                        if is_blocked_domain(source_url):
+                            print(f"[ImageFetcher] Skipping blocked domain: {source_url[:50]}...")
+                            filtered_count += 1
+                            continue
 
                         # Filter by minimum resolution
                         if width < min_width or height < min_height:
@@ -75,7 +110,6 @@ class ImageFetcher:
                             continue
 
                         # Extract domain
-                        source_url = item.get("link", "")
                         domain = urlparse(source_url).netloc
 
                         candidate = ImageCandidate(

@@ -291,6 +291,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Get search tags from metadata (for image search)
     const searchTags = getVariationKeywords(originalMetadata, seedGeneration.prompt);
 
+    // Get original image URLs from seed generation for 70/30 split
+    // Priority: qualityMetadata.imageUrls > imageAssets array
+    let originalImageUrls: string[] = [];
+    if (originalMetadata?.imageUrls && Array.isArray(originalMetadata.imageUrls)) {
+      originalImageUrls = originalMetadata.imageUrls as string[];
+    } else if (seedGeneration.imageAssets && Array.isArray(seedGeneration.imageAssets)) {
+      // Extract URLs from imageAssets array
+      const imageAssets = seedGeneration.imageAssets as Array<{ url?: string }>;
+      originalImageUrls = imageAssets
+        .map(asset => asset.url)
+        .filter((url): url is string => typeof url === 'string');
+    }
+
+    console.log(`[Compose Variations] Original images found: ${originalImageUrls.length}`);
+
     // Get script lines from original data (composeData for compose, fastCutData for fast-cut)
     // Fast-cut stores script as array directly, compose stores it with lines property
     const rawScript = originalComposeData?.script || originalFastCutData?.script;
@@ -432,7 +447,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Prepare auto-compose requests for each variation
-    // Auto-compose handles image search internally based on search_tags
+    // Uses 70% original images + 30% new search (keyword transformation disabled)
     // NOTE: Using polling (not callback) to check job status - GET endpoint polls EC2
     const autoComposeRequests: AutoComposeRequest[] = createdGenerations.map(({ generation, settings }) => {
       return {
@@ -456,11 +471,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               duration: line.duration,
             }))
           : undefined,
+        // Original image URLs for 70/30 split (70% original + 30% new search)
+        original_image_urls: originalImageUrls.length > 0 ? originalImageUrls : undefined,
       };
     });
 
     console.log(`[Compose Variations] Submitting ${autoComposeRequests.length} jobs to /api/v1/compose/auto`);
     console.log(`[Compose Variations] Search tags: ${searchTags.join(", ")}`);
+    console.log(`[Compose Variations] Original images for 70/30 split: ${originalImageUrls.length}`);
 
     // Submit each job to auto-compose endpoint (EC2 handles image search internally)
     try {

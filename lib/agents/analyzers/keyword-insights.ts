@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_PRO } from '../constants';
 import type { AgentConfig, AgentContext, AgentResult } from '../types';
 
 // Input Schema
@@ -61,7 +62,7 @@ export const KeywordInsightsConfig: AgentConfig<KeywordInsightsInput, KeywordIns
 
   model: {
     provider: 'gemini',
-    name: 'gemini-3-pro-preview',
+    name: GEMINI_PRO,
     options: {
       temperature: 0.7,
       maxTokens: 4096,

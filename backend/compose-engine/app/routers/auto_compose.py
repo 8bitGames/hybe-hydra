@@ -16,7 +16,7 @@ from ..models.render_job import (
 )
 from ..services.image_fetcher import ImageFetcher
 from ..services.video_renderer import VideoRenderer
-from ..services.keyword_transformer import get_keyword_transformer
+# Note: keyword_transformer is no longer used - variations use original tags directly
 from ..utils.job_queue import JobQueue
 from ..dependencies import get_job_queue, get_render_semaphore
 from ..config import get_settings
@@ -48,6 +48,8 @@ class AutoComposeRequest(BaseModel):
     callback_url: Optional[str] = Field(default=None, description="URL to call when job completes")
     # Script lines for text overlays (subtitles/captions)
     script_lines: Optional[List[ScriptLineInput]] = Field(default=None, description="Script lines for text overlays")
+    # Original image URLs for 70/30 split (70% original + 30% new search)
+    original_image_urls: Optional[List[str]] = Field(default=None, description="Original image URLs for variations")
 
 
 class AutoComposeResponse(BaseModel):
@@ -119,62 +121,76 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
         if request.callback_url:
             await send_callback(request.callback_url, request.job_id, "processing", progress=5)
 
-        # Search for images using the tags
+        # Image selection: 70% original + 30% new search (keyword transformation disabled)
         image_fetcher = ImageFetcher()
 
-        # Transform keywords based on style (vibe, color_grade, effect_preset)
-        try:
-            keyword_transformer = get_keyword_transformer()
-            transformed_tags = await keyword_transformer.transform(
-                original_tags=request.search_tags,
-                vibe=request.vibe,
-                color_grade=request.color_grade,
-                effect_preset=request.effect_preset,
-            )
-            logger.info(f"[Auto-Compose] Job {request.job_id} transformed tags: {request.search_tags} -> {transformed_tags}")
-        except Exception as e:
-            logger.warning(f"[Auto-Compose] Job {request.job_id} keyword transformation failed: {e}, using original tags")
-            transformed_tags = request.search_tags
+        # Use original search tags directly (keyword transformation disabled)
+        # This ensures variations use similar images to the original compose
+        search_tags = request.search_tags
+        logger.info(f"[Auto-Compose] Job {request.job_id} using original tags (transformation disabled): {search_tags}")
 
-        # Try each tag combination until we get enough images
-        # Use progressive resolution fallback: 720 -> 480 -> 360
+        # Calculate 70/30 split for images
+        target_image_count = 12  # Target total images
+
+        # If we have original images, use 70/30 split
+        original_images_to_use = []
+        new_search_target = target_image_count
+
+        if request.original_image_urls and len(request.original_image_urls) > 0:
+            # 70% from original images
+            original_count = int(target_image_count * 0.7)
+            original_count = min(original_count, len(request.original_image_urls))
+            original_images_to_use = request.original_image_urls[:original_count]
+            # 30% from new search
+            new_search_target = target_image_count - len(original_images_to_use)
+            logger.info(f"[Auto-Compose] Job {request.job_id} using 70/30 split: {len(original_images_to_use)} original + {new_search_target} new search")
+        else:
+            logger.info(f"[Auto-Compose] Job {request.job_id} no original images provided, using 100% new search")
+
+        # Search for new images using original tags (no transformation)
         all_candidates = []
         min_resolutions = [720, 480, 360]
 
-        for min_res in min_resolutions:
-            if len(all_candidates) >= 3:
-                break
+        if new_search_target > 0:
+            for min_res in min_resolutions:
+                if len(all_candidates) >= new_search_target:
+                    break
 
-            logger.info(f"[Auto-Compose] Job {request.job_id} searching with min_res={min_res}")
+                logger.info(f"[Auto-Compose] Job {request.job_id} searching with min_res={min_res}")
 
-            for tag in transformed_tags:
-                result = await image_fetcher.search(
-                    query=tag,
+                for tag in search_tags:
+                    result = await image_fetcher.search(
+                        query=tag,
+                        max_results=10,
+                        min_width=min_res,
+                        min_height=min_res
+                    )
+                    all_candidates.extend(result.candidates)
+
+                # Also try the full query
+                full_result = await image_fetcher.search(
+                    query=request.search_query,
                     max_results=10,
                     min_width=min_res,
                     min_height=min_res
                 )
-                all_candidates.extend(result.candidates)
+                all_candidates.extend(full_result.candidates)
 
-            # Also try the full query
-            full_result = await image_fetcher.search(
-                query=request.search_query,
-                max_results=10,
-                min_width=min_res,
-                min_height=min_res
-            )
-            all_candidates.extend(full_result.candidates)
-
-        # Remove duplicates based on URL
-        seen_urls = set()
+        # Remove duplicates based on URL (also exclude original images)
+        seen_urls = set(original_images_to_use)  # Start with original URLs to avoid duplicates
         unique_candidates = []
         for candidate in all_candidates:
             if candidate.source_url not in seen_urls:
                 seen_urls.add(candidate.source_url)
                 unique_candidates.append(candidate)
 
-        if len(unique_candidates) < 3:
-            error_message = f"Not enough images found. Only {len(unique_candidates)} images."
+        # Select new search images (30% of target)
+        new_search_images = unique_candidates[:new_search_target]
+
+        # Check if we have enough total images
+        total_images = len(original_images_to_use) + len(new_search_images)
+        if total_images < 3:
+            error_message = f"Not enough images found. Only {total_images} images (original: {len(original_images_to_use)}, new: {len(new_search_images)})."
             if job_queue:
                 await job_queue.update_job(
                     request.job_id,
@@ -186,40 +202,47 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
                 await send_callback(request.callback_url, request.job_id, "failed", error=error_message)
             return
 
-        # Select images for the video (8-12 images typically)
-        target_image_count = min(12, max(6, len(unique_candidates)))
-        selected_images = unique_candidates[:target_image_count]
+        # Combine: original images first, then new search images
+        # This preserves most of the original feel while adding variety
+        selected_image_urls = original_images_to_use + [c.source_url for c in new_search_images]
+        logger.info(f"[Auto-Compose] Job {request.job_id} final image selection: {len(original_images_to_use)} original + {len(new_search_images)} new = {len(selected_image_urls)} total")
 
         if job_queue:
             await job_queue.update_job(
                 request.job_id,
                 progress=20,
-                current_step=f"Found {len(selected_images)} images. Verifying accessibility..."
+                current_step=f"Found {len(selected_image_urls)} images. Verifying accessibility..."
             )
 
         # Verify images are accessible (filter out 403/blocked URLs)
-        verified_images = []
+        # Note: Original images are assumed to be accessible (from S3), only verify new search images
+        verified_image_urls = []
         async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
-            for img in selected_images:
+            for img_url in selected_image_urls:
+                # Skip verification for S3 URLs (original images) - they use IAM auth
+                if 's3.amazonaws.com' in img_url or 's3.' in img_url:
+                    verified_image_urls.append(img_url)
+                    continue
+
                 try:
                     headers = {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                         "Accept": "image/*,*/*;q=0.8",
                     }
-                    resp = await client.head(img.source_url, headers=headers)
+                    resp = await client.head(img_url, headers=headers)
                     if resp.status_code < 400:
-                        verified_images.append(img)
+                        verified_image_urls.append(img_url)
                     else:
-                        logger.warning(f"[Auto-Compose] Image blocked ({resp.status_code}): {img.source_url[:80]}")
+                        logger.warning(f"[Auto-Compose] Image blocked ({resp.status_code}): {img_url[:80]}")
                 except Exception as e:
                     logger.warning(f"[Auto-Compose] Image verification failed: {e}")
                     continue
 
-        logger.info(f"[Auto-Compose] Verified {len(verified_images)}/{len(selected_images)} images accessible")
+        logger.info(f"[Auto-Compose] Verified {len(verified_image_urls)}/{len(selected_image_urls)} images accessible")
 
         # Check we still have enough images after filtering
-        if len(verified_images) < 3:
-            error_message = f"Not enough accessible images. Only {len(verified_images)} images passed verification."
+        if len(verified_image_urls) < 3:
+            error_message = f"Not enough accessible images. Only {len(verified_image_urls)} images passed verification."
             if job_queue:
                 await job_queue.update_job(
                     request.job_id,
@@ -234,13 +257,13 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
             await job_queue.update_job(
                 request.job_id,
                 progress=30,
-                current_step=f"Verified {len(verified_images)} images. Preparing render..."
+                current_step=f"Verified {len(verified_image_urls)} images. Preparing render..."
             )
 
         # Prepare image data for rendering (only verified images)
         images = [
-            ImageData(url=img.source_url, order=i)
-            for i, img in enumerate(verified_images)
+            ImageData(url=img_url, order=i)
+            for i, img_url in enumerate(verified_image_urls)
         ]
 
         # Map vibe string to enum
@@ -366,12 +389,13 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
                 output_url=output_url,
                 metadata={
                     "search_tags": request.search_tags,
-                    "transformed_tags": transformed_tags,
+                    "original_images_used": len(original_images_to_use),
+                    "new_search_images_used": len(new_search_images),
                     "vibe": request.vibe,
                     "effect_preset": request.effect_preset,
                     "color_grade": request.color_grade,
                     "text_style": request.text_style,
-                    "image_count": len(selected_images),
+                    "image_count": len(verified_image_urls),
                 }
             )
 

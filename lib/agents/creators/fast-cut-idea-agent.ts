@@ -16,6 +16,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentConfig, AgentContext } from '../types';
 
 // Input Schema
@@ -86,7 +87,7 @@ export const FastCutIdeaConfig: AgentConfig<FastCutIdeaInput, FastCutIdeaOutput>
 
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.7,
       maxTokens: 4096,

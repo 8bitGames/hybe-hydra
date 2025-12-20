@@ -30,6 +30,13 @@ import { useWorkflowStore, useWorkflowHydrated } from "@/lib/stores/workflow-sto
 import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 import { InfoButton } from "@/components/ui/info-button";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface RecentProject {
   id: string;
@@ -117,6 +124,7 @@ export default function StartPage() {
 
   const {
     start,
+    analyze,
     setStartFromIdea,
     setStartFromVideo,
     setStartFromTrends,
@@ -126,6 +134,7 @@ export default function StartPage() {
     clearStartData,
     transferToAnalyze,
     updateVideoAiAnalysis,
+    setAnalyzeCampaign,
   } = useWorkflowStore();
 
   const [isAnalyzingVideo, setIsAnalyzingVideo] = useState(false);
@@ -133,6 +142,11 @@ export default function StartPage() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [inputType, setInputType] = useState<"text" | "tiktok" | null>(null);
+
+  // Campaign state for Fast Cut flow
+  const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string }>>([]);
+  const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(analyze.campaignId);
 
   const startSource = start.source;
 
@@ -177,6 +191,54 @@ export default function StartPage() {
       loadRecentProjects();
     }
   }, [hydrated]);
+
+  // Load campaigns on page load
+  useEffect(() => {
+    async function loadCampaigns() {
+      if (campaigns.length > 0) return; // Already loaded
+
+      setIsLoadingCampaigns(true);
+      try {
+        const token = getAccessToken();
+        if (!token) {
+          setIsLoadingCampaigns(false);
+          return;
+        }
+
+        const response = await fetch("/api/v1/campaigns?limit=50&sort=updatedAt", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          // API returns 'items' not 'campaigns'
+          const campaignList = (data.items || []).map((c: { id: string; name: string }) => ({
+            id: c.id,
+            name: c.name,
+          }));
+          setCampaigns(campaignList);
+        }
+      } catch (error) {
+        console.error("Failed to load campaigns:", error);
+      } finally {
+        setIsLoadingCampaigns(false);
+      }
+    }
+
+    if (hydrated) {
+      loadCampaigns();
+    }
+  }, [hydrated, campaigns.length]);
+
+  // Handle campaign selection
+  const handleCampaignSelect = (campaignId: string) => {
+    const campaign = campaigns.find(c => c.id === campaignId);
+    if (campaign) {
+      setSelectedCampaignId(campaignId);
+      setAnalyzeCampaign(campaignId, campaign.name);
+      console.log("[StartPage] Selected campaign:", campaign.name);
+    }
+  };
 
   // Auto-analyze video when source is video type without aiAnalysis
   useEffect(() => {
@@ -235,7 +297,7 @@ export default function StartPage() {
           };
           sceneAnalysis?: {
             scenes: { sceneNumber: number; description: string; visualElements: string[]; mood: string; imageKeywords: string[] }[];
-            overallStyle: { colorPalette: string[]; lighting: string; mood: string; vibe: string };
+            overallStyle: { colorPalette: string[]; lighting: string; mood: string; vibe: 'Exciting' | 'Emotional' | 'Pop' | 'Minimal' };
             totalSceneCount: number;
             isSmooth: boolean;
             recommendedImageCount: number;
@@ -566,7 +628,7 @@ export default function StartPage() {
     } | undefined,
     sceneAnalysis?: {
       scenes: { sceneNumber: number; description: string; visualElements: string[]; mood: string; imageKeywords: string[] }[];
-      overallStyle: { colorPalette: string[]; lighting: string; mood: string; vibe: string };
+      overallStyle: { colorPalette: string[]; lighting: string; mood: string; vibe: 'Exciting' | 'Emotional' | 'Pop' | 'Minimal' };
       totalSceneCount: number;
       isSmooth: boolean;
       recommendedImageCount: number;
@@ -709,11 +771,12 @@ export default function StartPage() {
   }
 
   // Check if we can proceed to analyze (not during loading)
-  // Must have: content type selected AND (has source OR has input)
+  // Must have: content type selected AND campaign selected AND (has source OR has input)
   const canProceedToAnalyze =
     !isAnalyzingVideo &&
     !isAnalyzingIdea &&
     start.contentType !== null &&
+    selectedCampaignId !== null &&
     (startSource !== null || ideaInput.trim().length > 0);
 
   // Handle proceed action
@@ -1573,6 +1636,57 @@ export default function StartPage() {
                   )}
                 </button>
               </div>
+
+              {/* Campaign selector - always required */}
+              <div className="mt-4 p-4 rounded-lg border border-neutral-200 bg-neutral-50">
+                  <div className="flex items-center gap-2 mb-3">
+                    <FolderOpen className="h-4 w-4 text-neutral-500" />
+                    <span className="text-sm font-medium">
+                      {language === "ko" ? "캠페인 선택" : "Select Campaign"}
+                    </span>
+                    <span className="text-xs text-red-500">*</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    {language === "ko"
+                      ? "콘텐츠를 생성할 캠페인을 선택해주세요."
+                      : "Select a campaign to create content for."}
+                  </p>
+                  <Select
+                    value={selectedCampaignId || ""}
+                    onValueChange={handleCampaignSelect}
+                    disabled={isLoadingCampaigns}
+                  >
+                    <SelectTrigger className="w-full bg-white">
+                      <SelectValue
+                        placeholder={
+                          isLoadingCampaigns
+                            ? (language === "ko" ? "로딩 중..." : "Loading...")
+                            : (language === "ko" ? "캠페인을 선택하세요" : "Select a campaign")
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {campaigns.map((campaign) => (
+                        <SelectItem key={campaign.id} value={campaign.id}>
+                          {campaign.name}
+                        </SelectItem>
+                      ))}
+                      {campaigns.length === 0 && !isLoadingCampaigns && (
+                        <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                          {language === "ko" ? "캠페인이 없습니다" : "No campaigns found"}
+                        </div>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {selectedCampaignId && (
+                    <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      {language === "ko" ? "캠페인이 선택되었습니다" : "Campaign selected"}
+                    </p>
+                  )}
+                </div>
 
               {/* Help text based on selection */}
               {start.contentType && (

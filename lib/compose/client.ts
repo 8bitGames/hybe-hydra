@@ -736,6 +736,8 @@ export interface AutoComposeRequest {
   campaign_id?: string;
   callback_url?: string;
   script_lines?: AutoComposeScriptLine[];
+  // Original image URLs for 70/30 split (70% original + 30% new search)
+  original_image_urls?: string[];
 }
 
 export interface AutoComposeResponse {

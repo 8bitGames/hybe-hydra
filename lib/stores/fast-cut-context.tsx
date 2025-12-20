@@ -168,7 +168,7 @@ const initialState: FastCutState = {
 const STORAGE_KEY = "fast-cut-state";
 
 // Extended state type that includes sessionId for validation
-interface StoredFastCutState extends Omit<FastCutState, "selectedSearchKeywords"> {
+interface StoredFastCutState extends Omit<FastCutState, "selectedSearchKeywords" | "hasSceneAnalysis"> {
   selectedSearchKeywords: string[];
   _sessionId?: string; // Track which session this data belongs to
   hasSceneAnalysis?: boolean; // Track if we have scene analysis (for restoring from storage)
@@ -356,7 +356,8 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
         ...initialState,
         prompt: initialPrompt,
         editableKeywords: [...initialKeywords],
-        selectedSearchKeywords: new Set(initialKeywords),
+        // Don't auto-select all keywords - let user choose which ones to search
+        selectedSearchKeywords: new Set<string>(),
         campaignId: analyze.campaignId || null,  // CRITICAL: Also sync campaignId from workflow
         campaignName: analyze.campaignName || "",
         hasSceneAnalysis: sceneKeywords.length > 0,  // Track if we have scene analysis

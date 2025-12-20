@@ -12,6 +12,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentConfig, AgentContext, AgentResult } from '../types';
 
 // ============================================================================
@@ -104,7 +105,7 @@ export const TrendInsightConfig: AgentConfig<TrendInsightInput, TrendInsightOutp
 
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.7,
       maxTokens: 4096,

@@ -19,6 +19,7 @@ import {
   type IModelClient,
   type ModelResponse,
 } from '../models';
+import { GEMINI_FLASH, GEMINI_PRO, type GeminiModelName } from './constants';
 import type {
   AgentConfig,
   AgentContext,
@@ -246,7 +247,7 @@ export abstract class BaseAgent<TInput, TOutput> {
 
     if (provider === 'gemini') {
       return new GeminiClient({
-        model: name as 'gemini-2.5-flash' | 'gemini-3-pro-preview',
+        model: name as GeminiModelName,
         temperature: options?.temperature ?? 0.7,
         maxTokens: options?.maxTokens ?? 8192,
         topP: options?.topP,

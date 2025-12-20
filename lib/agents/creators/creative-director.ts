@@ -13,6 +13,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_PRO } from '../constants';
 import type { AgentConfig, AgentContext, ReflectionConfig, ReflectionResult } from '../types';
 
 // Input Schema
@@ -128,7 +129,7 @@ export const CreativeDirectorConfig: AgentConfig<CreativeDirectorInput, Creative
 
   model: {
     provider: 'gemini',
-    name: 'gemini-3-pro-preview',
+    name: GEMINI_PRO,
     options: {
       temperature: 0.7,
       maxTokens: 16384,

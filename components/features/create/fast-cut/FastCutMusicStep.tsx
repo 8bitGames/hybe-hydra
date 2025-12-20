@@ -54,6 +54,7 @@ interface FastCutMusicStepProps {
   campaignId: string;
   musicSkipped: boolean;
   subtitleMode: SubtitleMode;
+  noCampaignForMusic?: boolean;  // True when no campaign is available for music search
   onSelectAudio: (audio: AudioMatch) => void;
   onSetAudioStartTime: (time: number) => void;
   onSetVideoDuration: (duration: number) => void;
@@ -76,6 +77,7 @@ export function FastCutMusicStep({
   campaignId,
   musicSkipped,
   subtitleMode,
+  noCampaignForMusic = false,
   onSelectAudio,
   onSetAudioStartTime,
   onSetVideoDuration,
@@ -91,6 +93,16 @@ export function FastCutMusicStep({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Audio player state
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [audioLoaded, setAudioLoaded] = useState(false);
+  const [loadingAudioUrl, setLoadingAudioUrl] = useState(false);
+  const [isPlayingSegment, setIsPlayingSegment] = useState(false);
 
   // Handle file upload
   const handleFileUpload = useCallback(async (file: File) => {
@@ -251,6 +263,94 @@ export function FastCutMusicStep({
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
   }, []);
+
+  // Fetch presigned URL for selected audio
+  const fetchAudioUrl = useCallback(async (audioId: string) => {
+    setLoadingAudioUrl(true);
+    setAudioLoaded(false);
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+
+    try {
+      const authState = useAuthStore.getState();
+      const accessToken = authState.accessToken;
+
+      if (!accessToken || !campaignId) {
+        console.error('[FastCut Audio] No token or campaignId for audio URL');
+        return;
+      }
+
+      const response = await fetch(
+        `/api/v1/campaigns/${campaignId}/assets/presign?asset_id=${audioId}`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+
+      if (!response.ok) throw new Error("Failed to get audio URL");
+
+      const data = await response.json();
+      setAudioUrl(data.presignedUrl);
+    } catch (err) {
+      console.error("Failed to get presigned URL:", err);
+      setAudioUrl(null);
+    } finally {
+      setLoadingAudioUrl(false);
+    }
+  }, [campaignId]);
+
+  // Fetch audio URL when audio is selected
+  useEffect(() => {
+    if (selectedAudio?.id) {
+      fetchAudioUrl(selectedAudio.id);
+    } else {
+      setAudioUrl(null);
+      setAudioLoaded(false);
+    }
+  }, [selectedAudio?.id, fetchAudioUrl]);
+
+  // Audio player controls
+  const togglePlayPause = async () => {
+    if (!audioRef.current) return;
+    try {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        await audioRef.current.play();
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name !== "AbortError") {
+        console.error("Playback error:", err);
+      }
+    }
+  };
+
+  // Play selected segment only
+  const playSelectedSegment = async () => {
+    if (!audioRef.current) return;
+    try {
+      audioRef.current.pause();
+      audioRef.current.currentTime = audioStartTime;
+      setIsPlayingSegment(true);
+      await audioRef.current.play();
+    } catch (err) {
+      if (err instanceof Error && err.name !== "AbortError") {
+        console.error("Segment playback error:", err);
+      }
+    }
+  };
+
+  // Stop segment playback when it reaches the end time
+  useEffect(() => {
+    if (isPlayingSegment && audioRef.current) {
+      const segmentEndTime = audioStartTime + videoDuration;
+      if (currentTime >= segmentEndTime) {
+        audioRef.current.pause();
+        setIsPlayingSegment(false);
+      }
+    }
+  }, [isPlayingSegment, currentTime, audioStartTime, videoDuration]);
 
   // Helper for tooltip icon
   const TooltipIcon = ({ tooltipKey }: { tooltipKey: string }) => (
@@ -578,14 +678,14 @@ export function FastCutMusicStep({
         <div className="flex flex-col items-center justify-center h-48 text-neutral-400 bg-neutral-50 rounded-lg">
           <Music className="h-12 w-12 mb-3 text-neutral-300" />
           <p className="text-sm mb-3">
-            {language === "ko"
-              ? "매칭된 음악이 없습니다"
-              : "No matching music found"}
+            {noCampaignForMusic
+              ? (language === "ko" ? "캠페인이 선택되지 않았습니다" : "No campaign selected")
+              : (language === "ko" ? "매칭된 음악이 없습니다" : "No matching music found")}
           </p>
           <p className="text-xs text-neutral-400">
-            {language === "ko"
-              ? "캠페인에 음악 에셋을 추가하세요"
-              : "Add audio assets to your campaign"}
+            {noCampaignForMusic
+              ? (language === "ko" ? "시작 페이지로 돌아가서 캠페인을 선택하거나 직접 음악을 업로드하세요" : "Go back to Start page to select a campaign, or upload music directly")
+              : (language === "ko" ? "캠페인에 음악 에셋을 추가하세요" : "Add audio assets to your campaign")}
           </p>
         </div>
       )}
@@ -606,14 +706,136 @@ export function FastCutMusicStep({
             )}
           </div>
 
-          {/* Audio Preview */}
-          <div className="p-3 bg-neutral-50 rounded-lg">
-            <p className="font-medium text-neutral-800 mb-1">{selectedAudio.filename}</p>
-            <div className="flex items-center gap-3 text-xs text-neutral-500">
-              {selectedAudio.bpm && <span>{selectedAudio.bpm} BPM</span>}
-              {selectedAudio.vibe && <span>· {selectedAudio.vibe}</span>}
-              <span>· {formatDuration(selectedAudio.duration)}</span>
+          {/* Audio Preview with Playback Controls */}
+          <div className="p-3 bg-neutral-50 rounded-lg space-y-3">
+            <div>
+              <p className="font-medium text-neutral-800 mb-1">{selectedAudio.filename}</p>
+              <div className="flex items-center gap-3 text-xs text-neutral-500">
+                {selectedAudio.bpm && <span>{selectedAudio.bpm} BPM</span>}
+                {selectedAudio.vibe && <span>· {selectedAudio.vibe}</span>}
+                <span>· {formatDuration(selectedAudio.duration)}</span>
+              </div>
             </div>
+
+            {/* Audio Element */}
+            <audio
+              ref={audioRef}
+              src={audioUrl || undefined}
+              onLoadedMetadata={(e) => {
+                setDuration(e.currentTarget.duration);
+                setAudioLoaded(true);
+              }}
+              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onEnded={() => {
+                setIsPlaying(false);
+                setIsPlayingSegment(false);
+              }}
+              preload="metadata"
+            />
+
+            {/* Audio Player Controls */}
+            {audioUrl && (
+              <div className="space-y-2">
+                {/* Progress Bar */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-neutral-500 font-mono w-10">
+                    {formatDuration(currentTime)}
+                  </span>
+                  <div className="flex-1 relative">
+                    <Slider
+                      value={[currentTime]}
+                      onValueChange={(v) => {
+                        if (audioRef.current) {
+                          audioRef.current.currentTime = v[0];
+                          setCurrentTime(v[0]);
+                        }
+                      }}
+                      min={0}
+                      max={duration || selectedAudio.duration}
+                      step={0.1}
+                      className="w-full"
+                      disabled={!audioLoaded}
+                    />
+                  </div>
+                  <span className="text-xs text-neutral-500 font-mono w-10 text-right">
+                    {formatDuration(duration || selectedAudio.duration)}
+                  </span>
+                </div>
+
+                {/* Playback Buttons */}
+                <div className="flex items-center gap-2">
+                  {/* Play/Pause Full Audio */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={togglePlayPause}
+                    disabled={!audioLoaded || loadingAudioUrl}
+                    className="flex-1"
+                  >
+                    {loadingAudioUrl ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        {language === "ko" ? "로딩..." : "Loading..."}
+                      </>
+                    ) : isPlaying ? (
+                      <>
+                        <Pause className="h-4 w-4 mr-1" />
+                        {language === "ko" ? "일시정지" : "Pause"}
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-1" />
+                        {language === "ko" ? "전체 재생" : "Play Full"}
+                      </>
+                    )}
+                  </Button>
+
+                  {/* Play Selected Segment */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={isPlayingSegment ? "default" : "outline"}
+                        size="sm"
+                        onClick={playSelectedSegment}
+                        disabled={!audioLoaded || loadingAudioUrl}
+                        className="flex-1"
+                      >
+                        {isPlayingSegment ? (
+                          <>
+                            <Pause className="h-4 w-4 mr-1" />
+                            {language === "ko" ? "구간 정지" : "Stop Segment"}
+                          </>
+                        ) : (
+                          <>
+                            <SkipForward className="h-4 w-4 mr-1" />
+                            {language === "ko" ? "구간 재생" : "Play Segment"}
+                          </>
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-[240px]">
+                      <p className="text-xs">
+                        {language === "ko"
+                          ? `선택한 구간만 재생합니다 (${formatDuration(audioStartTime)} - ${formatDuration(audioStartTime + videoDuration)})`
+                          : `Play only the selected segment (${formatDuration(audioStartTime)} - ${formatDuration(audioStartTime + videoDuration)})`}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </div>
+            )}
+
+            {/* Loading Audio URL */}
+            {loadingAudioUrl && (
+              <div className="flex items-center justify-center gap-2 py-2 text-neutral-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-xs">
+                  {language === "ko" ? "오디오 로딩 중..." : "Loading audio..."}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Video Duration Selection - Slider */}

@@ -69,6 +69,13 @@ import { useSearchParams } from "next/navigation";
 import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+// Veo3 generates exactly 8-second videos - this is a platform constraint
+const VEO3_VIDEO_DURATION_SECONDS = 8;
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -1022,7 +1029,7 @@ function InlinePromptPersonalizer({
 
   // Metadata
   const [metadata] = useState({
-    duration: "8s",
+    duration: `${VEO3_VIDEO_DURATION_SECONDS}s`,
     aspectRatio: "9:16",
     style: "cinematic",
   });
@@ -1504,7 +1511,7 @@ export default function CreatePage() {
     setIsAnalyzingAudio(true);
     setAudioAnalysis(null);
     try {
-      const targetDuration = 8; // Default video duration for Veo3
+      const targetDuration = VEO3_VIDEO_DURATION_SECONDS;
       const analysis = await fastCutApi.analyzeAudioBestSegment(assetId, targetDuration);
       setAudioAnalysis(analysis);
       // Auto-set to the suggested best segment start time

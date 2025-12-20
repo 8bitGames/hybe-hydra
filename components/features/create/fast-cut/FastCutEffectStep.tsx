@@ -48,6 +48,7 @@ import {
   StyleSetSummary,
 } from "@/lib/fast-cut-api";
 import { KeywordInputPopover } from "@/components/ui/keyword-input-popover";
+import type { LyricsData } from "@/lib/subtitle-styles";
 
 interface FastCutEffectStepProps {
   scriptData: ScriptGenerationResponse | null;
@@ -64,6 +65,9 @@ interface FastCutEffectStepProps {
   rendering: boolean;
   onStartRender: () => void;
   videoDuration: number;
+  subtitleMode?: "script" | "lyrics";
+  lyricsData?: LyricsData | null;
+  audioStartTime?: number;
 }
 
 // Format seconds to mm:ss.s
@@ -604,8 +608,59 @@ export function FastCutEffectStep({
   rendering,
   onStartRender,
   videoDuration,
+  subtitleMode = "script",
+  lyricsData,
+  audioStartTime = 0,
 }: FastCutEffectStepProps) {
   const { language, translate } = useI18n();
+
+  // Convert lyrics data to script format for timeline display
+  // When subtitleMode is "lyrics", we display lyrics instead of generated script
+  const lyricsAsScriptData = useMemo((): ScriptGenerationResponse | null => {
+    if (subtitleMode !== "lyrics" || !lyricsData?.segments?.length) {
+      return null;
+    }
+
+    // Convert lyrics segments to script lines format
+    // Adjust timing based on audioStartTime (lyrics timing is relative to audio start)
+    const lines = lyricsData.segments.map((segment) => {
+      // Calculate timing relative to video start
+      const adjustedStart = Math.max(0, segment.start - audioStartTime);
+      const adjustedEnd = Math.max(0, segment.end - audioStartTime);
+      const duration = adjustedEnd - adjustedStart;
+
+      return {
+        text: segment.text,
+        timing: adjustedStart,
+        duration: Math.max(0.5, duration), // Minimum 0.5s duration
+      };
+    }).filter(line => line.timing < videoDuration && line.duration > 0); // Only include lines within video duration
+
+    if (lines.length === 0) {
+      return null;
+    }
+
+    // Calculate total duration from lines
+    const totalDuration = lines.length > 0
+      ? lines[lines.length - 1].timing + lines[lines.length - 1].duration
+      : videoDuration;
+
+    // Return a ScriptGenerationResponse-like object with required fields
+    return {
+      script: {
+        lines,
+        totalDuration,
+      },
+      vibe: "lyrics",
+      vibeReason: "Lyrics from audio",
+      suggestedBpmRange: { min: 80, max: 120 },
+      searchKeywords: [],
+      effectRecommendation: "lyrics-sync",
+    };
+  }, [subtitleMode, lyricsData, audioStartTime, videoDuration]);
+
+  // Use lyrics data as script when in lyrics mode, otherwise use actual scriptData
+  const effectiveScriptData = subtitleMode === "lyrics" ? lyricsAsScriptData : scriptData;
 
   // Handle updating all script lines (for timeline editor)
   const handleUpdateScriptLines = useCallback(
@@ -656,10 +711,14 @@ export function FastCutEffectStep({
   }, [tiktokSEO]);
 
   // Check readiness - music is ready if audio is selected OR music is skipped
+  // Script/lyrics readiness depends on subtitle mode
   const isReady = useMemo(() => {
     const musicReady = selectedAudio !== null || musicSkipped;
-    return selectedImages.length >= 3 && musicReady && scriptData !== null;
-  }, [selectedImages, selectedAudio, musicSkipped, scriptData]);
+    const subtitleReady = subtitleMode === "lyrics"
+      ? (lyricsData?.segments?.length ?? 0) > 0  // Need lyrics data when in lyrics mode
+      : scriptData !== null;  // Need script data when in script mode
+    return selectedImages.length >= 3 && musicReady && subtitleReady;
+  }, [selectedImages, selectedAudio, musicSkipped, scriptData, subtitleMode, lyricsData]);
 
   // Update SEO description
   const updateSEODescription = (description: string) => {
@@ -841,16 +900,16 @@ export function FastCutEffectStep({
                   {language === "ko" ? selectedStyleSet.nameKo : selectedStyleSet.name}
                 </span>
               </div>
-              {/* Video duration from script */}
+              {/* Video duration from script/lyrics */}
               <Badge variant="secondary" className="text-xs">
                 <Clock className="h-3 w-3 mr-1" />
                 {language === "ko" ? "영상 길이" : "Duration"}:{" "}
-                {scriptData?.script.lines.length
+                {effectiveScriptData?.script.lines.length
                   ? formatTime(
-                      scriptData.script.lines[scriptData.script.lines.length - 1].timing +
-                      scriptData.script.lines[scriptData.script.lines.length - 1].duration
+                      effectiveScriptData.script.lines[effectiveScriptData.script.lines.length - 1].timing +
+                      effectiveScriptData.script.lines[effectiveScriptData.script.lines.length - 1].duration
                     )
-                  : "-"}
+                  : formatTime(videoDuration)}
               </Badge>
             </div>
             <div className="grid grid-cols-5 gap-2 text-xs">
@@ -981,11 +1040,11 @@ export function FastCutEffectStep({
         </div>
       )}
 
-      {/* Subtitle Timeline Editor */}
-      {selectedImages.length > 0 && scriptData && (
+      {/* Subtitle Timeline Editor - shows for both script and lyrics modes */}
+      {selectedImages.length > 0 && effectiveScriptData && (
         <SubtitleTimelineEditor
           selectedImages={selectedImages}
-          scriptData={scriptData}
+          scriptData={effectiveScriptData}
           onUpdateScript={handleUpdateScriptLines}
           selectedStyleSet={selectedStyleSet}
           language={language}
@@ -1012,7 +1071,12 @@ export function FastCutEffectStep({
                   • {language === "ko" ? "음악을 선택하거나 건너뛰세요" : "Select music or skip"}
                 </li>
               )}
-              {!scriptData && (
+              {subtitleMode === "lyrics" && (!lyricsData?.segments?.length) && (
+                <li>
+                  • {language === "ko" ? "선택한 음원에 가사 데이터가 없습니다" : "Selected audio has no lyrics data"}
+                </li>
+              )}
+              {subtitleMode !== "lyrics" && !scriptData && (
                 <li>
                   • {language === "ko" ? "스크립트를 생성하세요" : "Generate script"}
                 </li>

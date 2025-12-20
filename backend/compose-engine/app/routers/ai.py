@@ -43,6 +43,56 @@ router = APIRouter()
 
 
 # ============================================================
+# Callback Utilities
+# ============================================================
+
+async def send_callback(
+    callback_url: str,
+    callback_secret: str,
+    job_id: str,
+    job_type: str,
+    status: str,
+    output_url: Optional[str] = None,
+    error: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> None:
+    """
+    Send completion callback to Next.js.
+    Fire-and-forget, never fails the job on callback errors.
+    """
+    if not callback_url:
+        logger.info(f"[{job_id}] No callback URL configured, skipping callback")
+        return
+
+    payload = {
+        "job_id": job_id,
+        "job_type": job_type,
+        "status": status,
+        "output_url": output_url,
+        "error": error,
+        "metadata": metadata,
+    }
+
+    try:
+        logger.info(f"[{job_id}] Sending callback to {callback_url}")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                callback_url,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Callback-Secret": callback_secret or "",
+                },
+            )
+            if response.status_code == 200:
+                logger.info(f"[{job_id}] ✓ Callback sent successfully")
+            else:
+                logger.warning(f"[{job_id}] Callback returned status {response.status_code}: {response.text[:200]}")
+    except Exception as e:
+        logger.error(f"[{job_id}] Callback failed (non-fatal): {e}")
+
+
+# ============================================================
 # S3 Upload Utilities
 # ============================================================
 
@@ -544,6 +594,17 @@ async def process_video_generation(
 
         logger.info(f"[{job_id}] Video generation completed in {duration_ms}ms (gcs_uri: {actual_video_uri})")
 
+        # Send callback to Next.js with gcs_uri in metadata
+        await send_callback(
+            callback_url=request.callback_url,
+            callback_secret=request.callback_secret,
+            job_id=job_id,
+            job_type=request.job_type.value,
+            status="completed",
+            output_url=output_url,
+            metadata=generation_metadata,
+        )
+
     except Exception as e:
         logger.error(f"[{job_id}] Video generation failed: {e}")
         duration_ms = int((time.time() - start_time) * 1000)
@@ -554,6 +615,16 @@ async def process_video_generation(
                 status=JobStatus.FAILED,
                 error=str(e)
             )
+
+        # Send failure callback to Next.js
+        await send_callback(
+            callback_url=request.callback_url,
+            callback_secret=request.callback_secret,
+            job_id=job_id,
+            job_type=request.job_type.value,
+            status="failed",
+            error=str(e),
+        )
 
 
 async def process_image_to_video(
@@ -716,6 +787,17 @@ async def process_image_to_video(
 
         logger.info(f"[{job_id}] Image-to-video generation completed in {duration_ms}ms (gcs_uri: {actual_video_uri})")
 
+        # Send callback to Next.js with gcs_uri in metadata
+        await send_callback(
+            callback_url=request.callback_url,
+            callback_secret=request.callback_secret,
+            job_id=job_id,
+            job_type=request.job_type.value,
+            status="completed",
+            output_url=output_url,
+            metadata=generation_metadata,
+        )
+
     except Exception as e:
         logger.error(f"[{job_id}] Image-to-video generation failed: {e}")
         duration_ms = int((time.time() - start_time) * 1000)
@@ -726,6 +808,16 @@ async def process_image_to_video(
                 status=JobStatus.FAILED,
                 error=str(e)
             )
+
+        # Send failure callback to Next.js
+        await send_callback(
+            callback_url=request.callback_url,
+            callback_secret=request.callback_secret,
+            job_id=job_id,
+            job_type=request.job_type.value,
+            status="failed",
+            error=str(e),
+        )
 
 
 async def process_video_extend(
@@ -871,6 +963,17 @@ async def process_video_extend(
 
         logger.info(f"[{job_id}] Video extension completed in {duration_ms}ms (extension #{settings.extension_count + 1})")
 
+        # Send callback to Next.js with updated gcs_uri in metadata
+        await send_callback(
+            callback_url=request.callback_url,
+            callback_secret=request.callback_secret,
+            job_id=job_id,
+            job_type=request.job_type.value,
+            status="completed",
+            output_url=output_url,
+            metadata=extended_metadata,
+        )
+
     except Exception as e:
         logger.error(f"[{job_id}] Video extension failed: {e}")
         duration_ms = int((time.time() - start_time) * 1000)
@@ -881,6 +984,16 @@ async def process_video_extend(
                 status=JobStatus.FAILED,
                 error=str(e)
             )
+
+        # Send failure callback to Next.js
+        await send_callback(
+            callback_url=request.callback_url,
+            callback_secret=request.callback_secret,
+            job_id=job_id,
+            job_type=request.job_type.value,
+            status="failed",
+            error=str(e),
+        )
 
 
 # ============================================================

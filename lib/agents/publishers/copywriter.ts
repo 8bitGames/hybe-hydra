@@ -242,6 +242,7 @@ ARTIST: {{artistName}}
 
 ## HASHTAG RULES (CRITICAL):
 - NEVER use generic quality tags like #4k, #cinematic, #hd, #quality, #aesthetic, #fyp, #foryou, #viral
+- NEVER use AI-related tags like #aiart, #aigenerated, #ai, #aigc, #aiartwork, #artificialintelligence, #aiartcommunity, #midjourney, #dalle, #stablediffusion, #sora, #runwayml, #pika, #kling, #genai, #generativeai
 - ONLY use content-related tags that match actual TikTok trends
 - If trending keywords are provided, you MUST include at least 3 of them
 - Focus on: music genre, dance style, challenge names, artist names, viral sounds
@@ -295,6 +296,7 @@ ARTIST: {{artistName}}
 
 ## HASHTAG RULES (CRITICAL):
 - NEVER use generic quality tags like #4k, #cinematic, #hd, #quality, #aesthetic, #fyp, #foryou, #viral
+- NEVER use AI-related tags like #aiart, #aigenerated, #ai, #aigc, #aiartwork, #artificialintelligence, #aiartcommunity, #midjourney, #dalle, #stablediffusion, #sora, #runwayml, #pika, #kling, #genai, #generativeai
 - ONLY use content-related tags that match actual TikTok trends
 - If trending keywords are provided, you MUST include at least 5 of them in your hashtags
 - Focus on: music genre, dance style, challenge names, artist names, viral sounds, specific trends
@@ -515,12 +517,23 @@ export class CopywriterAgent extends BaseAgent<CopywriterInput, CopywriterOutput
 
       // Process hashtags based on version
       const output = validatedOutput.data;
+
+      // Blacklist of AI-related and generic tags that should never appear
+      const BLACKLISTED_TAGS = new Set([
+        'aiart', 'aigenerated', 'ai', 'aigc', 'aiartwork', 'artificialintelligence',
+        'aiartcommunity', 'midjourney', 'dalle', 'stablediffusion', 'sora',
+        'runwayml', 'pika', 'kling', 'genai', 'generativeai', 'aiimage', 'aivideo',
+        '4k', 'cinematic', 'hd', 'quality', 'aesthetic', 'fyp', 'foryou', 'viral',
+        'fypシ', 'fy', 'trending', 'trend', 'viralvideo', 'explorepage'
+      ]);
+
       const combinedHashtags = [
         ...(output.hashtags.primary || []),
         ...(output.hashtags.trending || []),
         ...(output.hashtags.secondary || []),
       ]
-        .map((h) => h.replace(/^#/, ''))
+        .map((h) => h.replace(/^#/, '').toLowerCase())
+        .filter((h) => !BLACKLISTED_TAGS.has(h.toLowerCase()))
         .filter((h, i, arr) => arr.indexOf(h) === i);
 
       // Limit hashtags based on version

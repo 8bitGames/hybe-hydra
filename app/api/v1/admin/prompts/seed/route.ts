@@ -32,6 +32,7 @@ import { I2VSpecialistConfig } from '@/lib/agents/transformers/i2v-specialist';
 // Publishers
 import { PublishOptimizerConfig } from '@/lib/agents/publishers/publish-optimizer';
 import { CopywriterConfig } from '@/lib/agents/publishers/copywriter';
+import { GeoAeoOptimizerConfig } from '@/lib/agents/publishers/geo-aeo-optimizer';
 // Fast Cut agents
 import { FastCutScriptGeneratorConfig } from '@/lib/agents/fast-cut/script-generator';
 import { FastCutEffectAnalyzerConfig } from '@/lib/agents/fast-cut/effect-analyzer';
@@ -63,9 +64,10 @@ const AGENT_CONFIGS = [
   // Transformers (2)
   PromptEngineerConfig,
   I2VSpecialistConfig,
-  // Publishers (2)
+  // Publishers (3)
   PublishOptimizerConfig,
   CopywriterConfig,
+  GeoAeoOptimizerConfig,
   // Fast Cut (4)
   FastCutScriptGeneratorConfig,
   FastCutEffectAnalyzerConfig,

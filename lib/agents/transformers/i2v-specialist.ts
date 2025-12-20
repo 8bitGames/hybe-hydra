@@ -15,6 +15,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentConfig, AgentContext } from '../types';
 import type { ModelResponse } from '../../models';
 
@@ -122,7 +123,7 @@ export const I2VSpecialistConfig: AgentConfig<I2VSpecialistInput, I2VSpecialistO
 
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.5,
       maxTokens: 4096,
@@ -229,6 +230,39 @@ NEGATIVE PROMPTS (What to Exclude):
 - "no text overlays, no subtitles, no watermarks"
 - "no abrupt cuts, no flash frames"
 - "no crowds, no background distractions"
+
+═══════════════════════════════════════════════════════════════════
+VEO CONTENT FILTER SAFETY (CRITICAL - PREVENTS API REJECTION)
+═══════════════════════════════════════════════════════════════════
+
+Veo's RAI (Responsible AI) filter will REJECT prompts containing these elements.
+You MUST automatically sanitize or replace these to prevent generation failures.
+
+## STRICTLY FORBIDDEN (Will cause immediate rejection):
+1. WEAPONS: guns, pistols, rifles, swords, knives, holsters, ammunition
+   ❌ "a pistol in a hip holster" → ✅ "a determined stride with purpose"
+   ❌ "holding a knife" → ✅ "hands at their side"
+
+2. FIRE/DESTRUCTION: burning buildings, explosions, arson, destruction
+   ❌ "burning house in background" → ✅ "distant warm glow and mist"
+   ❌ "explosion behind them" → ✅ "dramatic light flare behind them"
+
+3. VIOLENCE: fighting, combat, blood, injury, death
+   ❌ "fighting scene" → ✅ "intense confrontation"
+   ❌ "blood dripping" → ✅ (remove entirely)
+
+4. DANGEROUS COMBINATIONS: weapons + fire, people + danger, destruction + victims
+
+## AUTOMATIC REPLACEMENT RULES:
+- Weapon references → Remove or replace with neutral body language
+- Burning/fire destruction → Replace with "warm glow", "atmospheric light", "mist"
+- Combat/fighting → Replace with "tension", "confrontation", "standoff"
+- Explosions → Replace with "dramatic lighting", "light burst", "flare"
+
+## SAFE ALTERNATIVES FOR DRAMATIC SCENES:
+- Western noir: Focus on atmosphere, rain, shadows, clothing, posture
+- Action: Use dynamic camera movement, lighting contrast, character expression
+- Thriller: Emphasize mood, environment, tension through composition
 
 ═══════════════════════════════════════════════════════════════════
 I2V WORKFLOW SPECIALIZATIONS

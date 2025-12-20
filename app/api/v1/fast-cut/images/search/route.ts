@@ -112,9 +112,10 @@ export async function POST(request: NextRequest) {
     console.log(`[Image Search] ❌ CACHE MISS - calling Google API for: ${keywords.join(', ')}`);
 
     // Search images using multiple keywords for better coverage
+    // Each keyword gets enough results to ensure good coverage after filtering
     const searchResults = await searchImagesMultiQuery(keywords, {
-      maxResultsPerQuery: Math.ceil(maxImages / keywords.length) + 2,
-      totalMaxResults: maxImages * 2, // Get more to filter
+      maxResultsPerQuery: Math.max(15, Math.ceil(maxImages / keywords.length) + 5),  // At least 15 per keyword
+      totalMaxResults: maxImages * 3, // Get more to account for filtering and deduplication
       safeSearch: safeSearch as "off" | "medium" | "high",
       imageSize: "huge",  // Filter for huge images (1024x768+) at API level
       gl,  // Region filter based on user's language
@@ -132,10 +133,20 @@ export async function POST(request: NextRequest) {
     let lowResCount = 0;
     const candidates: ImageCandidate[] = [];
 
-    // Only block domains that definitely won't work (CDN with auth tokens)
+    // Block domains that won't work (CDN with auth) or have watermarks
     const blockedDomains = [
       'lookaside.fbsbx.com',  // Facebook CDN with auth
       'scontent-',           // Facebook/Instagram CDN
+      // Watermark stock sites - completely block
+      'vecteezy.com',
+      'dreamstime.com',
+      '123rf.com',
+      'depositphotos.com',
+      'bigstockphoto.com',
+      'canstockphoto.com',
+      'vectorstock.com',
+      'freepik.com',
+      'stock.adobe.com',
     ];
 
     for (let i = 0; i < searchResults.length && candidates.length < maxImages; i++) {
@@ -275,10 +286,15 @@ function calculateQualityScore(
     score += 0.1;
   }
 
-  // Penalty for generic stock photo sites
-  const stockSites = ['shutterstock', 'gettyimages', 'istockphoto', 'alamy'];
+  // Heavy penalty for stock photo sites (watermarks, licensing issues)
+  const stockSites = [
+    'shutterstock', 'gettyimages', 'istockphoto', 'alamy',
+    'vecteezy', 'dreamstime', '123rf', 'depositphotos',
+    'bigstockphoto', 'canstockphoto', 'vectorstock', 'freepik',
+    'stock.adobe', 'pond5', 'envato', 'elements.envato'
+  ];
   if (stockSites.some(s => domain.includes(s))) {
-    score -= 0.2;
+    score -= 0.5;  // Heavy penalty - likely has watermarks
   }
 
   // Heavy penalty for hotlink-protected domains (usually fail to download)

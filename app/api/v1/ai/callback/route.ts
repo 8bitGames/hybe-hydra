@@ -179,6 +179,19 @@ export async function POST(request: NextRequest) {
       updateData.errorMessage = error;
     }
 
+    // Extract and store GCS URI for video extension support (Veo 3.1)
+    if (metadata) {
+      // Store gcsUri directly in the gcsUri field (required for video extension)
+      if (metadata.gcs_uri) {
+        updateData.gcsUri = metadata.gcs_uri;
+        console.log(`[AI Callback] Storing GCS URI for video extension: ${(metadata.gcs_uri as string).slice(0, 60)}...`);
+      }
+      // Store extension count if provided
+      if (typeof metadata.extension_count === 'number') {
+        updateData.extensionCount = metadata.extension_count;
+      }
+    }
+
     // Store additional metadata
     if (metadata || duration_ms) {
       // Fetch existing metadata first

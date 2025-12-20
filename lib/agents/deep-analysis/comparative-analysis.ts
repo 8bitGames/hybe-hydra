@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentContext } from '../types';
 
 // =============================================================================
@@ -222,7 +223,7 @@ export const ComparativeAnalysisConfig = {
   category: 'analyzer',
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.4,
       maxTokens: 32768, // Increased for up to 10 account comparisons

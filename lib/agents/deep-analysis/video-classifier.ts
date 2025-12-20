@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentContext } from '../types';
 
 // =============================================================================
@@ -172,7 +173,7 @@ export const VideoClassifierConfig = {
   category: 'analyzer',
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.3, // Low temperature for consistent classification
       maxTokens: 16384, // Increased to handle many video classifications

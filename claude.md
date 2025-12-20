@@ -58,7 +58,7 @@ await ai.models.generateContent(...);
      name: 'My Agent',
      category: 'analyzer',
      prompts: { system: SYSTEM_PROMPT, templates: { ... } },
-     model: { provider: 'gemini', name: 'gemini-2.5-flash', options: {} }
+     model: { provider: 'gemini', name: 'gemini-3-flash-preview', options: {} }
    };
    ```
 

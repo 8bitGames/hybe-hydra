@@ -727,6 +727,20 @@ export interface AllVideoItem {
     suggestedPostingTimes?: string[];
     textOverlayKeywords?: string[];
   } | null;
+  tags?: string[];
+  quality_metadata?: {
+    videoEdit?: {
+      originalGenerationId: string;
+      originalOutputUrl: string;
+      editedAt: string;
+      editType: string[];
+      audioAssetId?: string;
+      audioAssetName?: string;
+      hasSubtitles: boolean;
+      subtitleLineCount: number;
+    };
+    [key: string]: unknown;
+  } | null;
 }
 
 export interface AllVideosResponse {
@@ -770,6 +784,8 @@ export function useAllAIVideos() {
                 generation_type: "AI" as const,
                 quality_score: video.quality_score,
                 tiktok_seo: video.tiktok_seo || null,
+                tags: video.tags || [],
+                quality_metadata: video.quality_metadata || null,
               }));
             }
             return [];

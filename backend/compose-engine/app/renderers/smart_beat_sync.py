@@ -136,17 +136,18 @@ class SmartBeatSync:
         # Find beats within target duration
         beats_in_target = self.beat_times[self.beat_times <= self.target_duration]
 
-        # Maximum number of images that fit
-        max_images = len(beats_in_target) // beats_per_image
+        # Maximum number of clips that fit in target duration
+        max_clips = len(beats_in_target) // beats_per_image
 
-        # Use minimum of available images and what fits
-        num_clips = min(self.num_images, max_images)
+        # Use ALL clips that fit in target duration (images will be looped by the renderer)
+        # This ensures video fills the target_duration instead of stopping early
+        num_clips = max(1, max_clips)
 
         logger.info(f"[SmartBeatSync] Clip calculation:")
         logger.info(f"  Beats in {self.target_duration}s: {len(beats_in_target)}")
-        logger.info(f"  Max images that fit: {max_images}")
-        logger.info(f"  Images available: {self.num_images}")
-        logger.info(f"  Using: {num_clips} images")
+        logger.info(f"  Max clips that fit: {max_clips}")
+        logger.info(f"  Images available: {self.num_images} (will loop if needed)")
+        logger.info(f"  Using: {num_clips} clips to fill {self.target_duration}s target")
 
         # Calculate exact duration for each clip
         durations = []

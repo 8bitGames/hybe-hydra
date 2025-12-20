@@ -22,6 +22,7 @@
 
 import { z } from 'zod';
 import { BaseAgent } from '../base-agent';
+import { GEMINI_FLASH } from '../constants';
 import type { AgentConfig, AgentContext } from '../types';
 
 // Vibe type
@@ -95,7 +96,7 @@ export const ImageKeywordGeneratorConfig: AgentConfig<ImageKeywordGeneratorInput
 
   model: {
     provider: 'gemini',
-    name: 'gemini-2.5-flash',
+    name: GEMINI_FLASH,
     options: {
       temperature: 0.6,
       maxTokens: 8192, // Increased for thinking model - reasoning uses significant tokens

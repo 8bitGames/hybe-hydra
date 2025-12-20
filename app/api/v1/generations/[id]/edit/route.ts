@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { Prisma } from "@prisma/client";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 
@@ -147,21 +148,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         progress: 0,
         // Copy audio info if editing audio
         audioAssetId: audio?.asset_id || originalGeneration.audioAssetId,
-        audioAnalysis: originalGeneration.audioAnalysis,
+        audioAnalysis: originalGeneration.audioAnalysis as Prisma.InputJsonValue | undefined,
         audioStartTime: audio?.start_time ?? originalGeneration.audioStartTime,
         audioDuration: originalGeneration.audioDuration,
         // Copy compose-specific fields
-        scriptData: originalGeneration.scriptData,
-        imageAssets: originalGeneration.imageAssets,
+        scriptData: originalGeneration.scriptData as Prisma.InputJsonValue | undefined,
+        imageAssets: originalGeneration.imageAssets as Prisma.InputJsonValue | undefined,
         effectPreset: originalGeneration.effectPreset,
         // Copy bridge context
         originalInput: originalGeneration.originalInput,
         trendKeywords: originalGeneration.trendKeywords,
-        referenceUrls: originalGeneration.referenceUrls,
-        promptAnalysis: originalGeneration.promptAnalysis,
+        referenceUrls: originalGeneration.referenceUrls as Prisma.InputJsonValue | undefined,
+        promptAnalysis: originalGeneration.promptAnalysis as Prisma.InputJsonValue | undefined,
         isFavorite: false, // New generation starts unfavorited
         tags: [...originalGeneration.tags, "edited"],
-        tiktokSEO: originalGeneration.tiktokSEO,
+        tiktokSEO: originalGeneration.tiktokSEO as Prisma.InputJsonValue | undefined,
         createdBy: user.id,
         qualityMetadata: {
           ...(originalGeneration.qualityMetadata as Record<string, unknown> || {}),
