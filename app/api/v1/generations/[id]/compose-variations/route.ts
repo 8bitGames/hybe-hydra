@@ -47,9 +47,23 @@ const DEFAULT_VIBE_PRESETS = ["Pop"];
 // Prioritizes nouns (visual subjects) over adjectives for better image search
 function getVariationKeywords(
   metadata: Record<string, unknown> | null,
-  prompt: string
+  prompt: string,
+  trendKeywords?: string[] | null
 ): string[] {
-  // Try to get keywords from composeData metadata (stored during compose creation)
+  // 1. First check trendKeywords field (stored at generation level for Fast-Cut)
+  if (trendKeywords && Array.isArray(trendKeywords) && trendKeywords.length > 0) {
+    console.log(`[getVariationKeywords] Using trendKeywords: ${trendKeywords.slice(0, 5).join(", ")}`);
+    return trendKeywords.slice(0, 5); // Use more keywords for better variety
+  }
+
+  // 2. Try to get keywords from fastCutData metadata (Fast-Cut generations)
+  const fastCutData = metadata?.fastCutData as Record<string, unknown> | null;
+  if (fastCutData?.searchKeywords && Array.isArray(fastCutData.searchKeywords) && fastCutData.searchKeywords.length > 0) {
+    console.log(`[getVariationKeywords] Using fastCutData.searchKeywords: ${(fastCutData.searchKeywords as string[]).slice(0, 5).join(", ")}`);
+    return (fastCutData.searchKeywords as string[]).slice(0, 5);
+  }
+
+  // 3. Try to get keywords from composeData metadata (Compose generations)
   const composeData = metadata?.composeData as Record<string, unknown> | null;
   if (composeData?.keywords && Array.isArray(composeData.keywords) && composeData.keywords.length > 0) {
     return composeData.keywords.slice(0, 3);
@@ -320,7 +334,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.log(`[Compose Variations] =========================================`);
 
     // Get search tags from metadata (for image search)
-    const searchTags = getVariationKeywords(originalMetadata, seedGeneration.prompt);
+    // Fast-Cut stores keywords in trendKeywords field at generation level
+    const searchTags = getVariationKeywords(
+      originalMetadata,
+      seedGeneration.prompt,
+      seedGeneration.trendKeywords
+    );
+    console.log(`[Compose Variations] Search tags: ${searchTags.join(", ")}`);
+    console.log(`[Compose Variations] trendKeywords from DB: ${seedGeneration.trendKeywords?.join(", ") || "none"}`);
 
     // Get original image URLs from seed generation for 70/30 split
     // Priority: qualityMetadata.imageUrls > imageAssets array
