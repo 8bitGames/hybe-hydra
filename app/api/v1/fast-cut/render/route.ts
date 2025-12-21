@@ -474,7 +474,7 @@ export async function POST(request: NextRequest) {
         // Store additional fast cut settings in qualityMetadata for retry
         qualityMetadata: {
           fastCutData,
-          imageUrls: images.map(img => img.url), // Store URLs for easy retry access
+          imageUrls: images.map(img => cleanS3Url(img.url)), // Store clean URLs without presigned params for IAM auth
         },
       },
       update: {
@@ -491,7 +491,7 @@ export async function POST(request: NextRequest) {
         tiktokSEO: tiktokSEOData,
         qualityMetadata: {
           fastCutData,
-          imageUrls: images.map(img => img.url),
+          imageUrls: images.map(img => cleanS3Url(img.url)), // Clean URLs for IAM auth
         },
       }
     });
@@ -597,7 +597,7 @@ export async function POST(request: NextRequest) {
         qualityMetadata: {
           fastCutData,
           modalCallId: modalResponse.call_id,
-          imageUrls: images.map(img => img.url), // Store for retry functionality
+          imageUrls: images.map(img => cleanS3Url(img.url)), // Store clean URLs without presigned params for IAM auth
           renderBackend, // 'local' or 'modal' or 'batch' for status display
           createdAt: new Date().toISOString(), // For progress estimation
         },

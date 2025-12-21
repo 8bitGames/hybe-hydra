@@ -7,6 +7,23 @@ import { submitAutoCompose, AutoComposeRequest, getComposeRenderStatus } from "@
 import { getSettingsFromStylePresets, getStyleSetById } from "@/lib/constants/style-presets";
 import { getPresignedUrlFromS3Url } from "@/lib/storage";
 
+/**
+ * Remove query string from S3 URL
+ * EC2 uses IAM role for S3 access, so pre-signed URL parameters are not needed
+ * and may have expired since original creation
+ */
+function cleanS3Url(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    // Remove all query parameters (pre-signed URL params)
+    urlObj.search = '';
+    return urlObj.toString();
+  } catch {
+    // If URL parsing fails, return original
+    return url;
+  }
+}
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
@@ -288,23 +305,49 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Fast-cut stores data in fastCutData instead of composeData
     const originalFastCutData = originalMetadata?.fastCutData as Record<string, unknown> | null;
 
+    // Debug: Log complete seed generation info for troubleshooting
+    console.log(`[Compose Variations] ========== SEED GENERATION DEBUG ==========`);
+    console.log(`[Compose Variations] Seed ID: ${seedGenerationId}`);
+    console.log(`[Compose Variations] Generation Type: ${seedGeneration.generationType}`);
+    console.log(`[Compose Variations] Status: ${seedGeneration.status}`);
+    console.log(`[Compose Variations] Prompt: ${seedGeneration.prompt?.substring(0, 100)}`);
+    console.log(`[Compose Variations] Has qualityMetadata: ${!!originalMetadata}`);
+    console.log(`[Compose Variations] qualityMetadata keys: ${originalMetadata ? Object.keys(originalMetadata).join(', ') : 'none'}`);
+    console.log(`[Compose Variations] Has composeData: ${!!originalComposeData}`);
+    console.log(`[Compose Variations] Has fastCutData: ${!!originalFastCutData}`);
+    console.log(`[Compose Variations] Has imageAssets: ${!!seedGeneration.imageAssets}`);
+    console.log(`[Compose Variations] ImageAssets count: ${Array.isArray(seedGeneration.imageAssets) ? (seedGeneration.imageAssets as unknown[]).length : 0}`);
+    console.log(`[Compose Variations] =========================================`);
+
     // Get search tags from metadata (for image search)
     const searchTags = getVariationKeywords(originalMetadata, seedGeneration.prompt);
 
     // Get original image URLs from seed generation for 70/30 split
     // Priority: qualityMetadata.imageUrls > imageAssets array
+    // Clean S3 URLs to remove expired presigned params - EC2 uses IAM auth
     let originalImageUrls: string[] = [];
     if (originalMetadata?.imageUrls && Array.isArray(originalMetadata.imageUrls)) {
-      originalImageUrls = originalMetadata.imageUrls as string[];
+      originalImageUrls = (originalMetadata.imageUrls as string[]).map(url => cleanS3Url(url));
     } else if (seedGeneration.imageAssets && Array.isArray(seedGeneration.imageAssets)) {
       // Extract URLs from imageAssets array
       const imageAssets = seedGeneration.imageAssets as Array<{ url?: string }>;
       originalImageUrls = imageAssets
         .map(asset => asset.url)
-        .filter((url): url is string => typeof url === 'string');
+        .filter((url): url is string => typeof url === 'string')
+        .map(url => cleanS3Url(url));
     }
 
+    console.log(`[Compose Variations] Seed generation ID: ${seedGenerationId}`);
     console.log(`[Compose Variations] Original images found: ${originalImageUrls.length}`);
+    // Debug: Log sample of original image URLs to verify they are S3 cached URLs
+    if (originalImageUrls.length > 0) {
+      console.log(`[Compose Variations] Original image URL samples:`, {
+        first: originalImageUrls[0]?.substring(0, 100),
+        second: originalImageUrls[1]?.substring(0, 100),
+        isS3: originalImageUrls[0]?.includes('s3.') || originalImageUrls[0]?.includes('amazonaws.com'),
+        urlPrefix: originalImageUrls[0]?.split('/').slice(0, 4).join('/'),
+      });
+    }
 
     // Get script lines from original data (composeData for compose, fastCutData for fast-cut)
     // Fast-cut stores script as array directly, compose stores it with lines property
