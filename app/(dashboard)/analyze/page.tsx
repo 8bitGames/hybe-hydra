@@ -135,16 +135,33 @@ function ContextReceptionPanel() {
   const { language } = useI18n();
   const { goToStart } = useWorkflowNavigation();
 
-  // Get discover state and start source
-  const { discover, startSource, resetWorkflow } = useWorkflowStore(
+  // Get start state with discover as fallback for legacy data
+  const { start, startSource, resetWorkflow } = useWorkflowStore(
     useShallow((state) => ({
-      discover: state.discover,
+      start: state.start,
       startSource: state.start.source,
       resetWorkflow: state.resetWorkflow,
     }))
   );
 
-  const { keywords, selectedHashtags, savedInspiration, aiInsights } = discover;
+  // Extract data from start state (migrated from discover)
+  const { selectedHashtags, savedInspiration, aiInsights } = start;
+
+  // Extract keywords from start.source based on source type
+  const keywords = (() => {
+    const source = startSource;
+    if (!source) return [];
+    switch (source.type) {
+      case "trends":
+        return source.keywords || [];
+      case "idea":
+        return source.keywords || [];
+      case "video":
+        return source.hashtags || [];
+      default:
+        return [];
+    }
+  })();
 
   // Type guard for video source
   const isVideoSource = startSource?.type === "video";
@@ -159,10 +176,10 @@ function ContextReceptionPanel() {
   // Debug logging
   console.log("[ContextReceptionPanel] Source type:", startSource?.type);
   console.log("[ContextReceptionPanel] Video source hashtags:", videoSource?.hashtags);
-  console.log("[ContextReceptionPanel] Discover keywords:", keywords);
+  console.log("[ContextReceptionPanel] Start keywords:", keywords);
 
   // Determine what data to display based on source type
-  // When video is selected, use video's hashtags; otherwise use discover keywords
+  // When video is selected, use video's hashtags; otherwise use start keywords
   const displayKeywords = isVideoSource && videoSource && videoSource.hashtags.length > 0
     ? videoSource.hashtags
     : keywords;
@@ -840,11 +857,27 @@ export default function AnalyzePage() {
   const sessionId = searchParams.get("session");
   const { activeSession, syncNow } = useSessionWorkflowSync("analyze");
 
-  // Workflow store
-  const discover = useWorkflowStore((state) => state.discover);
+  // Workflow store - using start state (migrated from discover)
+  const start = useWorkflowStore((state) => state.start);
   const analyze = useWorkflowStore((state) => state.analyze);
-  const startSource = useWorkflowStore((state) => state.start.source);
-  const startContentType = useWorkflowStore((state) => state.start.contentType);
+  const startSource = start.source;
+  const startContentType = start.contentType;
+
+  // Extract keywords from start.source based on source type
+  const startKeywords = (() => {
+    const source = startSource;
+    if (!source) return [];
+    switch (source.type) {
+      case "trends":
+        return source.keywords || [];
+      case "idea":
+        return source.keywords || [];
+      case "video":
+        return source.hashtags || [];
+      default:
+        return [];
+    }
+  })();
   const setAnalyzeUserIdea = useWorkflowStore((state) => state.setAnalyzeUserIdea);
   const setAnalyzeAiIdeas = useWorkflowStore((state) => state.setAnalyzeAiIdeas);
   const selectAnalyzeIdea = useWorkflowStore((state) => state.selectAnalyzeIdea);
@@ -854,12 +887,12 @@ export default function AnalyzePage() {
   // Local state
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Initialize hashtags from discover
+  // Initialize hashtags from start state (migrated from discover)
   useEffect(() => {
-    if (discover.selectedHashtags.length > 0 && analyze.hashtags.length === 0) {
-      setAnalyzeHashtags(discover.selectedHashtags);
+    if (start.selectedHashtags.length > 0 && analyze.hashtags.length === 0) {
+      setAnalyzeHashtags(start.selectedHashtags);
     }
-  }, [discover.selectedHashtags, analyze.hashtags, setAnalyzeHashtags]);
+  }, [start.selectedHashtags, analyze.hashtags, setAnalyzeHashtags]);
 
   // Generate ideas with Gemini 3
   const handleGenerateIdeas = async () => {
@@ -882,7 +915,8 @@ export default function AnalyzePage() {
       let trendInsights: TrendInsights | undefined = undefined;
 
       if (!isRecreationMode) {
-        inspirationVideos = discover.savedInspiration.map((video) => ({
+        // Use start.savedInspiration (migrated from discover)
+        inspirationVideos = start.savedInspiration.map((video) => ({
           id: video.id,
           description: video.description,
           hashtags: video.hashtags,
@@ -890,9 +924,10 @@ export default function AnalyzePage() {
           engagementRate: video.engagementRate,
         }));
 
-        // Also include viral videos from trend analysis
-        if (discover.trendAnalysis?.viralVideos) {
-          discover.trendAnalysis.viralVideos.forEach((video) => {
+        // Also include viral videos from trend analysis (from start.source when type is trends)
+        const trendAnalysisVideos = startSource?.type === "trends" ? startSource.analysis.viralVideos : [];
+        if (trendAnalysisVideos.length > 0) {
+          trendAnalysisVideos.forEach((video) => {
             // Only add if not already in saved inspiration
             if (!inspirationVideos.find(v => v.id === video.id)) {
               inspirationVideos.push({
@@ -906,13 +941,13 @@ export default function AnalyzePage() {
           });
         }
 
-        // Extract AI insights from discover phase
-        trendInsights = discover.aiInsights ? {
-          summary: discover.aiInsights.summary,
-          contentStrategy: discover.aiInsights.contentStrategy,
-          videoIdeas: discover.aiInsights.videoIdeas,
-          targetAudience: discover.aiInsights.targetAudience,
-          bestPostingTimes: discover.aiInsights.bestPostingTimes,
+        // Extract AI insights from start state (migrated from discover)
+        trendInsights = start.aiInsights ? {
+          summary: start.aiInsights.summary,
+          contentStrategy: start.aiInsights.contentStrategy,
+          videoIdeas: start.aiInsights.videoIdeas,
+          targetAudience: start.aiInsights.targetAudience,
+          bestPostingTimes: start.aiInsights.bestPostingTimes,
         } : undefined;
       }
 
@@ -923,7 +958,7 @@ export default function AnalyzePage() {
       const request: GenerateIdeasRequest = {
         user_idea: analyze.userIdea,
         // In recreation mode, don't send keywords/hashtags to avoid diluting the exact concept
-        keywords: isRecreationMode ? [] : discover.keywords,
+        keywords: isRecreationMode ? [] : startKeywords,
         hashtags: isRecreationMode ? [] : analyze.hashtags,
         target_audience: analyze.targetAudience,
         content_goals: analyze.contentGoals,
@@ -932,7 +967,7 @@ export default function AnalyzePage() {
         // Pass rich trend data only in non-recreation mode
         inspiration_videos: inspirationVideos,
         trend_insights: trendInsights,
-        performance_metrics: isRecreationMode ? null : discover.performanceMetrics,
+        performance_metrics: isRecreationMode ? null : start.performanceMetrics,
         language: language,
         // Content type - user-selected at Start stage
         contentType: startContentType,
@@ -1230,13 +1265,13 @@ export default function AnalyzePage() {
                     campaignId: analyze.campaignId || undefined,
                     campaignName: analyze.campaignName || undefined,
                     selectedIdea: analyze.selectedIdea,
-                    // Hashtags & keywords
+                    // Hashtags & keywords (migrated from discover to start)
                     hashtags: analyze.hashtags,
-                    keywords: discover.keywords,
+                    keywords: startKeywords,
                     // Performance metrics
-                    performanceMetrics: discover.performanceMetrics,
+                    performanceMetrics: start.performanceMetrics,
                     // Saved inspiration (thumbnails & stats only)
-                    savedInspiration: discover.savedInspiration.map((v) => ({
+                    savedInspiration: start.savedInspiration.map((v) => ({
                       id: v.id,
                       thumbnailUrl: v.thumbnailUrl,
                       stats: v.stats,
@@ -1245,7 +1280,7 @@ export default function AnalyzePage() {
                     targetAudience: analyze.targetAudience,
                     contentGoals: analyze.contentGoals,
                     // AI insights
-                    aiInsights: discover.aiInsights,
+                    aiInsights: start.aiInsights,
                   }}
                   source="analyze"
                   onRestore={(prompt, metadata) => {
