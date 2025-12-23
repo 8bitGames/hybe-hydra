@@ -35,7 +35,18 @@
       "Bash(sudo apt-get:*)",
       "Bash(sudo apt-get install:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nsync: EC2 로컬 수정사항 동기화\n\n- Dockerfile: asyncpg 설치 추가\n- 전체 backend/compose-engine 코드 업데이트\n- 로컬 개발 환경에서 수정된 내용 반영\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nsync: EC2 로컬 수정사항 동기화\n\n- Dockerfile: asyncpg 설치 추가\n- 전체 backend/compose-engine 코드 업데이트\n- 로컬 개발 환경에서 수정된 내용 반영\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)",
+      "Bash(sudo mkdir:*)",
+      "Bash(wget:*)",
+      "Bash(sudo cp:*)",
+      "Bash(sudo chmod:*)",
+      "Bash(sudo tee:*)",
+      "Bash(sudo apt update:*)",
+      "Bash(sudo apt install:*)",
+      "Bash(gh auth login:*)",
+      "Bash(gh auth:*)",
+      "Bash(git commit:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
