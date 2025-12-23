@@ -862,7 +862,3 @@ export const DURATION_OPTIONS = [
   { value: 25, label: '25초' }
 ];
 
-// Backward compatibility - alias for existing code that still uses composeApi
-export const composeApi = fastCutApi;
-export type ComposedVideo = FastCutVideo;
-export type ComposedVideosResponse = FastCutVideosResponse;

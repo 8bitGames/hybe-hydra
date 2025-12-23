@@ -336,36 +336,27 @@ export default function PublishPage() {
       // Determine generationType based on contentType
       const generationType: "AI" | "COMPOSE" = processingSession.contentType === "ai_video" ? "AI" : "COMPOSE";
       // Convert to ProcessingVideo format
-      // Note: Only original video has a real generationId, variations have temp client IDs
-      return sessionApproved
-        .filter((v) => {
-          // Only include videos with valid generationIds (not temp variation IDs like "var-xxx")
-          // Original video: uses the actual generationId from DB
-          // Variations: have temp IDs starting with "var-" which won't work for publishing
-          const isValidGenerationId = v.id && !v.id.startsWith("var-");
-          if (!isValidGenerationId) {
-            console.warn(`[Publish] Skipping video with temp ID: ${v.id}`);
-          }
-          return isValidGenerationId;
-        })
-        .map((v): ProcessingVideo => ({
-          id: v.id,
-          generationId: v.id,
-          campaignId: processingSession.campaignId,
-          campaignName: processingSession.campaignName,
-          prompt: v.styleName,
-          status: "approved",
-          progress: 100,
-          outputUrl: v.outputUrl,
-          thumbnailUrl: v.thumbnailUrl || null,
-          duration: 15, // Default duration
-          aspectRatio: "9:16",
-          qualityScore: null,
-          generationType,
-          createdAt: processingSession.createdAt,
-          completedAt: new Date().toISOString(),
-          metadata: {},
-        }));
+      // Note: getApprovedVideos now returns only items with valid generationId
+      // - Original video: uses its ID as generationId
+      // - Variations: use the API UUID stored in generationId field
+      return sessionApproved.map((v): ProcessingVideo => ({
+        id: v.id,
+        generationId: v.generationId, // Use the proper generationId (API UUID for variations)
+        campaignId: processingSession.campaignId,
+        campaignName: processingSession.campaignName,
+        prompt: v.styleName,
+        status: "approved",
+        progress: 100,
+        outputUrl: v.outputUrl,
+        thumbnailUrl: v.thumbnailUrl || null,
+        duration: 15, // Default duration
+        aspectRatio: "9:16",
+        qualityScore: null,
+        generationType,
+        createdAt: processingSession.createdAt,
+        completedAt: new Date().toISOString(),
+        metadata: {},
+      }));
     }
 
     // Legacy AI Video flow: use workflow-store

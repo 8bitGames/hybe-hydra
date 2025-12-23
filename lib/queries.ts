@@ -245,6 +245,7 @@ export function useUpdateCampaign() {
         name?: string;
         description?: string;
         status?: string;
+        artist_id?: string;
         target_countries?: string[];
         start_date?: string | null;
         end_date?: string | null;
