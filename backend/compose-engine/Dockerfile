@@ -257,6 +257,9 @@ RUN pip3 install --no-cache-dir \
 RUN pip3 install --no-cache-dir \
     google-cloud-storage>=2.18.0
 
+# PostgreSQL async driver for direct database updates
+RUN pip3 install --no-cache-dir asyncpg>=0.29.0
+
 # =============================================================================
 # STEP 5: Verify all installations work together
 # =============================================================================

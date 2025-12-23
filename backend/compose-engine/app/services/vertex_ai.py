@@ -366,6 +366,7 @@ class VertexAIClient:
             # Start extension (returns long-running operation)
             endpoint = self._get_model_endpoint(self.VEO_MODEL, "predictLongRunning")
             logger.info(f"Calling Veo extend endpoint: {endpoint}")
+            logger.info(f"Extend request body: {request_body}")
 
             response = await self._make_request("POST", endpoint, request_body)
 
