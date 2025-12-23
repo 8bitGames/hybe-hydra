@@ -426,13 +426,13 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
         // (startVariationGeneration creates variations and sets isGenerating = true)
         startVariationGeneration();
 
-        // Update each store variation with API data (replace placeholder IDs with real UUIDs)
+        // Update each store variation with API data (set generationId for publishing)
         const currentVariations = useProcessingSessionStore.getState().session?.variations || [];
         response.data.variations.forEach((apiVar, index) => {
           if (index < currentVariations.length) {
-            // Update existing store variation with API data
+            // Update existing store variation with API generationId
             updateVariation(currentVariations[index].id, {
-              id: apiVar.id, // Use API's UUID - replaces var-xxx placeholder
+              generationId: apiVar.id, // Store real API UUID for publishing (keep internal id unchanged)
               styleName: apiVar.variation_label || `Variation ${index + 1}`,
               styleNameKo: apiVar.variation_label || `변형 ${index + 1}`,
               status: "generating",
@@ -442,7 +442,8 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
           } else {
             // Add new variation if API returned more than store has
             addVariation({
-              id: apiVar.id,
+              id: `var-api-${Date.now()}-${index}`,
+              generationId: apiVar.id, // Store real API UUID for publishing
               styleId: apiVar.id, // Use API ID as styleId for dynamically added variations
               styleName: apiVar.variation_label || `Variation ${index + 1}`,
               styleNameKo: apiVar.variation_label || `변형 ${index + 1}`,
@@ -479,9 +480,8 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
         console.log("[ProcessingFlowPage] Compose variations started:", response);
 
-        // Map API response to store variations (update IDs to match API) BEFORE setting batch ID
-        // CRITICAL: The ID updates must complete before polling starts, otherwise polling
-        // will see old IDs and fail to match with API responses
+        // Map API response to store variations (set generationId for publishing) BEFORE setting batch ID
+        // CRITICAL: The generationId must be set before polling starts for proper matching
         const currentComposeVariations = useProcessingSessionStore.getState().session?.variations || [];
 
         console.log("[ProcessingFlowPage] Mapping API variations to store:", {
@@ -494,9 +494,9 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
         response.variations.forEach((apiVar, index) => {
           const storeVariation = currentComposeVariations[index];
           if (storeVariation) {
-            console.log(`[ProcessingFlowPage] Updating store variation ${index}: ${storeVariation.id} -> ${apiVar.id}`);
+            console.log(`[ProcessingFlowPage] Updating store variation ${index}: adding generationId ${apiVar.id}`);
             updateVariation(storeVariation.id, {
-              id: apiVar.id, // Update to API's ID for tracking
+              generationId: apiVar.id, // Store API UUID for publishing (polling will match by generationId)
               status: "generating",
               progress: 0,
               currentStep: "Starting...",
@@ -506,9 +506,9 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
           }
         });
 
-        // Verify IDs were updated
+        // Verify generationIds were set
         const updatedVars = useProcessingSessionStore.getState().session?.variations || [];
-        console.log("[ProcessingFlowPage] After ID update, store IDs:", updatedVars.map(v => v.id));
+        console.log("[ProcessingFlowPage] After update, store generationIds:", updatedVars.map(v => v.generationId));
 
         // NOW set the batch ID - this triggers polling useEffect via state change
         // At this point, all store variations have been updated with correct API IDs

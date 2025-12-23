@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode } from "react";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useSessionStore } from "@/lib/stores/session-store";
 import { useAuthStore } from "@/lib/auth-store";
@@ -257,13 +257,29 @@ interface FastCutProviderProps {
 
 export function FastCutProvider({ children }: FastCutProviderProps) {
   // Get initial data from workflow store
-  const { start, analyze, discover } = useWorkflowStore(
+  // Derive keywords from start.source instead of deprecated discover.keywords
+  const { start, analyze } = useWorkflowStore(
     useShallow((state) => ({
       start: state.start,
       analyze: state.analyze,
-      discover: state.discover,
     }))
   );
+
+  // Extract keywords from start.source using useMemo to avoid infinite loop
+  const startKeywords = useMemo(() => {
+    const source = start.source;
+    if (!source) return [];
+    switch (source.type) {
+      case "trends":
+        return source.keywords || [];
+      case "idea":
+        return source.keywords || [];
+      case "video":
+        return source.hashtags || [];
+      default:
+        return [];
+    }
+  }, [start.source]);
 
   // Get current session ID for state validation
   const activeSessionId = useSessionStore((state) => state.activeSession?.id);
@@ -342,14 +358,14 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
       const sceneAnalysis = start.source?.type === "video" ? start.source.aiAnalysis?.sceneAnalysis : null;
       const sceneKeywords = sceneAnalysis?.allImageKeywords || [];
 
-      // Priority: sceneAnalysis keywords > fastCutData keywords > discover keywords
+      // Priority: sceneAnalysis keywords > fastCutData keywords > start keywords
       const initialKeywords = sceneKeywords.length > 0
         ? sceneKeywords
         : fastCutData?.searchKeywords?.length
           ? fastCutData.searchKeywords
-          : discover.keywords;
+          : startKeywords;
 
-      console.log("[FastCutProvider] Keywords source:", sceneKeywords.length > 0 ? "sceneAnalysis" : (fastCutData?.searchKeywords?.length ? "fastCutData" : "discover"));
+      console.log("[FastCutProvider] Keywords source:", sceneKeywords.length > 0 ? "sceneAnalysis" : (fastCutData?.searchKeywords?.length ? "fastCutData" : "startKeywords"));
       console.log("[FastCutProvider] Initial keywords count:", initialKeywords.length);
 
       setState({
@@ -367,7 +383,7 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
 
     // Mark that we've hydrated for this specific session
     setHydratedForSessionId(activeSessionId);
-  }, [hydratedForSessionId, activeSessionId, analyze.optimizedPrompt, analyze.selectedIdea, analyze.campaignId, analyze.campaignName, discover.keywords, start.source]);
+  }, [hydratedForSessionId, activeSessionId, analyze.optimizedPrompt, analyze.selectedIdea, analyze.campaignId, analyze.campaignName, startKeywords, start.source]);
 
   // Save state to sessionStorage whenever it changes (only after hydration)
   // Include session ID for future validation

@@ -100,24 +100,41 @@ function ContextPanel() {
   const { language } = useI18n();
   const { goToAnalyze, goToStart } = useWorkflowNavigation();
 
-  const { discover, analyze } = useWorkflowStore(
+  // Get start state (migrated from discover) and analyze state
+  const { start, analyze } = useWorkflowStore(
     useShallow((state) => ({
-      discover: state.discover,
+      start: state.start,
       analyze: state.analyze,
     }))
   );
 
+  // Extract data from start state (migrated from discover)
   const {
-    keywords,
     selectedHashtags,
     savedInspiration,
     performanceMetrics,
     aiInsights,
-  } = discover;
+  } = start;
+
+  // Extract keywords from start.source based on source type (using useMemo to avoid infinite loop)
+  const keywords = useMemo(() => {
+    const source = start.source;
+    if (!source) return [];
+    switch (source.type) {
+      case "trends":
+        return source.keywords || [];
+      case "idea":
+        return source.keywords || [];
+      case "video":
+        return source.hashtags || [];
+      default:
+        return [];
+    }
+  }, [start.source]);
 
   const { selectedIdea, campaignName, campaignId, optimizedPrompt, hashtags: analyzeHashtags } = analyze;
 
-  // Combine hashtags from discover and analyze
+  // Combine hashtags from start and analyze
   const allHashtags = useMemo(() => {
     const combined = new Set([...selectedHashtags, ...analyzeHashtags]);
     return Array.from(combined).slice(0, 8);
@@ -1679,7 +1696,21 @@ export default function CreatePage() {
           preview_image_url: previewImageUrl,
           // Bridge context from workflow
           original_input: analyze.userIdea || undefined,
-          trend_keywords: useWorkflowStore.getState().discover.keywords,
+          trend_keywords: (() => {
+            // Extract keywords from start.source (migrated from discover.keywords)
+            const source = useWorkflowStore.getState().start.source;
+            if (!source) return [];
+            switch (source.type) {
+              case "trends":
+                return source.keywords || [];
+              case "idea":
+                return source.keywords || [];
+              case "video":
+                return source.hashtags || [];
+              default:
+                return [];
+            }
+          })(),
         });
 
         if (response.error) {

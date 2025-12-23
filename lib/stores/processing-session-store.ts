@@ -59,7 +59,8 @@ export interface SessionContent {
 
 // Variation video
 export interface VariationVideo {
-  id: string;
+  id: string;              // Internal store ID (var-{styleId}-{timestamp})
+  generationId?: string;   // Real API UUID from backend (for publishing)
   styleId: string;
   styleName: string;
   styleNameKo: string;
@@ -262,6 +263,7 @@ interface ProcessingSessionStoreState {
   // Computed - Get approved videos for publish
   getApprovedVideos: () => Array<{
     id: string;
+    generationId: string;  // Real API UUID for publishing
     styleId: string | null;
     styleName: string;
     outputUrl: string;
@@ -536,24 +538,26 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
         },
 
         updateVariation: (id, updates) => {
-          // Log if we're updating the ID field (important for tracking)
-          if (updates.id && updates.id !== id) {
-            console.log(`[ProcessingSessionStore] updateVariation: Changing ID from ${id} to ${updates.id}`);
+          // Log if we're updating the generationId field (important for publishing)
+          if (updates.generationId) {
+            console.log(`[ProcessingSessionStore] updateVariation: Setting generationId ${updates.generationId} for ${id}`);
           }
 
           set((s) => {
             if (!s.session) return s;
 
-            const variation = s.session.variations.find(v => v.id === id);
+            // Match by id OR generationId (for polling which uses API's UUID)
+            const variation = s.session.variations.find(v => v.id === id || v.generationId === id);
             if (!variation) {
-              console.warn(`[ProcessingSessionStore] updateVariation: No variation found with ID ${id}. Available IDs:`, s.session.variations.map(v => v.id));
+              console.warn(`[ProcessingSessionStore] updateVariation: No variation found with ID/generationId ${id}. Available:`,
+                s.session.variations.map(v => ({ id: v.id, generationId: v.generationId })));
             }
 
             return {
               session: {
                 ...s.session,
                 variations: s.session.variations.map((v) =>
-                  v.id === id ? { ...v, ...updates } : v
+                  (v.id === id || v.generationId === id) ? { ...v, ...updates } : v
                 ),
               },
             };
@@ -567,15 +571,16 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
             id,
             outputUrl: outputUrl ? `${outputUrl.substring(0, 60)}...` : 'missing',
             thumbnailUrl: thumbnailUrl ? 'present' : 'missing',
-            currentVariationIds: state.session?.variations.map(v => v.id) || [],
+            currentVariations: state.session?.variations.map(v => ({ id: v.id, generationId: v.generationId })) || [],
           });
 
           set((s) => {
             if (!s.session) return s;
 
+            // Match by id OR generationId (for polling which uses API's UUID)
             const updatedVariations = s.session.variations.map((v) => {
-              if (v.id === id) {
-                console.log(`[ProcessingSessionStore] Updating variation ${id}: status -> completed, outputUrl -> ${outputUrl ? 'set' : 'missing'}`);
+              if (v.id === id || v.generationId === id) {
+                console.log(`[ProcessingSessionStore] Updating variation ${v.id} (generationId: ${v.generationId}): status -> completed`);
                 return { ...v, status: "completed" as VideoGenerationStatus, progress: 100, outputUrl, thumbnailUrl };
               }
               return v;
@@ -605,8 +610,9 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
           set((s) => {
             if (!s.session) return s;
 
+            // Match by id OR generationId (for polling which uses API's UUID)
             const updatedVariations = s.session.variations.map((v) =>
-              v.id === id
+              (v.id === id || v.generationId === id)
                 ? { ...v, status: "failed" as VideoGenerationStatus, progress: 0 }
                 : v
             );
@@ -637,8 +643,9 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
             return {
               session: {
                 ...s.session,
+                // Match by id OR generationId
                 variations: s.session.variations.map((v) =>
-                  v.id === id ? { ...v, approval: "approved" as ApprovalStatus } : v
+                  (v.id === id || v.generationId === id) ? { ...v, approval: "approved" as ApprovalStatus } : v
                 ),
               },
             };
@@ -651,8 +658,9 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
             return {
               session: {
                 ...s.session,
+                // Match by id OR generationId
                 variations: s.session.variations.map((v) =>
-                  v.id === id ? { ...v, approval: "rejected" as ApprovalStatus } : v
+                  (v.id === id || v.generationId === id) ? { ...v, approval: "rejected" as ApprovalStatus } : v
                 ),
               },
             };
@@ -704,6 +712,7 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
 
           const approved: Array<{
             id: string;
+            generationId: string;
             styleId: string | null;
             styleName: string;
             outputUrl: string;
@@ -718,6 +727,7 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
           ) {
             approved.push({
               id: state.session.originalVideo.id,
+              generationId: state.session.originalVideo.id, // Original uses its ID as generationId
               styleId: null,
               styleName: "Original",
               outputUrl: state.session.originalVideo.outputUrl,
@@ -726,12 +736,13 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
             });
           }
 
-          // Include approved variations
+          // Include approved variations (only those with valid generationId)
           state.session.variations
-            .filter((v) => v.approval === "approved" && v.outputUrl)
+            .filter((v) => v.approval === "approved" && v.outputUrl && v.generationId)
             .forEach((v) => {
               approved.push({
                 id: v.id,
+                generationId: v.generationId!, // Real API UUID for publishing
                 styleId: v.styleId,
                 styleName: v.styleName,
                 outputUrl: v.outputUrl!,

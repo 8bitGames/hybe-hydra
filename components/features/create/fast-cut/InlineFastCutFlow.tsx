@@ -86,20 +86,29 @@ interface InlineFastCutFlowProps {
 function FastCutContextPanel() {
   const { language } = useI18n();
 
-  const { discover, analyze } = useWorkflowStore(
+  const { start, analyze, keywords } = useWorkflowStore(
     useShallow((state) => ({
-      discover: state.discover,
+      start: state.start,
       analyze: state.analyze,
+      // Derive keywords from start.source (replaces deprecated discover.keywords)
+      keywords: state.start.source
+        ? state.start.source.type === "trends"
+          ? state.start.source.keywords || []
+          : state.start.source.type === "idea"
+          ? state.start.source.keywords || []
+          : state.start.source.type === "video"
+          ? state.start.source.hashtags || []
+          : []
+        : [],
     }))
   );
 
   const {
-    keywords,
     selectedHashtags,
     savedInspiration,
     performanceMetrics,
     aiInsights,
-  } = discover;
+  } = start;
 
   const { selectedIdea, optimizedPrompt, hashtags: analyzeHashtags } = analyze;
 
@@ -472,9 +481,18 @@ export function InlineFastCutFlow({
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const { discover, analyze, setCreateType } = useWorkflowStore(
+  const { startKeywords, analyze, setCreateType } = useWorkflowStore(
     useShallow((state) => ({
-      discover: state.discover,
+      // Derive keywords from start.source (replaces deprecated discover.keywords)
+      startKeywords: state.start.source
+        ? state.start.source.type === "trends"
+          ? state.start.source.keywords || []
+          : state.start.source.type === "idea"
+          ? state.start.source.keywords || []
+          : state.start.source.type === "video"
+          ? state.start.source.hashtags || []
+          : []
+        : [],
       analyze: state.analyze,
       setCreateType: state.setCreateType,
     }))
@@ -504,13 +522,13 @@ export function InlineFastCutFlow({
   // Fast Cut Data - pre-generated keywords and vibe from Analyze stage
   const fastCutData = analyze.selectedIdea?.fastCutData;
 
-  // Use fastCutData.searchKeywords if available, otherwise fall back to discover.keywords
+  // Use fastCutData.searchKeywords if available, otherwise fall back to start keywords
   const initialKeywords = useMemo(() => {
     if (fastCutData?.searchKeywords && fastCutData.searchKeywords.length > 0) {
       return fastCutData.searchKeywords;
     }
-    return discover.keywords;
-  }, [fastCutData?.searchKeywords, discover.keywords]);
+    return startKeywords;
+  }, [fastCutData?.searchKeywords, startKeywords]);
 
   // Keyword state
   const [editableKeywords, setEditableKeywords] = useState<string[]>([
