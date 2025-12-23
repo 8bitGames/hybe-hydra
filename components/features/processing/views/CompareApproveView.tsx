@@ -185,7 +185,7 @@ export function CompareApproveView({
           className="text-neutral-600 hover:text-neutral-900"
         >
           <ArrowLeft className="w-4 h-4 mr-1.5" />
-          {isKorean ? "설정으로" : "Back to settings"}
+          {isKorean ? "돌아가기" : "Back"}
         </Button>
 
         <h2 className="text-lg font-semibold text-neutral-900">

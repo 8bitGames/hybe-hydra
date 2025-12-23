@@ -7,6 +7,107 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+// Compose Engine URL for fallback status check
+const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || "http://localhost:8000";
+
+// Compose Engine job status response
+interface ComposeEngineJobStatus {
+  job_id: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  progress: number;
+  current_step?: string;
+  output_url?: string;
+  error?: string;
+  metadata?: {
+    gcs_uri?: string;
+    extension_count?: number;
+  };
+}
+
+/**
+ * Fallback: Check job status directly from Compose Engine
+ * This is used when callback fails and DB is stuck in PROCESSING state
+ */
+async function checkComposeEngineStatus(jobId: string): Promise<ComposeEngineJobStatus | null> {
+  try {
+    const response = await fetch(`${COMPOSE_ENGINE_URL}/api/v1/ai/job/${jobId}/status`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      // Short timeout to avoid blocking
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error(`[Fallback] Failed to check Compose Engine status for ${jobId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Sync generation status from Compose Engine to database
+ * Called when generation is stuck in PROCESSING state
+ */
+async function syncStatusFromComposeEngine(
+  generationId: string,
+  jobId: string
+): Promise<{ synced: boolean; status?: string; outputUrl?: string }> {
+  const engineStatus = await checkComposeEngineStatus(jobId);
+
+  if (!engineStatus) {
+    return { synced: false };
+  }
+
+  // Only sync if Compose Engine shows completed or failed
+  if (engineStatus.status === "completed" && engineStatus.output_url) {
+    console.log(`[Fallback] Syncing completed status for ${generationId} from Compose Engine`);
+
+    await prisma.videoGeneration.update({
+      where: { id: generationId },
+      data: {
+        status: "COMPLETED",
+        progress: 100,
+        composedOutputUrl: engineStatus.output_url,
+        gcsUri: engineStatus.metadata?.gcs_uri || null,
+        updatedAt: new Date(),
+      },
+    });
+
+    return { synced: true, status: "completed", outputUrl: engineStatus.output_url };
+  } else if (engineStatus.status === "failed") {
+    console.log(`[Fallback] Syncing failed status for ${generationId} from Compose Engine`);
+
+    await prisma.videoGeneration.update({
+      where: { id: generationId },
+      data: {
+        status: "FAILED",
+        progress: 100,
+        errorMessage: engineStatus.error || "Job failed",
+        updatedAt: new Date(),
+      },
+    });
+
+    return { synced: true, status: "failed" };
+  }
+
+  // Still processing - update progress if available
+  if (engineStatus.progress > 0) {
+    await prisma.videoGeneration.update({
+      where: { id: generationId },
+      data: {
+        progress: engineStatus.progress,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  return { synced: false };
+}
+
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const authHeader = request.headers.get("authorization");
@@ -58,6 +159,32 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Fallback: If status is PROCESSING and we have a job ID, check Compose Engine directly
+    // This handles cases where callback failed but the job actually completed
+    let finalStatus = generation.status;
+    let finalProgress = generation.progress;
+    let finalOutputUrl = generation.composedOutputUrl;
+    let finalErrorMessage = generation.errorMessage;
+
+    if (generation.status === "PROCESSING" && generation.vertexRequestId) {
+      const syncResult = await syncStatusFromComposeEngine(
+        generation.id,
+        generation.vertexRequestId
+      );
+
+      if (syncResult.synced) {
+        // Update local variables with synced data
+        if (syncResult.status === "completed") {
+          finalStatus = "COMPLETED" as VideoGenerationStatus;
+          finalProgress = 100;
+          finalOutputUrl = syncResult.outputUrl || finalOutputUrl;
+        } else if (syncResult.status === "failed") {
+          finalStatus = "FAILED" as VideoGenerationStatus;
+          finalProgress = 100;
+        }
+      }
+    }
+
     return NextResponse.json({
       id: generation.id,
       campaign_id: generation.campaignId,
@@ -72,14 +199,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       audio_analysis: generation.audioAnalysis,
       audio_start_time: generation.audioStartTime,
       audio_duration: generation.audioDuration,
-      composed_output_url: generation.composedOutputUrl,
-      status: generation.status.toLowerCase(),
-      progress: generation.progress,
-      error_message: generation.errorMessage,
+      composed_output_url: finalOutputUrl,
+      status: finalStatus.toLowerCase(),
+      progress: finalProgress,
+      error_message: finalErrorMessage,
       vertex_operation_name: generation.vertexOperationName,
       vertex_request_id: generation.vertexRequestId,
       output_asset_id: generation.outputAssetId,
       output_url: generation.outputUrl,
+      extension_count: generation.extensionCount || 0,
+      gcs_uri: generation.gcsUri,
       quality_score: generation.qualityScore,
       quality_metadata: generation.qualityMetadata,
       // Bridge context fields

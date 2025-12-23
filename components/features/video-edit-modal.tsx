@@ -47,6 +47,7 @@ import {
   SkipForward,
   HelpCircle,
   Zap,
+  Shuffle,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,7 @@ import {
 import { fastCutApi, AudioAnalysisResponse } from "@/lib/fast-cut-api";
 import type { Asset } from "@/lib/campaigns-api";
 import type { LyricsData } from "@/lib/subtitle-styles";
+import { AudioAIRecommendation } from "@/components/features/audio/AudioAIRecommendation";
 
 interface VideoEditModalProps {
   open: boolean;
@@ -98,6 +100,7 @@ export function VideoEditModal({
   // Audio analysis state
   const [audioAnalysis, setAudioAnalysis] = useState<AudioAnalysisResponse | null>(null);
   const [analyzingAudio, setAnalyzingAudio] = useState(false);
+  const [triedStartTimes, setTriedStartTimes] = useState<number[]>([]);  // Track tried segments for variety
 
   // Audio state
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
@@ -136,7 +139,7 @@ export function VideoEditModal({
     stroke_color: "#000000",
     stroke_width: 3,
     animation: "fade",
-    position: "bottom",
+    position: "center",
     bottom_margin: 10,
   });
 
@@ -266,6 +269,7 @@ export function VideoEditModal({
     suggestedSegment: language === "ko" ? "추천 구간" : "Suggested Segment",
     useSuggestedTime: language === "ko" ? "추천 시작 시간 사용" : "Use Suggested Time",
     previewSegment: language === "ko" ? "구간 미리듣기" : "Preview Segment",
+    tryDifferent: language === "ko" ? "다른 구간 선택" : "Try Different",
   };
 
   // Reset state when modal opens
@@ -371,6 +375,46 @@ export function VideoEditModal({
     }
   }, []);
 
+  // Handle re-analyze audio for variety selection
+  const handleReAnalyzeAudio = useCallback(async () => {
+    if (!selectedAsset || analyzingAudio) return;
+
+    setAnalyzingAudio(true);
+    try {
+      // Collect current start time and previously tried ones
+      const excludeStarts = [...triedStartTimes, audioStartTime].filter(
+        (t, i, arr) => arr.indexOf(t) === i
+      );
+
+      console.log("[VideoEditModal] Re-analyzing audio with excludeStarts:", excludeStarts);
+
+      const targetDuration = sourceVideoDuration || videoDuration || 15;
+      const analysis = await fastCutApi.analyzeAudioBestSegment(
+        selectedAsset.id,
+        targetDuration,
+        {
+          preferVariety: true,
+          excludeStarts,
+        }
+      );
+
+      console.log("[VideoEditModal] Re-analysis result:", analysis);
+      setAudioAnalysis(analysis);
+
+      // Apply new suggested start time
+      if (analysis.suggestedStartTime !== undefined) {
+        setAudioStartTime(analysis.suggestedStartTime);
+      }
+
+      // Track tried times
+      setTriedStartTimes(excludeStarts);
+    } catch (err) {
+      console.error("[VideoEditModal] Re-analyze failed:", err);
+    } finally {
+      setAnalyzingAudio(false);
+    }
+  }, [selectedAsset, analyzingAudio, triedStartTimes, audioStartTime, sourceVideoDuration, videoDuration]);
+
   // Handle asset selection
   const handleSelectAsset = (asset: Asset) => {
     setSelectedAsset(asset);
@@ -379,6 +423,7 @@ export function VideoEditModal({
     setDuration(0);
     setIsPlaying(false);
     setMusicSkipped(false);
+    setTriedStartTimes([]);  // Reset tried times for new audio
     fetchAudioUrl(asset);
 
     // Check if asset has existing lyrics
@@ -1145,45 +1190,18 @@ export function VideoEditModal({
                     </div>
 
                     {/* AI Recommendation */}
-                    {(analyzingAudio || audioAnalysis) && (
-                      <div className="p-3 bg-muted/50 rounded-lg space-y-2">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                          <Zap className="h-3 w-3" />
-                          {t.aiRecommendation}
-                          {analyzingAudio && (
-                            <Loader2 className="h-3 w-3 ml-1 animate-spin" />
-                          )}
-                        </h4>
-                        {analyzingAudio ? (
-                          <p className="text-sm text-muted-foreground">{t.analyzing}</p>
-                        ) : audioAnalysis && (
-                          <>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <p className="text-xs text-muted-foreground">{t.detectedBpm}</p>
-                                <p className="text-sm font-medium">{audioAnalysis.bpm || "N/A"}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground">{t.suggestedSegment}</p>
-                                <p className="text-sm font-medium">
-                                  {formatTime(audioAnalysis.suggestedStartTime)} - {formatTime(audioAnalysis.suggestedEndTime)}
-                                </p>
-                              </div>
-                            </div>
-                            {audioAnalysis.suggestedStartTime !== audioStartTime && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full mt-2 text-xs"
-                                onClick={() => setAudioStartTime(audioAnalysis.suggestedStartTime)}
-                              >
-                                <Zap className="h-3 w-3 mr-1" />
-                                {t.useSuggestedTime}
-                              </Button>
-                            )}
-                          </>
-                        )}
-                      </div>
+                    {audioAnalysis && (
+                      <AudioAIRecommendation
+                        audioAnalysis={audioAnalysis}
+                        audioStartTime={audioStartTime}
+                        videoDuration={videoDuration}
+                        analyzingAudio={analyzingAudio}
+                        isPlayingSegment={isPlayingSegment}
+                        audioLoaded={audioLoaded}
+                        onUseSuggested={() => setAudioStartTime(audioAnalysis.suggestedStartTime)}
+                        onReAnalyze={handleReAnalyzeAudio}
+                        onPlaySegment={isPlayingSegment ? () => audioRef.current?.pause() : playSelectedSegment}
+                      />
                     )}
 
                     {/* Volume */}

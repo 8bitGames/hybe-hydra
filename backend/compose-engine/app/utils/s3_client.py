@@ -192,8 +192,8 @@ class S3Client:
         print(f"[S3Client] startswith={url.startswith(s3_url_prefix)}")
 
         if url.startswith(s3_url_prefix):
-            # Extract key from URL
-            key = url[len(s3_url_prefix):]
+            # Extract key from URL (strip query params - presigned URL params don't belong in key)
+            key = url[len(s3_url_prefix):].split('?')[0]
             print(f"[S3Client] Using S3 SDK download: bucket={self.bucket}, key={key}")
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
@@ -228,7 +228,7 @@ class S3Client:
             if match and match.group(2) != 'amazonaws':
                 other_bucket = match.group(1)
                 other_region = match.group(2)
-                other_key = match.group(3)
+                other_key = match.group(3).split('?')[0]  # Strip query params from key
                 print(f"[S3Client] Cross-bucket S3 download: bucket={other_bucket}, region={other_region}, key={other_key[:50]}...")
             else:
                 # Try without region (bucket.s3.amazonaws.com format)
@@ -236,7 +236,7 @@ class S3Client:
                 if match_no_region:
                     other_bucket = match_no_region.group(1)
                     other_region = self.region  # Use configured region as default
-                    other_key = match_no_region.group(2)
+                    other_key = match_no_region.group(2).split('?')[0]  # Strip query params from key
                     print(f"[S3Client] Cross-bucket S3 download (no region in URL): bucket={other_bucket}, using region={other_region}, key={other_key[:50]}...")
                 else:
                     # Fallback to HTTP for unparseable S3 URLs

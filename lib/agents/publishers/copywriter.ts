@@ -246,6 +246,7 @@ ARTIST: {{artistName}}
 - ONLY use content-related tags that match actual TikTok trends
 - If trending keywords are provided, you MUST include at least 3 of them
 - Focus on: music genre, dance style, challenge names, artist names, viral sounds
+- IMPORTANT: If ARTIST name is provided, you MUST include the artist name as a hashtag (remove all spaces, e.g., "BTS" → #BTS, "New Jeans" → #NewJeans, "BLACKPINK" → #BLACKPINK)
 - Generate 5-8 hashtags total
 
 Return JSON:
@@ -300,6 +301,7 @@ ARTIST: {{artistName}}
 - ONLY use content-related tags that match actual TikTok trends
 - If trending keywords are provided, you MUST include at least 5 of them in your hashtags
 - Focus on: music genre, dance style, challenge names, artist names, viral sounds, specific trends
+- IMPORTANT: If ARTIST name is provided, you MUST include the artist name as a hashtag (remove all spaces, e.g., "BTS" → #BTS, "New Jeans" → #NewJeans, "BLACKPINK" → #BLACKPINK)
 - Prioritize trending hashtags over generic ones
 - Generate 8-12 hashtags total
 
@@ -535,6 +537,19 @@ export class CopywriterAgent extends BaseAgent<CopywriterInput, CopywriterOutput
         .map((h) => h.replace(/^#/, '').toLowerCase())
         .filter((h) => !BLACKLISTED_TAGS.has(h.toLowerCase()))
         .filter((h, i, arr) => arr.indexOf(h) === i);
+
+      // Add artist name as hashtag (remove spaces, first position)
+      const artistName = context.workflow.artistName;
+      if (artistName) {
+        const artistHashtag = artistName.replace(/\s+/g, '').toLowerCase();
+        // Remove if already exists (to avoid duplicates) and add at the beginning
+        const filteredHashtags = combinedHashtags.filter(
+          (h) => h.toLowerCase() !== artistHashtag
+        );
+        filteredHashtags.unshift(artistHashtag);
+        combinedHashtags.length = 0;
+        combinedHashtags.push(...filteredHashtags);
+      }
 
       // Limit hashtags based on version
       const tagRange = options.version === 'short' ? { min: 5, max: 8 } : { min: 8, max: 12 };

@@ -459,12 +459,17 @@ export interface Translations {
     tryAgain: string;
   };
   publish: {
+    // Page header
+    title: string;
+    manageSchedule: string;
     // Stats
     total: string;
+    publishing: string;
     scheduled: string;
     published: string;
     drafts: string;
     failed: string;
+    cancelled: string;
     // View tabs
     queue: string;
     list: string;
@@ -481,10 +486,12 @@ export interface Translations {
     contactAdmin: string;
     generateVideos: string;
     // Post sections
+    publishingPosts: string;
     scheduledPosts: string;
     draftPosts: string;
     publishedPosts: string;
     failedPosts: string;
+    cancelledPosts: string;
     // Post card
     noCaption: string;
     cancelPost: string;
@@ -492,6 +499,9 @@ export interface Translations {
     viewPost: string;
     inTime: string;
     error: string;
+    retry: string;
+    thumbnailExpired: string;
+    noThumbnail: string;
     // Schedule modal
     schedulePost: string;
     selectVideo: string;
@@ -1030,12 +1040,17 @@ export const translations: Record<Language, Translations> = {
       tryAgain: "다시 시도",
     },
     publish: {
+      // Page header
+      title: "발행 관리",
+      manageSchedule: "예약된 게시물을 관리하세요",
       // Stats
       total: "전체",
+      publishing: "발행 중",
       scheduled: "예약됨",
       published: "발행됨",
       drafts: "초안",
       failed: "실패",
+      cancelled: "취소됨",
       // View tabs
       queue: "대기열",
       list: "목록",
@@ -1052,10 +1067,12 @@ export const translations: Record<Language, Translations> = {
       contactAdmin: "관리자에게 연락하여 SNS 계정을 연결하세요",
       generateVideos: "영상 생성",
       // Post sections
+      publishingPosts: "발행 중",
       scheduledPosts: "예약됨",
       draftPosts: "초안",
       publishedPosts: "발행됨",
       failedPosts: "실패",
+      cancelledPosts: "취소됨",
       // Post card
       noCaption: "캡션 없음",
       cancelPost: "이 예약 게시물을 취소하시겠습니까?",
@@ -1063,6 +1080,9 @@ export const translations: Record<Language, Translations> = {
       viewPost: "게시물 보기",
       inTime: "후",
       error: "오류",
+      retry: "재시도",
+      thumbnailExpired: "썸네일 만료됨",
+      noThumbnail: "미리보기 없음",
       // Schedule modal
       schedulePost: "게시물 예약",
       selectVideo: "영상 선택",
@@ -1593,12 +1613,17 @@ export const translations: Record<Language, Translations> = {
       tryAgain: "Try Again",
     },
     publish: {
+      // Page header
+      title: "Publishing",
+      manageSchedule: "Manage your scheduled posts",
       // Stats
       total: "Total",
+      publishing: "Publishing",
       scheduled: "Scheduled",
       published: "Published",
       drafts: "Drafts",
       failed: "Failed",
+      cancelled: "Cancelled",
       // View tabs
       queue: "Queue",
       list: "List",
@@ -1615,10 +1640,12 @@ export const translations: Record<Language, Translations> = {
       contactAdmin: "Contact your administrator to connect social media accounts",
       generateVideos: "Generate Videos",
       // Post sections
+      publishingPosts: "Publishing",
       scheduledPosts: "Scheduled",
       draftPosts: "Drafts",
       publishedPosts: "Published",
       failedPosts: "Failed",
+      cancelledPosts: "Cancelled",
       // Post card
       noCaption: "No caption",
       cancelPost: "Cancel this scheduled post?",
@@ -1626,6 +1653,9 @@ export const translations: Record<Language, Translations> = {
       viewPost: "View Post",
       inTime: "in",
       error: "Error",
+      retry: "Retry",
+      thumbnailExpired: "Thumbnail expired",
+      noThumbnail: "No preview",
       // Schedule modal
       schedulePost: "Schedule Post",
       selectVideo: "Select Video",

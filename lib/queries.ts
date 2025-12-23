@@ -741,6 +741,16 @@ export interface AllVideoItem {
     };
     [key: string]: unknown;
   } | null;
+  // Video Extension fields
+  extension_count?: number;
+  gcs_uri?: string | null;
+  // Audio asset info
+  audio_asset?: {
+    id: string;
+    filename: string;
+    original_filename: string;
+    s3_url: string;
+  } | null;
 }
 
 export interface AllVideosResponse {
@@ -748,7 +758,7 @@ export interface AllVideosResponse {
   total: number;
 }
 
-export function useAllAIVideos() {
+export function useAllAIVideos(options?: { refetchInterval?: number | false }) {
   // First get all campaigns
   const { data: campaignData } = useCampaigns({ page_size: 100 });
   const campaigns = campaignData?.items || [];
@@ -786,6 +796,9 @@ export function useAllAIVideos() {
                 tiktok_seo: video.tiktok_seo || null,
                 tags: video.tags || [],
                 quality_metadata: video.quality_metadata || null,
+                extension_count: video.extension_count,
+                gcs_uri: video.gcs_uri,
+                audio_asset: video.audio_asset || null,
               }));
             }
             return [];
@@ -813,6 +826,7 @@ export function useAllAIVideos() {
     refetchOnMount: true, // Always refetch on mount to catch server-side video completions
     refetchOnReconnect: false,
     placeholderData: (previousData) => previousData, // Show stale while revalidating
+    refetchInterval: options?.refetchInterval, // Auto-refresh when PROCESSING videos exist
   });
 }
 

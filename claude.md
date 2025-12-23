@@ -90,7 +90,7 @@ Code 수정 → POST /api/v1/admin/prompts/sync → DB 자동 업데이트 (버�
 
 ## Other Rules
 
-- DB operations → Use Supabase MCP tools
+- DB operations → Use Supabase MCP tools (Project ID: `nlwufeafadrnesurynom`)
 - Library docs → Check Context7 MCP
 - `npm run dev/build` → Do not run without permission
 - AI model changes → Do not change without permission

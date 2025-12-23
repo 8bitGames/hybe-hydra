@@ -185,16 +185,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // For extend jobs, use metadata.generation_id (the actual VideoGeneration ID)
+    // For regular jobs, job_id IS the generation ID
+    const generationId = metadata?.generation_id || job_id;
+
     await prisma.videoGeneration.update({
-      where: { id: job_id },
+      where: { id: generationId },
       data: updateData,
     });
 
-    console.log(`[Job Callback] Updated job ${job_id}: ${status} → ${prismaStatus} (progress: ${finalProgress}%)`);
+    console.log(`[Job Callback] Updated generation ${generationId}: ${status} → ${prismaStatus} (progress: ${finalProgress}%)`);
 
     // Check if this job has auto-publish settings
     const generation = await prisma.videoGeneration.findUnique({
-      where: { id: job_id },
+      where: { id: generationId },
       select: {
         qualityMetadata: true,
         composedOutputUrl: true,

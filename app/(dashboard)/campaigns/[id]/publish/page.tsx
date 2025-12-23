@@ -25,8 +25,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Calendar, X, Play, Trash2, ExternalLink, Clock, Check, CheckCircle } from "lucide-react";
+import { Plus, Calendar, X, Play, Trash2, ExternalLink, Clock, Check, CheckCircle, Send, Film, RefreshCw, Ban, ArrowLeft, Layers, AlertCircle } from "lucide-react";
 import { useI18n, type Translations } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 type ViewTab = "calendar" | "list" | "queue";
 
@@ -84,6 +85,22 @@ export default function PublishingPage() {
     loadExtraData();
   }, [loadExtraData]);
 
+  // Auto-refresh when there are PUBLISHING posts (polling fallback for callback failures)
+  const hasPublishingPosts = React.useMemo(() => {
+    return scheduledPosts.some((post) => post.status === "PUBLISHING");
+  }, [scheduledPosts]);
+
+  React.useEffect(() => {
+    if (!hasPublishingPosts) return;
+
+    // Poll every 5 seconds when there are publishing posts
+    const interval = setInterval(() => {
+      loadExtraData();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [hasPublishingPosts, loadExtraData]);
+
   // Redirect if campaign not found
   if (campaignError) {
     router.push("/campaigns");
@@ -98,19 +115,23 @@ export default function PublishingPage() {
 
   // Group posts by status for queue view
   const queueGroups = {
+    publishing: filteredPosts.filter((p) => p.status === "PUBLISHING"),
     scheduled: filteredPosts.filter((p) => p.status === "SCHEDULED"),
     draft: filteredPosts.filter((p) => p.status === "DRAFT"),
     published: filteredPosts.filter((p) => p.status === "PUBLISHED"),
     failed: filteredPosts.filter((p) => p.status === "FAILED"),
+    cancelled: filteredPosts.filter((p) => p.status === "CANCELLED"),
   };
 
   // Stats
   const stats = {
     total: scheduledPosts.length,
+    publishing: scheduledPosts.filter((p) => p.status === "PUBLISHING").length,
     scheduled: scheduledPosts.filter((p) => p.status === "SCHEDULED").length,
     published: scheduledPosts.filter((p) => p.status === "PUBLISHED").length,
     draft: scheduledPosts.filter((p) => p.status === "DRAFT").length,
     failed: scheduledPosts.filter((p) => p.status === "FAILED").length,
+    cancelled: scheduledPosts.filter((p) => p.status === "CANCELLED").length,
   };
 
   // Handle schedule creation
@@ -183,29 +204,64 @@ export default function PublishingPage() {
   if (!campaign) return null;
 
   return (
-    <div className="space-y-6">
-      {/* Stats */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
-        {[
-          { label: t.publish.total, value: stats.total, key: "ALL" },
-          { label: t.publish.scheduled, value: stats.scheduled, key: "SCHEDULED" },
-          { label: t.publish.published, value: stats.published, key: "PUBLISHED" },
-          { label: t.publish.drafts, value: stats.draft, key: "DRAFT" },
-          { label: t.publish.failed, value: stats.failed, key: "FAILED" },
-        ].map((stat) => (
-          <button
-            key={stat.label}
-            onClick={() => setStatusFilter(stat.key as PublishStatus | "ALL")}
-            className={`rounded-lg p-4 border transition-all ${
-              statusFilter === stat.key
-                ? "border-primary ring-2 ring-primary/30 bg-primary/5"
-                : "border-border hover:border-muted-foreground bg-card"
-            }`}
+    <div className="space-y-6 px-[7%] pb-8">
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.back()}
+            className="h-10 w-10"
           >
-            <p className="text-muted-foreground text-xs">{stat.label}</p>
-            <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-          </button>
-        ))}
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">{t.publish.title || "Publishing"}</h1>
+            <p className="text-muted-foreground text-sm">
+              {campaign?.name} - {t.publish.manageSchedule || "Manage your scheduled posts"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats - Card Grid (Monochrome Style) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        {[
+          { label: t.publish.total || "Total", value: stats.total, key: "ALL", icon: Layers },
+          { label: t.publish.publishing || "Publishing", value: stats.publishing, key: "PUBLISHING", icon: RefreshCw },
+          { label: t.publish.scheduled || "Scheduled", value: stats.scheduled, key: "SCHEDULED", icon: Clock },
+          { label: t.publish.published || "Published", value: stats.published, key: "PUBLISHED", icon: CheckCircle },
+          { label: t.publish.drafts || "Drafts", value: stats.draft, key: "DRAFT", icon: Film },
+          { label: t.publish.failed || "Failed", value: stats.failed, key: "FAILED", icon: AlertCircle },
+          { label: t.publish.cancelled || "Cancelled", value: stats.cancelled, key: "CANCELLED", icon: Ban },
+        ].map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <Card
+              key={stat.key}
+              className={cn(
+                "cursor-pointer transition-all hover:shadow-md",
+                statusFilter === stat.key && "ring-2 ring-primary border-primary"
+              )}
+              onClick={() => setStatusFilter(stat.key as PublishStatus | "ALL")}
+            >
+              <CardContent className="pt-4 pb-3 px-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                      {stat.label}
+                    </p>
+                    <p className="text-2xl font-bold mt-1">{stat.value}</p>
+                  </div>
+                  <div className="h-10 w-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                    <Icon className="h-5 w-5 text-zinc-700 dark:text-zinc-300" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* View Tabs & Filters */}
@@ -279,8 +335,8 @@ export default function PublishingPage() {
       {/* Empty State */}
       {filteredPosts.length === 0 && (
         <Card className="p-12 text-center">
-          <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Calendar className="w-10 h-10 text-green-600" />
+          <div className="w-20 h-20 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Calendar className="w-10 h-10 text-zinc-700 dark:text-zinc-300" />
           </div>
           <h3 className="text-xl font-medium text-foreground mb-2">{t.publish.noScheduledPosts}</h3>
           <p className="text-muted-foreground mb-6">
@@ -310,15 +366,42 @@ export default function PublishingPage() {
 
       {/* Queue View */}
       {activeTab === "queue" && filteredPosts.length > 0 && (
-        <div className="space-y-6">
+        <div className="space-y-8">
+          {/* Publishing Posts - Active/In Progress */}
+          {queueGroups.publishing.length > 0 && (
+            <Card className="border-dashed">
+              <CardContent className="pt-4">
+                <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                    <RefreshCw className="w-4 h-4 text-zinc-700 dark:text-zinc-300 animate-spin" />
+                  </div>
+                  {t.publish.publishingPosts || "Publishing"} ({queueGroups.publishing.length})
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {queueGroups.publishing.map((post) => (
+                    <PostCard
+                      key={post.id}
+                      post={post}
+                      onCancel={() => handleCancelPost(post.id)}
+                      onDelete={() => handleDeletePost(post.id)}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Scheduled Posts */}
           {queueGroups.scheduled.length > 0 && (
             <div>
-              <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                {t.publish.scheduledPosts} ({queueGroups.scheduled.length})
+              <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
+                </div>
+                {t.publish.scheduledPosts || "Scheduled"} ({queueGroups.scheduled.length})
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {queueGroups.scheduled
                   .sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime())
                   .map((post) => (
@@ -337,11 +420,13 @@ export default function PublishingPage() {
           {/* Draft Posts */}
           {queueGroups.draft.length > 0 && (
             <div>
-              <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                <span className="w-2 h-2 bg-gray-500 rounded-full"></span>
-                {t.publish.draftPosts} ({queueGroups.draft.length})
+              <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <Film className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
+                </div>
+                {t.publish.draftPosts || "Drafts"} ({queueGroups.draft.length})
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {queueGroups.draft.map((post) => (
                   <PostCard
                     key={post.id}
@@ -358,11 +443,13 @@ export default function PublishingPage() {
           {/* Published Posts */}
           {queueGroups.published.length > 0 && (
             <div>
-              <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                {t.publish.publishedPosts} ({queueGroups.published.length})
+              <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <CheckCircle className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
+                </div>
+                {t.publish.publishedPosts || "Published"} ({queueGroups.published.length})
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {queueGroups.published.map((post) => (
                   <PostCard
                     key={post.id}
@@ -378,13 +465,40 @@ export default function PublishingPage() {
 
           {/* Failed Posts */}
           {queueGroups.failed.length > 0 && (
-            <div>
-              <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                {t.publish.failedPosts} ({queueGroups.failed.length})
+            <Card className="border-dashed">
+              <CardContent className="pt-4">
+                <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                    <AlertCircle className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
+                  </div>
+                  {t.publish.failedPosts || "Failed"} ({queueGroups.failed.length})
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {queueGroups.failed.map((post) => (
+                    <PostCard
+                      key={post.id}
+                      post={post}
+                      onCancel={() => handleCancelPost(post.id)}
+                      onDelete={() => handleDeletePost(post.id)}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Cancelled Posts */}
+          {queueGroups.cancelled.length > 0 && (
+            <div className="opacity-60">
+              <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <Ban className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
+                </div>
+                {t.publish.cancelledPosts || "Cancelled"} ({queueGroups.cancelled.length})
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {queueGroups.failed.map((post) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {queueGroups.cancelled.map((post) => (
                   <PostCard
                     key={post.id}
                     post={post}
@@ -491,8 +605,8 @@ export default function PublishingPage() {
       {/* Calendar View Placeholder */}
       {activeTab === "calendar" && (
         <Card className="p-12 text-center">
-          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Calendar className="w-10 h-10 text-primary" />
+          <div className="w-20 h-20 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Calendar className="w-10 h-10 text-zinc-700 dark:text-zinc-300" />
           </div>
           <h3 className="text-xl font-medium text-foreground mb-2">{t.publish.calendarView}</h3>
           <p className="text-muted-foreground">
@@ -749,85 +863,116 @@ function PostCard({
   onDelete: () => void;
   t: Translations;
 }) {
+  const [thumbnailError, setThumbnailError] = React.useState(false);
+  const videoUrl = post.generation?.output_url || post.thumbnail_url;
+  const showPlaceholder = !videoUrl || thumbnailError;
+
   return (
-    <Card className="overflow-hidden">
+    <Card className={cn(
+      "overflow-hidden transition-all hover:shadow-md group",
+      post.status === "CANCELLED" && "opacity-60"
+    )}>
       {/* Thumbnail */}
-      <div className="aspect-video bg-muted relative">
-        {post.thumbnail_url ? (
-          <video src={post.thumbnail_url} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-            <Play className="w-12 h-12" />
+      <div className="aspect-video bg-gradient-to-br from-muted to-muted/50 relative group">
+        {showPlaceholder ? (
+          <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground">
+            <Film className="w-10 h-10 mb-2 opacity-50" />
+            <span className="text-xs opacity-50">
+              {thumbnailError ? (t.publish.thumbnailExpired || "Thumbnail expired") : (t.publish.noThumbnail || "No preview")}
+            </span>
           </div>
+        ) : (
+          <video
+            src={videoUrl}
+            className="w-full h-full object-cover"
+            onError={() => setThumbnailError(true)}
+            muted
+            playsInline
+            onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
+            onMouseLeave={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
+          />
         )}
 
-        {/* Platform Badge */}
+        {/* Overlay gradient */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+
+        {/* Platform Badge - Monochrome */}
         <div className="absolute top-2 left-2">
-          <span
-            className="px-2 py-1 rounded-lg text-xs font-medium"
-            style={{
-              backgroundColor: `${getPlatformColor(post.platform)}20`,
-              color: getPlatformColor(post.platform),
-            }}
-          >
+          <span className="px-2 py-1 rounded-lg text-xs font-medium bg-black/60 text-white backdrop-blur-sm">
             {getPlatformIcon(post.platform)} {getPlatformDisplayName(post.platform)}
           </span>
         </div>
 
-        {/* Status Badge */}
+        {/* Status Badge - Monochrome */}
         <div className="absolute top-2 right-2">
-          <Badge
-            variant={
-              getStatusColor(post.status) === "green" ? "default" :
-              getStatusColor(post.status) === "blue" ? "secondary" :
-              getStatusColor(post.status) === "red" ? "destructive" :
-              getStatusColor(post.status) === "yellow" ? "outline" : "outline"
-            }
-          >
+          <span className="px-2 py-1 rounded-lg text-xs font-medium bg-black/60 text-white backdrop-blur-sm flex items-center gap-1">
+            {post.status === "PUBLISHING" && <RefreshCw className="w-3 h-3 animate-spin" />}
+            {post.status === "SCHEDULED" && <Clock className="w-3 h-3" />}
+            {post.status === "PUBLISHED" && <CheckCircle className="w-3 h-3" />}
+            {post.status === "FAILED" && <AlertCircle className="w-3 h-3" />}
+            {post.status === "CANCELLED" && <Ban className="w-3 h-3" />}
+            {post.status === "DRAFT" && <Film className="w-3 h-3" />}
             {getStatusDisplayName(post.status)}
-          </Badge>
+          </span>
         </div>
 
         {/* Time Until */}
         {post.status === "SCHEDULED" && post.scheduled_at && (
           <div className="absolute bottom-2 right-2">
-            <span className="px-2 py-1 bg-black/60 rounded text-xs text-white">
-              {t.publish.inTime} {getTimeUntilPublish(post.scheduled_at)}
+            <span className="px-2 py-1 bg-black/60 backdrop-blur-sm rounded-lg text-xs text-white flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              {getTimeUntilPublish(post.scheduled_at)}
             </span>
+          </div>
+        )}
+
+        {/* Publishing Animation Overlay - Monochrome */}
+        {post.status === "PUBLISHING" && (
+          <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+            <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center animate-pulse">
+              <Send className="w-5 h-5 text-white" />
+            </div>
           </div>
         )}
       </div>
 
       {/* Content */}
-      <CardContent className="p-4">
+      <CardContent className="p-3">
         {/* Account */}
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-foreground font-medium text-sm">
+          <div className="w-6 h-6 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-xs">
+            <span className="text-zinc-700 dark:text-zinc-300">{getPlatformIcon(post.platform)}</span>
+          </div>
+          <span className="text-foreground font-medium text-sm truncate">
             {post.social_account.account_name}
           </span>
         </div>
 
         {/* Caption Preview */}
-        <p className="text-muted-foreground text-sm line-clamp-2 mb-3">
-          {post.caption || t.publish.noCaption}
+        <p className="text-muted-foreground text-sm line-clamp-2 mb-3 min-h-[2.5rem]">
+          {post.caption || <span className="italic opacity-60">{t.publish.noCaption || "No caption"}</span>}
         </p>
 
         {/* Schedule Time */}
         {post.scheduled_at && (
-          <p className="text-muted-foreground text-xs mb-3">
+          <div className="flex items-center gap-1 text-muted-foreground text-xs mb-3">
+            <Calendar className="w-3 h-3" />
             {formatScheduledTime(post.scheduled_at)}
-          </p>
+          </div>
         )}
 
         {/* Error Message */}
         {post.error_message && (
-          <p className="text-destructive text-xs mb-3 line-clamp-2">
-            {t.publish.error}: {post.error_message}
-          </p>
+          <div className="bg-muted border border-border rounded-lg p-2 mb-3">
+            <p className="text-muted-foreground text-xs line-clamp-2 flex items-start gap-1">
+              <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              {post.error_message}
+            </p>
+          </div>
         )}
 
         {/* Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pt-2 border-t border-border">
           {post.published_url && (
             <Button variant="outline" size="sm" asChild className="flex-1">
               <a
@@ -836,7 +981,7 @@ function PostCard({
                 rel="noopener noreferrer"
               >
                 <ExternalLink className="w-3 h-3 mr-1" />
-                {t.publish.viewPost}
+                {t.publish.viewPost || "View"}
               </a>
             </Button>
           )}
@@ -845,19 +990,28 @@ function PostCard({
               variant="outline"
               size="sm"
               onClick={onCancel}
-              className="text-yellow-600 hover:text-yellow-700"
             >
-              {t.publish.cancel}
+              <X className="w-3 h-3 mr-1" />
+              {t.publish.cancel || "Cancel"}
+            </Button>
+          )}
+          {post.status === "FAILED" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+            >
+              <RefreshCw className="w-3 h-3 mr-1" />
+              {t.publish.retry || "Retry"}
             </Button>
           )}
           {post.status !== "PUBLISHED" && post.status !== "PUBLISHING" && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={onDelete}
-              className="text-destructive hover:text-destructive"
             >
-              {t.common.delete}
+              <Trash2 className="w-3 h-3" />
             </Button>
           )}
         </div>

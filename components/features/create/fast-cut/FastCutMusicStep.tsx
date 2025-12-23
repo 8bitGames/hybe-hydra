@@ -32,6 +32,7 @@ import {
   Subtitles,
   ChevronDown,
   ChevronUp,
+  Shuffle,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import {
@@ -41,6 +42,7 @@ import {
 } from "@/lib/fast-cut-api";
 import type { LyricsData } from "@/lib/subtitle-styles";
 import type { SubtitleMode } from "@/lib/stores/fast-cut-context";
+import { AudioAIRecommendation } from "@/components/features/audio/AudioAIRecommendation";
 
 interface FastCutMusicStepProps {
   scriptData: ScriptGenerationResponse | null;
@@ -62,6 +64,7 @@ interface FastCutMusicStepProps {
   onUnskipMusic: () => void;
   onSetSubtitleMode: (mode: SubtitleMode) => void;
   onSetAudioLyricsText: (text: string | null) => void;
+  onReAnalyze?: () => void;  // Re-analyze to get different segment
   onNext?: () => void;
 }
 
@@ -85,6 +88,7 @@ export function FastCutMusicStep({
   onUnskipMusic,
   onSetSubtitleMode,
   onSetAudioLyricsText,
+  onReAnalyze,
   onNext,
 }: FastCutMusicStepProps) {
   const { language, translate } = useI18n();
@@ -940,43 +944,18 @@ export function FastCutMusicStep({
 
           {/* AI Analysis Result */}
           {audioAnalysis && (
-            <div className="p-3 bg-neutral-50 rounded-lg space-y-2">
-              <h4 className="text-xs font-semibold text-neutral-600 uppercase tracking-wide flex items-center gap-1">
-                <Zap className="h-3 w-3" />
-                {language === "ko" ? "AI 추천" : "AI Recommendation"}
-                <TooltipIcon tooltipKey="fastCut.tooltips.music.aiRecommendation" />
-              </h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-xs text-neutral-500">
-                    {language === "ko" ? "분석된 BPM" : "Detected BPM"}
-                  </p>
-                  <p className="text-sm font-medium text-neutral-900">
-                    {audioAnalysis.bpm || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-neutral-500">
-                    {language === "ko" ? "추천 구간" : "Suggested Segment"}
-                  </p>
-                  <p className="text-sm font-medium text-neutral-900">
-                    {formatDuration(audioAnalysis.suggestedStartTime)} -{" "}
-                    {formatDuration(audioAnalysis.suggestedEndTime)}
-                  </p>
-                </div>
-              </div>
-              {audioAnalysis.suggestedStartTime !== audioStartTime && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full mt-2 text-xs"
-                  onClick={() => onSetAudioStartTime(audioAnalysis.suggestedStartTime)}
-                >
-                  <Zap className="h-3 w-3 mr-1" />
-                  {language === "ko" ? "추천 시작 시간 사용" : "Use Suggested Time"}
-                </Button>
-              )}
-            </div>
+            <AudioAIRecommendation
+              audioAnalysis={audioAnalysis}
+              audioStartTime={audioStartTime}
+              videoDuration={videoDuration}
+              analyzingAudio={analyzingAudio}
+              isPlayingSegment={isPlayingSegment}
+              audioLoaded={audioLoaded}
+              onUseSuggested={() => onSetAudioStartTime(audioAnalysis.suggestedStartTime)}
+              onReAnalyze={onReAnalyze}
+              onPlaySegment={playSelectedSegment}
+              showTooltip={true}
+            />
           )}
 
           {/* Subtitle Mode Selection - only show if lyrics available */}

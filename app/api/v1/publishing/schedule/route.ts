@@ -277,7 +277,7 @@ export async function POST(request: NextRequest) {
     if (isNow) {
       console.log("[Schedule API] Triggering immediate publish for post:", post.id, "platform:", socialAccount.platform);
 
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://hydra.ai.kr";
       const callbackUrl = `${baseUrl}/api/v1/jobs/callback?type=publish&postId=${post.id}`;
       const publishingUrl = `${getComposeEngineUrl()}/api/v1/publish`;
       const jobId = uuidv4(); // Generate unique job ID for EC2 backend

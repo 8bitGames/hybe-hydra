@@ -13,7 +13,7 @@ const getPublishingUrl = () => `${getComposeEngineUrl()}/api/v1/publish`;
 
 // Callback URL for the backend to notify us
 const getCallbackUrl = (postId: string) => {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://hydra.ai.kr";
   return `${baseUrl}/api/v1/jobs/callback?type=publish&postId=${postId}`;
 };
 

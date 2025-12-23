@@ -332,6 +332,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         created_at: gen.createdAt.toISOString(),
         updated_at: gen.updatedAt.toISOString(),
         generation_type: gen.generationType,
+        // Video Extension fields
+        gcs_uri: gen.gcsUri || null,
+        extension_count: gen.extensionCount || 0,
         reference_image: gen.referenceImage
           ? {
               id: gen.referenceImage.id,

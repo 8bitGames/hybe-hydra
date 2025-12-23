@@ -135,6 +135,9 @@ export default function FastCutMusicPage() {
   // Track the duration used for last audio analysis to detect changes
   const [lastAnalyzedDuration, setLastAnalyzedDuration] = useState<number | null>(null);
 
+  // Track tried start times for variety selection
+  const [triedStartTimes, setTriedStartTimes] = useState<number[]>([]);
+
   // Re-analyze audio when videoDuration changes (only if we have selected audio)
   useEffect(() => {
     // Skip if no selected audio or still initializing
@@ -227,6 +230,7 @@ export default function FastCutMusicPage() {
     setAudioAnalysis(null);
     setAudioStartTime(0);
     setAnalyzingAudio(true);
+    setTriedStartTimes([]);  // Reset tried times for new audio
 
     try {
       // Use actual videoDuration (user's selected duration) for optimal segment finding
@@ -257,6 +261,46 @@ export default function FastCutMusicPage() {
     const hasVibeSource = scriptData || sceneAnalysis;
     if (hasVibeSource && audioMatches.length === 0) {
       handleMatchMusic();
+    }
+  };
+
+  // Handle re-analyze audio for variety selection
+  const handleReAnalyzeAudio = async () => {
+    if (!selectedAudio || analyzingAudio) return;
+
+    setAnalyzingAudio(true);
+    try {
+      // Collect current start time and previously tried ones
+      const excludeStarts = [...triedStartTimes, audioStartTime].filter(
+        (t, i, arr) => arr.indexOf(t) === i
+      );
+
+      console.log("[FastCut Music] Re-analyzing audio with excludeStarts:", excludeStarts);
+
+      const targetDuration = videoDuration || scriptData?.script?.totalDuration || 15;
+      const analysis = await fastCutApi.analyzeAudioBestSegment(
+        selectedAudio.id,
+        targetDuration,
+        {
+          preferVariety: true,
+          excludeStarts,
+        }
+      );
+
+      console.log("[FastCut Music] Re-analysis result:", analysis);
+      setAudioAnalysis(analysis);
+
+      // Apply new suggested start time
+      if (analysis.suggestedStartTime !== undefined) {
+        setAudioStartTime(analysis.suggestedStartTime);
+      }
+
+      // Track tried times
+      setTriedStartTimes(excludeStarts);
+    } catch (err) {
+      console.error("[FastCut Music] Re-analyze failed:", err);
+    } finally {
+      setAnalyzingAudio(false);
     }
   };
 
@@ -383,6 +427,7 @@ export default function FastCutMusicPage() {
               onSetAudioLyricsText={setAudioLyricsText}
               onSkipMusic={handleSkipMusic}
               onUnskipMusic={handleUnskipMusic}
+              onReAnalyze={handleReAnalyzeAudio}
               onNext={handleNext}
             />
           </div>

@@ -28,7 +28,6 @@ import {
   ExternalLink,
   MoreVertical,
   Trash2,
-  Send,
   Download,
   Eye,
   Film,
@@ -45,6 +44,7 @@ import {
   ChevronsRight,
   GitMerge,
   Link2,
+  Music,
 } from "lucide-react";
 import {
   Select,
@@ -213,7 +213,19 @@ type UnifiedVideo = {
   tags?: string[];
   quality_metadata?: {
     videoEdit?: VideoEditMetadata;
+    composition?: {
+      audioAssetId?: string;
+      audioAssetName?: string;
+    };
     [key: string]: unknown;
+  } | null;
+  extension_count?: number;
+  // Audio asset info
+  audio_asset?: {
+    id: string;
+    filename: string;
+    original_filename: string;
+    s3_url: string;
   } | null;
 };
 
@@ -252,14 +264,27 @@ export default function AllVideosPage() {
   // Extend state
   const [extendVideo, setExtendVideo] = useState<UnifiedVideo | null>(null);
 
+  // Track if there are PROCESSING videos for auto-refresh
+  const [hasProcessingVideos, setHasProcessingVideos] = useState(false);
+
   // Fetch ALL videos (client-side pagination)
   const { data: composeData, isLoading: loadingCompose, refetch: refetchCompose } = useFastCutVideos({
     page_size: 500, // Fetch all at once for client-side pagination
   });
-  const { data: aiData, isLoading: loadingAI, refetch: refetchAI } = useAllAIVideos();
+  const { data: aiData, isLoading: loadingAI, refetch: refetchAI } = useAllAIVideos({
+    refetchInterval: hasProcessingVideos ? 5000 : undefined, // Auto-refresh every 5s when processing
+  });
 
   const composeVideos = composeData?.items || [];
   const aiVideos = aiData?.items || [];
+
+  // Update hasProcessingVideos when aiVideos changes
+  useEffect(() => {
+    const hasProcessing = aiVideos.some(
+      (video) => video.status.toUpperCase() === "PROCESSING"
+    );
+    setHasProcessingVideos(hasProcessing);
+  }, [aiVideos]);
 
   // Helper to check if video is displayable (completed with output URL)
   // Note: status can be "completed" or "COMPLETED" depending on source
@@ -288,7 +313,6 @@ export default function AllVideosPage() {
     of: language === "ko" ? "/" : "of",
     viewDetails: language === "ko" ? "상세보기" : "View Details",
     viewInCampaign: language === "ko" ? "캠페인에서 보기" : "View in Campaign",
-    schedulePublish: language === "ko" ? "게시 예약" : "Schedule Publish",
     download: language === "ko" ? "다운로드" : "Download",
     delete: language === "ko" ? "삭제" : "Delete",
     deleteConfirm: language === "ko" ? "정말 이 영상을 삭제하시겠습니까?" : "Are you sure you want to delete this video?",
@@ -305,6 +329,7 @@ export default function AllVideosPage() {
     to: language === "ko" ? "~" : "to",
     ofTotal: language === "ko" ? "/ 총" : "of",
     edited: language === "ko" ? "편집됨" : "Edited",
+    extended: language === "ko" ? "확장됨" : "Extended",
     editedFilter: language === "ko" ? "편집 필터" : "Edit Filter",
     editedFilterAll: language === "ko" ? "전체" : "All",
     editedFilterEdited: language === "ko" ? "편집됨" : "Edited",
@@ -348,6 +373,7 @@ export default function AllVideosPage() {
     generation_type: "COMPOSE" as const,
     tags: video.tags,
     quality_metadata: video.quality_metadata,
+    audio_asset: video.audio_asset,
   }));
 
   const unifiedAIVideos: UnifiedVideo[] = aiVideos.map((video) => ({
@@ -366,11 +392,18 @@ export default function AllVideosPage() {
     generation_type: "AI" as const,
     tags: video.tags,
     quality_metadata: video.quality_metadata,
+    extension_count: video.extension_count,
+    audio_asset: video.audio_asset,
   }));
 
   // Helper to check if video is edited
   const isEditedVideo = (video: UnifiedVideo) => {
     return video.tags?.includes("edited") || !!video.quality_metadata?.videoEdit;
+  };
+
+  // Helper to check if video is extended
+  const isExtendedVideo = (video: UnifiedVideo) => {
+    return (video.extension_count || 0) > 0;
   };
 
   // Filter videos (all filtered, before pagination)
@@ -653,6 +686,17 @@ export default function AllVideosPage() {
                       <GitMerge className="h-3 w-3 mr-1" />{t.edited}
                     </Badge>
                   )}
+                  {isExtendedVideo(video) && (
+                    <Badge
+                      variant="secondary"
+                      className={cn(
+                        "absolute top-2 bg-blue-600/90 text-white text-[10px]",
+                        isEditedVideo(video) ? "right-[70px]" : "right-2"
+                      )}
+                    >
+                      <Expand className="h-3 w-3 mr-1" />{t.extended}
+                    </Badge>
+                  )}
                 </div>
 
                 <CardContent className="p-3">
@@ -697,7 +741,7 @@ export default function AllVideosPage() {
                             <Edit3 className="h-4 w-4 mr-2" />
                             {t.editVideo}
                           </DropdownMenuItem>
-                          {video.generation_type === "AI" && (
+                          {video.generation_type === "AI" && !isEditedVideo(video) && (
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setExtendVideo(video); }}>
                               <Expand className="h-4 w-4 mr-2" />
                               {t.extendVideo}
@@ -706,10 +750,6 @@ export default function AllVideosPage() {
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/campaigns/${video.campaign_id}/curation`); }}>
                             <ExternalLink className="h-4 w-4 mr-2" />
                             {t.viewInCampaign}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/campaigns/${video.campaign_id}/publish`); }}>
-                            <Send className="h-4 w-4 mr-2" />
-                            {t.schedulePublish}
                           </DropdownMenuItem>
                           {getVideoUrl(video) && (
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDownload(getVideoUrl(video)!, `video-${video.id}.mp4`); }}>
@@ -885,6 +925,12 @@ export default function AllVideosPage() {
                       {t.edited}
                     </Badge>
                   )}
+                  {isExtendedVideo(selectedVideo) && (
+                    <Badge className="text-xs bg-blue-600/90 text-white">
+                      <Expand className="h-3 w-3 mr-1" />
+                      {t.extended}
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {/* View Original button for edited videos */}
@@ -911,7 +957,7 @@ export default function AllVideosPage() {
                       {t.viewOriginal}
                     </Button>
                   )}
-                  {selectedVideo.generation_type === "AI" && (
+                  {selectedVideo.generation_type === "AI" && !isEditedVideo(selectedVideo) && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700"
@@ -940,6 +986,25 @@ export default function AllVideosPage() {
               {/* Scrollable Content */}
               <div className="px-4 max-h-[20vh] overflow-y-auto">
                 <p className="text-sm text-zinc-400 mb-2">{selectedVideo.artist_name}</p>
+                {/* Audio Info */}
+                {(() => {
+                  // Get audio name from various sources
+                  const rawAudioName =
+                    selectedVideo.audio_asset?.original_filename ||
+                    selectedVideo.quality_metadata?.videoEdit?.audioAssetName ||
+                    selectedVideo.quality_metadata?.composition?.audioAssetName;
+
+                  // Skip UUID-based filenames (e.g., "5f0865f5-9bfc-4817-8f70-f174518d4ac5.mp3")
+                  const isUuidFilename = rawAudioName && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\./i.test(rawAudioName);
+                  const audioName = isUuidFilename ? null : rawAudioName;
+
+                  return audioName ? (
+                    <p className="text-sm text-zinc-400 mb-2 flex items-center gap-1.5">
+                      <Music className="h-3.5 w-3.5 text-zinc-500" />
+                      <span className="text-zinc-300">{audioName}</span>
+                    </p>
+                  ) : null;
+                })()}
                 <p className="text-sm text-zinc-400 whitespace-pre-wrap">{selectedVideo.prompt}</p>
               </div>
 
@@ -996,7 +1061,7 @@ export default function AllVideosPage() {
 
       {/* Video Extend Dialog */}
       <Dialog open={!!extendVideo} onOpenChange={(open) => !open && setExtendVideo(null)}>
-        <DialogContent className="max-w-2xl p-0 overflow-hidden">
+        <DialogContent className="max-w-2xl p-0 overflow-hidden" showCloseButton={false}>
           <VisuallyHidden>
             <DialogTitle>{t.extendVideo}</DialogTitle>
             <DialogDescription>
@@ -1011,11 +1076,18 @@ export default function AllVideosPage() {
               videoUrl={getVideoUrl(extendVideo) || undefined}
               currentDuration={extendVideo.duration_seconds}
               aspectRatio={extendVideo.aspect_ratio}
+              extensionCount={extendVideo.extension_count || 0}
               onClose={() => setExtendVideo(null)}
-              onExtendStarted={(newGenerationId) => {
-                setExtendVideo(null);
-                // Refresh the video list to show the new generation in progress
+              onExtensionComplete={(newGeneration) => {
+                // Refresh the video list to include the new extended video
                 refetchAI();
+                // Update local state so if user clicks "Extend Again", it uses the new video
+                setExtendVideo((prev) => prev ? {
+                  ...prev,
+                  id: newGeneration.id,
+                  duration_seconds: newGeneration.duration,
+                  extension_count: newGeneration.extensionCount,
+                } : null);
               }}
             />
           )}

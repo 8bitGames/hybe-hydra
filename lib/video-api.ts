@@ -1016,6 +1016,119 @@ export interface VideoExtendInfoResponse {
   } | null;
 }
 
+// Extension History Types
+export interface ExtensionHistoryVideo {
+  id: string;
+  status: string;
+  duration_seconds: number;
+  extension_count: number;
+  output_url: string | null;
+  has_gcs_uri: boolean;
+  created_at: string;
+}
+
+export interface ExtensionHistoryRecord {
+  history_id: string;
+  extension_number: number;
+  prompt: string | null;
+  duration_before: number;
+  duration_after: number;
+  created_at: string;
+}
+
+export interface ExtensionChainVideo {
+  id: string;
+  extension_number: number;
+  duration_seconds: number;
+  status: string;
+  output_url: string | null;
+  has_gcs_uri: boolean;
+  is_current: boolean;
+  created_at: string;
+}
+
+export interface ExtensionHistoryResponse {
+  generation_id: string;
+  extension_count: number;
+  duration_seconds: number;
+  // Videos extended FROM this video
+  extensions_from_this: Array<ExtensionHistoryRecord & {
+    extended_video: ExtensionHistoryVideo;
+  }>;
+  // The video this was extended FROM (if any)
+  extended_from: (ExtensionHistoryRecord & {
+    source_video: ExtensionHistoryVideo;
+  }) | null;
+  // Full chain from root to all leaves
+  full_chain: {
+    root_id: string;
+    total_extensions: number;
+    total_duration_added: number;
+    videos: ExtensionChainVideo[];
+  } | null;
+}
+
+// Extension Prompt Generation Types
+export interface ExtensionPromptGenerateRequest {
+  user_idea: string;
+}
+
+export interface ExtensionPromptGenerateResponse {
+  success: boolean;
+  original_prompt: string;
+  user_idea: string;
+  generated: {
+    enhanced_prompt: string;
+    continuity_notes: string;
+    visual_consistency: {
+      preservedElements: string[];
+      transitionType: 'seamless' | 'cut' | 'fade' | 'action';
+      matchingDetails: string;
+    };
+    cinematic_breakdown: {
+      subject: string;
+      action: string;
+      environment: string;
+      lighting: string;
+      camera: string;
+      mood: string;
+    };
+    audio_suggestions?: {
+      ambientSound?: string;
+      soundEffects?: string;
+    };
+    warnings: string[];
+    safety_score: number;
+  };
+}
+
+// Generation Status Response (for polling)
+export interface GenerationStatusResponse {
+  id: string;
+  status: VideoGenerationStatus;
+  progress: number;
+  duration_seconds: number;
+  aspect_ratio: string;
+  output_url: string | null;
+  gcs_uri: string | null;
+  extension_count: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// AI Job Poll Response (from compose-engine via Vercel)
+export interface AIJobPollResponse {
+  job_id: string;
+  generation_id: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  output_url: string | null;
+  gcs_uri?: string | null;
+  progress: number;
+  current_step?: string;
+  is_final: boolean;
+}
+
 // Video Extension API - Extend AI-generated videos by up to 7 seconds (Veo 3.1)
 export const videoExtendApi = {
   // Extend an AI-generated video
@@ -1028,4 +1141,24 @@ export const videoExtendApi = {
   // Get extension info for a generation
   getInfo: (generationId: string) =>
     api.get<VideoExtendInfoResponse>(`/api/v1/generations/${generationId}/extend`),
+
+  // Get generation status (for polling during extension) - reads from DB
+  getStatus: (generationId: string) =>
+    api.get<GenerationStatusResponse>(`/api/v1/generations/${generationId}`),
+
+  // Poll AI job status from compose-engine and update DB
+  // This is the preferred method for reliable status updates during extension
+  pollJobStatus: (jobId: string) =>
+    api.post<AIJobPollResponse>(`/api/v1/ai/jobs/${jobId}/poll`),
+
+  // Get extension history/lineage for a generation
+  getHistory: (generationId: string) =>
+    api.get<ExtensionHistoryResponse>(`/api/v1/generations/${generationId}/extend/history`),
+
+  // Generate enhanced extension prompt using AI
+  generatePrompt: (generationId: string, userIdea: string) =>
+    api.post<ExtensionPromptGenerateResponse>(
+      `/api/v1/generations/${generationId}/extend/generate-prompt`,
+      { user_idea: userIdea }
+    ),
 };

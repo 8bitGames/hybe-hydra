@@ -293,7 +293,7 @@ function startVariationVideoGeneration(
         const autoPublish = existingMetadata?.autoPublish as { enabled?: boolean } | undefined;
         if (autoPublish?.enabled) {
           try {
-            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://hydra.ai.kr";
             await fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },

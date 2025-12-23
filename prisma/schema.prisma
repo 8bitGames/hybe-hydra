@@ -96,10 +96,11 @@ model User {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   // Relations
-  campaigns        Campaign[]
-  assets           Asset[]
-  videoGenerations VideoGeneration[]
-  savedKeywords    SavedKeyword[]
+  campaigns               Campaign[]
+  assets                  Asset[]
+  videoGenerations        VideoGeneration[]
+  savedKeywords           SavedKeyword[]
+  videoExtensionHistories VideoExtensionHistory[]
 
   @@map("users")
 }
@@ -304,8 +305,34 @@ model VideoGeneration {
   merchandiseReferences GenerationMerchandise[]
   scheduledPosts        ScheduledPost[]
 
+  // Video Extension History relations
+  extensionsAsSource VideoExtensionHistory[] @relation("ExtensionSource") // 이 영상에서 확장된 기록들
+  extensionsAsResult VideoExtensionHistory[] @relation("ExtensionResult") // 이 영상이 확장 결과인 기록
+
   @@index([projectId])
   @@map("video_generations")
+}
+
+// Video Extension History - tracks extension chain/lineage
+model VideoExtensionHistory {
+  id                   String   @id @default(uuid())
+  sourceGenerationId   String   @map("source_generation_id") // 원본 영상 (확장 전)
+  extendedGenerationId String   @map("extended_generation_id") // 확장된 영상 (결과물)
+  extensionNumber      Int      @map("extension_number") // 몇 번째 확장인지 (1, 2, 3...)
+  prompt               String?  // 확장 시 사용한 프롬프트 (없으면 자동 생성)
+  durationBefore       Int      @map("duration_before") // 확장 전 길이 (초)
+  durationAfter        Int      @map("duration_after") // 확장 후 길이 (초)
+  createdBy            String   @map("created_by")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  // Relations
+  sourceGeneration   VideoGeneration @relation("ExtensionSource", fields: [sourceGenerationId], references: [id], onDelete: Cascade)
+  extendedGeneration VideoGeneration @relation("ExtensionResult", fields: [extendedGenerationId], references: [id], onDelete: Cascade)
+  creator            User            @relation(fields: [createdBy], references: [id])
+
+  @@index([sourceGenerationId])
+  @@index([extendedGenerationId])
+  @@map("video_extension_history")
 }
 
 // Trend Snapshot model - stores trending content from social platforms
@@ -890,20 +917,21 @@ model GeneratedPreviewImage {
 // IMAGE CACHING SYSTEM
 // =====================================================
 
-// Image Search Cache - caches Google CSE results for 24 hours
+// Image Search Cache - caches Google CSE results per keyword with 7-day TTL
+// Stores results per individual keyword for efficient incremental search
 model ImageSearchCache {
   id           String   @id @default(uuid())
-  cacheKey     String   @unique @map("cache_key") // MD5 hash of keywords+params
-  keywords     String[] // Original keywords for debugging
-  searchParams Json?    @map("search_params") // {maxImages, safeSearch, imageSize}
-  results      Json // Full search response {candidates, totalFound, filtered}
-  totalResults Int      @map("total_results")
+  keyword      String   // Single normalized keyword (lowercase, trimmed)
+  language     String   @default("en") // Search language (ko, en)
+  results      Json     // Array of ImageCandidate objects for this keyword
+  resultCount  Int      @map("result_count") // Number of results
   hitCount     Int      @default(0) @map("hit_count") // Analytics
-  createdAt    DateTime @default(now()) @map("created_at")
-  expiresAt    DateTime @map("expires_at") // TTL enforcement (24h default)
+  searchedAt   DateTime @default(now()) @map("searched_at")
+  expiresAt    DateTime @map("expires_at") // searchedAt + 7 days
 
-  @@index([cacheKey])
+  @@unique([keyword, language])
   @@index([expiresAt])
+  @@index([keyword])
   @@map("image_search_cache")
 }
 
@@ -1376,3 +1404,4 @@ model KeywordDailySnapshot {
   @@index([viralityScore])
   @@map("keyword_daily_snapshots")
 }
+

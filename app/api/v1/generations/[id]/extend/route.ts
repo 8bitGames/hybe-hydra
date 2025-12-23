@@ -20,6 +20,11 @@ const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || "http://localhost:8
  * - Maximum 20 extensions per video
  * - Only works with AI-generated videos (not Compose)
  */
+// Helper function to get app base URL (consistent with ai-client.ts)
+function getAppBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL || "https://hydra.ai.kr";
+}
+
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const authHeader = request.headers.get("authorization");
@@ -148,6 +153,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     });
 
+    // Create extension history record for tracking lineage
+    await prisma.videoExtensionHistory.create({
+      data: {
+        sourceGenerationId: generation.id,
+        extendedGenerationId: extendedGeneration.id,
+        extensionNumber: extensionCount + 1,
+        prompt: prompt || null,
+        durationBefore: generation.durationSeconds,
+        durationAfter: generation.durationSeconds + 7,
+        createdBy: user.id,
+      },
+    });
+
     // Call compose engine to extend the video
     const composeEngineRequest: Record<string, unknown> = {
       job_id: jobId,
@@ -170,9 +188,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       output: {
         s3_bucket: s3Bucket,
         s3_key: s3Key,
-        gcs_bucket: process.env.GCS_OUTPUT_BUCKET || "hydra-ai-outputs",
+        gcs_bucket: process.env.GCS_OUTPUT_BUCKET || "hyb-hydra-dev-ai-output",
       },
-      callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/v1/jobs/callback`,
+      callback_url: `${getAppBaseUrl()}/api/v1/jobs/callback`,
       callback_secret: process.env.JOB_CALLBACK_SECRET,
       metadata: {
         generation_id: extendedGeneration.id,
@@ -183,7 +201,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     };
 
     // Submit to compose engine
-    const composeResponse = await fetch(`${COMPOSE_ENGINE_URL}/ai/video/extend`, {
+    const composeResponse = await fetch(`${COMPOSE_ENGINE_URL}/api/v1/ai/video/extend`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

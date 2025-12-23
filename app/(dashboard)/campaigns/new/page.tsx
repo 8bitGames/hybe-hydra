@@ -52,8 +52,8 @@ export default function NewCampaignPage() {
     artistError: language === "ko" ? "아티스트를 선택해주세요" : "Please select an artist",
     description: language === "ko" ? "설명" : "Description",
     descriptionPlaceholder: language === "ko"
-      ? "예: 청량한 여름 분위기의 컴백 티저. 새 앨범 'Summer Wave'를 홍보하며, 해변과 파티 컨셉으로 젊고 에너지 넘치는 이미지 강조. 타겟은 10-20대 팬층."
-      : "e.g., Fresh summer vibe comeback teaser. Promote new album 'Summer Wave' with beach and party concept, emphasizing young and energetic image. Target: teens and 20s fans.",
+      ? "예: 청량한 여름 컴백. 해변/파티 컨셉, 밝은 색감 강조. 어두운 분위기 피하기."
+      : "e.g., Fresh summer comeback. Beach/party concept, bright colors. Avoid dark mood.",
     startDate: language === "ko" ? "시작일" : "Start Date",
     endDate: language === "ko" ? "종료일" : "End Date",
     create: language === "ko" ? "캠페인 생성" : "Create Campaign",
@@ -69,8 +69,8 @@ export default function NewCampaignPage() {
       ? "이 캠페인에서 생성될 모든 콘텐츠의 주인공이 될 아티스트를 선택하세요"
       : "Select the artist who will be featured in all content created for this campaign",
     descriptionInfo: language === "ko"
-      ? "⭐ 가장 중요! AI가 영상과 이미지를 생성할 때 이 설명을 참고합니다. 원하는 분위기, 컨셉, 타겟 팬층, 홍보 포인트 등을 자세히 적어주세요."
-      : "⭐ Most important! AI uses this description when generating videos and images. Include desired mood, concept, target fans, and key promotion points.",
+      ? "모든 콘텐츠 생성 시 AI가 참고합니다. 분위기, 컨셉, 강조/피할 점을 적어주세요."
+      : "AI references this for all content. Include mood, concept, and what to emphasize/avoid.",
     periodInfo: language === "ko"
       ? "캠페인 기간을 설정하면 일정 관리와 분석에 도움이 됩니다 (선택사항)"
       : "Setting campaign period helps with scheduling and analytics (optional)",
@@ -226,6 +226,9 @@ export default function NewCampaignPage() {
                 <div className="space-y-2">
                   <Label htmlFor="description" className="flex items-center gap-2">
                     {t.description}
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-yellow-500/20 text-yellow-700 border-yellow-500/30">
+                      {language === "ko" ? "중요" : "Important"}
+                    </Badge>
                     <InfoButton content={t.descriptionInfo} />
                   </Label>
                   <textarea
@@ -233,7 +236,7 @@ export default function NewCampaignPage() {
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     placeholder={t.descriptionPlaceholder}
-                    rows={5}
+                    rows={3}
                     className="w-full px-3 py-3 bg-background border border-input rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none text-sm"
                   />
                 </div>

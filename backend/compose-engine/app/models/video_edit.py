@@ -1,7 +1,7 @@
 """Pydantic models for video editing job requests."""
 
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from enum import Enum
 
 
@@ -67,6 +67,9 @@ class VideoEditRequest(BaseModel):
 
     # Output settings
     campaign_id: Optional[str] = Field(default=None, description="Campaign ID for S3 path organization")
+
+    # Metadata for callback (generation_id, user_id, etc.)
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Metadata to include in callback (generation_id, user_id, etc.)")
 
     # Audio settings (optional - if provided, replaces original audio)
     audio: Optional[AudioEditSettings] = Field(default=None, description="New audio to add (replaces original)")

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/1"
 
+    # Database (Supabase PostgreSQL for direct updates)
+    database_url: str = ""  # PostgreSQL connection string
+
     # AWS S3
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""

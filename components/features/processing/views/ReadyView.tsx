@@ -49,6 +49,7 @@ import {
   selectVariations,
   STYLE_SETS,
 } from "@/lib/stores/processing-session-store";
+import { VideoExtendPanel } from "../VideoExtendPanel";
 
 // Icon mapping for FastCut style sets
 const STYLE_ICONS: Record<string, LucideIcon> = {
@@ -62,8 +63,9 @@ const STYLE_ICONS: Record<string, LucideIcon> = {
   bold_impact: Bold,
 };
 
-// AI Video style presets (8 individual presets matching FastCut UI)
+// AI Video style presets (15 individual presets - all available styles)
 const AI_STYLE_PRESETS = [
+  // Row 1: Mood & Lighting (8개)
   {
     id: "soft_pastel",
     name: "Soft Pastel",
@@ -134,7 +136,71 @@ const AI_STYLE_PRESETS = [
     description: "Bold, punchy visuals",
     descriptionKo: "강렬하고 임팩트 있는 비주얼",
     icon: Bold,
-    category: "effect",
+    category: "contrast",
+  },
+  // Row 2: Motion, Aesthetic & K-Pop (7개)
+  {
+    id: "dynamic_motion",
+    name: "Dynamic Motion",
+    nameKo: "다이나믹 모션",
+    description: "Energetic camera movement",
+    descriptionKo: "역동적인 카메라 움직임",
+    icon: Activity,
+    category: "motion",
+  },
+  {
+    id: "smooth_flow",
+    name: "Smooth Flow",
+    nameKo: "스무스 플로우",
+    description: "Graceful, fluid motion",
+    descriptionKo: "부드럽고 유연한 움직임",
+    icon: Activity,
+    category: "motion",
+  },
+  {
+    id: "neon_glow",
+    name: "Neon Glow",
+    nameKo: "네온 글로우",
+    description: "Cyberpunk neon lights",
+    descriptionKo: "사이버펑크 네온 조명",
+    icon: Zap,
+    category: "aesthetic",
+  },
+  {
+    id: "vintage_retro",
+    name: "Vintage Retro",
+    nameKo: "빈티지 레트로",
+    description: "Nostalgic film aesthetic",
+    descriptionKo: "향수를 자극하는 필름 감성",
+    icon: Disc,
+    category: "aesthetic",
+  },
+  {
+    id: "y2k_aesthetic",
+    name: "Y2K Aesthetic",
+    nameKo: "Y2K 감성",
+    description: "2000s glossy chrome style",
+    descriptionKo: "2000년대 글로시 크롬 스타일",
+    icon: Star,
+    category: "aesthetic",
+  },
+  {
+    id: "kpop_mv",
+    name: "K-Pop MV",
+    nameKo: "K-Pop 뮤비",
+    description: "Polished music video style",
+    descriptionKo: "세련된 뮤직비디오 스타일",
+    icon: Star,
+    category: "kpop",
+  },
+  {
+    id: "concept_photo",
+    name: "Concept Photo",
+    nameKo: "컨셉 포토",
+    description: "Editorial fashion style",
+    descriptionKo: "에디토리얼 패션 스타일",
+    icon: Camera,
+    category: "kpop",
   },
 ];
 
@@ -174,6 +240,9 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
   // Inline variation panel state
   const [showVariationPanel, setShowVariationPanel] = useState(false);
   const [isStartingGeneration, setIsStartingGeneration] = useState(false);
+
+  // Video extend panel state
+  const [showExtendPanel, setShowExtendPanel] = useState(false);
 
   // Playable video URL (fresh presigned URL for video player)
   const [playableVideoUrl, setPlayableVideoUrl] = useState<string | null>(null);
@@ -323,6 +392,19 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
   // Toggle variation panel
   const handleToggleVariationPanel = useCallback(() => {
     setShowVariationPanel((prev) => !prev);
+  }, []);
+
+  // Handle video extension complete - update the view with the new extended video
+  const handleExtensionComplete = useCallback((newGeneration: {
+    id: string;
+    videoUrl: string;
+    duration: number;
+    extensionCount: number;
+  }) => {
+    // Update playable video URL to show the newly extended video
+    setPlayableVideoUrl(newGeneration.videoUrl);
+    // Note: The VideoExtendPanel handles showing the success state internally
+    // User can click "Extend Again" or close the panel
   }, []);
 
   // Handle start generation from inline panel
@@ -516,6 +598,58 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
           </h3>
 
           <div className="space-y-4">
+            {/* Option 0: Extend AI Video (only for AI videos) */}
+            {isAIVideo && (
+              <Card
+                className={cn(
+                  "border-2 transition-all group",
+                  showExtendPanel
+                    ? "border-purple-500 bg-purple-50/50"
+                    : "border-purple-200 hover:border-purple-400 hover:shadow-lg cursor-pointer"
+                )}
+                onClick={() => !showExtendPanel && setShowExtendPanel(true)}
+              >
+                <CardContent className="p-6">
+                  <div className="flex items-start gap-4">
+                    <div className={cn(
+                      "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors",
+                      showExtendPanel
+                        ? "bg-gradient-to-br from-purple-500 to-blue-500 text-white"
+                        : "bg-purple-100 text-purple-700 group-hover:bg-purple-200"
+                    )}>
+                      <Sparkles className="w-6 h-6" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-neutral-900 text-lg mb-1 flex items-center gap-2">
+                        {isKorean ? "AI 영상 확장" : "Extend AI Video"}
+                        <Badge variant="secondary" className="bg-purple-100 text-purple-700 text-xs">
+                          Veo 3.1
+                        </Badge>
+                      </h4>
+                      <p className="text-sm text-neutral-500 mb-3">
+                        {isKorean
+                          ? "영상을 7초 더 연장합니다 (최대 20회)"
+                          : "Extend video by 7 seconds (max 20 times)"}
+                      </p>
+                      <div className="flex items-center text-sm text-purple-500">
+                        {showExtendPanel ? (
+                          <>
+                            <ChevronUp className="w-4 h-4 mr-1" />
+                            {isKorean ? "패널 닫기" : "Close panel"}
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-4 h-4 mr-1" />
+                            {isKorean ? "확장 옵션 보기" : "View extend options"}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Option 1: Direct Publish */}
             <Card
               className={cn(
@@ -594,8 +728,8 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
                           : "Generating videos with your selected styles")
                         : isAIVideo
                           ? (isKorean
-                            ? "8가지 스타일로 다양한 AI 영상 변형 생성"
-                            : "Generate AI video variations with 8 different styles")
+                            ? "15가지 스타일로 다양한 AI 영상 변형 생성"
+                            : "Generate AI video variations with 15 different styles")
                           : (isKorean
                             ? "8가지 스타일로 다양한 버전 생성 후 비교하여 선택"
                             : "Generate multiple versions with 8 different styles and compare")}
@@ -633,6 +767,21 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
         </div>
       </div>
 
+      {/* Full-width Video Extend Panel (only for AI videos) */}
+      {showExtendPanel && isAIVideo && originalVideo?.id && (
+        <div className="w-full max-w-5xl px-4 mt-8 animate-in slide-in-from-top-2 duration-200">
+          <VideoExtendPanel
+            generationId={originalVideo.id}
+            videoUrl={playableVideoUrl || undefined}
+            currentDuration={duration}
+            aspectRatio="9:16"
+            extensionCount={0}
+            onClose={() => setShowExtendPanel(false)}
+            onExtensionComplete={handleExtensionComplete}
+          />
+        </div>
+      )}
+
       {/* Full-width Variation Panel below - Style Selection OR Progress */}
       {(showVariationPanel || isGeneratingVariations) && (
         <div className="w-full max-w-6xl px-4 mt-8 animate-in slide-in-from-top-2 duration-200">
@@ -641,13 +790,13 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
               {!isGeneratingVariations ? (
                 /* Style Selection Mode - Different UI for AI Video vs FastCut */
                 isAIVideo ? (
-                  /* AI Video: 8 Individual Preset Selection (like FastCut) */
+                  /* AI Video: 15 Individual Preset Selection */
                   <>
                     {/* Header */}
                     <div className="flex items-center justify-between mb-6">
                       <h3 className="text-lg font-semibold text-neutral-900">
                         {isKorean ? "AI 스타일 선택" : "Select AI Styles"}
-                        <span className="text-neutral-400 font-normal ml-2">(1-8개)</span>
+                        <span className="text-neutral-400 font-normal ml-2">(1-15개)</span>
                       </h3>
                       <div className="flex items-center gap-2">
                         <Button

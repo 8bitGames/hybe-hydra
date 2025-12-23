@@ -1,6 +1,6 @@
 /**
  * Image Caching System
- * - Search results cache (24h TTL) - reduces Google API calls
+ * - Per-keyword search cache (7-day TTL) - reduces Google API calls
  * - Image cache with URL + Content Hash deduplication - reduces S3 storage
  */
 
@@ -9,12 +9,191 @@ import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 
 // =====================================================
-// CACHE KEY GENERATION
+// TYPES
+// =====================================================
+
+export interface ImageCandidate {
+  id: string;
+  sourceUrl: string;
+  thumbnailUrl: string;
+  sourceTitle?: string;
+  sourceDomain?: string;
+  width: number;
+  height: number;
+  isSelected: boolean;
+  sortOrder: number;
+  qualityScore: number;
+}
+
+export interface KeywordCacheResult {
+  keyword: string;
+  candidates: ImageCandidate[];
+  fromCache: boolean;
+  searchedAt: Date;
+}
+
+export interface CachedImageResult {
+  id: string;
+  sourceUrl: string;
+  s3Url: string;
+  s3Key: string;
+  contentHash: string;
+  width: number | null;
+  height: number | null;
+  mimeType: string | null;
+}
+
+// =====================================================
+// KEYWORD NORMALIZATION
 // =====================================================
 
 /**
- * Generate a cache key for image search results
- * Normalizes keywords and params for consistent caching
+ * Normalize a keyword for consistent caching
+ */
+export function normalizeKeyword(keyword: string): string {
+  return keyword.toLowerCase().trim();
+}
+
+// =====================================================
+// PER-KEYWORD CACHE OPERATIONS (7-day TTL)
+// =====================================================
+
+const CACHE_TTL_DAYS = 7;
+
+/**
+ * Get cached results for multiple keywords
+ * Returns: { cached: KeywordCacheResult[], uncached: string[] }
+ */
+export async function getKeywordCacheResults(
+  keywords: string[],
+  language: string = 'en'
+): Promise<{ cached: KeywordCacheResult[]; uncached: string[] }> {
+  try {
+    const normalizedKeywords = keywords.map(normalizeKeyword).filter(k => k.length > 0);
+
+    if (normalizedKeywords.length === 0) {
+      return { cached: [], uncached: [] };
+    }
+
+    // Find all cached keywords that haven't expired
+    const cachedEntries = await prisma.imageSearchCache.findMany({
+      where: {
+        keyword: { in: normalizedKeywords },
+        language,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    // Build result sets
+    const cachedKeywords = new Set(cachedEntries.map(e => e.keyword));
+    const cached: KeywordCacheResult[] = [];
+    const uncached: string[] = [];
+
+    for (const keyword of normalizedKeywords) {
+      const entry = cachedEntries.find(e => e.keyword === keyword);
+      if (entry) {
+        cached.push({
+          keyword,
+          candidates: entry.results as unknown as ImageCandidate[],
+          fromCache: true,
+          searchedAt: entry.searchedAt,
+        });
+
+        // Increment hit count (fire and forget)
+        prisma.imageSearchCache
+          .update({
+            where: { id: entry.id },
+            data: { hitCount: { increment: 1 } },
+          })
+          .catch(() => {});
+      } else {
+        uncached.push(keyword);
+      }
+    }
+
+    console.log(`[Image Cache] Keywords: ${normalizedKeywords.length} total, ${cached.length} cached, ${uncached.length} uncached`);
+    return { cached, uncached };
+  } catch (error) {
+    console.warn('[Image Cache] Cache check failed, treating all as uncached:', error);
+    return {
+      cached: [],
+      uncached: keywords.map(normalizeKeyword).filter(k => k.length > 0)
+    };
+  }
+}
+
+/**
+ * Store search results for a single keyword
+ */
+export async function setKeywordCacheResult(
+  keyword: string,
+  candidates: ImageCandidate[],
+  language: string = 'en'
+): Promise<void> {
+  try {
+    const normalizedKeyword = normalizeKeyword(keyword);
+    const expiresAt = new Date(Date.now() + CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+    await prisma.imageSearchCache.upsert({
+      where: {
+        keyword_language: {
+          keyword: normalizedKeyword,
+          language,
+        },
+      },
+      create: {
+        keyword: normalizedKeyword,
+        language,
+        results: candidates as unknown as Prisma.InputJsonValue,
+        resultCount: candidates.length,
+        expiresAt,
+      },
+      update: {
+        results: candidates as unknown as Prisma.InputJsonValue,
+        resultCount: candidates.length,
+        searchedAt: new Date(),
+        expiresAt,
+        hitCount: 0, // Reset on refresh
+      },
+    });
+
+    console.log(`[Image Cache] Stored ${candidates.length} results for keyword: "${normalizedKeyword}" (expires in ${CACHE_TTL_DAYS} days)`);
+  } catch (error) {
+    console.warn('[Image Cache] Failed to store keyword cache:', error);
+  }
+}
+
+/**
+ * Clear cache for specific keywords (used by force refresh)
+ */
+export async function clearKeywordCache(
+  keywords: string[],
+  language: string = 'en'
+): Promise<number> {
+  try {
+    const normalizedKeywords = keywords.map(normalizeKeyword).filter(k => k.length > 0);
+
+    const result = await prisma.imageSearchCache.deleteMany({
+      where: {
+        keyword: { in: normalizedKeywords },
+        language,
+      },
+    });
+
+    console.log(`[Image Cache] Cleared cache for ${result.count} keywords`);
+    return result.count;
+  } catch (error) {
+    console.warn('[Image Cache] Failed to clear cache:', error);
+    return 0;
+  }
+}
+
+// =====================================================
+// LEGACY FUNCTIONS (kept for backward compatibility)
+// =====================================================
+
+/**
+ * @deprecated Use getKeywordCacheResults instead
  */
 export function generateSearchCacheKey(
   keywords: string[],
@@ -24,14 +203,12 @@ export function generateSearchCacheKey(
     imageSize?: string;
   } = {}
 ): string {
-  // Normalize keywords: lowercase, trim, sort for consistency
   const normalizedKeywords = keywords
     .map((k) => k.toLowerCase().trim())
     .filter((k) => k.length > 0)
     .sort()
     .join('|');
 
-  // Include relevant params that affect search results
   const paramString = [
     `safe:${params.safeSearch || 'medium'}`,
     `size:${params.imageSize || 'huge'}`,
@@ -45,28 +222,55 @@ export function generateSearchCacheKey(
 }
 
 /**
+ * @deprecated Use getKeywordCacheResults instead
+ */
+export interface SearchCacheResult {
+  candidates: unknown[];
+  totalFound: number;
+  filtered: number;
+  filterReasons: Record<string, number>;
+}
+
+/**
+ * @deprecated Use getKeywordCacheResults instead
+ */
+export async function getCachedSearchResults(
+  cacheKey: string
+): Promise<SearchCacheResult | null> {
+  // Return null to force fresh search - this is deprecated
+  return null;
+}
+
+/**
+ * @deprecated Use setKeywordCacheResult instead
+ */
+export async function setCachedSearchResults(
+  cacheKey: string,
+  keywords: string[],
+  results: SearchCacheResult,
+  searchParams: Record<string, unknown>,
+  ttlHours: number = 24
+): Promise<void> {
+  // No-op - deprecated
+}
+
+// =====================================================
+// IMAGE URL/CONTENT HASH OPERATIONS
+// =====================================================
+
+/**
  * Generate a hash for an image URL
- * Removes common tracking parameters for better deduplication
  */
 export function generateImageUrlHash(url: string): string {
   try {
     const normalized = new URL(url);
-    // Remove common tracking parameters
     const trackingParams = [
-      'utm_source',
-      'utm_medium',
-      'utm_campaign',
-      'utm_content',
-      'utm_term',
-      'fbclid',
-      'gclid',
-      'ref',
-      'source',
+      'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+      'fbclid', 'gclid', 'ref', 'source',
     ];
     trackingParams.forEach((param) => normalized.searchParams.delete(param));
     return crypto.createHash('md5').update(normalized.toString()).digest('hex');
   } catch {
-    // If URL parsing fails, hash the raw string
     return crypto.createHash('md5').update(url).digest('hex');
   }
 }
@@ -79,107 +283,8 @@ export function generateContentHash(buffer: Buffer): string {
 }
 
 // =====================================================
-// SEARCH CACHE OPERATIONS
-// =====================================================
-
-export interface SearchCacheResult {
-  candidates: unknown[];
-  totalFound: number;
-  filtered: number;
-  filterReasons: Record<string, number>;
-}
-
-/**
- * Get cached search results if available and not expired
- * IMPORTANT: Fail-safe - returns null on any error so normal search continues.
- */
-export async function getCachedSearchResults(
-  cacheKey: string
-): Promise<SearchCacheResult | null> {
-  try {
-    const cached = await prisma.imageSearchCache.findFirst({
-      where: {
-        cacheKey,
-        expiresAt: { gt: new Date() },
-      },
-    });
-
-    if (cached) {
-      // Increment hit count (fire and forget - don't await)
-      prisma.imageSearchCache
-        .update({
-          where: { id: cached.id },
-          data: { hitCount: { increment: 1 } },
-        })
-        .catch(() => {}); // Ignore errors
-
-      console.log(`[Image Cache] Search cache HIT for key: ${cacheKey.slice(0, 8)}...`);
-      return cached.results as unknown as SearchCacheResult;
-    }
-
-    console.log(`[Image Cache] Search cache MISS for key: ${cacheKey.slice(0, 8)}...`);
-    return null;
-  } catch (error) {
-    // Fail-safe: if cache check fails, log and return null so normal search happens
-    console.warn('[Image Cache] Search cache check failed, falling back to fresh search:', error);
-    return null;
-  }
-}
-
-/**
- * Store search results in cache
- * IMPORTANT: Fail-safe - errors are logged but don't break the main flow.
- */
-export async function setCachedSearchResults(
-  cacheKey: string,
-  keywords: string[],
-  results: SearchCacheResult,
-  searchParams: Record<string, unknown>,
-  ttlHours: number = 24
-): Promise<void> {
-  try {
-    const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
-
-    await prisma.imageSearchCache.upsert({
-      where: { cacheKey },
-      create: {
-        cacheKey,
-        keywords,
-        results: results as unknown as Prisma.InputJsonValue,
-        totalResults: results.totalFound,
-        searchParams: searchParams as Prisma.InputJsonValue,
-        expiresAt,
-      },
-      update: {
-        results: results as unknown as Prisma.InputJsonValue,
-        totalResults: results.totalFound,
-        searchParams: searchParams as Prisma.InputJsonValue,
-        expiresAt,
-        hitCount: 0, // Reset hit count on refresh
-      },
-    });
-
-    console.log(`[Image Cache] Stored search results for key: ${cacheKey.slice(0, 8)}... (expires in ${ttlHours}h)`);
-  } catch (error) {
-    // Fail-safe: caching failures shouldn't break the main flow
-    console.warn('[Image Cache] Failed to store search results (non-fatal):', error);
-  }
-}
-
-// =====================================================
 // IMAGE CACHE OPERATIONS
 // =====================================================
-
-export interface CachedImageResult {
-  id: string;
-  sourceUrl: string;
-  s3Url: string;
-  s3Key: string;
-  contentHash: string;
-  width: number | null;
-  height: number | null;
-  mimeType: string | null;
-}
 
 /**
  * Check if an image is already cached by URL
@@ -195,7 +300,6 @@ export async function getCachedImageByUrl(
     });
 
     if (cached) {
-      // Update usage stats (fire and forget)
       prisma.cachedImage
         .update({
           where: { id: cached.id },
@@ -206,7 +310,6 @@ export async function getCachedImageByUrl(
         })
         .catch(() => {});
 
-      console.log(`[Image Cache] URL cache HIT: ${sourceUrl.slice(0, 50)}...`);
       return cached as CachedImageResult;
     }
 
@@ -219,7 +322,6 @@ export async function getCachedImageByUrl(
 
 /**
  * Check if an image is already cached by content hash
- * This catches cases where same image has different URLs
  */
 export async function getCachedImageByContentHash(
   contentHash: string
@@ -230,7 +332,6 @@ export async function getCachedImageByContentHash(
     });
 
     if (cached) {
-      // Update usage stats (fire and forget)
       prisma.cachedImage
         .update({
           where: { id: cached.id },
@@ -241,7 +342,6 @@ export async function getCachedImageByContentHash(
         })
         .catch(() => {});
 
-      console.log(`[Image Cache] Content hash HIT: ${contentHash.slice(0, 8)}...`);
       return cached as CachedImageResult;
     }
 
@@ -254,7 +354,6 @@ export async function getCachedImageByContentHash(
 
 /**
  * Store a new cached image
- * IMPORTANT: This function is fail-safe - if caching fails, it logs and returns null.
  */
 export async function setCachedImage(data: {
   sourceUrl: string;
@@ -283,35 +382,28 @@ export async function setCachedImage(data: {
     console.log(`[Image Cache] Stored new image: ${data.sourceUrl.slice(0, 50)}... → ${data.s3Key}`);
     return cached as CachedImageResult;
   } catch (error) {
-    // If caching fails (e.g., Prisma not updated, duplicate entry), log and continue
     console.warn('[Image Cache] Failed to store cached image:', error);
     return null;
   }
 }
 
 /**
- * Get or cache an image - the main entry point for image caching
- * Returns existing S3 URL if cached, or null if needs to be downloaded
- * IMPORTANT: This function is designed to be fail-safe - if caching fails,
- * it returns { cached: false } so the normal flow continues.
+ * Get or cache an image
  */
 export async function getOrCheckImageCache(
   sourceUrl: string,
   buffer?: Buffer
 ): Promise<{ cached: true; s3Url: string; s3Key: string } | { cached: false }> {
   try {
-    // Step 1: Check by URL (fast, no download needed)
     const byUrl = await getCachedImageByUrl(sourceUrl);
     if (byUrl) {
       return { cached: true, s3Url: byUrl.s3Url, s3Key: byUrl.s3Key };
     }
 
-    // Step 2: If buffer provided, check by content hash
     if (buffer) {
       const contentHash = generateContentHash(buffer);
       const byHash = await getCachedImageByContentHash(contentHash);
       if (byHash) {
-        // Same image content, different URL - register this URL too
         try {
           await prisma.cachedImage.create({
             data: {
@@ -325,7 +417,6 @@ export async function getOrCheckImageCache(
               mimeType: byHash.mimeType,
             },
           });
-          console.log(`[Image Cache] Registered duplicate URL for existing image`);
         } catch {
           // Ignore duplicate key errors
         }
@@ -335,9 +426,7 @@ export async function getOrCheckImageCache(
 
     return { cached: false };
   } catch (error) {
-    // If cache check fails for any reason (e.g., Prisma not updated, DB error),
-    // gracefully fall back to non-cached behavior
-    console.warn('[Image Cache] Cache check failed, falling back to direct download:', error);
+    console.warn('[Image Cache] Cache check failed:', error);
     return { cached: false };
   }
 }
@@ -360,7 +449,6 @@ export async function cleanupExpiredSearchCache(): Promise<number> {
 
 /**
  * Delete old unused images (LRU cleanup)
- * Only deletes images not used in the last X days with low hit count
  */
 export async function cleanupUnusedImages(
   maxAgeDays: number = 30,
@@ -368,7 +456,6 @@ export async function cleanupUnusedImages(
 ): Promise<{ count: number; s3Keys: string[] }> {
   const cutoffDate = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
 
-  // Find unused images
   const unused = await prisma.cachedImage.findMany({
     where: {
       lastUsedAt: { lt: cutoffDate },
@@ -381,7 +468,6 @@ export async function cleanupUnusedImages(
     return { count: 0, s3Keys: [] };
   }
 
-  // Delete from DB
   await prisma.cachedImage.deleteMany({
     where: {
       id: { in: unused.map((u) => u.id) },

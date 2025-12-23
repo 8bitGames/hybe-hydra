@@ -89,8 +89,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Check if original has output video
-    if (!originalGeneration.outputUrl) {
+    // Check if original has output video (could be in outputUrl or composedOutputUrl)
+    const sourceVideoUrl = originalGeneration.outputUrl || originalGeneration.composedOutputUrl;
+    if (!sourceVideoUrl) {
       return NextResponse.json(
         { detail: "Original generation does not have an output video" },
         { status: 400 }
@@ -168,7 +169,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           ...(originalGeneration.qualityMetadata as Record<string, unknown> || {}),
           videoEdit: {
             originalGenerationId: originalGeneration.id,
-            originalOutputUrl: originalGeneration.outputUrl,
+            originalOutputUrl: sourceVideoUrl,
             editedAt: new Date().toISOString(),
             editType: [audio ? "audio" : null, subtitles ? "subtitles" : null].filter(Boolean),
             audioAssetId: audio?.asset_id,
@@ -180,16 +181,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    // Build callback URL
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    // Build callback URL (consistent with ai-client.ts fallback)
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://hydra.ai.kr";
     const callbackUrl = `${baseUrl}/api/v1/jobs/callback`;
 
     // Build request for compose engine
     const editRequest = {
       job_id: newJobId,
-      video_url: originalGeneration.outputUrl,
+      video_url: sourceVideoUrl,
       callback_url: callbackUrl,
       campaign_id: originalGeneration.campaignId,
+      // Include metadata for callback to properly identify the generation
+      metadata: {
+        generation_id: newGeneration.id,
+        original_generation_id: originalGeneration.id,
+        user_id: user.id,
+      },
       ...(audio && audioUrl && {
         audio: {
           url: audioUrl,

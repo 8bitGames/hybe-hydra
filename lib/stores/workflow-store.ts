@@ -22,6 +22,7 @@ export interface StartEntryPath {
 export interface StartFromTrends {
   type: "trends";
   keywords: string[];
+  originalIdea?: string;  // Original user input before keyword extraction
   analysis: {
     totalVideos: number;
     avgViews: number;
@@ -1174,6 +1175,9 @@ export const useWorkflowStore = create<WorkflowState>()(
             // Transfer AI analysis suggestedApproach as optimizedPrompt for fast-cut
             optimizedPrompt = startSource.aiAnalysis?.suggestedApproach || startSource.description || "";
           } else if (startSource?.type === "trends") {
+            // CRITICAL: Use originalIdea if available (user's original prompt before keyword extraction)
+            userIdea = startSource.originalIdea || "";
+            optimizedPrompt = startSource.originalIdea || "";
             hashtags = startSource.selectedHashtags || hashtags;
             keywords = startSource.keywords || [];
           }

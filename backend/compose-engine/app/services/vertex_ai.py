@@ -341,6 +341,7 @@ class VertexAIClient:
         instances = [{
             "video": {
                 "gcsUri": config.source_video_gcs_uri,
+                "mimeType": "video/mp4",
             }
         }]
 

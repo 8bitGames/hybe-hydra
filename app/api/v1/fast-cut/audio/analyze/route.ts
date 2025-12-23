@@ -587,12 +587,13 @@ function rerankCandidates(
 
 /**
  * Weighted random selection from top K candidates
- * Higher scored candidates have higher probability, but lower scored can still be picked
+ * Uses flatter probability distribution to encourage variety
+ * Each call should return a different candidate with reasonable probability
  */
 function weightedRandomSelect(
   candidates: ClimaxCandidate[],
-  topK: number = 3,
-  minScore: number = 0.25
+  topK: number = 4,  // Increased from 3 to 4 for more variety
+  minScore: number = 0.2  // Lowered threshold to include more candidates
 ): { candidate: ClimaxCandidate; selectedIndex: number } {
   if (candidates.length === 0) {
     throw new Error('No candidates to select from');
@@ -616,13 +617,33 @@ function weightedRandomSelect(
     return { candidate: eligible[0], selectedIndex: 0 };
   }
 
-  // Calculate selection weights using softmax-like scaling
-  // Boost differences to make high scores more likely but not certain
+  // Use FLAT probability distribution for more variety
+  // Each eligible candidate gets roughly equal chance with slight score bonus
+  // This ensures different segments are selected on different calls
   const scores = eligible.map(c => c.score);
-  const maxScore = Math.max(...scores);
-  const scaledScores = scores.map(s => Math.exp((s / maxScore) * 2)); // Soft scaling
-  const totalWeight = scaledScores.reduce((a, b) => a + b, 0);
-  const probabilities = scaledScores.map(s => s / totalWeight);
+  const minScoreInEligible = Math.min(...scores);
+  const maxScoreInEligible = Math.max(...scores);
+  const scoreRange = maxScoreInEligible - minScoreInEligible || 1;
+
+  // Normalize to 0-1 range, then flatten with sqrt to reduce score dominance
+  // Result: top candidate might have 1.0, second has ~0.9, third has ~0.8 instead of 1.0, 0.5, 0.25
+  const flattenedScores = scores.map(s => {
+    const normalized = (s - minScoreInEligible) / scoreRange;  // 0 to 1
+    return 0.5 + (Math.sqrt(normalized) * 0.5);  // Range: 0.5 to 1.0 (flattened)
+  });
+
+  const totalWeight = flattenedScores.reduce((a, b) => a + b, 0);
+  const probabilities = flattenedScores.map(s => s / totalWeight);
+
+  // Log probabilities for debugging
+  console.log('[Fast Cut AudioAnalyze] Variety selection probabilities:',
+    eligible.map((c, i) => ({
+      type: c.type,
+      score: c.score.toFixed(2),
+      probability: (probabilities[i] * 100).toFixed(1) + '%',
+      startTime: c.start_time.toFixed(1)
+    }))
+  );
 
   // Weighted random selection
   const random = Math.random();
@@ -635,6 +656,14 @@ function weightedRandomSelect(
       const originalIndex = candidates.findIndex(
         c => c.start_time === eligible[i].start_time && c.type === eligible[i].type
       );
+      console.log('[Fast Cut AudioAnalyze] Selected candidate:', {
+        index: i,
+        originalIndex,
+        type: eligible[i].type,
+        score: eligible[i].score.toFixed(2),
+        startTime: eligible[i].start_time.toFixed(1),
+        random: random.toFixed(3)
+      });
       return { candidate: eligible[i], selectedIndex: originalIndex };
     }
   }

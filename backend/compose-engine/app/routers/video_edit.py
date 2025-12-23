@@ -26,6 +26,7 @@ from ..renderers.ffmpeg_pipeline import (
 )
 from ..utils.s3_client import S3Client
 from ..utils.job_queue import JobQueue
+from ..utils.db_client import update_video_generation, update_video_generation_progress
 from ..dependencies import get_job_queue, get_render_semaphore
 from ..config import get_settings
 
@@ -40,7 +41,8 @@ async def send_callback(
     status: str,
     output_url: Optional[str] = None,
     error: Optional[str] = None,
-    progress: Optional[int] = None
+    progress: Optional[int] = None,
+    metadata: Optional[dict] = None
 ):
     """Send callback to notify job status changes."""
     try:
@@ -51,12 +53,13 @@ async def send_callback(
                 "output_url": output_url,
                 "error": error,
                 "progress": progress,
+                "metadata": metadata,
             }
             response = await client.post(callback_url, json=payload)
             if response.status_code != 200:
                 logger.error(f"[VideoEdit] Callback failed: {response.status_code}: {response.text}")
             else:
-                logger.info(f"[VideoEdit] Callback sent: job={job_id}, status={status}")
+                logger.info(f"[VideoEdit] Callback sent: job={job_id}, status={status}, generation_id={metadata.get('generation_id') if metadata else 'N/A'}")
     except Exception as e:
         logger.error(f"[VideoEdit] Callback error for job {job_id}: {e}")
 
@@ -263,7 +266,7 @@ async def process_video_edit(request: VideoEditRequest, job_queue: Optional[JobQ
             if job_queue:
                 await job_queue.update_job(job_id, status="queued", progress=0, current_step="Waiting for render slot...")
             if request.callback_url:
-                await send_callback(request.callback_url, job_id, "queued", progress=0)
+                await send_callback(request.callback_url, job_id, "queued", progress=0, metadata=request.metadata)
             await semaphore.acquire()
             semaphore_acquired = True
             logger.info(f"[VideoEdit] Job {job_id} acquired render slot")
@@ -272,7 +275,7 @@ async def process_video_edit(request: VideoEditRequest, job_queue: Optional[JobQ
         if job_queue:
             await job_queue.update_job(job_id, status="processing", progress=5, current_step="Downloading video...")
         if request.callback_url:
-            await send_callback(request.callback_url, job_id, "processing", progress=5)
+            await send_callback(request.callback_url, job_id, "processing", progress=5, metadata=request.metadata)
 
         s3_client = S3Client()
 
@@ -292,7 +295,7 @@ async def process_video_edit(request: VideoEditRequest, job_queue: Optional[JobQ
         if job_queue:
             await job_queue.update_job(job_id, progress=20, current_step="Video downloaded. Processing audio...")
         if request.callback_url:
-            await send_callback(request.callback_url, job_id, "processing", progress=20)
+            await send_callback(request.callback_url, job_id, "processing", progress=20, metadata=request.metadata)
 
         # Current working video path
         current_video = source_video_path
@@ -310,7 +313,7 @@ async def process_video_edit(request: VideoEditRequest, job_queue: Optional[JobQ
             if job_queue:
                 await job_queue.update_job(job_id, progress=40, current_step="Replacing audio...")
             if request.callback_url:
-                await send_callback(request.callback_url, job_id, "processing", progress=40)
+                await send_callback(request.callback_url, job_id, "processing", progress=40, metadata=request.metadata)
 
             audio_output = os.path.join(job_dir, "with_audio.mp4")
             success = await replace_audio(
@@ -335,7 +338,7 @@ async def process_video_edit(request: VideoEditRequest, job_queue: Optional[JobQ
             if job_queue:
                 await job_queue.update_job(job_id, progress=60, current_step="Adding subtitles...")
             if request.callback_url:
-                await send_callback(request.callback_url, job_id, "processing", progress=60)
+                await send_callback(request.callback_url, job_id, "processing", progress=60, metadata=request.metadata)
 
             logger.info(f"[VideoEdit] Job {job_id} adding {len(request.subtitles.lines)} subtitle lines")
 
@@ -362,6 +365,7 @@ async def process_video_edit(request: VideoEditRequest, job_queue: Optional[JobQ
                     duration=duration,
                     style=style_name,
                     animation=style.animation,
+                    position=style.position,
                 ))
 
             if overlays:
@@ -388,7 +392,7 @@ async def process_video_edit(request: VideoEditRequest, job_queue: Optional[JobQ
         if job_queue:
             await job_queue.update_job(job_id, progress=85, current_step="Uploading result...")
         if request.callback_url:
-            await send_callback(request.callback_url, job_id, "processing", progress=85)
+            await send_callback(request.callback_url, job_id, "processing", progress=85, metadata=request.metadata)
 
         # Determine S3 path
         s3_folder = request.campaign_id or "video-edit"
@@ -410,8 +414,26 @@ async def process_video_edit(request: VideoEditRequest, job_queue: Optional[JobQ
                 current_step="Completed",
                 output_url=output_url,
             )
-        if request.callback_url:
-            await send_callback(request.callback_url, job_id, "completed", output_url=output_url, progress=100)
+
+        # PRIMARY: Direct database update (more reliable than callback)
+        generation_id = request.metadata.get("generation_id") if request.metadata else None
+        if generation_id:
+            db_updated = await update_video_generation(
+                generation_id=generation_id,
+                status="COMPLETED",
+                output_url=output_url,
+                progress=100,
+            )
+            if db_updated:
+                logger.info(f"[VideoEdit] Job {job_id} DB updated successfully: generation_id={generation_id}")
+            else:
+                logger.warning(f"[VideoEdit] Job {job_id} DB update failed, falling back to callback")
+                # Fallback to callback if DB update fails
+                if request.callback_url:
+                    await send_callback(request.callback_url, job_id, "completed", output_url=output_url, progress=100, metadata=request.metadata)
+        elif request.callback_url:
+            # No generation_id, use callback as fallback
+            await send_callback(request.callback_url, job_id, "completed", output_url=output_url, progress=100, metadata=request.metadata)
 
         logger.info(f"[VideoEdit] Job {job_id} completed: {output_url}")
 
@@ -423,8 +445,24 @@ async def process_video_edit(request: VideoEditRequest, job_queue: Optional[JobQ
 
         if job_queue:
             await job_queue.update_job(job_id, status="failed", error=error_message)
-        if request.callback_url:
-            await send_callback(request.callback_url, job_id, "failed", error=error_message)
+
+        # PRIMARY: Direct database update for failure
+        generation_id = request.metadata.get("generation_id") if request.metadata else None
+        if generation_id:
+            db_updated = await update_video_generation(
+                generation_id=generation_id,
+                status="FAILED",
+                error_message=error_message,
+                progress=0,
+            )
+            if db_updated:
+                logger.info(f"[VideoEdit] Job {job_id} failure recorded in DB: generation_id={generation_id}")
+            else:
+                logger.warning(f"[VideoEdit] Job {job_id} DB update failed, falling back to callback")
+                if request.callback_url:
+                    await send_callback(request.callback_url, job_id, "failed", error=error_message, metadata=request.metadata)
+        elif request.callback_url:
+            await send_callback(request.callback_url, job_id, "failed", error=error_message, metadata=request.metadata)
 
     finally:
         # Cleanup

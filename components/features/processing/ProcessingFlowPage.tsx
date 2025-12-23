@@ -541,17 +541,10 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
   }, [setState]);
 
   const handleBackToConfig = useCallback(() => {
-    // Cancel any pending generations and go back to config
-    // Clear batch ID to stop polling
-    variationBatchIdRef.current = null;
-    setVariationBatchId(null);
-    if (variationPollingRef.current) {
-      clearInterval(variationPollingRef.current);
-      variationPollingRef.current = null;
-    }
-    cancelVariationGeneration();
-    setState("VARIATION_CONFIG");
-  }, [cancelVariationGeneration, setState]);
+    // Go back to READY state without deleting variations
+    // User can view completed variations again or proceed to publish
+    setState("READY");
+  }, [setState]);
 
   const handlePublish = useCallback(async () => {
     // Update session stage to "publish" before navigating
@@ -713,7 +706,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
           <div className="flex items-center justify-between px-[7%] py-4 border-t border-neutral-200 bg-white shrink-0">
             <Button variant="outline" onClick={handleBackToConfig}>
               <ArrowLeft className="w-4 h-4 mr-2" />
-              {isKorean ? "설정으로" : "Back to Config"}
+              {isKorean ? "돌아가기" : "Back"}
             </Button>
             <Button onClick={handlePublish}>
               <Upload className="w-4 h-4 mr-2" />

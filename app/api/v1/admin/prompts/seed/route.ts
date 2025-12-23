@@ -29,6 +29,7 @@ import { VideoRecreationIdeaConfig } from '@/lib/agents/creators/video-recreatio
 // Transformers
 import { PromptEngineerConfig } from '@/lib/agents/transformers/prompt-engineer';
 import { I2VSpecialistConfig } from '@/lib/agents/transformers/i2v-specialist';
+import { ExtensionPromptGeneratorConfig } from '@/lib/agents/transformers/extension-prompt-generator';
 // Publishers
 import { PublishOptimizerConfig } from '@/lib/agents/publishers/publish-optimizer';
 import { CopywriterConfig } from '@/lib/agents/publishers/copywriter';
@@ -61,9 +62,10 @@ const AGENT_CONFIGS = [
   ScriptWriterConfig,
   FastCutIdeaConfig,
   VideoRecreationIdeaConfig,
-  // Transformers (2)
+  // Transformers (3)
   PromptEngineerConfig,
   I2VSpecialistConfig,
+  ExtensionPromptGeneratorConfig,
   // Publishers (3)
   PublishOptimizerConfig,
   CopywriterConfig,

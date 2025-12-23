@@ -24,6 +24,9 @@ redis==5.0.1
 httpx==0.26.0
 aiofiles==23.2.1
 
+# PostgreSQL async driver (for direct DB updates)
+asyncpg==0.29.0
+
 # Utilities
 python-dotenv==1.0.0
 pydantic==2.5.3

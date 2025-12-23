@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -147,6 +147,33 @@ export default function StartPage() {
   const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string }>>([]);
   const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(analyze.campaignId);
+
+  // CRITICAL FIX: Sync selectedCampaignId when workflow store's analyze.campaignId changes after session sync
+  // This ensures the UI reflects the campaign that was saved in the session
+  // Uses ref to track the initial sync to prevent resetting on every render
+  const initialCampaignSyncDone = useRef(false);
+
+  useEffect(() => {
+    // Wait for hydration before syncing
+    if (!hydrated) return;
+
+    // On first sync after hydration, always sync the value (including null)
+    // This ensures the UI matches the session state
+    if (!initialCampaignSyncDone.current) {
+      initialCampaignSyncDone.current = true;
+      if (analyze.campaignId !== selectedCampaignId) {
+        console.log("[StartPage] Initial sync campaignId from workflow store:", analyze.campaignId);
+        setSelectedCampaignId(analyze.campaignId);
+      }
+      return;
+    }
+
+    // After initial sync, only update when analyze.campaignId changes
+    if (analyze.campaignId !== selectedCampaignId) {
+      console.log("[StartPage] Syncing campaignId from workflow store:", analyze.campaignId);
+      setSelectedCampaignId(analyze.campaignId);
+    }
+  }, [hydrated, analyze.campaignId, selectedCampaignId]);
 
   const startSource = start.source;
 
@@ -495,6 +522,7 @@ export default function StartPage() {
 
               setStartFromTrends({
                 keywords: keywords,
+                originalIdea: input,  // CRITICAL: Preserve original user input
                 analysis: {
                   totalVideos: analysis.totalVideos || 0,
                   avgViews: analysis.aggregateStats?.avgViews || 0,
@@ -556,32 +584,33 @@ export default function StartPage() {
         // No trend data found or keywords empty - just set as simple idea and proceed
         setStartFromIdea({ idea: input, keywords });
         setIdeaInput("");
-        // CRITICAL: Sync to save title before navigating
-        syncNow();
-        // Route based on content type
+        // CRITICAL: transferToAnalyze() must be called BEFORE syncNow()
+        // because it populates analyze.userIdea, analyze.optimizedPrompt from start.source
+        // If syncNow() is called first, the analyze data won't be saved to session
         transferToAnalyze();
+        syncNow();
+        const sessionParam = activeSession?.id ? `?session=${activeSession.id}` : "";
         if (start.contentType === "fast-cut") {
-          const sessionParam = activeSession?.id ? `?session=${activeSession.id}` : "";
           router.push(`/fast-cut/images${sessionParam}`);
         } else {
           setCurrentStage("analyze");
-          router.push("/analyze");
+          router.push(`/analyze${sessionParam}`);
         }
       } catch (error) {
         console.error("[START] Idea analysis failed:", error);
         // Fallback: just set the idea and proceed
         setStartFromIdea({ idea: input });
         setIdeaInput("");
-        // CRITICAL: Sync to save title before navigating
-        syncNow();
+        // CRITICAL: transferToAnalyze() must be called BEFORE syncNow()
         transferToAnalyze();
+        syncNow();
         // Route based on content type
+        const sessionParamCatch = activeSession?.id ? `?session=${activeSession.id}` : "";
         if (start.contentType === "fast-cut") {
-          const sessionParam = activeSession?.id ? `?session=${activeSession.id}` : "";
-          router.push(`/fast-cut/images${sessionParam}`);
+          router.push(`/fast-cut/images${sessionParamCatch}`);
         } else {
           setCurrentStage("analyze");
-          router.push("/analyze");
+          router.push(`/analyze${sessionParamCatch}`);
         }
       } finally {
         setIsAnalyzingIdea(false);
@@ -733,15 +762,16 @@ export default function StartPage() {
     syncNow();
 
     // Route based on content type
+    // CRITICAL: Always pass session ID in URL for page refresh support
+    const sessionParam = activeSession?.id ? `?session=${activeSession.id}` : "";
+
     if (start.contentType === "fast-cut") {
       // Fast Cut has its own step indicator, just navigate
-      // Pass session ID in URL so it can be loaded after page refresh
-      const sessionParam = activeSession?.id ? `?session=${activeSession.id}` : "";
       router.push(`/fast-cut/images${sessionParam}`);
     } else {
       // Default: AI Video flow
       setCurrentStage("analyze");
-      router.push("/analyze");
+      router.push(`/analyze${sessionParam}`);
     }
   };
 

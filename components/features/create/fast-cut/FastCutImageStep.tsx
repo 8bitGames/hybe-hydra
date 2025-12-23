@@ -25,6 +25,7 @@ import {
   HelpCircle,
   Plus,
   ZoomIn,
+  RefreshCw,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ImageCandidate } from "@/lib/fast-cut-api";
@@ -56,6 +57,7 @@ interface FastCutImageStepProps {
   onToggleSelection: (image: ImageCandidate) => void;
   onReorderImages: (newImages: ImageCandidate[]) => void;
   onSearchImages: () => void;
+  onForceRefresh?: () => void;  // Force refresh - bypass cache
   onAddKeyword?: (keyword: string) => void;
   onNext?: () => void;
 }
@@ -152,6 +154,7 @@ export function FastCutImageStep({
   onToggleSelection,
   onReorderImages,
   onSearchImages,
+  onForceRefresh,
   onAddKeyword,
   onNext,
 }: FastCutImageStepProps) {
@@ -416,24 +419,46 @@ export function FastCutImageStep({
               </Button>
             </div>
           )}
-          <Button
-            onClick={onSearchImages}
-            disabled={searchingImages || selectedSearchKeywords.size === 0}
-            className="w-full"
-            variant="outline"
-          >
-            {searchingImages ? (
-              <>
-                <Search className="h-4 w-4 mr-2 animate-spin" />
-                {language === "ko" ? "검색 중..." : "Searching..."}
-              </>
-            ) : (
-              <>
-                <Search className="h-4 w-4 mr-2" />
-                {language === "ko" ? "이미지 검색" : "Search Images"}
-              </>
+          <div className="flex gap-2">
+            <Button
+              onClick={onSearchImages}
+              disabled={searchingImages || selectedSearchKeywords.size === 0}
+              className="flex-1"
+              variant="outline"
+            >
+              {searchingImages ? (
+                <>
+                  <Search className="h-4 w-4 mr-2 animate-spin" />
+                  {language === "ko" ? "검색 중..." : "Searching..."}
+                </>
+              ) : (
+                <>
+                  <Search className="h-4 w-4 mr-2" />
+                  {language === "ko" ? "이미지 검색" : "Search Images"}
+                </>
+              )}
+            </Button>
+            {onForceRefresh && imageCandidates.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={onForceRefresh}
+                    disabled={searchingImages || selectedSearchKeywords.size === 0}
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0"
+                  >
+                    <RefreshCw className={cn("h-4 w-4", searchingImages && "animate-spin")} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs">
+                    {language === "ko" ? "새로 검색 (캐시 무시)" : "Fresh search (bypass cache)"}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
             )}
-          </Button>
+          </div>
         </div>
 
         {/* Search Results */}

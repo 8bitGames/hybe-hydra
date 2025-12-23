@@ -155,6 +155,7 @@ class TextOverlaySpec:
     duration: float
     style: str = "minimal"
     animation: Optional[str] = None
+    position: Literal["top", "center", "bottom"] = "bottom"
 
 
 def build_drawtext_filter(
@@ -797,8 +798,8 @@ def _generate_ass_file(
     # 7=top-left,    8=top-center,    9=top-right
     # 4=middle-left, 5=middle-center, 6=middle-right
     # 1=bottom-left, 2=bottom-center, 3=bottom-right
-    # We use 5 for center of screen (both horizontal and vertical)
-    alignment = 5  # Middle-center
+    # Default style uses bottom-center (2), individual lines can override with \an tag
+    default_alignment = 2  # Bottom-center as default
 
     ass_header = f"""[Script Info]
 Title: Text Overlays
@@ -809,11 +810,18 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Noto Sans CJK KR,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,{alignment},0,0,0,1
+Style: Default,Noto Sans CJK KR,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,{default_alignment},0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+
+    # Position to ASS alignment mapping (numpad layout)
+    position_to_alignment = {
+        "top": 8,      # Top-center
+        "center": 5,   # Middle-center
+        "bottom": 2,   # Bottom-center
+    }
 
     # Generate dialogue lines
     dialogue_lines = []
@@ -825,17 +833,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         fade_in_ms = int(ANIMATION_REGISTRY.get(overlay.animation or "fade", {}).get("in_duration", 0.3) * 1000)
         fade_out_ms = int(ANIMATION_REGISTRY.get(overlay.animation or "fade", {}).get("out_duration", 0.3) * 1000)
 
+        # Get alignment based on position
+        position = getattr(overlay, 'position', 'bottom')
+        alignment = position_to_alignment.get(position, 2)
+
         # Escape special ASS characters and add fade effect
         text = overlay.text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
 
-        # Add fade effect: \fad(fade_in_ms, fade_out_ms)
-        text_with_fade = f"{{\\fad({fade_in_ms},{fade_out_ms})}}{text}"
+        # Add alignment override and fade effect: \an{alignment}\fad(fade_in_ms, fade_out_ms)
+        text_with_effects = f"{{\\an{alignment}\\fad({fade_in_ms},{fade_out_ms})}}{text}"
 
         dialogue_lines.append(
-            f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text_with_fade}"
+            f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text_with_effects}"
         )
 
-        logger.debug(f"[{job_id}] ASS line {i}: '{overlay.text[:30]}...' @ {start_time}->{end_time}")
+        logger.debug(f"[{job_id}] ASS line {i}: '{overlay.text[:30]}...' @ {start_time}->{end_time}, position={position}, alignment={alignment}")
 
     return ass_header + "\n".join(dialogue_lines) + "\n"
 

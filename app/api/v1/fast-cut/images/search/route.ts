@@ -6,10 +6,10 @@ import {
   ImageSearchResult
 } from '@/lib/google-search';
 import {
-  generateSearchCacheKey,
-  getCachedSearchResults,
-  setCachedSearchResults,
-  type SearchCacheResult
+  getKeywordCacheResults,
+  setKeywordCacheResult,
+  clearKeywordCache,
+  type ImageCandidate as CacheImageCandidate,
 } from '@/lib/image-cache';
 
 interface ImageSearchRequest {
@@ -19,7 +19,8 @@ interface ImageSearchRequest {
   minWidth?: number;
   minHeight?: number;
   safeSearch?: string;
-  language?: 'ko' | 'en';  // User's language preference
+  language?: 'ko' | 'en';
+  forceRefresh?: boolean; // Bypass cache and force fresh search
 }
 
 interface ImageCandidate {
@@ -49,16 +50,17 @@ export async function POST(request: NextRequest) {
       generationId,
       keywords,
       maxImages = 20,
-      minWidth = 300,  // Very low threshold - quality score handles prioritization
-      minHeight = 200,  // Allow landscape images (most Google results are wide)
+      minWidth = 300,
+      minHeight = 200,
       safeSearch = 'medium',
-      language = 'ko'
+      language = 'ko',
+      forceRefresh = false,
     } = body;
 
     // Map language to Google CSE parameters
     const languageMapping = {
-      ko: { gl: 'kr', hl: 'ko' },  // Korean: South Korea region, Korean language
-      en: { gl: 'us', hl: 'en' },  // English: US region, English language
+      ko: { gl: 'kr', hl: 'ko' },
+      en: { gl: 'us', hl: 'en' },
     };
     const { gl, hl } = languageMapping[language];
 
@@ -70,162 +72,177 @@ export async function POST(request: NextRequest) {
         totalFound: 0,
         filtered: 0,
         filterReasons: {},
-        message: 'Google Custom Search API not configured. Please set GOOGLE_CSE_API_KEY and GOOGLE_SEARCH_ENGINE_ID environment variables.'
+        cacheStats: { cached: 0, fresh: 0 },
+        message: 'Google Custom Search API not configured.'
       });
     }
 
     // =====================================================
-    // CACHE CHECK - Try to get cached results first
+    // FORCE REFRESH - Clear cache if requested
     // =====================================================
-    const cacheKey = generateSearchCacheKey(keywords, { maxImages, safeSearch });
-    console.log(`[Image Search] Checking cache for key: ${cacheKey.slice(0, 8)}...`);
+    if (forceRefresh) {
+      console.log(`[Image Search] 🔄 Force refresh requested - clearing cache for ${keywords.length} keywords`);
+      await clearKeywordCache(keywords, language);
+    }
 
-    const cachedResults = await getCachedSearchResults(cacheKey);
+    // =====================================================
+    // PER-KEYWORD CACHE CHECK
+    // =====================================================
+    const { cached: cachedResults, uncached: uncachedKeywords } = await getKeywordCacheResults(
+      keywords,
+      language
+    );
 
-    if (cachedResults) {
-      const cachedCandidates = cachedResults.candidates as ImageCandidate[];
-      // Skip cache if too few results (likely outdated or incomplete)
-      const minCachedResults = 5;
-      if (cachedCandidates.length < minCachedResults) {
-        console.log(`[Image Search] ⚠️ CACHE STALE - only ${cachedCandidates.length} results, refreshing...`);
-      } else {
-        console.log(`[Image Search] ✅ CACHE HIT for: ${keywords.join(', ')} (${cachedCandidates.length} results)`);
-        // Update IDs for this generation (cache stores generic IDs)
-        const candidates = cachedCandidates.map((c, idx) => ({
-          ...c,
-          id: `${generationId}-img-${idx}`,
-          sortOrder: idx,
-        }));
-        return NextResponse.json({
-          candidates,
-          totalFound: cachedResults.totalFound,
-          filtered: cachedResults.filtered,
-          filterReasons: cachedResults.filterReasons,
-          fromCache: true,
+    console.log(`[Image Search] Cache status: ${cachedResults.length} cached, ${uncachedKeywords.length} uncached`);
+
+    // Collect all candidates (cached + fresh)
+    const allCandidates: ImageCandidate[] = [];
+
+    // Add cached results
+    for (const result of cachedResults) {
+      for (const candidate of result.candidates) {
+        allCandidates.push({
+          ...candidate,
+          id: `${generationId}-img-${allCandidates.length}`,
+          sortOrder: allCandidates.length,
         });
       }
     }
 
     // =====================================================
-    // CACHE MISS - Call Google API
+    // FETCH UNCACHED KEYWORDS FROM API
     // =====================================================
-    console.log(`[Image Search] ❌ CACHE MISS - calling Google API for: ${keywords.join(', ')}`);
-
-    // Search images using multiple keywords for better coverage
-    // Each keyword gets enough results to ensure good coverage after filtering
-    const searchResults = await searchImagesMultiQuery(keywords, {
-      maxResultsPerQuery: Math.max(15, Math.ceil(maxImages / keywords.length) + 5),  // At least 15 per keyword
-      totalMaxResults: maxImages * 3, // Get more to account for filtering and deduplication
-      safeSearch: safeSearch as "off" | "medium" | "high",
-      imageSize: "huge",  // Filter for huge images (1024x768+) at API level
-      gl,  // Region filter based on user's language
-      hl,  // Language filter based on user's language
-    });
-
-    // Debug: log search results
-    console.log(`[Image Search] Keywords: ${keywords.join(', ')}`);
-    console.log(`[Image Search] Total found: ${searchResults.length}`);
-    console.log(`[Image Search] Filter threshold: ${minWidth}x${minHeight}`);
-
-    // Filter by minimum dimensions and calculate quality scores
+    let freshResultsCount = 0;
     let filteredCount = 0;
     let blockedCount = 0;
     let lowResCount = 0;
-    const candidates: ImageCandidate[] = [];
 
-    // Block domains that won't work (CDN with auth) or have watermarks
-    const blockedDomains = [
-      'lookaside.fbsbx.com',  // Facebook CDN with auth
-      'scontent-',           // Facebook/Instagram CDN
-      // Watermark stock sites - completely block
-      'vecteezy.com',
-      'dreamstime.com',
-      '123rf.com',
-      'depositphotos.com',
-      'bigstockphoto.com',
-      'canstockphoto.com',
-      'vectorstock.com',
-      'freepik.com',
-      'stock.adobe.com',
-    ];
+    if (uncachedKeywords.length > 0) {
+      console.log(`[Image Search] 🌐 Calling Google API for: ${uncachedKeywords.join(', ')}`);
 
-    for (let i = 0; i < searchResults.length && candidates.length < maxImages; i++) {
-      const result = searchResults[i];
+      // Search for each uncached keyword separately (for individual caching)
+      for (const keyword of uncachedKeywords) {
+        const searchResults = await searchImagesMultiQuery([keyword], {
+          maxResultsPerQuery: 15,
+          totalMaxResults: 30,
+          safeSearch: safeSearch as "off" | "medium" | "high",
+          imageSize: "huge",
+          gl,
+          hl,
+        });
 
-      // Skip only definitely blocked URLs
-      if (blockedDomains.some(d => result.link?.includes(d))) {
-        console.log(`[Image Search] Skipping blocked domain: ${result.link?.substring(0, 50)}...`);
-        blockedCount++;
-        filteredCount++;
-        continue;
+        // Process results for this keyword
+        const keywordCandidates: ImageCandidate[] = [];
+        const blockedDomains = [
+          'lookaside.fbsbx.com', 'scontent-',
+          'vecteezy.com', 'dreamstime.com', '123rf.com', 'depositphotos.com',
+          'bigstockphoto.com', 'canstockphoto.com', 'vectorstock.com', 'freepik.com',
+          'stock.adobe.com',
+        ];
+
+        for (const result of searchResults) {
+          // Skip blocked domains
+          if (blockedDomains.some(d => result.link?.includes(d))) {
+            blockedCount++;
+            filteredCount++;
+            continue;
+          }
+
+          const width = result.image?.width || 0;
+          const height = result.image?.height || 0;
+
+          // Skip very small images
+          if (width < 100 || height < 100) {
+            lowResCount++;
+            filteredCount++;
+            continue;
+          }
+
+          keywordCandidates.push({
+            id: `cached-img-${keywordCandidates.length}`,
+            sourceUrl: result.link,
+            thumbnailUrl: result.image?.thumbnailLink || result.link,
+            sourceTitle: result.title,
+            sourceDomain: result.displayLink,
+            width,
+            height,
+            isSelected: true,
+            sortOrder: keywordCandidates.length,
+            qualityScore: calculateQualityScore(result, minWidth, minHeight),
+          });
+        }
+
+        // Sort by quality
+        keywordCandidates.sort((a, b) => b.qualityScore - a.qualityScore);
+
+        // Store in cache (7-day TTL)
+        if (keywordCandidates.length > 0) {
+          await setKeywordCacheResult(
+            keyword,
+            keywordCandidates as CacheImageCandidate[],
+            language
+          );
+        }
+
+        // Add to all candidates
+        for (const candidate of keywordCandidates) {
+          allCandidates.push({
+            ...candidate,
+            id: `${generationId}-img-${allCandidates.length}`,
+            sortOrder: allCandidates.length,
+          });
+        }
+
+        freshResultsCount += keywordCandidates.length;
       }
+    }
 
-      const width = result.image?.width || 0;
-      const height = result.image?.height || 0;
+    // =====================================================
+    // DEDUPLICATE BY URL
+    // =====================================================
+    const seenUrls = new Set<string>();
+    const uniqueCandidates: ImageCandidate[] = [];
 
-      // Relaxed filter - only skip very small images
-      if (width < 100 || height < 100) {
-        lowResCount++;
-        filteredCount++;
-        continue;
+    for (const candidate of allCandidates) {
+      if (!seenUrls.has(candidate.sourceUrl)) {
+        seenUrls.add(candidate.sourceUrl);
+        uniqueCandidates.push({
+          ...candidate,
+          id: `${generationId}-img-${uniqueCandidates.length}`,
+          sortOrder: uniqueCandidates.length,
+        });
       }
-
-      candidates.push({
-        id: `${generationId}-img-${candidates.length}`,
-        sourceUrl: result.link,
-        thumbnailUrl: result.image?.thumbnailLink || result.link,
-        sourceTitle: result.title,
-        sourceDomain: result.displayLink,
-        width,
-        height,
-        isSelected: true,
-        sortOrder: candidates.length,
-        qualityScore: calculateQualityScore(result, minWidth, minHeight),
-      });
     }
 
     // Sort by quality score
-    candidates.sort((a, b) => b.qualityScore - a.qualityScore);
+    uniqueCandidates.sort((a, b) => b.qualityScore - a.qualityScore);
 
-    // Update sort order after sorting
-    candidates.forEach((c, idx) => {
+    // Re-assign sort order after sorting
+    uniqueCandidates.forEach((c, idx) => {
       c.sortOrder = idx;
     });
 
-    console.log(`[Image Search] Results: ${candidates.length} passed, ${filteredCount} filtered (blocked: ${blockedCount}, low-res: ${lowResCount})`);
+    // Limit to maxImages
+    const finalCandidates = uniqueCandidates.slice(0, maxImages);
 
-    const response = {
-      candidates,
-      totalFound: searchResults.length,
+    console.log(`[Image Search] Results: ${finalCandidates.length} total (${cachedResults.length} keywords cached, ${uncachedKeywords.length} fresh)`);
+
+    return NextResponse.json({
+      candidates: finalCandidates,
+      totalFound: allCandidates.length,
       filtered: filteredCount,
       filterReasons: {
         blocked_domain: blockedCount,
-        low_resolution: lowResCount
-      }
-    };
-
-    // =====================================================
-    // STORE IN CACHE for future requests (24h TTL)
-    // =====================================================
-    if (candidates.length > 0) {
-      console.log(`[Image Search] 💾 Storing ${candidates.length} results in cache...`);
-      // Store with generic IDs (will be remapped per request)
-      const cacheableCandidates = candidates.map((c, idx) => ({
-        ...c,
-        id: `cached-img-${idx}`,
-        sortOrder: idx,
-      }));
-      await setCachedSearchResults(
-        cacheKey,
-        keywords,
-        { ...response, candidates: cacheableCandidates },
-        { maxImages, safeSearch, minWidth, minHeight }
-      );
-    }
-
-    return NextResponse.json({
-      ...response,
-      fromCache: false,
+        low_resolution: lowResCount,
+        duplicate: allCandidates.length - uniqueCandidates.length,
+      },
+      cacheStats: {
+        cachedKeywords: cachedResults.map(r => r.keyword),
+        freshKeywords: uncachedKeywords,
+        cached: cachedResults.length,
+        fresh: uncachedKeywords.length,
+      },
+      fromCache: uncachedKeywords.length === 0,
     });
   } catch (error) {
     console.error('Image search error:', error);
@@ -248,66 +265,50 @@ function calculateQualityScore(
   const resolution = width * height;
 
   // Higher resolution = higher score (max 0.4)
-  // Prioritize high-res images for better video quality
-  if (resolution > 4000000) score += 0.4; // 4MP+ (e.g., 2000x2000)
-  else if (resolution > 2000000) score += 0.3; // 2MP+ (e.g., 1414x1414)
-  else if (resolution > 1000000) score += 0.15; // 1MP+ (e.g., 1000x1000)
-  else score += 0.05; // Lower resolution penalty
+  if (resolution > 4000000) score += 0.4;
+  else if (resolution > 2000000) score += 0.3;
+  else if (resolution > 1000000) score += 0.15;
+  else score += 0.05;
 
   // Aspect ratio bonus for vertical images (good for TikTok/Reels)
   const aspectRatio = height / width;
   if (aspectRatio >= 1.5 && aspectRatio <= 2.0) {
-    score += 0.1; // Ideal for 9:16
+    score += 0.1;
   } else if (aspectRatio >= 0.5 && aspectRatio <= 0.7) {
-    score += 0.05; // Good for 16:9
+    score += 0.05;
   }
 
   // Has thumbnail = likely valid
   if (result.image?.thumbnailLink) score += 0.05;
 
-  // Known good domains for country music content
+  // Known good domains
   const domain = result.displayLink?.toLowerCase() || '';
   const goodDomains = [
-    'pinterest.com',
-    'instagram.com',
-    'twitter.com',
-    'x.com',
-    'billboard.com',
-    'rollingstone.com',
-    'cmt.com',
-    'nashvillelifestyles.com',
-    'tasteofcountry.com',
-    'theboot.com',
-    'sounds-like-nashville.com',
-    'countrymusictattletale.com',
+    'pinterest.com', 'instagram.com', 'twitter.com', 'x.com',
+    'billboard.com', 'rollingstone.com', 'cmt.com',
   ];
 
   if (goodDomains.some(d => domain.includes(d))) {
     score += 0.1;
   }
 
-  // Heavy penalty for stock photo sites (watermarks, licensing issues)
+  // Heavy penalty for stock photo sites
   const stockSites = [
     'shutterstock', 'gettyimages', 'istockphoto', 'alamy',
     'vecteezy', 'dreamstime', '123rf', 'depositphotos',
-    'bigstockphoto', 'canstockphoto', 'vectorstock', 'freepik',
-    'stock.adobe', 'pond5', 'envato', 'elements.envato'
   ];
   if (stockSites.some(s => domain.includes(s))) {
-    score -= 0.5;  // Heavy penalty - likely has watermarks
+    score -= 0.5;
   }
 
-  // Heavy penalty for hotlink-protected domains (usually fail to download)
+  // Heavy penalty for hotlink-protected domains
   const protectedDomains = [
-    'lookaside.instagram.com',
-    'lookaside.fbsbx.com',
-    'scontent.instagram.com',
-    'scontent-',  // Facebook CDN
-    'tiktok.com/api',
-    'tiktokcdn.com',
+    'lookaside.instagram.com', 'lookaside.fbsbx.com',
+    'scontent.instagram.com', 'scontent-',
+    'tiktok.com/api', 'tiktokcdn.com',
   ];
   if (protectedDomains.some(d => result.link?.includes(d))) {
-    score -= 0.5;  // Heavy penalty - likely to fail
+    score -= 0.5;
   }
 
   return Math.max(0, Math.min(score, 1));

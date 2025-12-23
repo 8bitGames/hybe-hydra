@@ -214,7 +214,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             if (autoPublish?.enabled) {
               console.log(`${LOG_PREFIX} Auto-publish enabled - triggering auto-schedule...`);
               try {
-                const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+                const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://hydra.ai.kr';
                 fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },

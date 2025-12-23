@@ -6,6 +6,7 @@ from typing import Optional, List
 import asyncio
 import httpx
 import logging
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -137,13 +138,16 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
         new_search_target = target_image_count
 
         if request.original_image_urls and len(request.original_image_urls) > 0:
-            # 70% from original images
+            # 70% from original images (randomly sampled for variety between variations)
             original_count = int(target_image_count * 0.7)
             original_count = min(original_count, len(request.original_image_urls))
-            original_images_to_use = request.original_image_urls[:original_count]
+            # Random sample to ensure each variation gets different image combinations
+            original_images_to_use = random.sample(request.original_image_urls, original_count)
             # 30% from new search
             new_search_target = target_image_count - len(original_images_to_use)
-            logger.info(f"[Auto-Compose] Job {request.job_id} using 70/30 split: {len(original_images_to_use)} original + {new_search_target} new search")
+            logger.info(f"[Auto-Compose] Job {request.job_id} using 70/30 split: {len(original_images_to_use)} original (random) + {new_search_target} new search")
+            # Log sample of original URLs for debugging
+            logger.info(f"[Auto-Compose] Job {request.job_id} original URLs sample: {[url[:80] for url in original_images_to_use[:3]]}")
         else:
             logger.info(f"[Auto-Compose] Job {request.job_id} no original images provided, using 100% new search")
 
@@ -184,8 +188,11 @@ async def process_auto_compose(request: AutoComposeRequest, job_queue: Optional[
                 seen_urls.add(candidate.source_url)
                 unique_candidates.append(candidate)
 
-        # Select new search images (30% of target)
-        new_search_images = unique_candidates[:new_search_target]
+        # Select new search images (30% of target) - randomly for variety between variations
+        if len(unique_candidates) > new_search_target:
+            new_search_images = random.sample(unique_candidates, new_search_target)
+        else:
+            new_search_images = unique_candidates
 
         # Check if we have enough total images
         total_images = len(original_images_to_use) + len(new_search_images)

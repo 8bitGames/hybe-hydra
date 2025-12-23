@@ -142,6 +142,7 @@ export interface ImageSearchRequest {
   minWidth?: number;
   minHeight?: number;
   language?: 'ko' | 'en';  // User's language for region/language filtering
+  forceRefresh?: boolean;  // Bypass cache and force fresh search
 }
 
 export interface ImageSearchResponse {
@@ -149,6 +150,13 @@ export interface ImageSearchResponse {
   totalFound: number;
   filtered: number;
   filterReasons: Record<string, number>;
+  cacheStats?: {
+    cachedKeywords: string[];
+    freshKeywords: string[];
+    cached: number;
+    fresh: number;
+  };
+  fromCache?: boolean;
 }
 
 export interface AudioMatch {
@@ -167,6 +175,13 @@ export interface AudioMatch {
   analyzed?: boolean;
 }
 
+export interface ClimaxCandidate {
+  startTime: number;
+  dropTime: number;
+  score: number;
+  type: string;  // 'drop', 'energy_peak', 'chorus', 'combined', etc.
+}
+
 export interface AudioAnalysisResponse {
   assetId: string;
   duration: number;
@@ -178,6 +193,22 @@ export interface AudioAnalysisResponse {
   // Real analysis data from fast-cut-engine (librosa)
   energyCurve?: [number, number][];  // [[time, energy], ...] - 0.5s intervals
   beatTimes?: number[];  // Beat positions in seconds
+  // Variety selection info
+  selectedCandidateIndex?: number;
+  selectionReason?: string;
+  // Advanced climax detection
+  climaxCandidates?: ClimaxCandidate[];
+  drops?: number[];
+  builds?: [number, number][];
+  bestHookStart?: number;
+  // Lyrics analysis (if requested)
+  lyrics?: {
+    language: string;
+    confidence: number;
+    isInstrumental: boolean;
+    segmentCount: number;
+    hasChorus: boolean;
+  };
 }
 
 export interface MusicMatchRequest {
@@ -450,11 +481,25 @@ export const fastCutApi = {
   /**
    * Analyze audio to find best segment (highest energy section)
    * Used for automatic audio start time detection
+   *
+   * @param assetId - The asset ID to analyze
+   * @param targetDuration - Target segment duration in seconds (default: 15)
+   * @param options - Additional options for variety selection
    */
-  analyzeAudioBestSegment: async (assetId: string, targetDuration: number = 15): Promise<AudioAnalysisResponse> => {
+  analyzeAudioBestSegment: async (
+    assetId: string,
+    targetDuration: number = 15,
+    options?: {
+      preferVariety?: boolean;      // Enable random selection from top candidates (default: true)
+      candidateIndex?: number;      // Force specific candidate index
+      excludeStarts?: number[];     // Exclude these start times (for re-analysis)
+      includeLyrics?: boolean;      // Include lyrics-based chorus detection
+    }
+  ): Promise<AudioAnalysisResponse> => {
     const response = await api.post<AudioAnalysisResponse>('/api/v1/fast-cut/audio/analyze', {
       assetId,
-      targetDuration
+      targetDuration,
+      ...options
     });
     if (response.error) throw new Error(response.error.message);
     return response.data!;

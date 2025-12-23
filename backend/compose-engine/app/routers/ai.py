@@ -480,7 +480,7 @@ async def process_video_generation(
         client = create_vertex_ai_client()
 
         # Build GCS output URI (Veo requires GCS for output)
-        gcs_bucket = request.output.gcs_bucket or os.environ.get('GCS_OUTPUT_BUCKET', 'hydra-ai-outputs')
+        gcs_bucket = request.output.gcs_bucket or os.environ.get('GCS_OUTPUT_BUCKET', 'hyb-hydra-dev-ai-output')
         gcs_key = f"videos/{job_id}.mp4"
         output_gcs_uri = f"gs://{gcs_bucket}/{gcs_key}"
 
@@ -671,7 +671,7 @@ async def process_image_to_video(
         client = create_vertex_ai_client()
 
         # Build GCS output URI
-        gcs_bucket = request.output.gcs_bucket or os.environ.get('GCS_OUTPUT_BUCKET', 'hydra-ai-outputs')
+        gcs_bucket = request.output.gcs_bucket or os.environ.get('GCS_OUTPUT_BUCKET', 'hyb-hydra-dev-ai-output')
         gcs_key = f"videos/{job_id}.mp4"
         output_gcs_uri = f"gs://{gcs_bucket}/{gcs_key}"
 
@@ -853,7 +853,7 @@ async def process_video_extend(
         client = create_vertex_ai_client()
 
         # Build GCS output URI
-        gcs_bucket = request.output.gcs_bucket or os.environ.get('GCS_OUTPUT_BUCKET', 'hydra-ai-outputs')
+        gcs_bucket = request.output.gcs_bucket or os.environ.get('GCS_OUTPUT_BUCKET', 'hyb-hydra-dev-ai-output')
         gcs_key = f"videos/extended/{job_id}.mp4"
         output_gcs_uri = f"gs://{gcs_bucket}/{gcs_key}"
 
@@ -945,7 +945,9 @@ async def process_video_extend(
         duration_ms = int((time.time() - start_time) * 1000)
 
         # Include the new GCS URI in metadata for future extensions
+        # Merge with original request metadata to preserve generation_id
         extended_metadata = {
+            **(request.metadata or {}),  # Preserve generation_id from original request
             "gcs_uri": actual_video_uri,
             "extension_count": settings.extension_count + 1,
             "source_gcs_uri": settings.source_gcs_uri,
@@ -1157,7 +1159,10 @@ async def extend_video(
 
 @router.get("/job/{job_id}/status")
 async def get_ai_job_status(job_id: str):
-    """Get the status of an AI generation job."""
+    """Get the status of an AI generation job.
+
+    Returns job status including metadata with gcs_uri for video extension support.
+    """
     job_queue = get_job_queue()
 
     if not job_queue:
@@ -1182,6 +1187,9 @@ async def get_ai_job_status(job_id: str):
 
     job_status = status_map.get(job.get("status"), AIJobStatus.PROCESSING)
 
+    # Determine if this is a final state
+    is_final = job_status in [AIJobStatus.COMPLETED, AIJobStatus.FAILED]
+
     return {
         "job_id": job_id,
         "status": job_status,
@@ -1189,6 +1197,9 @@ async def get_ai_job_status(job_id: str):
         "current_step": job.get("current_step"),
         "output_url": job.get("output_url"),
         "error": job.get("error"),
+        # Include metadata for gcs_uri and other extension info
+        "metadata": job.get("metadata"),
+        "is_final": is_final,
     }
 
 

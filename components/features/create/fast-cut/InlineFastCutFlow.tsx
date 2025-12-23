@@ -536,6 +536,7 @@ export function InlineFastCutFlow({
   const [musicSkipped, setMusicSkipped] = useState(false);
   const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>("lyrics");
   const [audioLyricsText, setAudioLyricsText] = useState<string | null>(null);
+  const [triedStartTimes, setTriedStartTimes] = useState<number[]>([]);  // Track tried segments for variety
 
   // Get lyrics data from selected audio asset's metadata
   const selectedAudioLyrics = useMemo((): LyricsData | null => {
@@ -751,9 +752,14 @@ export function InlineFastCutFlow({
   // Step 2: Image Search
   // ========================================
 
-  const handleSearchImages = async (keywords?: string[], genId?: string) => {
+  const handleSearchImages = async (
+    keywords?: string[],
+    genId?: string,
+    options?: { forceRefresh?: boolean; clearExisting?: boolean }
+  ) => {
     const searchKeywords = keywords || Array.from(selectedSearchKeywords);
     const targetGenId = genId || generationId;
+    const { forceRefresh = false, clearExisting = false } = options || {};
 
     if (searchKeywords.length === 0 || !targetGenId) return;
 
@@ -766,21 +772,57 @@ export function InlineFastCutFlow({
         keywords: searchKeywords,
         maxImages: 30,
         language: language as 'ko' | 'en',
+        forceRefresh,
       });
 
-      setImageCandidates(result.candidates);
+      // Accumulate results: merge with existing candidates (unless clearExisting)
+      setImageCandidates((prev) => {
+        if (clearExisting || forceRefresh) {
+          return result.candidates;
+        }
 
-      // Auto-select high quality images
-      const autoSelected = result.candidates
-        .filter((img) => (img.qualityScore || 0) > 0.5)
-        .slice(0, Math.min(6, result.candidates.length));
+        // Merge and deduplicate by URL
+        const existingUrls = new Set(prev.map((img) => img.sourceUrl));
+        const newCandidates = result.candidates.filter(
+          (img) => !existingUrls.has(img.sourceUrl)
+        );
 
-      setSelectedImages(autoSelected);
+        // Combine and re-sort by quality score
+        const combined = [...prev, ...newCandidates];
+        combined.sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0));
+
+        // Re-assign IDs and sortOrder
+        return combined.map((img, idx) => ({
+          ...img,
+          id: `${targetGenId}-img-${idx}`,
+          sortOrder: idx,
+        }));
+      });
+
+      // Auto-select high quality images (only if no images selected yet)
+      if (selectedImages.length === 0 || forceRefresh) {
+        const autoSelected = result.candidates
+          .filter((img) => (img.qualityScore || 0) > 0.5)
+          .slice(0, Math.min(6, result.candidates.length));
+        setSelectedImages(autoSelected);
+      }
+
+      // Log cache stats
+      if (result.cacheStats) {
+        console.log(
+          `[FastCut] Image search: ${result.cacheStats.cached} cached, ${result.cacheStats.fresh} fresh`
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Image search failed");
     } finally {
       setSearchingImages(false);
     }
+  };
+
+  // Force refresh - bypass cache and search fresh
+  const handleForceRefreshImages = () => {
+    handleSearchImages(undefined, undefined, { forceRefresh: true, clearExisting: true });
   };
 
   const toggleImageSelection = (image: ImageCandidate) => {
@@ -830,6 +872,7 @@ export function InlineFastCutFlow({
     setMusicSkipped(false); // Reset skip when selecting audio
     setAudioAnalysis(null);
     setAudioStartTime(0);
+    setTriedStartTimes([]);  // Reset tried times for new audio
     setAnalyzingAudio(true);
 
     try {
@@ -1124,6 +1167,52 @@ export function InlineFastCutFlow({
   }, [scriptData, selectedImages.length, selectedAudio, musicSkipped, styleSetId, styleSets, language]);
 
   // ========================================
+  // Re-analyze audio for different segment
+  // ========================================
+
+  const handleReAnalyzeAudio = useCallback(async () => {
+    if (!selectedAudio || analyzingAudio) return;
+
+    setAnalyzingAudio(true);
+    try {
+      // Add current start time to exclusion list
+      const excludeStarts = [...triedStartTimes, audioStartTime].filter(
+        (t, i, arr) => arr.indexOf(t) === i  // Deduplicate
+      );
+
+      console.log("[FastCut Inline] Re-analyzing for different segment:", {
+        audioId: selectedAudio.id,
+        targetDuration,
+        excludeStarts
+      });
+
+      const analysis = await fastCutApi.analyzeAudioBestSegment(
+        selectedAudio.id,
+        targetDuration,
+        {
+          preferVariety: true,
+          excludeStarts,
+        }
+      );
+
+      setAudioAnalysis(analysis);
+      setAudioStartTime(analysis.suggestedStartTime);
+      setTriedStartTimes(excludeStarts);  // Track this start time
+
+      console.log("[FastCut Inline] Re-analysis complete:", {
+        previousStart: audioStartTime,
+        newStart: analysis.suggestedStartTime,
+        selectionReason: analysis.selectionReason,
+        candidatesCount: analysis.climaxCandidates?.length
+      });
+    } catch (err) {
+      console.warn("[FastCut Inline] Re-analysis failed:", err);
+    } finally {
+      setAnalyzingAudio(false);
+    }
+  }, [selectedAudio, analyzingAudio, targetDuration, audioStartTime, triedStartTimes]);
+
+  // ========================================
   // Navigation
   // ========================================
 
@@ -1226,6 +1315,7 @@ export function InlineFastCutFlow({
                 onToggleSelection={toggleImageSelection}
                 onReorderImages={reorderImages}
                 onSearchImages={() => handleSearchImages()}
+                onForceRefresh={handleForceRefreshImages}
                 onNext={handleNext}
               />
             )}
@@ -1250,6 +1340,7 @@ export function InlineFastCutFlow({
                 onSetAudioLyricsText={setAudioLyricsText}
                 onSkipMusic={handleSkipMusic}
                 onUnskipMusic={handleUnskipMusic}
+                onReAnalyze={handleReAnalyzeAudio}
                 onNext={handleNext}
               />
             )}

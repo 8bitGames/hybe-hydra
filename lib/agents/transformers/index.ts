@@ -27,3 +27,14 @@ export {
   type I2VSpecialistInput,
   type I2VSpecialistOutput,
 } from './i2v-specialist';
+
+// Extension Prompt Generator - Video extension prompt enhancement
+export {
+  ExtensionPromptGeneratorAgent,
+  createExtensionPromptGeneratorAgent,
+  ExtensionPromptGeneratorConfig,
+  ExtensionPromptInputSchema,
+  ExtensionPromptOutputSchema,
+  type ExtensionPromptInput,
+  type ExtensionPromptOutput,
+} from './extension-prompt-generator';
