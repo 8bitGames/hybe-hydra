@@ -1448,14 +1448,51 @@ export const selectCompletedStages = (state: WorkflowState) => state.completedSt
 export const selectIsStageCompleted = (stage: WorkflowStage) => (state: WorkflowState) =>
   state.completedStages.includes(stage);
 
+/**
+ * Helper selector to extract keywords from start.source regardless of source type.
+ * Replaces deprecated discover.keywords usage.
+ */
+export const selectStartKeywords = (state: WorkflowState): string[] => {
+  const source = state.start.source;
+  if (!source) return [];
+
+  switch (source.type) {
+    case "trends":
+      return source.keywords || [];
+    case "idea":
+      return source.keywords || [];
+    case "video":
+      return source.hashtags || []; // Use hashtags as keywords for video-based start
+    default:
+      return [];
+  }
+};
+
+/**
+ * Helper selector to get trend analysis data from start.source.
+ * Replaces deprecated discover.trendAnalysis usage.
+ */
+export const selectStartTrendAnalysis = (state: WorkflowState) => {
+  const source = state.start.source;
+  if (!source || source.type !== "trends") return null;
+
+  return {
+    keyword: source.keywords.join(", "),
+    totalVideos: source.analysis.totalVideos,
+    viralVideos: source.analysis.viralVideos,
+    highPerformingVideos: source.analysis.viralVideos,
+  };
+};
+
 export const selectCanProceedToAnalyze = (state: WorkflowState) =>
   state.start.source !== null || // Has selected an entry path
-  state.discover.keywords.length > 0 || // Legacy support
-  state.discover.savedInspiration.length > 0; // Legacy support
+  selectStartKeywords(state).length > 0 || // From start source
+  state.start.savedInspiration.length > 0; // From start data
 
 export const selectStartSummary = (state: WorkflowState) => ({
   hasSource: state.start.source !== null,
   sourceType: state.start.source?.type || null,
+  keywordCount: selectStartKeywords(state).length,
   hashtagCount: state.start.selectedHashtags.length,
   inspirationCount: state.start.savedInspiration.length,
   hasMetrics: state.start.performanceMetrics !== null,
@@ -1476,11 +1513,14 @@ export const selectCanProceedToPublish = (state: WorkflowState) =>
     (v.status === "completed" || v.status === "approved")
   );
 
+/**
+ * @deprecated Use selectStartSummary instead. Will be removed in future version.
+ */
 export const selectDiscoverSummary = (state: WorkflowState) => ({
-  keywordCount: state.discover.keywords.length,
-  hashtagCount: state.discover.selectedHashtags.length,
-  inspirationCount: state.discover.savedInspiration.length,
-  hasMetrics: state.discover.performanceMetrics !== null,
+  keywordCount: selectStartKeywords(state).length,
+  hashtagCount: state.start.selectedHashtags.length,
+  inspirationCount: state.start.savedInspiration.length,
+  hasMetrics: state.start.performanceMetrics !== null,
 });
 
 export const selectAnalyzeSummary = (state: WorkflowState) => ({
