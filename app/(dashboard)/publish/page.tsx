@@ -155,10 +155,26 @@ export default function PublishPage() {
     }))
   );
 
-  // Workflow store
-  const discover = useWorkflowStore((state) => state.discover);
+  // Workflow store - using start state (migrated from discover)
+  const start = useWorkflowStore((state) => state.start);
   const analyze = useWorkflowStore((state) => state.analyze);
   const processing = useWorkflowStore((state) => state.processing);
+
+  // Extract keywords from start.source based on source type
+  const startKeywords = (() => {
+    const source = start.source;
+    if (!source) return [];
+    switch (source.type) {
+      case "trends":
+        return source.keywords || [];
+      case "idea":
+        return source.keywords || [];
+      case "video":
+        return source.hashtags || [];
+      default:
+        return [];
+    }
+  })();
   const setSelectedProcessingVideos = useWorkflowStore((state) => state.setSelectedProcessingVideos);
   const publish = useWorkflowStore((state) => state.publish);
   const setPublishCaption = useWorkflowStore((state) => state.setPublishCaption);
@@ -428,8 +444,8 @@ export default function PublishPage() {
     setIsGeneratingAI(true);
     try {
       const context = {
-        trendKeywords: discover.keywords,
-        hashtags: discover.selectedHashtags,
+        trendKeywords: startKeywords,
+        hashtags: start.selectedHashtags,
         campaignName: analyze.campaignName,
         userIdea: analyze.userIdea,
         selectedIdea: analyze.selectedIdea
@@ -472,7 +488,7 @@ export default function PublishPage() {
     try {
       const basePrompt = publish.caption.trim() || currentVideo.prompt;
       const allKeywords = [
-        ...(discover.keywords || []),
+        ...(startKeywords || []),
         ...(analyze.hashtags || []),
         ...(publish.hashtags || []),
       ].filter((k, i, arr) => arr.indexOf(k) === i);
@@ -483,12 +499,12 @@ export default function PublishPage() {
         score: number;
       }>("/api/v1/publishing/geo-aeo", {
         keywords: allKeywords.length > 0 ? allKeywords : [analyze.campaignName || "content"].filter(Boolean),
-        search_tags: discover.selectedHashtags || publish.hashtags || [],
+        search_tags: start.selectedHashtags || publish.hashtags || [],
         prompt: basePrompt,
         artist_name: analyze.campaignName,
         language,
         platform: "tiktok",
-        trend_keywords: discover.keywords || [],
+        trend_keywords: startKeywords || [],
       });
 
       if (response.data?.caption) {
