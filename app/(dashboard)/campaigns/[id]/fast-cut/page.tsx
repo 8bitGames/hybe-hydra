@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { assetsApi, type Campaign, type Asset } from "@/lib/campaigns-api";
+// campaigns-api imports removed - using queries hooks directly
 import { useCampaign, useAssets } from "@/lib/queries";
 import { loadBridgePrompt, clearBridgePrompt } from "@/lib/bridge-storage";
 import {
@@ -13,7 +13,7 @@ import {
   AudioMatch,
   RenderStatus,
   AudioAnalysisResponse,
-  EFFECT_PRESETS,
+  StyleSetSummary,
   ASPECT_RATIOS,
 } from "@/lib/fast-cut-api";
 import { Card, CardContent } from "@/components/ui/card";
@@ -47,7 +47,6 @@ import {
   Wand2,
   Zap,
   Plus,
-  ExternalLink,
   Globe,
   Film,
   ArrowRight,
@@ -111,7 +110,8 @@ export default function ComposePage() {
   const [analyzingAudio, setAnalyzingAudio] = useState(false);
 
   // Step 4: Render state
-  const [effectPreset, setEffectPreset] = useState("zoom_beat");
+  const [styleSetId, setStyleSetId] = useState("viral_tiktok");
+  const [styleSets, setStyleSets] = useState<StyleSetSummary[]>([]);
   const [rendering, setRendering] = useState(false);
   const [renderStatus, setRenderStatus] = useState<RenderStatus | null>(null);
   const [outputUrl, setOutputUrl] = useState<string | null>(null);
@@ -175,6 +175,19 @@ export default function ComposePage() {
       clearBridgePrompt();
     }
   }, [campaignId]);
+
+  // Fetch style sets on mount
+  useEffect(() => {
+    const fetchStyleSets = async () => {
+      try {
+        const { styleSets: sets } = await fastCutApi.getStyleSets();
+        setStyleSets(sets);
+      } catch (error) {
+        console.error("[FastCut] Failed to fetch style sets:", error);
+      }
+    };
+    fetchStyleSets();
+  }, []);
 
   // Step 1: Generate Script
   const handleGenerateScript = async () => {
@@ -405,10 +418,10 @@ export default function ComposePage() {
         audioAssetId: selectedAudio.id,
         images: proxyedImages,
         script: { lines: scriptData.script.lines },
-        effectPreset,
+        // Use style set instead of individual effectPreset/vibe
+        styleSetId,
         aspectRatio,
         targetDuration: 0,
-        vibe: scriptData.vibe,
         // Audio timing control
         audioStartTime,  // Start time from best segment analysis or manual adjustment
         // Pass compose data for variations to use
@@ -509,16 +522,6 @@ export default function ComposePage() {
     setGenerationId(null);
   };
 
-  const getVibeColor = (vibe: string) => {
-    switch (vibe) {
-      case "Exciting": return "bg-red-500/20 text-red-400 border-red-500/30";
-      case "Emotional": return "bg-blue-500/20 text-blue-400 border-blue-500/30";
-      case "Pop": return "bg-pink-500/20 text-pink-400 border-pink-500/30";
-      case "Minimal": return "bg-gray-500/20 text-gray-400 border-gray-500/30";
-      default: return "bg-primary/20 text-primary border-primary/30";
-    }
-  };
-
   // Get displayed images based on source mode
   const getDisplayedImages = () => {
     switch (imageSourceMode) {
@@ -548,7 +551,7 @@ export default function ComposePage() {
     <div className="space-y-6 pb-8 px-[7%]">
       {/* Progress Steps - Minimal horizontal stepper */}
       <div className="flex items-center gap-2 p-1 bg-muted/50 rounded-lg">
-        {STEPS.map((step, idx) => {
+        {STEPS.map((step) => {
           const Icon = step.icon;
           const isActive = step.step === currentStep;
           const isComplete = step.step < currentStep;
@@ -1267,24 +1270,39 @@ export default function ComposePage() {
                   </div>
                 </div>
 
-                {/* Effect Selection */}
+                {/* Style Set Selection */}
                 <div className="space-y-2">
-                  <Label>{language === "ko" ? "이펙트 프리셋" : "Effect Preset"}</Label>
-                  <Select value={effectPreset} onValueChange={setEffectPreset}>
-                    <SelectTrigger className="h-11">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {EFFECT_PRESETS.map((preset) => (
-                        <SelectItem key={preset.value} value={preset.value}>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{preset.label}</span>
-                            <span className="text-muted-foreground text-xs">- {preset.description}</span>
+                  <Label>{language === "ko" ? "영상 스타일" : "Video Style"}</Label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {styleSets.map((styleSet) => {
+                      const isSelected = styleSet.id === styleSetId;
+                      return (
+                        <button
+                          key={styleSet.id}
+                          onClick={() => setStyleSetId(styleSet.id)}
+                          className={`relative p-3 rounded-lg border-2 text-left transition-all
+                            hover:border-neutral-400 hover:bg-neutral-50
+                            ${isSelected
+                              ? "border-neutral-900 bg-neutral-50"
+                              : "border-neutral-200"
+                            }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-lg">{styleSet.icon}</span>
+                            <span className="font-medium text-sm">
+                              {language === "ko" ? styleSet.nameKo : styleSet.name}
+                            </span>
                           </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            {language === "ko" ? styleSet.descriptionKo : styleSet.description}
+                          </p>
+                          {isSelected && (
+                            <Check className="absolute top-2 right-2 w-4 h-4 text-neutral-900" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Render Progress */}

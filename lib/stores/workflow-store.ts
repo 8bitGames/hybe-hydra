@@ -169,7 +169,16 @@ export interface AiInsightsData {
   bestPostingTimes?: string[];
 }
 
-// Legacy DiscoverData - kept for backward compatibility during migration
+/**
+ * @deprecated Use StartData instead. This interface will be removed in a future version.
+ * Migration guide:
+ * - keywords → use start.source (StartFromTrends.keywords)
+ * - selectedHashtags → use start.selectedHashtags
+ * - savedInspiration → use start.savedInspiration
+ * - performanceMetrics → use start.performanceMetrics
+ * - aiInsights → use start.aiInsights
+ * - trendAnalysis → compute from start.source data
+ */
 export interface DiscoverData {
   keywords: string[];
   selectedHashtags: string[];
@@ -404,7 +413,8 @@ interface WorkflowState {
 
   // Stage data
   start: StartData;
-  discover: DiscoverData; // Legacy - kept for backward compatibility
+  /** @deprecated Use `start` instead. Will be removed in future version. */
+  discover: DiscoverData;
   analyze: AnalyzeData;
   create: CreateData;
   processing: ProcessingData;
@@ -433,7 +443,16 @@ interface WorkflowState {
   setStartAiInsights: (insights: AiInsightsData | null) => void;
   clearStartData: () => void;
 
-  // Actions - Discover (legacy - kept for backward compatibility)
+  /**
+   * @deprecated All discover-related actions will be removed in a future version.
+   * Use the equivalent Start actions instead:
+   * - setDiscoverKeywords → use StartFromTrends.keywords via setStartFromTrends
+   * - setDiscoverHashtags → use setStartHashtags
+   * - addInspiration → use addStartInspiration
+   * - setDiscoverPerformanceMetrics → use setStartPerformanceMetrics
+   * - setDiscoverAiInsights → use setStartAiInsights
+   */
+  // Legacy Actions - Discover (kept for backward compatibility during migration)
   setDiscoverKeywords: (keywords: string[]) => void;
   addDiscoverKeyword: (keyword: string) => void;
   removeDiscoverKeyword: (keyword: string) => void;
