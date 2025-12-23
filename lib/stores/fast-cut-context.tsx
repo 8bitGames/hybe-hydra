@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode } from "react";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useSessionStore } from "@/lib/stores/session-store";
 import { useAuthStore } from "@/lib/auth-store";
@@ -258,31 +258,28 @@ interface FastCutProviderProps {
 export function FastCutProvider({ children }: FastCutProviderProps) {
   // Get initial data from workflow store
   // Derive keywords from start.source instead of deprecated discover.keywords
-  const { start, analyze, startKeywords } = useWorkflowStore(
-    useShallow((state) => {
-      // Extract keywords from start.source based on source type
-      const source = state.start.source;
-      let keywords: string[] = [];
-      if (source) {
-        switch (source.type) {
-          case "trends":
-            keywords = source.keywords || [];
-            break;
-          case "idea":
-            keywords = source.keywords || [];
-            break;
-          case "video":
-            keywords = source.hashtags || [];
-            break;
-        }
-      }
-      return {
-        start: state.start,
-        analyze: state.analyze,
-        startKeywords: keywords,
-      };
-    })
+  const { start, analyze } = useWorkflowStore(
+    useShallow((state) => ({
+      start: state.start,
+      analyze: state.analyze,
+    }))
   );
+
+  // Extract keywords from start.source using useMemo to avoid infinite loop
+  const startKeywords = useMemo(() => {
+    const source = start.source;
+    if (!source) return [];
+    switch (source.type) {
+      case "trends":
+        return source.keywords || [];
+      case "idea":
+        return source.keywords || [];
+      case "video":
+        return source.hashtags || [];
+      default:
+        return [];
+    }
+  }, [start.source]);
 
   // Get current session ID for state validation
   const activeSessionId = useSessionStore((state) => state.activeSession?.id);

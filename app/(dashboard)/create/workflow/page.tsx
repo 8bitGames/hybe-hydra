@@ -101,30 +101,11 @@ function ContextPanel() {
   const { goToAnalyze, goToStart } = useWorkflowNavigation();
 
   // Get start state (migrated from discover) and analyze state
-  const { start, analyze, startKeywords } = useWorkflowStore(
-    useShallow((state) => {
-      // Extract keywords from start.source based on source type
-      const source = state.start.source;
-      let keywords: string[] = [];
-      if (source) {
-        switch (source.type) {
-          case "trends":
-            keywords = source.keywords || [];
-            break;
-          case "idea":
-            keywords = source.keywords || [];
-            break;
-          case "video":
-            keywords = source.hashtags || [];
-            break;
-        }
-      }
-      return {
-        start: state.start,
-        analyze: state.analyze,
-        startKeywords: keywords,
-      };
-    })
+  const { start, analyze } = useWorkflowStore(
+    useShallow((state) => ({
+      start: state.start,
+      analyze: state.analyze,
+    }))
   );
 
   // Extract data from start state (migrated from discover)
@@ -135,8 +116,21 @@ function ContextPanel() {
     aiInsights,
   } = start;
 
-  // Use startKeywords derived from start.source
-  const keywords = startKeywords;
+  // Extract keywords from start.source based on source type (using useMemo to avoid infinite loop)
+  const keywords = useMemo(() => {
+    const source = start.source;
+    if (!source) return [];
+    switch (source.type) {
+      case "trends":
+        return source.keywords || [];
+      case "idea":
+        return source.keywords || [];
+      case "video":
+        return source.hashtags || [];
+      default:
+        return [];
+    }
+  }, [start.source]);
 
   const { selectedIdea, campaignName, campaignId, optimizedPrompt, hashtags: analyzeHashtags } = analyze;
 
