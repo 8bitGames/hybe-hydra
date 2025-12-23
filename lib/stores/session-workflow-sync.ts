@@ -283,11 +283,11 @@ export function syncWorkflowToSession(expectedSessionId?: string): void {
     sessionStore.updateStageData("start", {
       source: workflowState.start.source,
       contentType: workflowState.start.contentType,
-      selectedHashtags: workflowState.discover.selectedHashtags,
+      selectedHashtags: workflowState.start.selectedHashtags,
       // CRITICAL: Also sync these fields that were previously missing
       aiInsights: workflowState.start.aiInsights,
       performanceMetrics: workflowState.start.performanceMetrics,
-      savedInspiration: workflowState.discover.savedInspiration,
+      savedInspiration: workflowState.start.savedInspiration,
     });
     console.log("[SyncWorkflowToSession] Synced start data:", workflowState.start.source?.type);
   }
