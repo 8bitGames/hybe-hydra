@@ -46,7 +46,8 @@
       "Bash(sudo apt install:*)",
       "Bash(gh auth login:*)",
       "Bash(gh auth:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git pull:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
