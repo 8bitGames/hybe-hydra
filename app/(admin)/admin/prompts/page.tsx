@@ -47,6 +47,10 @@ import {
   MessageSquare,
   RefreshCw,
   GitCompare,
+  Zap,
+  ThumbsUp,
+  ThumbsDown,
+  Lightbulb,
 } from 'lucide-react';
 import { PromptRefinerChat } from '@/components/admin/prompt-refiner-chat';
 
@@ -96,7 +100,26 @@ interface AgentExecution {
   agent_feedback?: Array<{
     overall_score: number;
     feedback_type: string;
+    relevance_score?: number;
+    quality_score?: number;
+    creativity_score?: number;
+    feedback_text?: string;
+    strengths?: string[];
+    weaknesses?: string[];
+    suggestions?: string[];
   }>;
+}
+
+interface DetailedEvaluation {
+  overall_score: number;
+  relevance_score: number;
+  quality_score: number;
+  creativity_score: number;
+  feedback_text: string;
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  evaluated_at?: string;
 }
 
 interface SyncResult {
@@ -169,6 +192,16 @@ export default function PromptsAdminPage() {
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncResults, setSyncResults] = useState<SyncResponse | null>(null);
+
+  // Deep Evaluation state
+  const [evaluationDialogOpen, setEvaluationDialogOpen] = useState(false);
+  const [selectedExecution, setSelectedExecution] = useState<AgentExecution | null>(null);
+  const [detailedEvaluation, setDetailedEvaluation] = useState<DetailedEvaluation | null>(null);
+  const [deepEvaluating, setDeepEvaluating] = useState(false);
+
+  // Tab control for smooth evaluation-to-refine flow
+  const [activeTab, setActiveTab] = useState('prompt');
+  const [refinerInitialMessage, setRefinerInitialMessage] = useState<string | undefined>(undefined);
 
   // Fetch prompts
   const fetchPrompts = useCallback(async () => {
@@ -275,6 +308,51 @@ export default function PromptsAdminPage() {
       setMessage({ type: 'error', text: 'Failed to sync prompts' });
     } finally {
       setSyncLoading(false);
+    }
+  };
+
+  // Trigger Deep Evaluation (LLM-as-Judge)
+  const triggerDeepEvaluation = async (execution: AgentExecution) => {
+    setSelectedExecution(execution);
+    setDetailedEvaluation(null);
+    setEvaluationDialogOpen(true);
+
+    // First check if we already have an LLM evaluation
+    try {
+      const existingRes = await fetch(`/api/v1/agents/executions/${execution.id}/evaluate`);
+      const existingData = await existingRes.json();
+
+      if (existingData.hasEvaluation && existingData.evaluation) {
+        setDetailedEvaluation(existingData.evaluation);
+        return;
+      }
+    } catch (error) {
+      console.error('Error checking existing evaluation:', error);
+    }
+
+    // No existing evaluation, trigger new one
+    setDeepEvaluating(true);
+    try {
+      const res = await fetch(`/api/v1/agents/executions/${execution.id}/evaluate`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+
+      if (data.success && data.evaluation) {
+        setDetailedEvaluation(data.evaluation);
+        setMessage({ type: 'success', text: 'Deep evaluation completed!' });
+        // Refresh executions to update the list
+        if (selectedPrompt) {
+          fetchExecutions(selectedPrompt.agent_id);
+        }
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to evaluate execution' });
+      }
+    } catch (error) {
+      console.error('Error triggering deep evaluation:', error);
+      setMessage({ type: 'error', text: 'Failed to trigger deep evaluation' });
+    } finally {
+      setDeepEvaluating(false);
     }
   };
 
@@ -559,7 +637,7 @@ export default function PromptsAdminPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Tabs defaultValue="prompt" className="w-full">
+                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                     <TabsList className="bg-gray-800 border border-gray-700 mb-4">
                       <TabsTrigger value="prompt" className="data-[state=active]:bg-gray-700 data-[state=active]:text-white text-gray-400">System Prompt</TabsTrigger>
                       <TabsTrigger value="templates" className="data-[state=active]:bg-gray-700 data-[state=active]:text-white text-gray-400">Templates</TabsTrigger>
@@ -798,6 +876,8 @@ export default function PromptsAdminPage() {
                           });
                           setMessage({ type: 'success', text: 'Improvement applied! Review and save when ready.' });
                         }}
+                        initialMessage={refinerInitialMessage}
+                        onInitialMessageProcessed={() => setRefinerInitialMessage(undefined)}
                       />
                     </TabsContent>
 
@@ -899,53 +979,73 @@ export default function PromptsAdminPage() {
                               No executions recorded yet
                             </div>
                           ) : (
-                            executions.map((exec) => (
-                              <div
-                                key={exec.id}
-                                className="bg-gray-800 rounded-lg p-3 border border-gray-700 flex items-center justify-between"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-2 h-2 rounded-full ${
-                                    exec.status === 'success' ? 'bg-green-500' :
-                                    exec.status === 'error' ? 'bg-red-500' : 'bg-yellow-500'
-                                  }`} />
-                                  <div>
-                                    <div className="text-sm text-white">
-                                      {exec.status === 'success' ? 'Success' :
-                                       exec.status === 'error' ? 'Error' : 'Running'}
-                                    </div>
-                                    <div className="text-xs text-gray-400">
-                                      {new Date(exec.created_at).toLocaleString()}
+                            executions.map((exec) => {
+                              const hasLlmEvaluation = exec.agent_feedback?.some(
+                                f => f.feedback_type === 'llm_judge'
+                              );
+                              return (
+                                <div
+                                  key={exec.id}
+                                  className="bg-gray-800 rounded-lg p-3 border border-gray-700 flex items-center justify-between"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-2 h-2 rounded-full ${
+                                      exec.status === 'success' ? 'bg-green-500' :
+                                      exec.status === 'error' ? 'bg-red-500' : 'bg-yellow-500'
+                                    }`} />
+                                    <div>
+                                      <div className="text-sm text-white">
+                                        {exec.status === 'success' ? 'Success' :
+                                         exec.status === 'error' ? 'Error' : 'Running'}
+                                      </div>
+                                      <div className="text-xs text-gray-400">
+                                        {new Date(exec.created_at).toLocaleString()}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                                <div className="flex items-center gap-4 text-sm">
-                                  {exec.latency_ms && (
-                                    <span className="text-gray-400">
-                                      {(exec.latency_ms / 1000).toFixed(2)}s
-                                    </span>
-                                  )}
-                                  {exec.input_tokens && exec.output_tokens && (
-                                    <span className="text-gray-400">
-                                      {exec.input_tokens + exec.output_tokens} tokens
-                                    </span>
-                                  )}
-                                  {exec.agent_feedback && exec.agent_feedback.length > 0 && (
-                                    <div className="flex items-center gap-1">
-                                      <Star className="w-3 h-3 text-yellow-500" />
-                                      <span className="text-yellow-400">
-                                        {exec.agent_feedback[0].overall_score}
+                                  <div className="flex items-center gap-4 text-sm">
+                                    {exec.latency_ms && (
+                                      <span className="text-gray-400">
+                                        {(exec.latency_ms / 1000).toFixed(2)}s
                                       </span>
-                                    </div>
-                                  )}
-                                  {exec.error_message && (
-                                    <span className="text-red-400 text-xs max-w-[200px] truncate">
-                                      {exec.error_message}
-                                    </span>
-                                  )}
+                                    )}
+                                    {exec.input_tokens && exec.output_tokens && (
+                                      <span className="text-gray-400">
+                                        {exec.input_tokens + exec.output_tokens} tokens
+                                      </span>
+                                    )}
+                                    {exec.agent_feedback && exec.agent_feedback.length > 0 && (
+                                      <div className="flex items-center gap-1">
+                                        <Star className="w-3 h-3 text-yellow-500" />
+                                        <span className="text-yellow-400">
+                                          {exec.agent_feedback[0].overall_score}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {exec.error_message && (
+                                      <span className="text-red-400 text-xs max-w-[200px] truncate">
+                                        {exec.error_message}
+                                      </span>
+                                    )}
+                                    {exec.status === 'success' && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => triggerDeepEvaluation(exec)}
+                                        className={`border-gray-600 text-xs h-7 px-2 ${
+                                          hasLlmEvaluation
+                                            ? 'bg-purple-600/20 border-purple-500 text-purple-300 hover:bg-purple-600/30'
+                                            : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                                        }`}
+                                      >
+                                        <Zap className="w-3 h-3 mr-1" />
+                                        {hasLlmEvaluation ? 'View' : 'Deep Evaluate'}
+                                      </Button>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            ))
+                              );
+                            })
                           )}
                         </div>
                       </div>
@@ -1174,6 +1274,191 @@ export default function PromptsAdminPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Deep Evaluation Dialog */}
+      <Dialog open={evaluationDialogOpen} onOpenChange={setEvaluationDialogOpen}>
+        <DialogContent className="bg-gray-900 border-gray-800 max-w-2xl max-h-[80vh] overflow-y-auto text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Zap className="w-5 h-5 text-purple-400" />
+              Deep Evaluation (LLM-as-Judge)
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6 mt-4">
+            {/* Execution Info */}
+            {selectedExecution && (
+              <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                <div className="text-sm text-gray-400">Execution ID</div>
+                <div className="text-white font-mono text-sm">{selectedExecution.id}</div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {new Date(selectedExecution.created_at).toLocaleString()}
+                </div>
+              </div>
+            )}
+
+            {/* Loading State */}
+            {deepEvaluating && (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-400 mb-4" />
+                <p className="text-gray-400">Running LLM-as-Judge evaluation...</p>
+                <p className="text-xs text-gray-500 mt-1">This may take 10-30 seconds</p>
+              </div>
+            )}
+
+            {/* Evaluation Results */}
+            {detailedEvaluation && !deepEvaluating && (
+              <div className="space-y-6">
+                {/* Score Summary */}
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-gray-800 rounded-lg p-3 border border-gray-700 text-center">
+                    <div className="text-2xl font-bold text-purple-400">
+                      {detailedEvaluation.overall_score}/5
+                    </div>
+                    <div className="text-xs text-gray-400">Overall</div>
+                  </div>
+                  <div className="bg-gray-800 rounded-lg p-3 border border-gray-700 text-center">
+                    <div className={`text-xl font-bold ${
+                      detailedEvaluation.quality_score >= 4 ? 'text-green-400' :
+                      detailedEvaluation.quality_score >= 3 ? 'text-yellow-400' : 'text-red-400'
+                    }`}>
+                      {detailedEvaluation.quality_score}/5
+                    </div>
+                    <div className="text-xs text-gray-400">Quality</div>
+                  </div>
+                  <div className="bg-gray-800 rounded-lg p-3 border border-gray-700 text-center">
+                    <div className={`text-xl font-bold ${
+                      detailedEvaluation.relevance_score >= 4 ? 'text-green-400' :
+                      detailedEvaluation.relevance_score >= 3 ? 'text-yellow-400' : 'text-red-400'
+                    }`}>
+                      {detailedEvaluation.relevance_score}/5
+                    </div>
+                    <div className="text-xs text-gray-400">Relevance</div>
+                  </div>
+                  <div className="bg-gray-800 rounded-lg p-3 border border-gray-700 text-center">
+                    <div className={`text-xl font-bold ${
+                      detailedEvaluation.creativity_score >= 4 ? 'text-green-400' :
+                      detailedEvaluation.creativity_score >= 3 ? 'text-yellow-400' : 'text-red-400'
+                    }`}>
+                      {detailedEvaluation.creativity_score}/5
+                    </div>
+                    <div className="text-xs text-gray-400">Creativity</div>
+                  </div>
+                </div>
+
+                {/* Feedback Text */}
+                {detailedEvaluation.feedback_text && (
+                  <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <h4 className="text-sm font-medium text-gray-300 mb-2">Summary</h4>
+                    <p className="text-white text-sm">{detailedEvaluation.feedback_text}</p>
+                  </div>
+                )}
+
+                {/* Strengths */}
+                {detailedEvaluation.strengths && detailedEvaluation.strengths.length > 0 && (
+                  <div className="bg-green-900/20 rounded-lg p-4 border border-green-700/50">
+                    <h4 className="text-sm font-medium text-green-400 mb-3 flex items-center gap-2">
+                      <ThumbsUp className="w-4 h-4" />
+                      Strengths ({detailedEvaluation.strengths.length})
+                    </h4>
+                    <ul className="space-y-2">
+                      {detailedEvaluation.strengths.map((strength, idx) => (
+                        <li key={idx} className="text-sm text-green-200 flex gap-2">
+                          <span className="text-green-500">✓</span>
+                          {strength}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Weaknesses */}
+                {detailedEvaluation.weaknesses && detailedEvaluation.weaknesses.length > 0 && (
+                  <div className="bg-red-900/20 rounded-lg p-4 border border-red-700/50">
+                    <h4 className="text-sm font-medium text-red-400 mb-3 flex items-center gap-2">
+                      <ThumbsDown className="w-4 h-4" />
+                      Weaknesses ({detailedEvaluation.weaknesses.length})
+                    </h4>
+                    <ul className="space-y-2">
+                      {detailedEvaluation.weaknesses.map((weakness, idx) => (
+                        <li key={idx} className="text-sm text-red-200 flex gap-2">
+                          <span className="text-red-500">✗</span>
+                          {weakness}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Suggestions */}
+                {detailedEvaluation.suggestions && detailedEvaluation.suggestions.length > 0 && (
+                  <div className="bg-yellow-900/20 rounded-lg p-4 border border-yellow-700/50">
+                    <h4 className="text-sm font-medium text-yellow-400 mb-3 flex items-center gap-2">
+                      <Lightbulb className="w-4 h-4" />
+                      Suggestions ({detailedEvaluation.suggestions.length})
+                    </h4>
+                    <ul className="space-y-2">
+                      {detailedEvaluation.suggestions.map((suggestion, idx) => (
+                        <li key={idx} className="text-sm text-yellow-200 flex gap-2">
+                          <span className="text-yellow-500">→</span>
+                          {suggestion}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Evaluated At */}
+                {detailedEvaluation.evaluated_at && (
+                  <div className="text-xs text-gray-500 text-right">
+                    Evaluated: {new Date(detailedEvaluation.evaluated_at).toLocaleString()}
+                  </div>
+                )}
+
+                {/* Improve from Evaluation Button */}
+                {(detailedEvaluation.weaknesses?.length > 0 || detailedEvaluation.suggestions?.length > 0) && (
+                  <div className="pt-4 border-t border-gray-700">
+                    <Button
+                      onClick={() => {
+                        // Build improvement message from weaknesses and suggestions
+                        const weaknessText = detailedEvaluation.weaknesses?.length > 0
+                          ? `## 개선이 필요한 약점:\n${detailedEvaluation.weaknesses.map((w, i) => `${i + 1}. ${w}`).join('\n')}\n\n`
+                          : '';
+                        const suggestionText = detailedEvaluation.suggestions?.length > 0
+                          ? `## 개선 제안:\n${detailedEvaluation.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n`
+                          : '';
+                        const improvementMessage = `LLM-as-Judge 평가 결과를 바탕으로 프롬프트를 개선해주세요.\n\n${weaknessText}${suggestionText}위 피드백을 반영하여 개선된 프롬프트를 제안해주세요.`;
+
+                        // Set initial message for refiner
+                        setRefinerInitialMessage(improvementMessage);
+                        // Switch to refine tab
+                        setActiveTab('refine');
+                        // Close dialog
+                        setEvaluationDialogOpen(false);
+                      }}
+                      className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                    >
+                      <Zap className="w-4 h-4 mr-2" />
+                      이 평가로 개선하기
+                    </Button>
+                    <p className="text-xs text-gray-500 mt-2 text-center">
+                      Refine 탭에서 AI가 자동으로 개선안을 제안합니다
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* No Evaluation Yet */}
+            {!detailedEvaluation && !deepEvaluating && (
+              <div className="text-center py-8 text-gray-400">
+                <Zap className="w-12 h-12 mx-auto mb-3 text-gray-600" />
+                <p>No evaluation available</p>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

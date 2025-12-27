@@ -111,6 +111,10 @@ interface PromptRefinerChatProps {
     systemPrompt?: string;
     templates?: Record<string, string>;
   }) => void;
+  /** Auto-send this message when component mounts or when it changes */
+  initialMessage?: string;
+  /** Callback when initial message has been processed */
+  onInitialMessageProcessed?: () => void;
 }
 
 
@@ -118,6 +122,8 @@ export function PromptRefinerChat({
   agentId,
   currentPrompt,
   onApplyImprovement,
+  initialMessage,
+  onInitialMessageProcessed,
 }: PromptRefinerChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -392,6 +398,23 @@ JSON 코드 블록만 출력하고 설명은 필요없어.`,
       setIsLoading(false);
     }
   }, [agentId, currentPrompt, input, messages]);
+
+  // Track processed initial message to avoid re-sending
+  const processedInitialMessageRef = useRef<string | null>(null);
+
+  // Handle initial message from evaluation (auto-send improvement request)
+  useEffect(() => {
+    if (
+      initialMessage &&
+      initialMessage !== processedInitialMessageRef.current &&
+      !isLoading
+    ) {
+      processedInitialMessageRef.current = initialMessage;
+      // Use improve action for evaluation-based improvements
+      sendMessage('improve', initialMessage);
+      onInitialMessageProcessed?.();
+    }
+  }, [initialMessage, isLoading, sendMessage, onInitialMessageProcessed]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
