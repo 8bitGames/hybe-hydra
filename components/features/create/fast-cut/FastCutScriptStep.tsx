@@ -40,6 +40,38 @@ import {
 import { ScriptGenerationResponse, TikTokSEO, ASPECT_RATIOS } from "@/lib/fast-cut-api";
 import { KeywordInputPopover } from "@/components/ui/keyword-input-popover";
 import { CampaignSelector } from "@/components/features/create/CampaignSelector";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { ImageSourceMode, AIImageStyle } from "@/lib/stores/fast-cut-context";
+import { ImageIcon, Wand2 } from "lucide-react";
+
+// Image style options for AI generation
+const AI_IMAGE_STYLES: { value: AIImageStyle; label: { ko: string; en: string }; description: { ko: string; en: string } }[] = [
+  {
+    value: "cinematic",
+    label: { ko: "시네마틱", en: "Cinematic" },
+    description: { ko: "영화같은 분위기", en: "Movie-like atmosphere" }
+  },
+  {
+    value: "photorealistic",
+    label: { ko: "포토리얼", en: "Photorealistic" },
+    description: { ko: "실사 사진 스타일", en: "Real photo style" }
+  },
+  {
+    value: "illustration",
+    label: { ko: "일러스트", en: "Illustration" },
+    description: { ko: "그래픽 일러스트", en: "Graphic illustration" }
+  },
+  {
+    value: "artistic",
+    label: { ko: "아티스틱", en: "Artistic" },
+    description: { ko: "예술적 표현", en: "Artistic expression" }
+  },
+  {
+    value: "anime",
+    label: { ko: "애니메", en: "Anime" },
+    description: { ko: "애니메이션 스타일", en: "Animation style" }
+  },
+];
 
 interface FastCutScriptStepProps {
   // Campaign selection
@@ -64,6 +96,11 @@ interface FastCutScriptStepProps {
   onGenerateScript: () => void;
   keywordPopoverOpen?: boolean;
   onKeywordPopoverOpenChange?: (open: boolean) => void;
+  // Image source mode
+  imageSourceMode: ImageSourceMode;
+  setImageSourceMode: (mode: ImageSourceMode) => void;
+  aiImageStyle: AIImageStyle;
+  setAiImageStyle: (style: AIImageStyle) => void;
 }
 
 export function FastCutScriptStep({
@@ -86,6 +123,10 @@ export function FastCutScriptStep({
   onGenerateScript,
   keywordPopoverOpen,
   onKeywordPopoverOpenChange,
+  imageSourceMode,
+  setImageSourceMode,
+  aiImageStyle,
+  setAiImageStyle,
 }: FastCutScriptStepProps) {
   const { language, translate } = useI18n();
   const [campaignSelectorOpen, setCampaignSelectorOpen] = useState(!campaignId && !campaignReadOnly);
@@ -319,6 +360,114 @@ export function FastCutScriptStep({
             ? "클릭하여 이미지 검색에 사용할 키워드를 선택하세요"
             : "Click to select keywords for image search"}
         </p>
+      </div>
+
+      {/* Image Source Mode Selection */}
+      <div className="space-y-3">
+        <Label className="text-sm font-medium text-neutral-700 flex items-center">
+          {language === "ko" ? "이미지 소스" : "Image Source"}
+          <TooltipIcon tooltipKey="fastCut.tooltips.script.imageSource" />
+        </Label>
+        <RadioGroup
+          value={imageSourceMode}
+          onValueChange={(value) => setImageSourceMode(value as ImageSourceMode)}
+          className="grid grid-cols-2 gap-3"
+        >
+          {/* Search Mode */}
+          <div className="relative">
+            <RadioGroupItem
+              value="search"
+              id="image-source-search"
+              className="peer sr-only"
+            />
+            <label
+              htmlFor="image-source-search"
+              className={cn(
+                "flex flex-col items-center justify-center p-4 rounded-lg border-2 cursor-pointer transition-all",
+                imageSourceMode === "search"
+                  ? "border-neutral-900 bg-neutral-50"
+                  : "border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50"
+              )}
+            >
+              <ImageIcon className={cn(
+                "h-6 w-6 mb-2",
+                imageSourceMode === "search" ? "text-neutral-900" : "text-neutral-500"
+              )} />
+              <span className={cn(
+                "text-sm font-medium",
+                imageSourceMode === "search" ? "text-neutral-900" : "text-neutral-600"
+              )}>
+                {language === "ko" ? "이미지 검색" : "Image Search"}
+              </span>
+              <span className="text-xs text-neutral-400 mt-1">
+                {language === "ko" ? "키워드로 이미지 검색" : "Search by keywords"}
+              </span>
+            </label>
+          </div>
+
+          {/* AI Generate Mode */}
+          <div className="relative">
+            <RadioGroupItem
+              value="ai_generate"
+              id="image-source-ai"
+              className="peer sr-only"
+            />
+            <label
+              htmlFor="image-source-ai"
+              className={cn(
+                "flex flex-col items-center justify-center p-4 rounded-lg border-2 cursor-pointer transition-all",
+                imageSourceMode === "ai_generate"
+                  ? "border-neutral-900 bg-neutral-50"
+                  : "border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50"
+              )}
+            >
+              <Wand2 className={cn(
+                "h-6 w-6 mb-2",
+                imageSourceMode === "ai_generate" ? "text-neutral-900" : "text-neutral-500"
+              )} />
+              <span className={cn(
+                "text-sm font-medium",
+                imageSourceMode === "ai_generate" ? "text-neutral-900" : "text-neutral-600"
+              )}>
+                {language === "ko" ? "AI 이미지 생성" : "AI Image Generation"}
+              </span>
+              <span className="text-xs text-neutral-400 mt-1">
+                {language === "ko" ? "각 씬별 AI 생성" : "AI generates per scene"}
+              </span>
+            </label>
+          </div>
+        </RadioGroup>
+
+        {/* AI Image Style Selection - Only shown when AI mode is selected */}
+        {imageSourceMode === "ai_generate" && (
+          <div className="mt-4 p-4 bg-neutral-50 border border-neutral-200 rounded-lg space-y-3">
+            <Label className="text-sm font-medium text-neutral-700">
+              {language === "ko" ? "이미지 스타일" : "Image Style"}
+            </Label>
+            <Select value={aiImageStyle} onValueChange={(value) => setAiImageStyle(value as AIImageStyle)}>
+              <SelectTrigger className="w-full bg-white border-neutral-200">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AI_IMAGE_STYLES.map((style) => (
+                  <SelectItem key={style.value} value={style.value}>
+                    <div className="flex flex-col">
+                      <span>{language === "ko" ? style.label.ko : style.label.en}</span>
+                      <span className="text-xs text-neutral-400">
+                        {language === "ko" ? style.description.ko : style.description.en}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-neutral-500">
+              {language === "ko"
+                ? "AI가 각 씬의 내용에 맞는 이미지를 자동 생성합니다. 스크립트 생성 후 이미지 단계에서 확인할 수 있습니다."
+                : "AI will automatically generate images matching each scene. You can review them in the image step after generating the script."}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Generate Button */}

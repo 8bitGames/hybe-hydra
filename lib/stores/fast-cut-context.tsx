@@ -21,6 +21,30 @@ import {
 
 export type FastCutStep = "script" | "images" | "music" | "effects";
 export type SubtitleMode = "script" | "lyrics";
+export type ImageSourceMode = "search" | "ai_generate";
+export type AIImageStyle = "photorealistic" | "illustration" | "cinematic" | "artistic" | "anime";
+
+// AI Generated Image type
+export interface AIGeneratedImage {
+  sceneNumber: number;
+  scriptText: string;
+  imagePrompt: string;
+  negativePrompt?: string;
+  imageUrl?: string;
+  imageBase64?: string;
+  s3Key?: string;
+  status: "pending" | "generating" | "completed" | "failed";
+  error?: string;
+}
+
+// Global style from Image Prompt Generator
+export interface AIImageGlobalStyle {
+  colorPalette: string[];
+  lighting: string;
+  mood: string;
+  artStyle: string;
+  visualTheme: string;
+}
 
 interface FastCutState {
   // Current step
@@ -42,11 +66,22 @@ interface FastCutState {
   // Scene analysis data (from video analysis on Start page)
   hasSceneAnalysis: boolean;
 
-  // Images step
+  // Images step - Mode selection
+  imageSourceMode: ImageSourceMode;  // 'search' or 'ai_generate'
+
+  // Images step - Search mode
   searchingImages: boolean;
   imageCandidates: ImageCandidate[];
   selectedImages: ImageCandidate[];
   generationId: string | null;
+
+  // Images step - AI Generation mode
+  aiImageStyle: AIImageStyle;
+  aiImageGlobalStyle: AIImageGlobalStyle | null;
+  aiGeneratedImages: AIGeneratedImage[];
+  generatingAiPrompts: boolean;
+  generatingAiImages: boolean;
+  aiImageSessionId: string | null;
 
   // Music step
   matchingMusic: boolean;
@@ -90,13 +125,25 @@ interface FastCutActions {
   setScriptData: (data: ScriptGenerationResponse | null) => void;
   setTiktokSEO: (seo: TikTokSEO | null) => void;
 
-  // Images actions
+  // Images actions - Mode
+  setImageSourceMode: (mode: ImageSourceMode) => void;
+
+  // Images actions - Search mode
   setSearchingImages: (loading: boolean) => void;
   setImageCandidates: (images: ImageCandidate[]) => void;
   setSelectedImages: (images: ImageCandidate[]) => void;
   setGenerationId: (id: string | null) => void;
   addSelectedImage: (image: ImageCandidate) => void;
   removeSelectedImage: (imageId: string) => void;
+
+  // Images actions - AI Generation mode
+  setAiImageStyle: (style: AIImageStyle) => void;
+  setAiImageGlobalStyle: (style: AIImageGlobalStyle | null) => void;
+  setAiGeneratedImages: (images: AIGeneratedImage[] | ((prev: AIGeneratedImage[]) => AIGeneratedImage[])) => void;
+  updateAiGeneratedImage: (sceneNumber: number, update: Partial<AIGeneratedImage>) => void;
+  setGeneratingAiPrompts: (loading: boolean) => void;
+  setGeneratingAiImages: (loading: boolean) => void;
+  setAiImageSessionId: (id: string | null) => void;
 
   // Music actions
   setMatchingMusic: (loading: boolean) => void;
@@ -140,10 +187,17 @@ const initialState: FastCutState = {
   scriptData: null,
   tiktokSEO: null,
   hasSceneAnalysis: false,
+  imageSourceMode: "search",  // Default to search mode
   searchingImages: false,
   imageCandidates: [],
   selectedImages: [],
   generationId: null,
+  aiImageStyle: "cinematic",  // Default AI image style
+  aiImageGlobalStyle: null,
+  aiGeneratedImages: [],
+  generatingAiPrompts: false,
+  generatingAiImages: false,
+  aiImageSessionId: null,
   matchingMusic: false,
   audioMatches: [],
   selectedAudio: null,
@@ -447,7 +501,15 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
         // Script step can be bypassed if we have scene analysis from Start page
         return state.scriptData !== null || state.hasSceneAnalysis;
       case "images":
-        return state.selectedImages.length >= 3;
+        // Check based on image source mode
+        if (state.imageSourceMode === "ai_generate") {
+          // AI mode: need at least 3 successfully generated images
+          const completedImages = state.aiGeneratedImages.filter(img => img.status === "completed");
+          return completedImages.length >= 3;
+        } else {
+          // Search mode: need at least 3 selected images
+          return state.selectedImages.length >= 3;
+        }
       case "music":
         return state.selectedAudio !== null || state.musicSkipped;
       case "effects":
@@ -455,7 +517,7 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
       default:
         return false;
     }
-  }, [state.currentStep, state.scriptData, state.hasSceneAnalysis, state.selectedImages, state.selectedAudio, state.musicSkipped]);
+  }, [state.currentStep, state.scriptData, state.hasSceneAnalysis, state.selectedImages, state.imageSourceMode, state.aiGeneratedImages, state.selectedAudio, state.musicSkipped]);
 
   const setCampaignId = useCallback((id: string | null) => {
     setState((prev) => ({ ...prev, campaignId: id }));
@@ -523,6 +585,49 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
       ...prev,
       selectedImages: prev.selectedImages.filter((img) => img.id !== imageId),
     }));
+  }, []);
+
+  // AI Image Generation actions
+  const setImageSourceMode = useCallback((imageSourceMode: ImageSourceMode) => {
+    setState((prev) => ({ ...prev, imageSourceMode }));
+  }, []);
+
+  const setAiImageStyle = useCallback((aiImageStyle: AIImageStyle) => {
+    setState((prev) => ({ ...prev, aiImageStyle }));
+  }, []);
+
+  const setAiImageGlobalStyle = useCallback((aiImageGlobalStyle: AIImageGlobalStyle | null) => {
+    setState((prev) => ({ ...prev, aiImageGlobalStyle }));
+  }, []);
+
+  const setAiGeneratedImages = useCallback((imagesOrUpdater: AIGeneratedImage[] | ((prev: AIGeneratedImage[]) => AIGeneratedImage[])) => {
+    setState((prev) => ({
+      ...prev,
+      aiGeneratedImages: typeof imagesOrUpdater === 'function'
+        ? imagesOrUpdater(prev.aiGeneratedImages)
+        : imagesOrUpdater,
+    }));
+  }, []);
+
+  const updateAiGeneratedImage = useCallback((sceneNumber: number, update: Partial<AIGeneratedImage>) => {
+    setState((prev) => ({
+      ...prev,
+      aiGeneratedImages: prev.aiGeneratedImages.map((img) =>
+        img.sceneNumber === sceneNumber ? { ...img, ...update } : img
+      ),
+    }));
+  }, []);
+
+  const setGeneratingAiPrompts = useCallback((generatingAiPrompts: boolean) => {
+    setState((prev) => ({ ...prev, generatingAiPrompts }));
+  }, []);
+
+  const setGeneratingAiImages = useCallback((generatingAiImages: boolean) => {
+    setState((prev) => ({ ...prev, generatingAiImages }));
+  }, []);
+
+  const setAiImageSessionId = useCallback((aiImageSessionId: string | null) => {
+    setState((prev) => ({ ...prev, aiImageSessionId }));
   }, []);
 
   // Music actions
@@ -603,12 +708,20 @@ export function FastCutProvider({ children }: FastCutProviderProps) {
     setGeneratingScript,
     setScriptData,
     setTiktokSEO,
+    setImageSourceMode,
     setSearchingImages,
     setImageCandidates,
     setSelectedImages,
     setGenerationId,
     addSelectedImage,
     removeSelectedImage,
+    setAiImageStyle,
+    setAiImageGlobalStyle,
+    setAiGeneratedImages,
+    updateAiGeneratedImage,
+    setGeneratingAiPrompts,
+    setGeneratingAiImages,
+    setAiImageSessionId,
     setMatchingMusic,
     setAudioMatches,
     setSelectedAudio,

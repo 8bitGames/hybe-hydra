@@ -145,6 +145,63 @@ export interface ImageSearchRequest {
   forceRefresh?: boolean;  // Bypass cache and force fresh search
 }
 
+// AI Image Generation Types
+export type AIImageStyle = 'cinematic' | 'photorealistic' | 'illustration' | 'artistic' | 'anime';
+
+export interface ImagePromptGenerationRequest {
+  script: {
+    lines: ScriptLine[];
+    totalDuration: number;
+  };
+  style: AIImageStyle;
+  language?: 'ko' | 'en';
+}
+
+export interface GeneratedImagePrompt {
+  sceneNumber: number;
+  scriptText: string;
+  imagePrompt: string;
+  negativePrompt?: string;
+}
+
+export interface ImagePromptGenerationResponse {
+  scenes: GeneratedImagePrompt[];
+  globalStyle?: {
+    colorPalette: string;
+    lighting: string;
+    mood: string;
+    consistency: string;
+  };
+}
+
+export interface AIImageGenerationRequest {
+  scenes: Array<{
+    sceneNumber: number;
+    imagePrompt: string;
+    negativePrompt?: string;
+  }>;
+  aspectRatio?: '9:16' | '16:9' | '1:1';
+  sessionId?: string;
+}
+
+export interface GeneratedImage {
+  sceneNumber: number;
+  success: boolean;
+  imageUrl?: string;
+  imageBase64?: string;
+  s3Key?: string;
+  error?: string;
+}
+
+export interface AIImageGenerationResponse {
+  success: boolean;
+  sessionId: string;
+  totalScenes: number;
+  successCount: number;
+  failureCount: number;
+  images: GeneratedImage[];
+}
+
 export interface ImageSearchResponse {
   candidates: ImageCandidate[];
   totalFound: number;
@@ -415,6 +472,32 @@ export const fastCutApi = {
    */
   searchImages: async (data: ImageSearchRequest): Promise<ImageSearchResponse> => {
     const response = await api.post<ImageSearchResponse>('/api/v1/fast-cut/images/search', data as unknown as Record<string, unknown>);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Generate image prompts from script using AI
+   * This creates detailed image generation prompts for each scene
+   */
+  generateImagePrompts: async (data: ImagePromptGenerationRequest): Promise<ImagePromptGenerationResponse> => {
+    const response = await api.post<ImagePromptGenerationResponse>(
+      '/api/v1/fast-cut/images/generate-prompts',
+      data as unknown as Record<string, unknown>
+    );
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Generate AI images from prompts using Vertex AI Imagen 3
+   * Creates actual images for each scene
+   */
+  generateImages: async (data: AIImageGenerationRequest): Promise<AIImageGenerationResponse> => {
+    const response = await api.post<AIImageGenerationResponse>(
+      '/api/v1/fast-cut/images/generate',
+      data as unknown as Record<string, unknown>
+    );
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },

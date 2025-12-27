@@ -90,6 +90,11 @@ export default function FastCutScriptPage() {
     setGenerationId,
     setStyleSetId,
     setError,
+    // Image source mode (search vs AI generation)
+    imageSourceMode,
+    setImageSourceMode,
+    aiImageStyle,
+    setAiImageStyle,
   } = useFastCut();
 
   // Dialog state
@@ -251,6 +256,9 @@ export default function FastCutScriptPage() {
         scriptData,
         tiktokSEO,
         generationId,
+        // Image source mode for the images step
+        imageSourceMode,
+        aiImageStyle,
       });
 
       // Proceed to images stage (saves to DB)
@@ -294,6 +302,11 @@ export default function FastCutScriptPage() {
               onGenerateScript={handleGenerateScript}
               keywordPopoverOpen={keywordPopoverOpen}
               onKeywordPopoverOpenChange={setKeywordPopoverOpen}
+              // Image source mode props
+              imageSourceMode={imageSourceMode}
+              setImageSourceMode={setImageSourceMode}
+              aiImageStyle={aiImageStyle}
+              setAiImageStyle={setAiImageStyle}
             />
           </div>
         </div>

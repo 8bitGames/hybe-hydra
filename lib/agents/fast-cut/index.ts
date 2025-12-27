@@ -56,6 +56,21 @@ export {
 } from './image-keyword-generator';
 
 // ============================================================================
+// Image Prompt Generator (AI Image Generation)
+// ============================================================================
+
+export {
+  ImagePromptGeneratorAgent,
+  createImagePromptGeneratorAgent,
+  ImagePromptGeneratorConfig,
+  ImagePromptGeneratorInputSchema,
+  ImagePromptGeneratorOutputSchema,
+  type ImagePromptGeneratorInput,
+  type ImagePromptGeneratorOutput,
+  type ScenePrompt,
+} from './image-prompt-generator';
+
+// ============================================================================
 // Effect Analyzer
 // ============================================================================
 
@@ -93,6 +108,7 @@ export const FastCutAgentFactories = {
   sceneAnalyzer: () => import('./scene-analyzer').then(m => m.getFastCutSceneAnalyzerAgent()),
   scriptGenerator: () => import('./script-generator').then(m => m.createFastCutScriptGeneratorAgent()),
   imageKeywordGenerator: () => import('./image-keyword-generator').then(m => m.createImageKeywordGeneratorAgent()),
+  imagePromptGenerator: () => import('./image-prompt-generator').then(m => m.createImagePromptGeneratorAgent()),
   effectAnalyzer: () => import('./effect-analyzer').then(m => m.createFastCutEffectAnalyzerAgent()),
   conductor: () => import('./conductor').then(m => m.createFastCutConductorAgent()),
 };
@@ -105,6 +121,7 @@ export const FastCutAgentIds = {
   SCENE_ANALYZER: 'fast-cut-scene-analyzer',
   SCRIPT_GENERATOR: 'fast-cut-script-generator',
   IMAGE_KEYWORD_GENERATOR: 'fast-cut-image-keyword-generator',
+  IMAGE_PROMPT_GENERATOR: 'fast-cut-image-prompt-generator',
   EFFECT_ANALYZER: 'fast-cut-effect-analyzer',
   CONDUCTOR: 'fast-cut-conductor',
 } as const;
@@ -117,6 +134,7 @@ export const FastCutAgentModels = {
   'fast-cut-scene-analyzer': GEMINI_FLASH,
   'fast-cut-script-generator': GEMINI_FLASH,
   'fast-cut-image-keyword-generator': GEMINI_FLASH,
+  'fast-cut-image-prompt-generator': GEMINI_FLASH,
   'fast-cut-effect-analyzer': GEMINI_FLASH,
   'fast-cut-conductor': GEMINI_FLASH,
 } as const;

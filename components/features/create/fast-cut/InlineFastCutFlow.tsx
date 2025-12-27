@@ -60,11 +60,18 @@ import {
 // Step Components
 import { FastCutScriptStep } from "./FastCutScriptStep";
 import { FastCutImageStep } from "./FastCutImageStep";
+import { FastCutAIImageStep } from "./FastCutAIImageStep";
 import { FastCutMusicStep } from "./FastCutMusicStep";
 import { FastCutEffectStep } from "./FastCutEffectStep";
 
 // Types
-import type { SubtitleMode } from "@/lib/stores/fast-cut-context";
+import type {
+  SubtitleMode,
+  ImageSourceMode,
+  AIImageStyle,
+  AIGeneratedImage,
+  AIImageGlobalStyle,
+} from "@/lib/stores/fast-cut-context";
 import type { LyricsData } from "@/lib/subtitle-styles";
 
 // ============================================================================
@@ -393,6 +400,8 @@ function StepNavigation({
   selectedImages,
   selectedAudio,
   musicSkipped,
+  imageSourceMode,
+  aiGeneratedImages,
   onStepClick,
 }: {
   currentStep: FastCutStep;
@@ -400,6 +409,8 @@ function StepNavigation({
   selectedImages: ImageCandidate[];
   selectedAudio: AudioMatch | null;
   musicSkipped: boolean;
+  imageSourceMode: ImageSourceMode;
+  aiGeneratedImages: AIGeneratedImage[];
   onStepClick: (step: FastCutStep) => void;
 }) {
   const { language, translate } = useI18n();
@@ -412,7 +423,14 @@ function StepNavigation({
   const isStepComplete = (step: FastCutStep): boolean => {
     switch (step) {
       case 1: return scriptData !== null;
-      case 2: return selectedImages.length >= 3;
+      case 2:
+        // Check image mode - search requires selected images, AI requires generated images
+        if (imageSourceMode === "search") {
+          return selectedImages.length >= 3;
+        } else {
+          const completedAiImages = aiGeneratedImages.filter((img) => img.status === "completed");
+          return completedAiImages.length >= 3;
+        }
       case 3: return selectedAudio !== null || musicSkipped; // Complete if audio selected OR skipped
       case 4: return false; // Never "complete" - this is the final step
       default: return false;
@@ -543,6 +561,14 @@ export function InlineFastCutFlow({
   const [imageCandidates, setImageCandidates] = useState<ImageCandidate[]>([]);
   const [selectedImages, setSelectedImages] = useState<ImageCandidate[]>([]);
   const [generationId, setGenerationId] = useState<string | null>(null);
+
+  // Step 2: AI Image Mode state
+  const [imageSourceMode, setImageSourceMode] = useState<ImageSourceMode>("search");
+  const [aiImageStyle, setAiImageStyle] = useState<AIImageStyle>("cinematic");
+  const [aiGeneratedImages, setAiGeneratedImages] = useState<AIGeneratedImage[]>([]);
+  const [aiImageGlobalStyle, setAiImageGlobalStyle] = useState<AIImageGlobalStyle | null>(null);
+  const [generatingAiPrompts, setGeneratingAiPrompts] = useState(false);
+  const [generatingAiImages, setGeneratingAiImages] = useState(false);
 
   // Step 3: Music state
   const [matchingMusic, setMatchingMusic] = useState(false);
@@ -857,6 +883,231 @@ export function InlineFastCutFlow({
   };
 
   // ========================================
+  // Step 2: AI Image Generation
+  // ========================================
+
+  const handleGenerateAiPrompts = async () => {
+    if (!scriptData) return;
+
+    setGeneratingAiPrompts(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/v1/fast-cut/images/generate-prompts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userPrompt: prompt,
+          vibe: scriptData.vibe,
+          scriptLines: scriptData.script.lines.map((line) => ({
+            text: line.text,
+            timing: line.timing,
+            duration: line.duration,
+            purpose: line.purpose,
+          })),
+          artistName: analyze.artistStageName || analyze.artistName || "Artist",
+          aspectRatio,
+          imageStyle: aiImageStyle,
+          language,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to generate image prompts");
+      }
+
+      const result = await response.json();
+      console.log("[FastCut AI Images] Prompts generated:", result.sceneCount);
+
+      // Set global style
+      setAiImageGlobalStyle(result.globalStyle);
+
+      // Initialize AI generated images array with prompts
+      const initialImages: AIGeneratedImage[] = result.scenes.map(
+        (scene: { sceneNumber: number; scriptText: string; imagePrompt: string; negativePrompt: string }) => ({
+          sceneNumber: scene.sceneNumber,
+          scriptText: scene.scriptText,
+          imagePrompt: scene.imagePrompt,
+          negativePrompt: scene.negativePrompt,
+          status: "pending" as const,
+        })
+      );
+      setAiGeneratedImages(initialImages);
+
+      toast.success(
+        language === "ko" ? "프롬프트 생성 완료" : "Prompts Generated",
+        language === "ko"
+          ? `${result.sceneCount}개의 이미지 프롬프트가 생성되었습니다`
+          : `${result.sceneCount} image prompts generated`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Prompt generation failed");
+    } finally {
+      setGeneratingAiPrompts(false);
+    }
+  };
+
+  const handleGenerateAiImages = async () => {
+    if (aiGeneratedImages.length === 0) return;
+
+    // Only generate pending images
+    const pendingImages = aiGeneratedImages.filter((img) => img.status === "pending");
+    if (pendingImages.length === 0) return;
+
+    setGeneratingAiImages(true);
+    setError("");
+
+    // Mark pending images as generating
+    setAiGeneratedImages((prev) =>
+      prev.map((img) =>
+        img.status === "pending" ? { ...img, status: "generating" as const } : img
+      )
+    );
+
+    try {
+      const response = await fetch("/api/v1/fast-cut/images/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scenes: pendingImages.map((img) => ({
+            sceneNumber: img.sceneNumber,
+            imagePrompt: img.imagePrompt,
+            negativePrompt: img.negativePrompt,
+          })),
+          aspectRatio,
+          sessionId: generationId || `fastcut-ai-${Date.now()}`,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to generate images");
+      }
+
+      const result = await response.json();
+      console.log("[FastCut AI Images] Images generated:", result.successCount, "success,", result.failureCount, "failed");
+
+      // Update images with results
+      setAiGeneratedImages((prev) =>
+        prev.map((img) => {
+          const generated = result.images.find(
+            (g: { sceneNumber: number; success: boolean; imageUrl?: string; imageBase64?: string; s3Key?: string; error?: string }) =>
+              g.sceneNumber === img.sceneNumber
+          );
+          if (generated) {
+            return {
+              ...img,
+              imageUrl: generated.imageUrl,
+              imageBase64: generated.imageBase64,
+              s3Key: generated.s3Key,
+              status: generated.success ? ("completed" as const) : ("failed" as const),
+              error: generated.error,
+            };
+          }
+          return img;
+        })
+      );
+
+      if (result.failureCount > 0) {
+        toast.warning(
+          language === "ko" ? "일부 이미지 생성 실패" : "Some Images Failed",
+          language === "ko"
+            ? `${result.successCount}개 성공, ${result.failureCount}개 실패`
+            : `${result.successCount} succeeded, ${result.failureCount} failed`
+        );
+      } else {
+        toast.success(
+          language === "ko" ? "이미지 생성 완료" : "Images Generated",
+          language === "ko"
+            ? `${result.successCount}개의 이미지가 생성되었습니다`
+            : `${result.successCount} images generated`
+        );
+      }
+    } catch (err) {
+      // Mark generating images as failed
+      setAiGeneratedImages((prev) =>
+        prev.map((img) =>
+          img.status === "generating"
+            ? { ...img, status: "failed" as const, error: err instanceof Error ? err.message : "Generation failed" }
+            : img
+        )
+      );
+      setError(err instanceof Error ? err.message : "Image generation failed");
+    } finally {
+      setGeneratingAiImages(false);
+    }
+  };
+
+  const handleRegenerateAiImage = async (sceneNumber: number) => {
+    const scene = aiGeneratedImages.find((img) => img.sceneNumber === sceneNumber);
+    if (!scene) return;
+
+    // Mark this scene as generating
+    setAiGeneratedImages((prev) =>
+      prev.map((img) =>
+        img.sceneNumber === sceneNumber ? { ...img, status: "generating" as const, error: undefined } : img
+      )
+    );
+
+    try {
+      const response = await fetch("/api/v1/fast-cut/images/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scenes: [
+            {
+              sceneNumber: scene.sceneNumber,
+              imagePrompt: scene.imagePrompt,
+              negativePrompt: scene.negativePrompt,
+            },
+          ],
+          aspectRatio,
+          sessionId: generationId || `fastcut-ai-${Date.now()}`,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to regenerate image");
+      }
+
+      const result = await response.json();
+      const generated = result.images[0];
+
+      setAiGeneratedImages((prev) =>
+        prev.map((img) =>
+          img.sceneNumber === sceneNumber
+            ? {
+                ...img,
+                imageUrl: generated.imageUrl,
+                imageBase64: generated.imageBase64,
+                s3Key: generated.s3Key,
+                status: generated.success ? ("completed" as const) : ("failed" as const),
+                error: generated.error,
+              }
+            : img
+        )
+      );
+
+      if (generated.success) {
+        toast.success(
+          language === "ko" ? "이미지 재생성 완료" : "Image Regenerated",
+          language === "ko" ? `씬 ${sceneNumber} 이미지가 재생성되었습니다` : `Scene ${sceneNumber} image regenerated`
+        );
+      }
+    } catch (err) {
+      setAiGeneratedImages((prev) =>
+        prev.map((img) =>
+          img.sceneNumber === sceneNumber
+            ? { ...img, status: "failed" as const, error: err instanceof Error ? err.message : "Regeneration failed" }
+            : img
+        )
+      );
+    }
+  };
+
+  // ========================================
   // Step 3: Music Matching
   // ========================================
 
@@ -983,7 +1234,13 @@ export function InlineFastCutFlow({
   const handleStartRender = async () => {
     // Allow proceeding with music skipped (no selectedAudio) or with audio selected
     const hasValidMusicChoice = selectedAudio !== null || musicSkipped;
-    if (!hasValidMusicChoice || selectedImages.length < 3 || !generationId || !scriptData) {
+
+    // Check image count based on mode
+    const hasValidImages = imageSourceMode === "search"
+      ? selectedImages.length >= 3
+      : aiGeneratedImages.filter((img) => img.status === "completed").length >= 3;
+
+    if (!hasValidMusicChoice || !hasValidImages || !generationId || !scriptData) {
       setError(language === "ko" ? "최소 3개의 이미지가 필요합니다" : "At least 3 images required");
       return;
     }
@@ -992,39 +1249,63 @@ export function InlineFastCutFlow({
     setError("");
 
     try {
-      // Proxy images first
-      const proxyResult = await fastCutApi.proxyImages(
-        generationId,
-        selectedImages.map((img) => ({ url: img.sourceUrl, id: img.id }))
-      );
+      let finalImages: { url: string; order: number }[];
+      let imageUrlMapForSession: Map<string, string>;
 
-      if (proxyResult.successful < 3) {
-        setError(`Image upload failed: ${proxyResult.failed} failed. Need at least 3 images.`);
-        setRendering(false);
-        return;
-      }
+      if (imageSourceMode === "search") {
+        // Search mode: Proxy images first (external URLs need to be uploaded to our storage)
+        const proxyResult = await fastCutApi.proxyImages(
+          generationId,
+          selectedImages.map((img) => ({ url: img.sourceUrl, id: img.id }))
+        );
 
-      const imageUrlMap = new Map(
-        proxyResult.results
-          .filter((r) => r.success)
-          .map((r) => [r.id, r.minioUrl])
-      );
+        if (proxyResult.successful < 3) {
+          setError(`Image upload failed: ${proxyResult.failed} failed. Need at least 3 images.`);
+          setRendering(false);
+          return;
+        }
 
-      const proxiedImages = selectedImages
-        .filter((img) => imageUrlMap.has(img.id))
-        .map((img, idx) => ({
-          url: imageUrlMap.get(img.id)!,
+        imageUrlMapForSession = new Map(
+          proxyResult.results
+            .filter((r) => r.success)
+            .map((r) => [r.id, r.minioUrl])
+        );
+
+        finalImages = selectedImages
+          .filter((img) => imageUrlMapForSession.has(img.id))
+          .map((img, idx) => ({
+            url: imageUrlMapForSession.get(img.id)!,
+            order: idx,
+          }));
+      } else {
+        // AI mode: Images are already on S3, use their URLs directly
+        const completedAiImages = aiGeneratedImages.filter((img) => img.status === "completed" && img.imageUrl);
+
+        if (completedAiImages.length < 3) {
+          setError(language === "ko" ? "최소 3개의 AI 이미지가 필요합니다" : "At least 3 AI images required");
+          setRendering(false);
+          return;
+        }
+
+        imageUrlMapForSession = new Map(
+          completedAiImages.map((img) => [`ai-scene-${img.sceneNumber}`, img.imageUrl!])
+        );
+
+        finalImages = completedAiImages.map((img, idx) => ({
+          url: img.imageUrl!,
           order: idx,
         }));
+      }
 
       // Start render - audioAssetId is optional when music is skipped
       console.log("[FastCut] 🚀 Starting render API call...");
       console.log("[FastCut] 🎤 Subtitle mode:", subtitleMode, "→ useAudioLyrics:", subtitleMode === "lyrics");
+      console.log("[FastCut] 🖼️ Image source mode:", imageSourceMode, "→ images count:", finalImages.length);
       const renderResult = await fastCutApi.startRender({
         generationId,
         campaignId,
         audioAssetId: selectedAudio?.id || "", // Empty string when skipped, API handles this
-        images: proxiedImages,
+        images: finalImages,
         script: { lines: scriptData.script.lines },
         // Use style set instead of individual effectPreset
         styleSetId,
@@ -1060,6 +1341,21 @@ export function InlineFastCutFlow({
           scriptPreview: displayScript.substring(0, 100),
         });
 
+        // Build images array based on mode
+        const sessionImages = imageSourceMode === "search"
+          ? selectedImages.map((img) => ({
+              id: img.id,
+              url: imageUrlMapForSession.get(img.id) || img.sourceUrl,
+              thumbnailUrl: img.thumbnailUrl,
+            }))
+          : aiGeneratedImages
+              .filter((img) => img.status === "completed" && img.imageUrl)
+              .map((img) => ({
+                id: `ai-scene-${img.sceneNumber}`,
+                url: img.imageUrl!,
+                thumbnailUrl: img.imageUrl!, // AI images use same URL for thumbnail
+              }));
+
         const sessionData = {
           campaignId,
           campaignName,
@@ -1067,11 +1363,7 @@ export function InlineFastCutFlow({
           contentType: "fast-cut" as const, // Fast Cut workflow
           content: {
             script: displayScript,
-            images: selectedImages.map((img) => ({
-              id: img.id,
-              url: imageUrlMap.get(img.id) || img.sourceUrl,
-              thumbnailUrl: img.thumbnailUrl,
-            })),
+            images: sessionImages,
             musicTrack: selectedAudio ? {
               id: selectedAudio.id,
               name: selectedAudio.filename,
@@ -1127,8 +1419,15 @@ export function InlineFastCutFlow({
     setPrompt(originalPrompt);
     setScriptData(null);
     setTiktokSEO(null);
+    // Reset search mode images
     setImageCandidates([]);
     setSelectedImages([]);
+    // Reset AI mode images
+    setAiGeneratedImages([]);
+    setAiImageGlobalStyle(null);
+    setGeneratingAiPrompts(false);
+    setGeneratingAiImages(false);
+    // Reset music
     setAudioMatches([]);
     setSelectedAudio(null);
     setAudioAnalysis(null);
@@ -1158,6 +1457,18 @@ export function InlineFastCutFlow({
       musicDetail = language === "ko" ? "대기 중" : "Pending";
     }
 
+    // Determine images status based on mode
+    let imagesComplete: boolean;
+    let imagesDetail: string;
+    if (imageSourceMode === "search") {
+      imagesComplete = selectedImages.length >= 3;
+      imagesDetail = `${selectedImages.length}/3+ ${language === "ko" ? "선택됨" : "selected"}`;
+    } else {
+      const completedCount = aiGeneratedImages.filter((img) => img.status === "completed").length;
+      imagesComplete = completedCount >= 3;
+      imagesDetail = `${completedCount}/3+ ${language === "ko" ? "AI 생성됨" : "AI generated"}`;
+    }
+
     return {
       script: {
         complete: scriptData !== null,
@@ -1167,9 +1478,9 @@ export function InlineFastCutFlow({
           : language === "ko" ? "대기 중" : "Pending"
       },
       images: {
-        complete: selectedImages.length >= 3,
+        complete: imagesComplete,
         label: language === "ko" ? "이미지" : "Images",
-        detail: `${selectedImages.length}/3+ ${language === "ko" ? "선택됨" : "selected"}`
+        detail: imagesDetail
       },
       music: {
         complete: selectedAudio !== null || musicSkipped,
@@ -1182,7 +1493,7 @@ export function InlineFastCutFlow({
         detail: styleSets.find(s => s.id === styleSetId)?.nameKo || styleSetId.replace("_", " ")
       }
     };
-  }, [scriptData, selectedImages.length, selectedAudio, musicSkipped, styleSetId, styleSets, language]);
+  }, [scriptData, selectedImages.length, selectedAudio, musicSkipped, styleSetId, styleSets, language, imageSourceMode, aiGeneratedImages]);
 
   // ========================================
   // Re-analyze audio for different segment
@@ -1237,7 +1548,15 @@ export function InlineFastCutFlow({
   const canProceed = (): boolean => {
     switch (currentStep) {
       case 1: return scriptData !== null;
-      case 2: return selectedImages.length >= 3;
+      case 2:
+        // Check image mode - search requires selected images, AI requires generated images
+        if (imageSourceMode === "search") {
+          return selectedImages.length >= 3;
+        } else {
+          // AI mode: need at least 3 completed images
+          const completedAiImages = aiGeneratedImages.filter((img) => img.status === "completed");
+          return completedAiImages.length >= 3;
+        }
       case 3: return selectedAudio !== null || musicSkipped; // Can proceed if audio selected OR skipped
       case 4: return true;
       default: return false;
@@ -1272,6 +1591,8 @@ export function InlineFastCutFlow({
           selectedImages={selectedImages}
           selectedAudio={selectedAudio}
           musicSkipped={musicSkipped}
+          imageSourceMode={imageSourceMode}
+          aiGeneratedImages={aiGeneratedImages}
           onStepClick={setCurrentStep}
         />
       </div>
@@ -1319,10 +1640,14 @@ export function InlineFastCutFlow({
                 onGenerateScript={handleGenerateScript}
                 keywordPopoverOpen={keywordPopoverOpen}
                 onKeywordPopoverOpenChange={setKeywordPopoverOpen}
+                imageSourceMode={imageSourceMode}
+                setImageSourceMode={setImageSourceMode}
+                aiImageStyle={aiImageStyle}
+                setAiImageStyle={setAiImageStyle}
               />
             )}
 
-            {currentStep === 2 && (
+            {currentStep === 2 && imageSourceMode === "search" && (
               <FastCutImageStep
                 imageCandidates={imageCandidates}
                 selectedImages={selectedImages}
@@ -1334,6 +1659,21 @@ export function InlineFastCutFlow({
                 onReorderImages={reorderImages}
                 onSearchImages={() => handleSearchImages()}
                 onForceRefresh={handleForceRefreshImages}
+                onNext={handleNext}
+              />
+            )}
+
+            {currentStep === 2 && imageSourceMode === "ai_generate" && (
+              <FastCutAIImageStep
+                scriptData={scriptData}
+                aiGeneratedImages={aiGeneratedImages}
+                aiImageGlobalStyle={aiImageGlobalStyle}
+                aiImageStyle={aiImageStyle}
+                generatingAiPrompts={generatingAiPrompts}
+                generatingAiImages={generatingAiImages}
+                onGeneratePrompts={handleGenerateAiPrompts}
+                onGenerateImages={handleGenerateAiImages}
+                onRegenerateImage={handleRegenerateAiImage}
                 onNext={handleNext}
               />
             )}
@@ -1459,9 +1799,15 @@ export function InlineFastCutFlow({
 
           {/* Step progress indicator */}
           <div className="flex items-center gap-2 text-sm text-neutral-500">
-            {currentStep === 2 && (
+            {currentStep === 2 && imageSourceMode === "search" && (
               <span>
                 {selectedImages.length}/3+ {language === "ko" ? "이미지 선택됨" : "images selected"}
+              </span>
+            )}
+            {currentStep === 2 && imageSourceMode === "ai_generate" && (
+              <span>
+                {aiGeneratedImages.filter((img) => img.status === "completed").length}/3+{" "}
+                {language === "ko" ? "AI 이미지 생성됨" : "AI images generated"}
               </span>
             )}
             {currentStep === 3 && !selectedAudio && !musicSkipped && (
@@ -1496,7 +1842,7 @@ export function InlineFastCutFlow({
               <TooltipTrigger asChild>
                 <Button
                   onClick={handleStartRender}
-                  disabled={rendering || (!selectedAudio && !musicSkipped) || selectedImages.length < 3}
+                  disabled={rendering || (!selectedAudio && !musicSkipped) || (imageSourceMode === "search" ? selectedImages.length < 3 : aiGeneratedImages.filter((img) => img.status === "completed").length < 3)}
                   className="bg-neutral-900 text-white hover:bg-neutral-800"
                 >
                   {rendering ? (
