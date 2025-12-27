@@ -319,9 +319,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, job_id, status });
   } catch (error) {
-    console.error("[Job Callback] Error processing callback:", error);
+    // Enhanced error logging for debugging
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error("[Job Callback] Error processing callback:", {
+      error: errorMessage,
+      stack: errorStack,
+      // Log the full error object for Prisma errors
+      fullError: error,
+    });
     return NextResponse.json(
-      { detail: "Failed to process callback" },
+      { detail: "Failed to process callback", error: errorMessage },
       { status: 500 }
     );
   }

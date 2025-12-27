@@ -302,11 +302,39 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // If gcsUri is missing for a completed AI video, try to recover it from backend
+    let gcsUri = generation.gcsUri;
+    if (generation.status === "COMPLETED" && generation.generationType === "AI" && !gcsUri) {
+      console.log(`[Extend Info] Attempting to recover gcsUri for ${generation.id}`);
+      try {
+        const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || "http://15.164.236.53:8000";
+        const recoveryResponse = await fetch(
+          `${COMPOSE_ENGINE_URL}/api/v1/ai/job/${generation.id}/status`,
+          { method: "GET", headers: { "Content-Type": "application/json" } }
+        );
+
+        if (recoveryResponse.ok) {
+          const recoveryData = await recoveryResponse.json();
+          if (recoveryData.metadata?.gcs_uri) {
+            console.log(`[Extend Info] Recovered gcsUri: ${recoveryData.metadata.gcs_uri.slice(0, 60)}...`);
+            gcsUri = recoveryData.metadata.gcs_uri;
+            // Update database with recovered gcsUri
+            await prisma.videoGeneration.update({
+              where: { id: generation.id },
+              data: { gcsUri },
+            });
+          }
+        }
+      } catch (recoveryError) {
+        console.warn(`[Extend Info] Failed to recover gcsUri: ${recoveryError}`);
+      }
+    }
+
     const extensionCount = generation.extensionCount || 0;
     const canExtend =
       generation.status === "COMPLETED" &&
       generation.generationType === "AI" &&
-      !!generation.gcsUri &&
+      !!gcsUri &&
       extensionCount < 20;
 
     return NextResponse.json({
@@ -323,14 +351,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         current_extension_count: extensionCount,
         max_extensions: 20,
         remaining_extensions: Math.max(0, 20 - extensionCount),
-        has_gcs_uri: !!generation.gcsUri,
+        has_gcs_uri: !!gcsUri,
         is_ai_generated: generation.generationType === "AI",
         is_completed: generation.status === "COMPLETED",
       },
       reasons_cannot_extend: !canExtend ? {
         not_completed: generation.status !== "COMPLETED",
         not_ai_generated: generation.generationType !== "AI",
-        no_gcs_uri: !generation.gcsUri,
+        no_gcs_uri: !gcsUri,
         max_extensions_reached: extensionCount >= 20,
       } : null,
     });

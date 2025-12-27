@@ -56,8 +56,41 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Job not found" }, { status: 404 });
     }
 
-    // If already completed or failed in DB, return current status
+    // If already completed or failed in DB, check if we need to recover gcsUri
     if (generation.status === "COMPLETED" || generation.status === "FAILED") {
+      // If gcsUri is missing for a completed video, try to recover it from backend
+      if (generation.status === "COMPLETED" && !generation.gcsUri) {
+        console.log(`[AI Job Poll] Completed video missing gcsUri, attempting recovery for ${jobId}`);
+        try {
+          const recoveryResponse = await fetch(
+            `${COMPOSE_ENGINE_URL}/api/v1/ai/job/${jobId}/status`,
+            { method: "GET", headers: { "Content-Type": "application/json" } }
+          );
+
+          if (recoveryResponse.ok) {
+            const recoveryData: ComposeEngineStatusResponse = await recoveryResponse.json();
+            if (recoveryData.metadata?.gcs_uri) {
+              console.log(`[AI Job Poll] Recovered gcsUri: ${recoveryData.metadata.gcs_uri.slice(0, 60)}...`);
+              await prisma.videoGeneration.update({
+                where: { id: generation.id },
+                data: { gcsUri: recoveryData.metadata.gcs_uri },
+              });
+              return NextResponse.json({
+                job_id: jobId,
+                generation_id: generation.id,
+                status: generation.status.toLowerCase(),
+                output_url: generation.composedOutputUrl || generation.outputUrl,
+                gcs_uri: recoveryData.metadata.gcs_uri,
+                progress: generation.progress,
+                is_final: true,
+              });
+            }
+          }
+        } catch (recoveryError) {
+          console.warn(`[AI Job Poll] Failed to recover gcsUri: ${recoveryError}`);
+        }
+      }
+
       return NextResponse.json({
         job_id: jobId,
         generation_id: generation.id,
