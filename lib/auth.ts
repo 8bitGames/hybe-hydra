@@ -1,8 +1,8 @@
 import { compare, hash } from "bcryptjs";
-import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
+import { createClient } from "./supabase/server";
+import { createClient as createBareClient } from "@supabase/supabase-js";
 import { prisma } from "./db/prisma";
-import type { User, UserRole } from "@prisma/client";
+import type { UserRole } from "@prisma/client";
 
 export interface AuthUser {
   id: string;
@@ -13,8 +13,8 @@ export interface AuthUser {
   isActive: boolean;
 }
 
-// Create Supabase client for token verification
-const supabase = createClient(
+// Bare Supabase client for API routes (token validation from header)
+const bareSupabase = createBareClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
@@ -29,17 +29,13 @@ export async function verifyPassword(password: string, hashedPassword: string): 
 }
 
 // Get current user from cookies (for server components)
+// Uses SSR client which automatically reads Supabase session from cookies
 export async function getCurrentUser(): Promise<AuthUser | null> {
   try {
-    const cookieStore = await cookies();
-    const accessToken = cookieStore.get("sb-access-token")?.value;
+    const supabase = await createClient();
 
-    if (!accessToken) {
-      return null;
-    }
-
-    // Verify token with Supabase
-    const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(accessToken);
+    // SSR client automatically reads session from cookies set by middleware
+    const { data: { user: supabaseUser }, error } = await supabase.auth.getUser();
 
     if (error || !supabaseUser?.email) {
       return null;
@@ -69,6 +65,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 }
 
 // Get user from Authorization header (for API routes)
+// Uses bare client since API routes receive token in header, not cookies
 export async function getUserFromHeader(authHeader: string | null): Promise<AuthUser | null> {
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return null;
@@ -77,8 +74,8 @@ export async function getUserFromHeader(authHeader: string | null): Promise<Auth
   const token = authHeader.substring(7);
 
   try {
-    // Verify token with Supabase
-    const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
+    // Verify token with Supabase using bare client
+    const { data: { user: supabaseUser }, error } = await bareSupabase.auth.getUser(token);
 
     if (error || !supabaseUser?.email) {
       return null;

@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 import { prisma } from "@/lib/db/prisma";
-
-// Create Supabase client for auth operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,6 +14,27 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Create response object first so we can set cookies on it
+    let response = NextResponse.json({});
+
+    // Create Supabase client with cookie handling
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options);
+            });
+          },
+        },
+      }
+    );
 
     // Authenticate with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -62,8 +77,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Return Supabase tokens along with user profile
-    return NextResponse.json({
+    // Create the final response with user data and cookies
+    const responseData = {
       access_token: authData.session.access_token,
       refresh_token: authData.session.refresh_token,
       token_type: "bearer",
@@ -75,7 +90,24 @@ export async function POST(request: NextRequest) {
         role: user.role,
         label_ids: user.labelIds,
       },
+    };
+
+    // Create new response with the data but preserve cookies
+    const finalResponse = NextResponse.json(responseData);
+
+    // Copy cookies from the response object that Supabase set
+    response.cookies.getAll().forEach((cookie) => {
+      finalResponse.cookies.set(cookie.name, cookie.value, {
+        ...cookie,
+        // Ensure cookies are accessible
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+      });
     });
+
+    return finalResponse;
   } catch (error) {
     console.error("Login error:", error);
     return NextResponse.json(
