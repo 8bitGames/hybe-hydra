@@ -6,7 +6,6 @@ import { useWorkflowStore, ContentIdea, StartFromVideo } from "@/lib/stores/work
 import { useShallow } from "zustand/react/shallow";
 import { useWorkflowNavigation, useWorkflowSync } from "@/lib/hooks/useWorkflowNavigation";
 import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
-import { useCampaigns } from "@/lib/queries";
 import { useI18n } from "@/lib/i18n";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/api";
@@ -17,22 +16,19 @@ import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WorkflowHeader, WorkflowFooter } from "@/components/workflow/WorkflowHeader";
 import { StashedPromptsPanel } from "@/components/features/stashed-prompts-panel";
-import { cn, getProxiedImageUrl } from "@/lib/utils";
+import { cn, getProxiedImageUrl, formatNumber } from "@/lib/utils";
 import {
   ArrowLeft,
   ArrowRight,
   Sparkles,
   Check,
-  FolderOpen,
   Video,
   Image as ImageIcon,
   Bot,
   Clock,
   Music,
-  Plus,
   X,
   BookmarkCheck,
-  ChevronsUpDown,
 } from "lucide-react";
 import {
   Collapsible,
@@ -300,31 +296,69 @@ function ContextReceptionPanel() {
           </div>
         )}
 
-        {/* Saved Inspiration */}
+        {/* Trend Videos - Auto-fetched from keyword analysis */}
         {savedInspiration.length > 0 && (
           <div>
-            <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-1">
-              {language === "ko" ? "저장된 영감" : "Saved Inspiration"} ({savedInspiration.length})
-            </p>
-            <div className="flex gap-1">
+            <div className="flex items-center gap-1 mb-1">
+              <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+                {language === "ko" ? "트렌드 영상" : "Trend Videos"} ({savedInspiration.length})
+              </p>
+              <InfoButton
+                content={language === "ko"
+                  ? "입력한 키워드로 검색된 TikTok 인기 영상들입니다. AI가 이 영상들의 성과를 참고하여 아이디어를 생성합니다."
+                  : "Popular TikTok videos found by your keywords. AI references these videos' performance to generate ideas."}
+                size="sm"
+              />
+            </div>
+            <div className="space-y-2 max-h-[200px] overflow-y-auto">
               {savedInspiration.slice(0, 5).map((v) => (
                 <div
                   key={v.id}
-                  className="w-10 h-14 rounded overflow-hidden bg-neutral-200"
+                  className="p-2 bg-neutral-50 rounded-lg border border-neutral-100"
                 >
-                  {v.thumbnailUrl && (
-                    <img
-                      src={getProxiedImageUrl(v.thumbnailUrl) || ""}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
+                  {/* Stats Row */}
+                  <div className="flex items-center gap-3 text-[10px] text-neutral-500 mb-1">
+                    <span className="flex items-center gap-1">
+                      <Video className="w-3 h-3" />
+                      {formatNumber(v.stats?.playCount || 0)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      ❤️ {formatNumber(v.stats?.likeCount || 0)}
+                    </span>
+                    <span className="text-green-600 font-medium">
+                      {v.engagementRate?.toFixed(1)}%
+                    </span>
+                    {v.author?.name && (
+                      <span className="text-neutral-400">@{v.author.name}</span>
+                    )}
+                  </div>
+                  {/* Description */}
+                  {v.description && (
+                    <p className="text-xs text-neutral-600 line-clamp-2 mb-1">
+                      {v.description}
+                    </p>
+                  )}
+                  {/* Hashtags */}
+                  {v.hashtags && v.hashtags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {v.hashtags.slice(0, 4).map((tag, i) => (
+                        <span key={i} className="text-[10px] text-blue-500">
+                          #{tag}
+                        </span>
+                      ))}
+                      {v.hashtags.length > 4 && (
+                        <span className="text-[10px] text-neutral-400">
+                          +{v.hashtags.length - 4}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}
               {savedInspiration.length > 5 && (
-                <div className="w-10 h-14 rounded bg-neutral-200 flex items-center justify-center text-xs text-neutral-500">
-                  +{savedInspiration.length - 5}
-                </div>
+                <p className="text-[10px] text-neutral-400 text-center py-1">
+                  +{savedInspiration.length - 5} {language === "ko" ? "개 더" : "more"}
+                </p>
               )}
             </div>
           </div>
@@ -499,171 +533,6 @@ function ContextReceptionPanel() {
         )}
       </div>
     </div>
-  );
-}
-
-// ============================================================================
-// Campaign Selector Component
-// ============================================================================
-
-function CampaignSelector() {
-  const { language } = useI18n();
-  const router = useRouter();
-  const [isOpen, setIsOpen] = useState(false);
-
-  const { campaignId, campaignName, artistDisplayName, setAnalyzeCampaign } = useWorkflowStore(
-    useShallow((state) => ({
-      campaignId: state.analyze.campaignId,
-      campaignName: state.analyze.campaignName,
-      artistDisplayName: state.analyze.artistStageName || state.analyze.artistName,
-      setAnalyzeCampaign: state.setAnalyzeCampaign,
-    }))
-  );
-
-  const { data: campaignsData, isLoading } = useCampaigns({ page_size: 100, status: "active" });
-  const campaigns = campaignsData?.items || [];
-
-  // Auto-select first campaign
-  useEffect(() => {
-    if (campaigns.length > 0 && !campaignId) {
-      setAnalyzeCampaign(
-        campaigns[0].id,
-        campaigns[0].name,
-        campaigns[0].description,
-        campaigns[0].genre,
-        campaigns[0].artist_name,
-        campaigns[0].artist_stage_name
-      );
-    }
-  }, [campaigns, campaignId, setAnalyzeCampaign]);
-
-  const handleSelectCampaign = (campaign: typeof campaigns[0]) => {
-    setAnalyzeCampaign(
-      campaign.id,
-      campaign.name,
-      campaign.description,
-      campaign.genre,
-      campaign.artist_name,
-      campaign.artist_stage_name
-    );
-    setIsOpen(false);
-  };
-
-  if (isLoading) {
-    return <div className="h-12 bg-neutral-100 rounded-lg animate-pulse" />;
-  }
-
-  if (campaigns.length === 0) {
-    return (
-      <div className="text-center py-6 border border-neutral-200 rounded-lg">
-        <FolderOpen className="h-8 w-8 text-neutral-400 mx-auto mb-2" />
-        <p className="text-xs text-neutral-500 mb-2">
-          {language === "ko" ? "캠페인이 없습니다" : "No campaigns"}
-        </p>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => router.push("/campaigns/new")}
-          className="border-neutral-300"
-        >
-          <Plus className="h-3 w-3 mr-1" />
-          {language === "ko" ? "캠페인 만들기" : "Create Campaign"}
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <CollapsibleTrigger asChild>
-        <button
-          className={cn(
-            "w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all",
-            campaignId
-              ? "border-neutral-300 bg-white hover:border-neutral-400"
-              : "border-neutral-200 bg-neutral-50 hover:border-neutral-300"
-          )}
-        >
-          <div className="w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0">
-            <FolderOpen className="h-4 w-4 text-neutral-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            {campaignId ? (
-              <>
-                <p className="text-sm font-medium truncate text-neutral-800">{campaignName}</p>
-                <p className="text-xs text-neutral-500 truncate">{artistDisplayName}</p>
-              </>
-            ) : (
-              <p className="text-sm text-neutral-500">
-                {language === "ko" ? "캠페인을 선택하세요" : "Select a campaign"}
-              </p>
-            )}
-          </div>
-          <ChevronsUpDown className="h-4 w-4 text-neutral-400 shrink-0" />
-        </button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="mt-2">
-        <div className="space-y-1.5 max-h-[200px] overflow-y-auto border border-neutral-200 rounded-lg p-2 bg-white">
-          {campaigns.slice(0, 10).map((campaign) => {
-            const isSelected = campaignId === campaign.id;
-            return (
-              <button
-                key={campaign.id}
-                onClick={() => handleSelectCampaign(campaign)}
-                className={cn(
-                  "w-full flex items-center gap-3 p-2.5 rounded-lg text-left transition-all",
-                  isSelected
-                    ? "bg-neutral-100"
-                    : "hover:bg-neutral-50"
-                )}
-              >
-                <div
-                  className={cn(
-                    "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
-                    isSelected ? "bg-neutral-200" : "bg-neutral-100"
-                  )}
-                >
-                  {campaign.cover_image_url ? (
-                    <img
-                      src={campaign.cover_image_url}
-                      alt=""
-                      className="w-full h-full object-cover rounded-lg"
-                    />
-                  ) : (
-                    <FolderOpen
-                      className={cn("h-3.5 w-3.5", isSelected ? "text-neutral-900" : "text-neutral-500")}
-                    />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate text-neutral-800">{campaign.name}</p>
-                  <p className="text-xs text-neutral-500 truncate">
-                    {campaign.artist_stage_name || campaign.artist_name}
-                  </p>
-                </div>
-                {isSelected && (
-                  <div className="w-5 h-5 rounded-full bg-neutral-900 flex items-center justify-center shrink-0">
-                    <Check className="h-3 w-3 text-white" />
-                  </div>
-                )}
-              </button>
-            );
-          })}
-          {/* Create new campaign button */}
-          <button
-            onClick={() => router.push("/campaigns/new")}
-            className="w-full flex items-center gap-3 p-2.5 rounded-lg text-left transition-all hover:bg-neutral-50 border border-dashed border-neutral-300 mt-2"
-          >
-            <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0">
-              <Plus className="h-3.5 w-3.5 text-neutral-500" />
-            </div>
-            <p className="text-sm text-neutral-600">
-              {language === "ko" ? "새 캠페인 만들기" : "Create New Campaign"}
-            </p>
-          </button>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
   );
 }
 
@@ -1069,22 +938,6 @@ export default function AnalyzePage() {
             <div className="p-4 pr-6 space-y-4 overflow-hidden box-border">
               {/* Context from Discover */}
               <ContextReceptionPanel />
-
-              {/* Campaign Selection */}
-              <div>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Label className="text-xs font-medium text-neutral-700">
-                    {t.campaign}
-                  </Label>
-                  <InfoButton
-                    content={language === "ko"
-                      ? "생성된 콘텐츠가 저장될 캠페인을 선택하세요. 캠페인별로 콘텐츠를 관리하고 성과를 추적할 수 있습니다. 캠페인이 없다면 먼저 생성하세요."
-                      : "Select the campaign where generated content will be saved. You can manage content and track performance per campaign. Create a campaign first if you don't have one."}
-                    side="bottom"
-                  />
-                </div>
-                <CampaignSelector />
-              </div>
 
               {/* User Idea Input */}
               <div>

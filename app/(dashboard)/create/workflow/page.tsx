@@ -67,6 +67,7 @@ import {
 import { ChevronDown } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useSessionWorkflowSync } from "@/lib/stores/session-workflow-sync";
+import { useSessionStore } from "@/lib/stores/session-store";
 
 // ============================================================================
 // Constants
@@ -1448,6 +1449,9 @@ export default function CreatePage() {
   const sessionId = searchParams.get("session");
   const { activeSession, syncNow } = useSessionWorkflowSync("create");
 
+  // Session store - for creating session when generating video without existing session
+  const createSession = useSessionStore((state) => state.createSession);
+
   // Sync workflow stage
   useWorkflowSync("create");
   const { goToAnalyze } = useWorkflowNavigation();
@@ -1717,6 +1721,21 @@ export default function CreatePage() {
           throw new Error(response.error.message || "Generation failed");
         }
 
+        // CRITICAL: Ensure database session exists for publish flow to work
+        // If no active session, create one now so publish page can load it
+        let databaseSessionId = activeSession?.id;
+        if (!databaseSessionId) {
+          try {
+            console.log("[Workflow] No active session, creating one for publish flow...");
+            // Create session without entrySource - user navigated directly to workflow
+            databaseSessionId = await createSession();
+            console.log("[Workflow] Created new session for publish flow:", databaseSessionId);
+          } catch (sessionError) {
+            console.error("[Workflow] Failed to create session:", sessionError);
+            // Continue without session - publish will show error but video will still generate
+          }
+        }
+
         // Initialize processing session before navigating
         // This ensures the /processing page has a valid session to display
         initProcessingSession({
@@ -1738,7 +1757,7 @@ export default function CreatePage() {
           },
           generationId: response.data?.id,
           contentType: "ai_video", // AI Video workflow
-          databaseSessionId: activeSession?.id, // Link to database session for stage updates
+          databaseSessionId, // Link to database session for stage updates
         });
 
         toast.success(
@@ -1760,7 +1779,7 @@ export default function CreatePage() {
         setIsGenerating(false);
       }
     },
-    [selectedCampaignId, selectedCampaignName, audioAsset, audioStartTime, imageAssets, analyze, router, language, toast, fileToBase64, initProcessingSession, activeSession]
+    [selectedCampaignId, selectedCampaignName, audioAsset, audioStartTime, imageAssets, analyze, router, language, toast, fileToBase64, initProcessingSession, activeSession, createSession]
   );
 
   // Translations

@@ -130,6 +130,7 @@ export function VideoEditModal({
   const [syncedLyrics, setSyncedLyrics] = useState<LyricsData | null>(null);
   const [languageHint, setLanguageHint] = useState<"ko" | "en" | "ja" | "auto">("auto");
   const [syncing, setSyncing] = useState(false);
+  const [generatingCaptions, setGeneratingCaptions] = useState(false);
 
   // Subtitle style
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>({
@@ -256,6 +257,8 @@ export function VideoEditModal({
       : "Select at least audio or subtitles",
     extractLyrics: language === "ko" ? "가사 자동 추출" : "Auto-extract Lyrics",
     extracting: language === "ko" ? "추출 중..." : "Extracting...",
+    generateTikTokCaptions: language === "ko" ? "숏폼 캡션 생성" : "Generate Short-form Captions",
+    generatingCaptions: language === "ko" ? "캡션 생성 중..." : "Generating captions...",
     lyricsPreview: language === "ko" ? "가사 미리보기" : "Lyrics Preview",
     visible: language === "ko" ? "표시됨" : "visible",
     videoDuration: language === "ko" ? "영상 길이" : "Video Duration",
@@ -639,10 +642,10 @@ export function VideoEditModal({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Sync lyrics with audio
+  // Sync lyrics with audio (or distribute evenly if no audio)
   const handleSyncLyrics = async () => {
-    if (!selectedAsset || !lyricsText.trim()) {
-      setError(language === "ko" ? "음원과 가사를 모두 입력해주세요" : "Please select audio and enter lyrics");
+    if (!lyricsText.trim()) {
+      setError(language === "ko" ? "가사를 입력해주세요" : "Please enter lyrics");
       return;
     }
 
@@ -650,6 +653,31 @@ export function VideoEditModal({
     setError(null);
 
     try {
+      // If no audio selected, distribute lyrics evenly across video duration
+      if (!selectedAsset || musicSkipped) {
+        const lines = lyricsText.trim().split('\n').filter(line => line.trim());
+        const totalDuration = sourceVideoDuration || videoDuration || 15;
+        const segmentDuration = totalDuration / lines.length;
+
+        const segments = lines.map((line, idx) => ({
+          text: line.trim(),
+          start: idx * segmentDuration,
+          end: (idx + 1) * segmentDuration,
+        }));
+
+        setSyncedLyrics({
+          language: languageHint === 'auto' ? 'ko' : languageHint,
+          extractedAt: new Date().toISOString(),
+          source: 'manual',
+          confidence: 1,
+          isInstrumental: false,
+          fullText: lyricsText.trim(),
+          segments,
+        });
+        return;
+      }
+
+      // With audio, use AI for timing alignment
       const response = await api.post<{ lyrics: LyricsData; cached: boolean }>("/api/v1/audio/lyrics", {
         assetId: selectedAsset.id,
         lyrics: lyricsText.trim(),
@@ -683,7 +711,7 @@ export function VideoEditModal({
     setError(null);
 
     try {
-      const response = await api.post<{ lyrics: LyricsData }>("/api/v1/audio/extract-lyrics", {
+      const response = await api.post<{ lyrics: LyricsData }>("/api/v1/audio/lyrics", {
         assetId: selectedAsset.id,
         languageHint,
       });
@@ -702,6 +730,40 @@ export function VideoEditModal({
       setError(err instanceof Error ? err.message : "Extraction failed");
     } finally {
       setSyncing(false);
+    }
+  };
+
+  // Generate TikTok-style captions from audio lyrics
+  const handleGenerateTikTokCaptions = async () => {
+    if (!selectedAudioLyrics) {
+      setError(language === "ko" ? "가사가 포함된 음원을 선택해주세요" : "Please select audio with lyrics");
+      return;
+    }
+
+    setGeneratingCaptions(true);
+    setError(null);
+
+    try {
+      const response = await api.post<{ captions: string[] }>("/api/v1/video/tiktok-captions", {
+        lyrics: selectedAudioLyrics.fullText,
+        language: selectedAudioLyrics.language || languageHint,
+        videoDuration: sourceVideoDuration || videoDuration,
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message || "Caption generation failed");
+      }
+
+      if (response.data?.captions && response.data.captions.length > 0) {
+        // Set the generated captions as lyrics text
+        setLyricsText(response.data.captions.join('\n'));
+        setSyncedLyrics(null); // Reset synced lyrics to force re-sync
+      }
+    } catch (err) {
+      console.error("TikTok caption generation error:", err);
+      setError(err instanceof Error ? err.message : "Caption generation failed");
+    } finally {
+      setGeneratingCaptions(false);
     }
   };
 
@@ -1414,14 +1476,36 @@ export function VideoEditModal({
               {/* Manual Input Section */}
               {subtitleMode === "manual" && (
                 <div className="space-y-4">
-                  {/* Extract Button (if audio selected) */}
+                  {/* AI Caption Generation Buttons */}
                   {selectedAsset && (
-                    <div className="flex items-center justify-end">
+                    <div className="flex items-center justify-end gap-2">
+                      {/* Generate TikTok Captions (when audio has lyrics) */}
+                      {selectedAudioLyrics && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={handleGenerateTikTokCaptions}
+                          disabled={generatingCaptions || syncing}
+                        >
+                          {generatingCaptions ? (
+                            <>
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              {t.generatingCaptions}
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="h-3 w-3 mr-1" />
+                              {t.generateTikTokCaptions}
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {/* Extract Lyrics (fallback when no lyrics) */}
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={handleExtractLyrics}
-                        disabled={syncing}
+                        disabled={syncing || generatingCaptions}
                       >
                         {syncing ? (
                           <>
@@ -1471,7 +1555,7 @@ export function VideoEditModal({
 
                     <Button
                       onClick={handleSyncLyrics}
-                      disabled={syncing || !lyricsText.trim() || !selectedAsset}
+                      disabled={syncing || !lyricsText.trim()}
                       size="sm"
                       className="ml-auto"
                     >
