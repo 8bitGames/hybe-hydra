@@ -39,6 +39,7 @@ import { FastCutScriptGeneratorConfig } from '@/lib/agents/fast-cut/script-gener
 import { FastCutEffectAnalyzerConfig } from '@/lib/agents/fast-cut/effect-analyzer';
 import { FastCutConductorConfig } from '@/lib/agents/fast-cut/conductor';
 import { ImageKeywordGeneratorConfig } from '@/lib/agents/fast-cut/image-keyword-generator';
+import { ImagePromptGeneratorConfig } from '@/lib/agents/fast-cut/image-prompt-generator';
 // Deep Analysis agents
 import { VideoClassifierConfig } from '@/lib/agents/deep-analysis/video-classifier';
 import { AccountMetricsConfig } from '@/lib/agents/deep-analysis/account-metrics';
@@ -70,11 +71,12 @@ const AGENT_CONFIGS = [
   PublishOptimizerConfig,
   CopywriterConfig,
   GeoAeoOptimizerConfig,
-  // Fast Cut (4)
+  // Fast Cut (5)
   FastCutScriptGeneratorConfig,
   FastCutEffectAnalyzerConfig,
   FastCutConductorConfig,
   ImageKeywordGeneratorConfig,
+  ImagePromptGeneratorConfig,
   // Deep Analysis (3)
   VideoClassifierConfig,
   AccountMetricsConfig,
