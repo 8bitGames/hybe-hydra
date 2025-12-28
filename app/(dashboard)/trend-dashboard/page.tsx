@@ -69,7 +69,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useSessionStore } from "@/lib/stores/session-store";
 import { useAuthStore } from "@/lib/auth-store";
-import { useShallow } from "zustand/react/shallow";
+// useShallow removed - individual property subscriptions used instead
 import { RelatedKeywordsDiscovery, SuggestedAccounts, SearchRecommendations } from "@/components/trends/expansion";
 
 // ============================================================================
@@ -1380,13 +1380,10 @@ export default function TrendDashboardPage() {
   const createSession = useSessionStore((state) => state.createSession);
 
   // Auth store - need to wait for hydration before making API calls
-  const { user, accessToken, _hasHydrated } = useAuthStore(
-    useShallow((state) => ({
-      user: state.user,
-      accessToken: state.accessToken,
-      _hasHydrated: state._hasHydrated,
-    }))
-  );
+  // Subscribe to each property individually to ensure re-renders on changes
+  const _hasHydrated = useAuthStore((state) => state._hasHydrated);
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
 
   // Workflow store actions (kept for compatibility during transition)
   const {
@@ -1438,6 +1435,42 @@ export default function TrendDashboardPage() {
     return calculateCrossKeywordInsights(keywordAnalysisData, trackedKeywords, isKorean);
   }, [keywordAnalysisData, trackedKeywords, isKorean]);
 
+  // Debug auth state
+  useEffect(() => {
+    console.log("[TrendDashboard] Auth state:", { _hasHydrated, accessToken: !!accessToken, user: !!user });
+  }, [_hasHydrated, accessToken, user]);
+
+  // Hydration timeout - if hydration doesn't happen within 2 seconds, force proceed
+  useEffect(() => {
+    if (_hasHydrated) return; // Already hydrated
+
+    const timeout = setTimeout(() => {
+      console.log("[TrendDashboard] Hydration timeout - checking localStorage directly");
+      // Check localStorage directly as fallback
+      const stored = localStorage.getItem("hydra-auth-storage");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          const hasToken = !!parsed?.state?.accessToken;
+          console.log("[TrendDashboard] localStorage check:", { hasToken });
+          if (!hasToken) {
+            // No token in storage, redirect to login
+            router.push("/login");
+          }
+        } catch (e) {
+          console.error("[TrendDashboard] localStorage parse error:", e);
+          router.push("/login");
+        }
+      } else {
+        // No storage, redirect to login
+        console.log("[TrendDashboard] No auth storage found, redirecting to login");
+        router.push("/login");
+      }
+    }, 2000);
+
+    return () => clearTimeout(timeout);
+  }, [_hasHydrated, router]);
+
   // Redirect to login if not authenticated after hydration
   useEffect(() => {
     if (_hasHydrated && !accessToken) {
@@ -1448,6 +1481,8 @@ export default function TrendDashboardPage() {
 
   // Load initial data from localStorage - wait for auth hydration before API calls
   useEffect(() => {
+    console.log("[TrendDashboard] loadInitialData effect triggered:", { _hasHydrated, hasToken: !!accessToken });
+
     // Wait for auth store hydration before making API calls
     if (!_hasHydrated) {
       console.log("[TrendDashboard] Waiting for auth hydration...");
@@ -1456,9 +1491,12 @@ export default function TrendDashboardPage() {
 
     // Skip loading if not authenticated (will redirect)
     if (!accessToken) {
+      console.log("[TrendDashboard] No token, setting loading false and redirecting...");
       setIsInitialLoading(false);
       return;
     }
+
+    console.log("[TrendDashboard] Starting data load...");
 
     const loadInitialData = async () => {
       try {

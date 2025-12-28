@@ -73,6 +73,7 @@ export const useAuthStore = create<AuthState>()(
 
         if (response.data) {
           const { access_token, refresh_token, user } = response.data;
+          console.log("[AuthStore] Login successful, setting token...");
 
           // Set token in API client
           api.setAccessToken(access_token);
@@ -207,13 +208,28 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         user: state.user,
       }),
-      onRehydrateStorage: () => (state) => {
-        // 복원된 토큰을 API 클라이언트에 설정
-        if (state?.accessToken) {
-          api.setAccessToken(state.accessToken);
-        }
-        // Hydration 완료 표시
-        state?.setHasHydrated(true);
+      onRehydrateStorage: () => {
+        // This function is called BEFORE hydration with the initial state
+        // It returns a callback that's called AFTER hydration
+        return (hydratedState, error: unknown) => {
+          console.log("[AuthStore] Rehydration complete:", {
+            hasToken: !!hydratedState?.accessToken,
+            isAuthenticated: hydratedState?.isAuthenticated,
+            error: error instanceof Error ? error.message : error
+          });
+          if (error) {
+            console.error("[AuthStore] Rehydration error:", error);
+          }
+          // 복원된 토큰을 API 클라이언트에 설정
+          if (hydratedState?.accessToken) {
+            api.setAccessToken(hydratedState.accessToken);
+          }
+          // Hydration 완료 표시 - use the setter from hydrated state
+          if (hydratedState?.setHasHydrated) {
+            hydratedState.setHasHydrated(true);
+            console.log("[AuthStore] _hasHydrated set to true via setter");
+          }
+        };
       },
     }
   )
