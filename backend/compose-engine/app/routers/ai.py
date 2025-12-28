@@ -35,6 +35,7 @@ from ..services.vertex_ai import (
     GenerationResult,
 )
 from ..utils.job_queue import JobQueue
+from ..utils.gcs_client import get_gcs_client
 from ..dependencies import get_job_queue
 from ..config import get_settings
 
@@ -417,20 +418,35 @@ async def process_image_generation(
             await job_queue.update_job(
                 job_id,
                 progress=70,
-                current_step="Uploading to S3"
+                current_step="Uploading to GCS"
             )
 
-        # Upload to S3
+        # Upload to GCS (instead of S3)
         image_bytes = base64.b64decode(result.image_base64)
-        output_url = await upload_to_s3(
+
+        gcs = get_gcs_client()
+        gcs_bucket = os.environ.get('GCS_AI_BUCKET', 'hyb-hydra-dev-ai-output')
+        gcs_key = f"images/{job_id}.png"
+        gcs_uri = gcs.upload_bytes(
             image_bytes,
-            request.output.s3_bucket,
-            request.output.s3_key,
-            content_type="image/png"
+            gcs_key,
+            content_type="image/png",
+            bucket_name=gcs_bucket,
         )
+        logger.info(f"[{job_id}] Image uploaded to GCS: {gcs_uri}")
+
+        # Generate signed URL
+        output_url = gcs.generate_signed_url_from_uri(gcs_uri)
+        logger.info(f"[{job_id}] Generated GCS signed URL for image")
 
         # Update completion status
         duration_ms = int((time.time() - start_time) * 1000)
+
+        # Include GCS URI in metadata
+        generation_metadata = {
+            "gcs_uri": gcs_uri,
+            "storage": "gcs",
+        }
 
         if job_queue:
             await job_queue.update_job(
@@ -438,10 +454,11 @@ async def process_image_generation(
                 status=JobStatus.COMPLETED,
                 progress=100,
                 current_step="Completed",
-                output_url=output_url
+                output_url=output_url,
+                metadata=generation_metadata,
             )
 
-        logger.info(f"[{job_id}] Image generation completed in {duration_ms}ms")
+        logger.info(f"[{job_id}] Image generation completed in {duration_ms}ms (gcs_uri: {gcs_uri})")
 
     except Exception as e:
         logger.error(f"[{job_id}] Image generation failed: {e}")
@@ -512,43 +529,33 @@ async def process_video_generation(
         if not result.success:
             raise RuntimeError(result.error or "Video generation failed")
 
-        if job_queue:
-            await job_queue.update_job(
-                job_id,
-                progress=80,
-                current_step="Downloading from GCS and uploading to S3"
-            )
-
-        # Download from GCS and upload to S3
         # Use the actual video URI returned by Veo (may differ from our requested storageUri)
-        from google.cloud import storage
-
         actual_video_uri = result.video_uri or output_gcs_uri
-        logger.info(f"[{job_id}] Downloading video from: {actual_video_uri}")
+        logger.info(f"[{job_id}] Video generated at GCS: {actual_video_uri}")
 
-        # Parse GCS URI (gs://bucket/path)
-        if actual_video_uri.startswith("gs://"):
-            uri_parts = actual_video_uri[5:].split("/", 1)
-            actual_bucket = uri_parts[0]
-            actual_key = uri_parts[1] if len(uri_parts) > 1 else gcs_key
-        else:
-            actual_bucket = gcs_bucket
-            actual_key = gcs_key
+        # Get GCS client for operations
+        gcs = get_gcs_client()
 
-        gcs_client = storage.Client()
-        bucket = gcs_client.bucket(actual_bucket)
-        blob = bucket.blob(actual_key)
-
-        video_bytes = blob.download_as_bytes()
-
-        # Handle audio overlay if configured
+        # Handle audio overlay if configured (requires download, process, re-upload to GCS)
         if settings.audio_overlay:
+            if job_queue:
+                await job_queue.update_job(
+                    job_id,
+                    progress=80,
+                    current_step="Downloading video for audio overlay"
+                )
+
+            # Download video for processing
+            video_bytes = gcs.download_from_uri(actual_video_uri)
+            logger.info(f"[{job_id}] Downloaded video: {len(video_bytes)} bytes")
+
             if job_queue:
                 await job_queue.update_job(
                     job_id,
                     progress=85,
                     current_step="Applying audio overlay"
                 )
+
             logger.info(f"[{job_id}] Applying audio overlay...")
             try:
                 video_bytes = await apply_audio_overlay(
@@ -557,22 +564,30 @@ async def process_video_generation(
                     job_id=job_id,
                 )
                 logger.info(f"[{job_id}] Audio overlay applied: {len(video_bytes)} bytes")
-            except Exception as e:
-                logger.warning(f"[{job_id}] Audio overlay failed, saving video without audio: {e}")
 
+                # Upload processed video to GCS with new key
+                processed_gcs_key = f"videos/processed/{job_id}.mp4"
+                actual_video_uri = gcs.upload_bytes(
+                    video_bytes,
+                    processed_gcs_key,
+                    content_type="video/mp4",
+                    bucket_name=gcs_bucket,
+                )
+                logger.info(f"[{job_id}] Processed video uploaded to GCS: {actual_video_uri}")
+
+            except Exception as e:
+                logger.warning(f"[{job_id}] Audio overlay failed, using original video: {e}")
+
+        # Generate signed URL directly from GCS (no S3 copy needed)
         if job_queue:
             await job_queue.update_job(
                 job_id,
                 progress=95,
-                current_step="Uploading to S3"
+                current_step="Generating signed URL"
             )
 
-        output_url = await upload_to_s3(
-            video_bytes,
-            request.output.s3_bucket,
-            request.output.s3_key,
-            content_type="video/mp4"
-        )
+        output_url = gcs.generate_signed_url_from_uri(actual_video_uri)
+        logger.info(f"[{job_id}] Generated GCS signed URL for video")
 
         duration_ms = int((time.time() - start_time) * 1000)
 
@@ -580,6 +595,7 @@ async def process_video_generation(
         generation_metadata = {
             "gcs_uri": actual_video_uri,
             "extension_count": 0,
+            "storage": "gcs",  # Mark as GCS storage
         }
 
         if job_queue:
@@ -705,43 +721,33 @@ async def process_image_to_video(
         if not result.success:
             raise RuntimeError(result.error or "Image-to-video generation failed")
 
-        if job_queue:
-            await job_queue.update_job(
-                job_id,
-                progress=80,
-                current_step="Downloading from GCS and uploading to S3"
-            )
-
-        # Download from GCS and upload to S3
         # Use the actual video URI returned by Veo (may differ from our requested storageUri)
-        from google.cloud import storage
-
         actual_video_uri = result.video_uri or output_gcs_uri
-        logger.info(f"[{job_id}] Downloading video from: {actual_video_uri}")
+        logger.info(f"[{job_id}] Video generated at GCS: {actual_video_uri}")
 
-        # Parse GCS URI (gs://bucket/path)
-        if actual_video_uri.startswith("gs://"):
-            uri_parts = actual_video_uri[5:].split("/", 1)
-            actual_bucket = uri_parts[0]
-            actual_key = uri_parts[1] if len(uri_parts) > 1 else gcs_key
-        else:
-            actual_bucket = gcs_bucket
-            actual_key = gcs_key
+        # Get GCS client for operations
+        gcs = get_gcs_client()
 
-        gcs_client = storage.Client()
-        bucket = gcs_client.bucket(actual_bucket)
-        blob = bucket.blob(actual_key)
-
-        video_bytes = blob.download_as_bytes()
-
-        # Handle audio overlay if configured
+        # Handle audio overlay if configured (requires download, process, re-upload to GCS)
         if settings.audio_overlay:
+            if job_queue:
+                await job_queue.update_job(
+                    job_id,
+                    progress=80,
+                    current_step="Downloading video for audio overlay"
+                )
+
+            # Download video for processing
+            video_bytes = gcs.download_from_uri(actual_video_uri)
+            logger.info(f"[{job_id}] Downloaded video: {len(video_bytes)} bytes")
+
             if job_queue:
                 await job_queue.update_job(
                     job_id,
                     progress=85,
                     current_step="Applying audio overlay"
                 )
+
             logger.info(f"[{job_id}] Applying audio overlay...")
             try:
                 video_bytes = await apply_audio_overlay(
@@ -750,22 +756,30 @@ async def process_image_to_video(
                     job_id=job_id,
                 )
                 logger.info(f"[{job_id}] Audio overlay applied: {len(video_bytes)} bytes")
-            except Exception as e:
-                logger.warning(f"[{job_id}] Audio overlay failed, saving video without audio: {e}")
 
+                # Upload processed video to GCS with new key
+                processed_gcs_key = f"videos/processed/{job_id}.mp4"
+                actual_video_uri = gcs.upload_bytes(
+                    video_bytes,
+                    processed_gcs_key,
+                    content_type="video/mp4",
+                    bucket_name=gcs_bucket,
+                )
+                logger.info(f"[{job_id}] Processed video uploaded to GCS: {actual_video_uri}")
+
+            except Exception as e:
+                logger.warning(f"[{job_id}] Audio overlay failed, using original video: {e}")
+
+        # Generate signed URL directly from GCS (no S3 copy needed)
         if job_queue:
             await job_queue.update_job(
                 job_id,
                 progress=95,
-                current_step="Uploading to S3"
+                current_step="Generating signed URL"
             )
 
-        output_url = await upload_to_s3(
-            video_bytes,
-            request.output.s3_bucket,
-            request.output.s3_key,
-            content_type="video/mp4"
-        )
+        output_url = gcs.generate_signed_url_from_uri(actual_video_uri)
+        logger.info(f"[{job_id}] Generated GCS signed URL for video")
 
         duration_ms = int((time.time() - start_time) * 1000)
 
@@ -773,6 +787,7 @@ async def process_image_to_video(
         generation_metadata = {
             "gcs_uri": actual_video_uri,
             "extension_count": 0,
+            "storage": "gcs",  # Mark as GCS storage
         }
 
         if job_queue:
@@ -881,42 +896,33 @@ async def process_video_extend(
         if not result.success:
             raise RuntimeError(result.error or "Video extension failed")
 
-        if job_queue:
-            await job_queue.update_job(
-                job_id,
-                progress=80,
-                current_step="Downloading from GCS and uploading to S3"
-            )
-
-        # Download from GCS and upload to S3
-        from google.cloud import storage
-
+        # Use the actual video URI returned by Veo
         actual_video_uri = result.video_uri or output_gcs_uri
-        logger.info(f"[{job_id}] Downloading extended video from: {actual_video_uri}")
+        logger.info(f"[{job_id}] Extended video at GCS: {actual_video_uri}")
 
-        # Parse GCS URI (gs://bucket/path)
-        if actual_video_uri.startswith("gs://"):
-            uri_parts = actual_video_uri[5:].split("/", 1)
-            actual_bucket = uri_parts[0]
-            actual_key = uri_parts[1] if len(uri_parts) > 1 else gcs_key
-        else:
-            actual_bucket = gcs_bucket
-            actual_key = gcs_key
+        # Get GCS client for operations
+        gcs = get_gcs_client()
 
-        gcs_client = storage.Client()
-        bucket = gcs_client.bucket(actual_bucket)
-        blob = bucket.blob(actual_key)
-
-        video_bytes = blob.download_as_bytes()
-
-        # Apply audio overlay if configured
+        # Apply audio overlay if configured (requires download, process, re-upload to GCS)
         if settings.audio_overlay:
+            if job_queue:
+                await job_queue.update_job(
+                    job_id,
+                    progress=80,
+                    current_step="Downloading video for audio overlay"
+                )
+
+            # Download video for processing
+            video_bytes = gcs.download_from_uri(actual_video_uri)
+            logger.info(f"[{job_id}] Downloaded video: {len(video_bytes)} bytes")
+
             if job_queue:
                 await job_queue.update_job(
                     job_id,
                     progress=85,
                     current_step="Applying audio overlay"
                 )
+
             logger.info(f"[{job_id}] Applying audio overlay to extended video...")
             try:
                 video_bytes = await apply_audio_overlay(
@@ -925,22 +931,30 @@ async def process_video_extend(
                     job_id=job_id,
                 )
                 logger.info(f"[{job_id}] Audio overlay applied: {len(video_bytes)} bytes")
-            except Exception as e:
-                logger.warning(f"[{job_id}] Audio overlay failed, saving video without audio: {e}")
 
+                # Upload processed video to GCS with new key
+                processed_gcs_key = f"videos/extended/processed/{job_id}.mp4"
+                actual_video_uri = gcs.upload_bytes(
+                    video_bytes,
+                    processed_gcs_key,
+                    content_type="video/mp4",
+                    bucket_name=gcs_bucket,
+                )
+                logger.info(f"[{job_id}] Processed video uploaded to GCS: {actual_video_uri}")
+
+            except Exception as e:
+                logger.warning(f"[{job_id}] Audio overlay failed, using original video: {e}")
+
+        # Generate signed URL directly from GCS (no S3 copy needed)
         if job_queue:
             await job_queue.update_job(
                 job_id,
                 progress=95,
-                current_step="Uploading to S3"
+                current_step="Generating signed URL"
             )
 
-        output_url = await upload_to_s3(
-            video_bytes,
-            request.output.s3_bucket,
-            request.output.s3_key,
-            content_type="video/mp4"
-        )
+        output_url = gcs.generate_signed_url_from_uri(actual_video_uri)
+        logger.info(f"[{job_id}] Generated GCS signed URL for extended video")
 
         duration_ms = int((time.time() - start_time) * 1000)
 
@@ -951,6 +965,7 @@ async def process_video_extend(
             "gcs_uri": actual_video_uri,
             "extension_count": settings.extension_count + 1,
             "source_gcs_uri": settings.source_gcs_uri,
+            "storage": "gcs",  # Mark as GCS storage
         }
 
         if job_queue:
