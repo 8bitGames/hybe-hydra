@@ -1377,7 +1377,13 @@ export default function TrendDashboardPage() {
 
   // Session store for creating new sessions
   const createSession = useSessionStore((state) => state.createSession);
-  const user = useAuthStore((state) => state.user);
+
+  // Auth store - need to wait for hydration before making API calls
+  const { user, accessToken, _hasHydrated } = useAuthStore((state) => ({
+    user: state.user,
+    accessToken: state.accessToken,
+    _hasHydrated: state._hasHydrated,
+  }));
 
   // Workflow store actions (kept for compatibility during transition)
   const {
@@ -1429,8 +1435,14 @@ export default function TrendDashboardPage() {
     return calculateCrossKeywordInsights(keywordAnalysisData, trackedKeywords, isKorean);
   }, [keywordAnalysisData, trackedKeywords, isKorean]);
 
-  // Load initial data from localStorage
+  // Load initial data from localStorage - wait for auth hydration before API calls
   useEffect(() => {
+    // Wait for auth store hydration before making API calls
+    if (!_hasHydrated) {
+      console.log("[TrendDashboard] Waiting for auth hydration...");
+      return;
+    }
+
     const loadInitialData = async () => {
       try {
         // Load from localStorage - immediate restore of previous state
@@ -1462,9 +1474,8 @@ export default function TrendDashboardPage() {
           setSelectedKeywordId(keywordIdToSelect);
 
           // Fetch fresh analysis for all tracked keywords in background
-          // Only if user is authenticated (token available)
-          const token = getAccessToken();
-          if (token) {
+          // Only if user is authenticated (use accessToken from store, not localStorage)
+          if (accessToken) {
             const keywords = storedKeywords.map(k => k.keyword);
             try {
               const apiResults = await fetchKeywordAnalysis(keywords, 50);
@@ -1497,9 +1508,11 @@ export default function TrendDashboardPage() {
           }
         }
 
-        // Fetch content summary
-        const summary = await fetchContentSummary();
-        setContentSummary(summary);
+        // Fetch content summary (only if authenticated)
+        if (accessToken) {
+          const summary = await fetchContentSummary();
+          setContentSummary(summary);
+        }
       } catch (err) {
         console.error("Error loading initial data:", err);
         setError(isKorean ? "데이터를 불러오는 중 오류가 발생했습니다." : "Failed to load data.");
@@ -1509,7 +1522,7 @@ export default function TrendDashboardPage() {
     };
 
     loadInitialData();
-  }, [isKorean]);
+  }, [isKorean, _hasHydrated, accessToken]);
 
   // Save selected keyword to localStorage when it changes
   useEffect(() => {
