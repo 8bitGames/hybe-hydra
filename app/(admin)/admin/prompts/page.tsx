@@ -378,16 +378,27 @@ export default function PromptsAdminPage() {
     setMessage(null);
 
     try {
+      const payload = {
+        ...selectedPrompt,
+        change_notes: 'Updated via admin panel',
+      };
+      console.log('[Admin Prompts] Saving:', {
+        agent_id: selectedPrompt.agent_id,
+        model_provider: selectedPrompt.model_provider,
+        model_name: selectedPrompt.model_name
+      });
+
       const res = await fetch(`/api/v1/admin/prompts/${selectedPrompt.agent_id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...selectedPrompt,
-          change_notes: 'Updated via admin panel',
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
+      console.log('[Admin Prompts] Response:', {
+        model_name: data.prompt?.model_name,
+        error: data.error
+      });
 
       if (data.error) throw new Error(data.error);
 
@@ -791,16 +802,17 @@ export default function PromptsAdminPage() {
                         <div>
                           <Label className="text-gray-300">Model Name</Label>
                           <Select
-                            value={selectedPrompt.model_name}
-                            onValueChange={value =>
+                            value={selectedPrompt.model_name || ''}
+                            onValueChange={value => {
+                              console.log('[Admin Prompts] Model name changed:', value);
                               setSelectedPrompt({
                                 ...selectedPrompt,
                                 model_name: value,
-                              })
-                            }
+                              });
+                            }}
                           >
                             <SelectTrigger className="bg-gray-800 border-gray-700 mt-1 text-white">
-                              <SelectValue />
+                              <SelectValue placeholder="Select model" />
                             </SelectTrigger>
                             <SelectContent className="bg-gray-800 border-gray-700">
                               {MODEL_NAMES[
