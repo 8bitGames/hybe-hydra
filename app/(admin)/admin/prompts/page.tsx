@@ -165,8 +165,10 @@ const MODEL_PROVIDERS = [
 
 const MODEL_NAMES = {
   gemini: [
-    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
-    { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro' },
+    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (최신)' },
+    { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
   ],
   openai: [
     { value: 'gpt-5.1', label: 'GPT-5.1' },
