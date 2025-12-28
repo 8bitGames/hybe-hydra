@@ -1462,31 +1462,38 @@ export default function TrendDashboardPage() {
           setSelectedKeywordId(keywordIdToSelect);
 
           // Fetch fresh analysis for all tracked keywords in background
-          const keywords = storedKeywords.map(k => k.keyword);
-          try {
-            const apiResults = await fetchKeywordAnalysis(keywords, 50);
-            const analysisMap: Record<string, KeywordAnalysisData> = {};
+          // Only if user is authenticated (token available)
+          const token = getAccessToken();
+          if (token) {
+            const keywords = storedKeywords.map(k => k.keyword);
+            try {
+              const apiResults = await fetchKeywordAnalysis(keywords, 50);
+              const analysisMap: Record<string, KeywordAnalysisData> = {};
 
-            apiResults.forEach(result => {
-              analysisMap[result.keyword] = transformAPIToKeywordAnalysis(result);
-            });
+              apiResults.forEach(result => {
+                analysisMap[result.keyword] = transformAPIToKeywordAnalysis(result);
+              });
 
-            setKeywordAnalysisData(analysisMap);
-            saveAnalysisData(analysisMap); // Persist fresh data
+              setKeywordAnalysisData(analysisMap);
+              saveAnalysisData(analysisMap); // Persist fresh data
 
-            // Update tracked keywords with fresh data
-            const updatedKeywords = storedKeywords.map(kw => {
-              const apiData = apiResults.find(r => r.keyword === kw.keyword);
-              if (apiData) {
-                return transformAPIToTrackedKeyword(apiData, kw);
-              }
-              return kw;
-            });
-            setTrackedKeywords(updatedKeywords);
-            saveTrackedKeywords(updatedKeywords);
-          } catch (apiError) {
-            console.error("Failed to fetch initial analysis:", apiError);
-            // Keep using stored keywords and analysis data even if API fails
+              // Update tracked keywords with fresh data
+              const updatedKeywords = storedKeywords.map(kw => {
+                const apiData = apiResults.find(r => r.keyword === kw.keyword);
+                if (apiData) {
+                  return transformAPIToTrackedKeyword(apiData, kw);
+                }
+                return kw;
+              });
+              setTrackedKeywords(updatedKeywords);
+              saveTrackedKeywords(updatedKeywords);
+            } catch (apiError) {
+              console.error("Failed to fetch initial analysis:", apiError);
+              // Keep using stored keywords and analysis data even if API fails
+            }
+          } else {
+            console.log("[TrendDashboard] Skipping API fetch - user not authenticated");
+            // Keep using cached data from localStorage
           }
         }
 
