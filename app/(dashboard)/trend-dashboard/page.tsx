@@ -1438,11 +1438,25 @@ export default function TrendDashboardPage() {
     return calculateCrossKeywordInsights(keywordAnalysisData, trackedKeywords, isKorean);
   }, [keywordAnalysisData, trackedKeywords, isKorean]);
 
+  // Redirect to login if not authenticated after hydration
+  useEffect(() => {
+    if (_hasHydrated && !accessToken) {
+      console.log("[TrendDashboard] Not authenticated, redirecting to login...");
+      router.push("/login");
+    }
+  }, [_hasHydrated, accessToken, router]);
+
   // Load initial data from localStorage - wait for auth hydration before API calls
   useEffect(() => {
     // Wait for auth store hydration before making API calls
     if (!_hasHydrated) {
       console.log("[TrendDashboard] Waiting for auth hydration...");
+      return;
+    }
+
+    // Skip loading if not authenticated (will redirect)
+    if (!accessToken) {
+      setIsInitialLoading(false);
       return;
     }
 
