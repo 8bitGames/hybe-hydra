@@ -46,6 +46,7 @@ export interface ScriptLine {
   text: string;
   timing: number;
   duration: number;
+  purpose?: 'hook' | 'setup' | 'build' | 'climax' | 'cta';
 }
 
 export interface TrendContext {
@@ -167,10 +168,11 @@ export interface GeneratedImagePrompt {
 export interface ImagePromptGenerationResponse {
   scenes: GeneratedImagePrompt[];
   globalStyle?: {
-    colorPalette: string;
+    colorPalette: string[];
     lighting: string;
     mood: string;
-    consistency: string;
+    artStyle: string;
+    visualTheme: string;
   };
 }
 

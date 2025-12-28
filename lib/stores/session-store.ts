@@ -124,13 +124,22 @@ export interface ScriptStageData {
   tiktokSEO: unknown | null;
   generationId: string | null;
   hasSceneAnalysis?: boolean;  // Track if using scene analysis flow (no script step)
+  // Image source mode for the images step (saved here to pass to images stage)
+  imageSourceMode?: 'search' | 'ai_generate';
+  aiImageStyle?: string;
 }
 
 export interface ImagesStageData {
-  imageCandidates: unknown[];
-  selectedImages: unknown[];
+  imageCandidates?: unknown[];
+  selectedImages?: unknown[];
   generationId: string | null;
   hasSceneAnalysis?: boolean;  // Track if using scene analysis flow (no script step)
+  // AI generation mode fields
+  imageSourceMode?: 'search' | 'ai_generate';
+  aiGeneratedImages?: unknown[];
+  aiImageGlobalStyle?: unknown;
+  aiImageStyle?: string;
+  aiImageSessionId?: string | null;
 }
 
 export interface MusicStageData {
@@ -494,7 +503,7 @@ const buildFastCutStateFromSession = (session: CreationSession): Record<string, 
   // For scene-analysis-only flow (no script step), we can still restore state
   // if we have images data (meaning user went Start → Images directly)
   const hasScriptData = !!script?.scriptData;
-  const hasImageData = images && (images.selectedImages?.length > 0 || images.imageCandidates?.length > 0);
+  const hasImageData = images && ((images.selectedImages?.length ?? 0) > 0 || (images.imageCandidates?.length ?? 0) > 0);
   // Check hasSceneAnalysis from multiple locations (script, images, or metadata)
   const hasSceneAnalysis = !!script?.hasSceneAnalysis || !!(images as ImagesStageData)?.hasSceneAnalysis || metadata?.hasSceneAnalysis;
 
