@@ -171,6 +171,7 @@ const MODEL_NAMES = {
     { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
   ],
   openai: [
+    { value: 'gpt-5.2-2025-12-11', label: 'GPT-5.2 (2025-12-11)' },
     { value: 'gpt-5.1', label: 'GPT-5.1' },
     { value: 'gpt-5.1-mini', label: 'GPT-5.1 Mini' },
   ],
