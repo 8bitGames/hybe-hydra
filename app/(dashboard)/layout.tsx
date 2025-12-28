@@ -184,8 +184,26 @@ export default function DashboardLayout({
     router.push("/login");
   };
 
-  // Hydration 또는 로딩 중이거나 user가 없으면 로딩 표시
-  if (!_hasHydrated || isLoading || !user) {
+  // Wait for hydration first
+  if (!_hasHydrated) {
+    console.log("[DashboardLayout] Waiting for hydration...");
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Spinner className="h-8 w-8" />
+      </div>
+    );
+  }
+
+  // If not authenticated, useEffect will handle redirect
+  // Return null to allow navigation to happen
+  if (!isAuthenticated) {
+    console.log("[DashboardLayout] Not authenticated, allowing redirect...");
+    return null;
+  }
+
+  // If authenticated but loading or no user yet, show loading
+  if (isLoading || !user) {
+    console.log("[DashboardLayout] Loading user data...");
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Spinner className="h-8 w-8" />
