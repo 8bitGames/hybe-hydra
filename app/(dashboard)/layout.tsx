@@ -142,7 +142,13 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { user, isAuthenticated, isLoading, logout, fetchUser, _hasHydrated } = useAuthStore();
+  // Subscribe to each property individually to ensure re-renders on hydration state changes
+  const _hasHydrated = useAuthStore((state) => state._hasHydrated);
+  const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isLoading = useAuthStore((state) => state.isLoading);
+  const logout = useAuthStore((state) => state.logout);
+  const fetchUser = useAuthStore((state) => state.fetchUser);
 
   useEffect(() => {
     // Hydration이 완료될 때까지 대기
