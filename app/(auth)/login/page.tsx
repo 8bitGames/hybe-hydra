@@ -14,7 +14,9 @@ import { ArrowLeft } from "@phosphor-icons/react";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isLoading } = useAuthStore();
+  // Subscribe to each property individually for proper re-renders
+  const login = useAuthStore((state) => state.login);
+  const isLoading = useAuthStore((state) => state.isLoading);
   const { t } = useI18n();
 
   const [email, setEmail] = useState("");
@@ -25,9 +27,19 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
 
+    console.log("[Login] Starting login...");
     const result = await login(email, password);
+    console.log("[Login] Login result:", result);
 
     if (result.success) {
+      // Verify token is saved to localStorage before navigating
+      const stored = localStorage.getItem("hydra-auth-storage");
+      console.log("[Login] localStorage after login:", stored);
+
+      // Small delay to ensure state is fully propagated
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      console.log("[Login] Navigating to trend-dashboard...");
       router.push("/trend-dashboard");
     } else {
       setError(result.error || t.auth.login.error);

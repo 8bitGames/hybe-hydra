@@ -151,20 +151,33 @@ export default function DashboardLayout({
   const fetchUser = useAuthStore((state) => state.fetchUser);
 
   useEffect(() => {
+    console.log("[DashboardLayout] Auth state:", {
+      _hasHydrated,
+      isAuthenticated,
+      hasUser: !!user,
+      isLoading,
+    });
+
     // Hydration이 완료될 때까지 대기
-    if (!_hasHydrated) return;
+    if (!_hasHydrated) {
+      console.log("[DashboardLayout] Waiting for hydration...");
+      return;
+    }
 
     const checkAuth = async () => {
+      console.log("[DashboardLayout] Checking auth...", { isAuthenticated, hasUser: !!user });
       if (!isAuthenticated) {
+        console.log("[DashboardLayout] Not authenticated, redirecting to login...");
         router.push("/login");
         return;
       }
       if (!user) {
+        console.log("[DashboardLayout] No user, fetching...");
         await fetchUser();
       }
     };
     checkAuth();
-  }, [_hasHydrated, isAuthenticated, user, router, fetchUser]);
+  }, [_hasHydrated, isAuthenticated, user, router, fetchUser, isLoading]);
 
   const handleLogout = () => {
     logout();

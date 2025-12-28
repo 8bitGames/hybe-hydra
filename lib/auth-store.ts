@@ -73,7 +73,10 @@ export const useAuthStore = create<AuthState>()(
 
         if (response.data) {
           const { access_token, refresh_token, user } = response.data;
-          console.log("[AuthStore] Login successful, setting token...");
+          console.log("[AuthStore] Login successful, setting token...", {
+            hasAccessToken: !!access_token,
+            hasUser: !!user,
+          });
 
           // Set token in API client
           api.setAccessToken(access_token);
@@ -96,6 +99,11 @@ export const useAuthStore = create<AuthState>()(
                 updated_at: "",
               },
             });
+            console.log("[AuthStore] State set with user, current state:", {
+              accessToken: !!get().accessToken,
+              isAuthenticated: get().isAuthenticated,
+              user: !!get().user,
+            });
           } else {
             set({
               accessToken: access_token,
@@ -103,6 +111,7 @@ export const useAuthStore = create<AuthState>()(
               isAuthenticated: true,
               isLoading: false,
             });
+            console.log("[AuthStore] State set, fetching user...");
 
             // Fetch user info if not included in response
             await get().fetchUser();
