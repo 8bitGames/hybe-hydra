@@ -69,6 +69,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useWorkflowStore } from "@/lib/stores/workflow-store";
 import { useSessionStore } from "@/lib/stores/session-store";
 import { useAuthStore } from "@/lib/auth-store";
+import { useShallow } from "zustand/react/shallow";
 import { RelatedKeywordsDiscovery, SuggestedAccounts, SearchRecommendations } from "@/components/trends/expansion";
 
 // ============================================================================
@@ -1379,11 +1380,13 @@ export default function TrendDashboardPage() {
   const createSession = useSessionStore((state) => state.createSession);
 
   // Auth store - need to wait for hydration before making API calls
-  const { user, accessToken, _hasHydrated } = useAuthStore((state) => ({
-    user: state.user,
-    accessToken: state.accessToken,
-    _hasHydrated: state._hasHydrated,
-  }));
+  const { user, accessToken, _hasHydrated } = useAuthStore(
+    useShallow((state) => ({
+      user: state.user,
+      accessToken: state.accessToken,
+      _hasHydrated: state._hasHydrated,
+    }))
+  );
 
   // Workflow store actions (kept for compatibility during transition)
   const {
