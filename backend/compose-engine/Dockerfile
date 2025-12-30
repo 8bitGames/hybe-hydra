@@ -304,24 +304,41 @@ COPY app/ /root/app/
 # COPY aws-batch/batch_worker.py /root/batch_worker.py
 # COPY aws-batch/ai_worker.py /root/ai_worker.py
 
-# Copy GCP Service Account credentials (for Vertex AI authentication)
+# Copy GCP Workload Identity Federation config (for Vertex AI authentication)
 #
-# Direct Service Account Authentication:
-#   Service Account JSON → Vertex AI (no WIF, no impersonation)
+# Centralized WIF Authentication with 2-hop Service Account Impersonation:
+#   AWS EC2 IAM Role → GCP Workload Identity Pool → Central SA (hyb-mgmt-prod) → Target SA (hyb-hydra-dev)
 #
-# Project: hyb-hydra-dev
-# Service Account: sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com
+# Authentication Flow:
+#   1. AWS EC2 instance metadata (IAM Role credentials)
+#   2. GCP Workload Identity Pool exchanges AWS credentials for GCP token
+#   3. 1st hop: Impersonate central SA: sa-wif-hyb-hydra-dev@hyb-mgmt-prod.iam.gserviceaccount.com
+#   4. 2nd hop: Impersonate target SA: sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com
 #
-COPY hyb-hydra-dev-d2dc3a95cc1b.json /root/gcp-service-account.json
-ENV GOOGLE_APPLICATION_CREDENTIALS=/root/gcp-service-account.json
+# Benefits:
+#   - No service account key files to manage
+#   - Automatic credential rotation
+#   - Centralized access control via hyb-mgmt-prod
+#   - Supports multi-project deployments
+#
+COPY central-credential-config.json /root/gcp-wif-config.json
+ENV GOOGLE_APPLICATION_CREDENTIALS=/root/gcp-wif-config.json
 
 # GCP Project and Authentication Settings
 ENV GCP_PROJECT_ID=hyb-hydra-dev
 ENV GCP_LOCATION=us-central1
 
-# Direct service account - no impersonation needed
-ENV GCP_CENTRAL_SERVICE_ACCOUNT=
-ENV GCP_TARGET_SERVICE_ACCOUNT=skip
+# Centralized WIF authentication mode (2-hop impersonation)
+#
+# 1st hop: WIF config automatically impersonates Central SA in hyb-mgmt-prod
+# 2nd hop: TARGET_SERVICE_ACCOUNT specifies the Target SA in hyb-hydra-dev
+#
+# Environment Variables:
+#   - TARGET_SERVICE_ACCOUNT: Target SA for 2nd hop impersonation
+#   - TARGET_PROJECT_ID: Target project ID (defaults to project from TARGET_SERVICE_ACCOUNT)
+#
+ENV TARGET_SERVICE_ACCOUNT=sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com
+ENV TARGET_PROJECT_ID=hyb-hydra-dev
 
 EXPOSE 8000
 

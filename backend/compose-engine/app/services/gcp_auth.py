@@ -2,18 +2,26 @@
 GCP Authentication Module for Vertex AI.
 
 Supports multiple authentication methods:
-1. Service Account JSON (recommended for production)
+1. Workload Identity Federation (WIF) with Centralized SA - recommended for production
+   - GOOGLE_APPLICATION_CREDENTIALS: Path to WIF credential config JSON (central-credential-config.json)
+   - TARGET_SERVICE_ACCOUNT: Target SA for 2nd hop impersonation (required for centralized WIF)
+   - TARGET_PROJECT_ID: Target project ID (optional, defaults to project from TARGET_SERVICE_ACCOUNT)
+2. Service Account JSON (fallback)
    - GOOGLE_SERVICE_ACCOUNT_JSON: JSON string of service account credentials
-2. Workload Identity Federation (WIF) - legacy
-   - GOOGLE_APPLICATION_CREDENTIALS: Path to WIF credential config JSON
 
 Required Environment Variables:
-- GOOGLE_SERVICE_ACCOUNT_JSON: Service account JSON string (preferred)
+- GOOGLE_APPLICATION_CREDENTIALS: Path to WIF credential config JSON (preferred)
 - GCP_PROJECT_ID: GCP project ID for Vertex AI
 - GCP_LOCATION: GCP region (default: us-central1)
 
-Legacy WIF Environment Variables (if not using service account JSON):
-- GOOGLE_APPLICATION_CREDENTIALS: Path to WIF credential config JSON
+Centralized WIF Environment Variables:
+- TARGET_SERVICE_ACCOUNT: Target SA for impersonation (e.g., sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com)
+- TARGET_PROJECT_ID: Target project ID (e.g., hyb-hydra-dev)
+
+Fallback Environment Variables:
+- GOOGLE_SERVICE_ACCOUNT_JSON: Service account JSON string (if WIF not available)
+
+Legacy WIF Environment Variables (code-based impersonation):
 - GCP_CENTRAL_SERVICE_ACCOUNT: Central SA for 1st hop
 - GCP_TARGET_SERVICE_ACCOUNT: Target SA for 2nd hop
 """
@@ -53,8 +61,9 @@ class GCPAuthManager:
     Manages GCP authentication for Vertex AI.
 
     Supports:
-    1. Service Account JSON (recommended) - via GOOGLE_SERVICE_ACCOUNT_JSON env var
-    2. Workload Identity Federation (WIF) - legacy, via GOOGLE_APPLICATION_CREDENTIALS
+    1. Workload Identity Federation (WIF) - recommended, via GOOGLE_APPLICATION_CREDENTIALS
+       - Config with service_account_impersonation_url for auto SA impersonation
+    2. Service Account JSON (fallback) - via GOOGLE_SERVICE_ACCOUNT_JSON env var
 
     Usage:
         auth_manager = GCPAuthManager()
@@ -75,7 +84,7 @@ class GCPAuthManager:
         Initialize GCP Auth Manager.
 
         Args:
-            service_account_json: Service account JSON string (preferred method)
+            service_account_json: Service account JSON string (fallback method)
             central_service_account: Central SA for WIF 1st hop impersonation (legacy)
             target_service_account: Target SA for WIF 2nd hop impersonation (legacy)
             project_id: GCP project ID for Vertex AI
@@ -86,23 +95,45 @@ class GCPAuthManager:
         self.location = location or os.environ.get("GCP_LOCATION", DEFAULT_GCP_LOCATION)
         self.scopes = scopes or VERTEX_AI_SCOPES
 
-        # Check for service account JSON first (preferred method)
+        # Check for centralized WIF environment variables (TARGET_SERVICE_ACCOUNT mode)
+        self._target_sa_from_env = os.environ.get("TARGET_SERVICE_ACCOUNT")
+        self._target_project_from_env = os.environ.get("TARGET_PROJECT_ID")
+        self._use_centralized_wif = False
+
+        # Check for WIF config first (preferred method)
+        self._use_wif = False
+        self._wif_config_file = None
+        cred_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if cred_file and os.path.exists(cred_file):
+            try:
+                with open(cred_file, 'r') as f:
+                    cred_config = json.load(f)
+                    # Check if it's a WIF config (external_account type)
+                    if cred_config.get("type") == "external_account":
+                        self._use_wif = True
+                        self._wif_config_file = cred_file
+                        # Check if it has auto SA impersonation (centralized WIF)
+                        if cred_config.get("service_account_impersonation_url"):
+                            logger.info(f"Detected WIF config with central SA impersonation: {cred_file}")
+                            # If TARGET_SERVICE_ACCOUNT is set, use centralized WIF with 2nd hop
+                            if self._target_sa_from_env:
+                                self._use_centralized_wif = True
+                                logger.info(f"Centralized WIF mode enabled with TARGET_SERVICE_ACCOUNT: {self._target_sa_from_env}")
+                                if self._target_project_from_env:
+                                    self.project_id = self._target_project_from_env
+                                    logger.info(f"Using TARGET_PROJECT_ID: {self._target_project_from_env}")
+                        else:
+                            logger.info(f"Detected WIF config (no auto impersonation): {cred_file}")
+                    elif cred_config.get("type") == "service_account":
+                        # It's a service account file, treat as fallback
+                        logger.info(f"Detected service account file: {cred_file}")
+                        service_account_json = json.dumps(cred_config)
+            except Exception as e:
+                logger.warning(f"Could not read credential file: {e}")
+
+        # Service account JSON as fallback
         self._service_account_json = service_account_json or os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-
-        # Also check if GOOGLE_APPLICATION_CREDENTIALS points to a service account file
-        if not self._service_account_json:
-            cred_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-            if cred_file and os.path.exists(cred_file):
-                try:
-                    with open(cred_file, 'r') as f:
-                        cred_config = json.load(f)
-                        if cred_config.get("type") == "service_account":
-                            logger.info(f"Detected service account file: {cred_file}")
-                            self._service_account_json = json.dumps(cred_config)
-                except Exception as e:
-                    logger.warning(f"Could not read credential file: {e}")
-
-        self._use_service_account = bool(self._service_account_json)
+        self._use_service_account = bool(self._service_account_json) and not self._use_wif
 
         # WIF-related settings (legacy)
         env_central_sa = os.environ.get("GCP_CENTRAL_SERVICE_ACCOUNT", "")
@@ -122,15 +153,26 @@ class GCPAuthManager:
         self._wif_credentials = None      # Pure WIF credentials (no impersonation)
         self._central_credentials = None  # Central SA credentials (1st hop)
         self._target_credentials = None   # Target SA credentials (2nd hop)
+        self._auto_wif_credentials = None # Auto WIF credentials (config with service_account_impersonation_url)
+        self._centralized_wif_credentials = None  # Centralized WIF with 2nd hop impersonation
         self._access_token = None
         self._token_expiry = None
 
-        # VERSION MARKER - v3.0 (2024-12-12) with self-signed JWT support
-        logger.info(f"[gcp_auth v3.0] GCPAuthManager initialized for project: {self.project_id}")
-        if self._use_service_account:
-            logger.info("Auth method: Service Account JSON (direct)")
-        else:
+        # VERSION MARKER - v5.0 (2024-12-30) Centralized WIF support
+        logger.info(f"[gcp_auth v5.0] GCPAuthManager initialized for project: {self.project_id}")
+        if self._use_centralized_wif:
+            logger.info("Auth method: Centralized WIF with 2nd hop impersonation - recommended")
+            logger.info(f"WIF config: {self._wif_config_file}")
+            logger.info(f"Target SA: {self._target_sa_from_env}")
+            if self._target_project_from_env:
+                logger.info(f"Target Project: {self._target_project_from_env}")
+        elif self._use_wif:
             logger.info("Auth method: Workload Identity Federation (WIF)")
+            logger.info(f"WIF config: {self._wif_config_file}")
+        elif self._use_service_account:
+            logger.info("Auth method: Service Account JSON (fallback)")
+        else:
+            logger.info("Auth method: WIF with code-based impersonation (legacy)")
             logger.info(f"Central SA (1st hop): {self.central_service_account}")
             logger.info(f"2-hop impersonation: {'ENABLED' if self._enable_2hop else 'DISABLED'}")
             if self._enable_2hop:
@@ -390,23 +432,92 @@ class GCPAuthManager:
 
         return self._target_credentials
 
+    def _get_centralized_wif_credentials(self):
+        """
+        Get credentials via Centralized WIF with 2nd hop impersonation.
+
+        Flow:
+        1. WIF config with service_account_impersonation_url → Central SA (hyb-mgmt-prod)
+        2. Central SA → Target SA (hyb-hydra-dev) via impersonated_credentials
+
+        Returns:
+            Credentials: Target SA credentials with Vertex AI access
+        """
+        if self._centralized_wif_credentials is None:
+            logger.info("Centralized WIF: Getting credentials with 2nd hop impersonation...")
+
+            try:
+                # Step 1: Get Central SA credentials via WIF config
+                # google.auth.default() with WIF config returns Central SA credentials
+                central_creds, project = google.auth.default(scopes=DEFAULT_SCOPES)
+                logger.info(f"1st hop: WIF → Central SA (via config)")
+                logger.info(f"  Credential type: {type(central_creds).__name__}")
+
+                # Step 2: Impersonate Target SA using Central SA credentials
+                logger.info(f"2nd hop: Central SA → Target SA")
+                logger.info(f"  Target SA: {self._target_sa_from_env}")
+
+                # Use DEFAULT_SCOPES for impersonation (cloud-platform only)
+                # This matches the test_auth.py pattern that works successfully
+                self._centralized_wif_credentials = impersonated_credentials.Credentials(
+                    source_credentials=central_creds,
+                    target_principal=self._target_sa_from_env,
+                    target_scopes=DEFAULT_SCOPES,  # Use cloud-platform scope for impersonation
+                )
+
+                logger.info("Centralized WIF: 2nd hop impersonation successful")
+                logger.info(f"  Target SA credentials type: {type(self._centralized_wif_credentials).__name__}")
+
+            except Exception as e:
+                logger.error(f"Centralized WIF authentication failed: {e}")
+                raise RuntimeError(f"Centralized WIF authentication failed: {e}")
+
+        return self._centralized_wif_credentials
+
     def get_credentials(self):
         """
         Get authenticated credentials for GCP API calls.
 
         Priority:
-        1. Service Account JSON (if GOOGLE_SERVICE_ACCOUNT_JSON is set)
-        2. WIF with impersonation (legacy)
+        1. Centralized WIF with TARGET_SERVICE_ACCOUNT (2nd hop impersonation)
+        2. WIF config with service_account_impersonation_url (auto-handled by google.auth.default)
+        3. Service Account JSON (fallback, if GOOGLE_SERVICE_ACCOUNT_JSON is set)
+        4. WIF with code-based impersonation (legacy)
 
         Returns:
             google.auth.credentials.Credentials: Authenticated credentials
         """
-        # Use Service Account JSON if available (preferred)
+        # Use Centralized WIF if TARGET_SERVICE_ACCOUNT is set (preferred)
+        if self._use_centralized_wif:
+            logger.info("Using Centralized WIF with 2nd hop impersonation")
+            return self._get_centralized_wif_credentials()
+
+        # Use WIF config if available
+        if self._use_wif:
+            logger.info("Using Workload Identity Federation (WIF) authentication")
+            if self._auto_wif_credentials is None:
+                try:
+                    credentials, project = google.auth.default(scopes=self.scopes)
+                    self._auto_wif_credentials = credentials
+                    if project:
+                        self.project_id = project
+                    logger.info(f"WIF credentials obtained via google.auth.default()")
+                    logger.info(f"  Credential type: {type(credentials).__name__}")
+                except Exception as e:
+                    logger.error(f"WIF authentication failed: {e}")
+                    # Fall back to service account if available
+                    if self._service_account_json:
+                        logger.info("Falling back to Service Account JSON...")
+                        return self._get_sa_credentials()
+                    raise RuntimeError(f"WIF authentication failed: {e}")
+            return self._auto_wif_credentials
+
+        # Use Service Account JSON as fallback
         if self._use_service_account:
-            logger.info("Using Service Account JSON authentication (direct)")
+            logger.info("Using Service Account JSON authentication (fallback)")
             return self._get_sa_credentials()
 
-        # Fall back to WIF (legacy)
+        # Fall back to code-based impersonation (legacy)
         if self._enable_2hop:
             # 2-hop: WIF → Central SA → Target SA (all in code)
             logger.info("Using 2-hop authentication (code-based): WIF → Central SA → Target SA")
@@ -420,8 +531,9 @@ class GCPAuthManager:
         """
         Get a valid access token for Vertex AI API calls.
 
-        For Service Account JSON authentication, uses self-signed JWT directly
-        as the Bearer token (most reliable method for Vertex AI).
+        For Centralized WIF, uses 2nd hop impersonation with automatic refresh.
+        For WIF authentication, uses google.auth.default() with automatic refresh.
+        For Service Account JSON (fallback), uses self-signed JWT directly.
 
         Args:
             force_refresh: Force token refresh even if not expired
@@ -429,16 +541,61 @@ class GCPAuthManager:
         Returns:
             str: Valid access token or self-signed JWT
         """
-        # VERSION MARKER - v3.0 with self-signed JWT (2024-12-12)
-        logger.info(f"[gcp_auth v3.0] get_access_token() called, _use_service_account={self._use_service_account}")
+        # VERSION MARKER - v5.0 with Centralized WIF support (2024-12-30)
+        logger.info(f"[gcp_auth v5.0] get_access_token() called, _use_centralized_wif={self._use_centralized_wif}, _use_wif={self._use_wif}, _use_service_account={self._use_service_account}")
 
-        # For service account JSON, use self-signed JWT directly (most reliable)
-        # Self-signed JWT can be used directly as Bearer token for Google Cloud APIs
+        # For Centralized WIF, use 2nd hop impersonation credential refresh
+        if self._use_centralized_wif:
+            logger.info("Using Centralized WIF with 2nd hop impersonation for Vertex AI authentication")
+            credentials = self.get_credentials()
+
+            # Check if refresh is needed
+            if force_refresh or not credentials.valid:
+                logger.info("Refreshing Centralized WIF access token...")
+                request = Request()
+                try:
+                    credentials.refresh(request)
+                    logger.info("Centralized WIF access token refreshed successfully")
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"Centralized WIF credentials refresh failed: {error_msg}")
+                    raise RuntimeError(f"Failed to refresh Centralized WIF credentials: {error_msg}")
+
+            if not credentials.token:
+                raise RuntimeError("Failed to obtain Centralized WIF access token - no token after refresh")
+
+            return credentials.token
+
+        # For WIF, use standard credential refresh
+        if self._use_wif:
+            logger.info("Using WIF for Vertex AI authentication")
+            credentials = self.get_credentials()
+
+            # Check if refresh is needed
+            if force_refresh or not credentials.valid:
+                logger.info("Refreshing WIF access token...")
+                request = Request()
+                try:
+                    credentials.refresh(request)
+                    logger.info("WIF access token refreshed successfully")
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"WIF credentials refresh failed: {error_msg}")
+                    # Fall back to service account if available
+                    if self._service_account_json:
+                        logger.info("Falling back to Service Account JWT...")
+                        return self._create_self_signed_jwt()
+                    raise RuntimeError(f"Failed to refresh WIF credentials: {error_msg}")
+
+            if not credentials.token:
+                raise RuntimeError("Failed to obtain WIF access token - no token after refresh")
+
+            return credentials.token
+
+        # For service account JSON (fallback), use self-signed JWT directly (most reliable)
         if self._use_service_account:
-            logger.info("Using self-signed JWT for Vertex AI authentication")
+            logger.info("Using self-signed JWT for Vertex AI authentication (fallback)")
             try:
-                # Self-signed JWT is the most reliable method
-                # It bypasses OAuth2 token exchange which sometimes returns id_token
                 jwt_token = self._create_self_signed_jwt()
                 logger.info("Self-signed JWT created successfully")
                 return jwt_token
@@ -446,7 +603,7 @@ class GCPAuthManager:
                 logger.warning(f"Self-signed JWT creation failed: {e}")
                 logger.info("Falling back to OAuth2 token exchange...")
 
-                # Fallback 1: Try OAuth2 JWT exchange
+                # Fallback: Try OAuth2 JWT exchange
                 try:
                     return self._exchange_jwt_for_access_token()
                 except Exception as e2:
@@ -454,6 +611,7 @@ class GCPAuthManager:
                     logger.info("Falling back to library refresh...")
                     # Fall through to library-based refresh
 
+        # Legacy: code-based impersonation
         credentials = self.get_credentials()
 
         # Check if refresh is needed
@@ -466,7 +624,6 @@ class GCPAuthManager:
             except Exception as e:
                 error_msg = str(e)
                 logger.error(f"Credentials refresh failed: {error_msg}")
-                # Re-raise to let caller handle
                 raise RuntimeError(f"Failed to refresh credentials: {error_msg}")
 
         if not credentials.token:
@@ -532,18 +689,26 @@ class GCPAuthManager:
             dict: Validation result with status and details
         """
         # Determine auth mode string
-        if self._use_service_account:
-            auth_mode = "Service Account JSON (direct)"
+        if self._use_centralized_wif:
+            auth_mode = "Centralized WIF with 2nd hop impersonation - recommended"
+        elif self._use_wif:
+            auth_mode = "Workload Identity Federation (WIF)"
+        elif self._use_service_account:
+            auth_mode = "Service Account JSON (fallback)"
         elif self._enable_2hop:
-            auth_mode = "2-hop (WIF → Central SA → Target SA)"
+            auth_mode = "2-hop (WIF → Central SA → Target SA) - legacy"
         else:
-            auth_mode = "1-hop (WIF → Central SA)"
+            auth_mode = "1-hop (WIF → Central SA) - legacy"
 
         result = {
             "valid": False,
             "project_id": self.project_id,
-            "target_sa": self.target_service_account or "(direct SA, no impersonation)" if self._use_service_account else "(1-hop only)",
             "location": self.location,
+            "use_centralized_wif": self._use_centralized_wif,
+            "target_service_account": self._target_sa_from_env,
+            "target_project_id": self._target_project_from_env,
+            "use_wif": self._use_wif,
+            "wif_config_file": self._wif_config_file,
             "use_service_account": self._use_service_account,
             "enable_2hop": self._enable_2hop,
             "auth_mode": auth_mode,
@@ -606,16 +771,19 @@ def get_auth_headers() -> dict:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    print("Testing GCP WIF 2-hop Authentication...")
+    print("Testing GCP Authentication (WIF as default)...")
     print("=" * 60)
 
     manager = GCPAuthManager()
     result = manager.validate_auth()
 
     print(f"\nAuth Mode: {result['auth_mode']}")
+    print(f"Use WIF: {result['use_wif']}")
+    if result.get('wif_config_file'):
+        print(f"WIF Config: {result['wif_config_file']}")
+    print(f"Use Service Account: {result['use_service_account']}")
     print(f"2-hop Enabled: {result['enable_2hop']}")
     print(f"Project ID: {result['project_id']}")
-    print(f"Target SA: {result['target_sa']}")
     print(f"Location: {result['location']}")
     print("-" * 60)
     print(f"Valid: {result['valid']}")
@@ -623,6 +791,6 @@ if __name__ == "__main__":
     if result['error']:
         print(f"Error: {result['error']}")
     else:
-        print(f"Token: {result['token_preview']}")
+        print(f"Token: {result.get('token_preview', 'N/A')}")
 
     print("=" * 60)

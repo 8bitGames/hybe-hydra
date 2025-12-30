@@ -5,10 +5,13 @@
 #   2. Set LOCAL_COMPOSE_URL=http://localhost:8000
 #
 # CPU mode (no GPU):
-#   docker-compose --profile cpu up --build
+#   docker compose --profile cpu up --build
 #
 # GPU mode (NVIDIA - requires NVIDIA Container Toolkit):
-#   docker-compose --profile gpu up --build
+#   docker compose --profile gpu up --build
+#
+# EC2 mode (with WIF authentication - requires host network for AWS metadata):
+#   docker compose --profile ec2 up --build
 
 services:
   # CPU-only version
@@ -26,6 +29,12 @@ services:
     environment:
       - TEMP_DIR=/tmp/compose
       - USE_FFMPEG_PIPELINE=1  # ~3x faster rendering
+      # Centralized WIF authentication (2-hop impersonation)
+      - GOOGLE_APPLICATION_CREDENTIALS=/root/gcp-wif-config.json
+      - TARGET_SERVICE_ACCOUNT=sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com
+      - TARGET_PROJECT_ID=hyb-hydra-dev
+      - GCP_PROJECT_ID=hyb-hydra-dev
+      - GCP_LOCATION=us-central1
     volumes:
       - ./app:/root/app
       - compose-temp:/tmp/compose
@@ -53,6 +62,12 @@ services:
       - TEMP_DIR=/tmp/compose
       - NVIDIA_VISIBLE_DEVICES=all
       - USE_FFMPEG_PIPELINE=1  # ~3x faster rendering
+      # Centralized WIF authentication (2-hop impersonation)
+      - GOOGLE_APPLICATION_CREDENTIALS=/root/gcp-wif-config.json
+      - TARGET_SERVICE_ACCOUNT=sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com
+      - TARGET_PROJECT_ID=hyb-hydra-dev
+      - GCP_PROJECT_ID=hyb-hydra-dev
+      - GCP_LOCATION=us-central1
     volumes:
       - ./app:/root/app
       - compose-temp:/tmp/compose
@@ -70,6 +85,41 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu, compute, utility]
+
+  # EC2 version with WIF authentication (requires host network for AWS metadata access)
+  compose-engine-ec2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hydra-compose-engine-ec2
+    profiles:
+      - ec2
+    network_mode: host  # Required for AWS metadata service access
+    env_file:
+      - .env
+    environment:
+      - TEMP_DIR=/tmp/compose
+      - USE_FFMPEG_PIPELINE=1  # ~3x faster rendering
+      # CRITICAL: Clear static AWS credentials to use EC2 IAM Role for WIF
+      # WIF requires EC2 metadata credentials, not static keys
+      - AWS_ACCESS_KEY_ID=
+      - AWS_SECRET_ACCESS_KEY=
+      # Centralized WIF authentication (2-hop impersonation)
+      - GOOGLE_APPLICATION_CREDENTIALS=/root/gcp-wif-config.json
+      - TARGET_SERVICE_ACCOUNT=sa-wif-hyb-hydra-dev@hyb-hydra-dev.iam.gserviceaccount.com
+      - TARGET_PROJECT_ID=hyb-hydra-dev
+      - GCP_PROJECT_ID=hyb-hydra-dev
+      - GCP_LOCATION=us-central1
+    volumes:
+      - ./app:/root/app
+      - compose-temp:/tmp/compose
+    restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   compose-temp:
