@@ -21,7 +21,8 @@ import {
   generateAIJobId,
   type ImageAspectRatio,
 } from '@/lib/ec2/ai-client';
-import { downloadFromS3AsBase64, getPresignedUrl, uploadToS3 } from '@/lib/storage';
+// Note: Images are now stored in GCS, not S3. The output_url from compose-engine is used directly.
+// import { downloadFromS3AsBase64, getPresignedUrl, uploadToS3 } from '@/lib/storage';
 import { convertAspectRatioForGeminiImage } from '@/lib/imagen';
 
 // ============================================================================
@@ -120,22 +121,37 @@ async function generateSingleImage(
     console.log(`${logPrefix} [Scene ${sceneNumber}] Status: ${status.status} (${elapsed}s elapsed)`);
 
     if (status.mappedStatus === 'completed') {
-      // Job completed - download image from S3
-      console.log(`${logPrefix} [Scene ${sceneNumber}] Job completed! Downloading from S3: ${s3Key}`);
+      // Job completed - use GCS signed URL from compose-engine response
+      console.log(`${logPrefix} [Scene ${sceneNumber}] Job completed!`);
+      console.log(`${logPrefix} [Scene ${sceneNumber}] Output URL: ${status.output_url?.slice(0, 80)}...`);
 
       try {
-        const imageBase64 = await downloadFromS3AsBase64(s3Key);
-        const imageUrl = await getPresignedUrl(s3Key, 604800); // 7 days
+        // Use output_url from compose-engine (GCS signed URL)
+        const imageUrl = status.output_url;
+
+        if (!imageUrl) {
+          throw new Error('No output_url in job status response');
+        }
+
+        // Download image from GCS signed URL to get base64
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to download from GCS: ${response.status} ${response.statusText}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const imageBase64 = Buffer.from(arrayBuffer).toString('base64');
+
+        console.log(`${logPrefix} [Scene ${sceneNumber}] Downloaded image: ${imageBase64.length} chars base64`);
 
         return {
           sceneNumber,
           success: true,
           imageUrl,
           imageBase64,
-          s3Key,
+          s3Key, // Keep for compatibility, but image is in GCS
         };
       } catch (downloadError) {
-        console.error(`${logPrefix} [Scene ${sceneNumber}] Failed to download from S3:`, downloadError);
+        console.error(`${logPrefix} [Scene ${sceneNumber}] Failed to download generated image:`, downloadError);
         return {
           sceneNumber,
           success: false,

@@ -127,21 +127,36 @@ async function generateImageViaEC2(
     console.log(`${logPrefix} [EC2] Status: ${status.status} (${elapsed}s elapsed)`);
 
     if (status.mappedStatus === "completed") {
-      // Job completed - download image from S3
-      console.log(`${logPrefix} [EC2] Job completed! Downloading from S3: ${s3Key}`);
+      // Job completed - use GCS signed URL from compose-engine response
+      console.log(`${logPrefix} [EC2] Job completed!`);
+      console.log(`${logPrefix} [EC2] Output URL: ${status.output_url?.slice(0, 80)}...`);
 
       try {
-        const imageBase64 = await downloadFromS3AsBase64(s3Key);
-        const imageUrl = await getPresignedUrl(s3Key, 604800); // 7 days
+        // Use output_url from compose-engine (GCS signed URL)
+        const imageUrl = status.output_url;
+
+        if (!imageUrl) {
+          throw new Error("No output_url in job status response");
+        }
+
+        // Download image from GCS signed URL to get base64
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to download from GCS: ${response.status} ${response.statusText}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const imageBase64 = Buffer.from(arrayBuffer).toString("base64");
+
+        console.log(`${logPrefix} [EC2] Downloaded image: ${imageBase64.length} chars base64`);
 
         return {
           success: true,
           imageBase64,
           imageUrl,
-          s3Key,
+          s3Key, // Keep for compatibility, but image is in GCS
         };
       } catch (downloadError) {
-        console.error(`${logPrefix} [EC2] Failed to download from S3:`, downloadError);
+        console.error(`${logPrefix} [EC2] Failed to download generated image:`, downloadError);
         return {
           success: false,
           error: `Failed to download generated image: ${downloadError instanceof Error ? downloadError.message : "Unknown error"}`,
