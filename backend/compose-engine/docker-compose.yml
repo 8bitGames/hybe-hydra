@@ -86,7 +86,7 @@ services:
               count: all
               capabilities: [gpu, compute, utility]
 
-  # EC2 version with WIF authentication (requires host network for AWS metadata access)
+  # EC2 version with WIF authentication + GPU (requires host network for AWS metadata access)
   compose-engine-ec2:
     build:
       context: .
@@ -99,6 +99,7 @@ services:
       - .env
     environment:
       - TEMP_DIR=/tmp/compose
+      - NVIDIA_VISIBLE_DEVICES=all
       - USE_FFMPEG_PIPELINE=1  # ~3x faster rendering
       # CRITICAL: Clear static AWS credentials to use EC2 IAM Role for WIF
       # WIF requires EC2 metadata credentials, not static keys
@@ -120,6 +121,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
 
 volumes:
   compose-temp:
