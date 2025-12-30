@@ -1158,6 +1158,11 @@
         "aiAnalysis": "AI 분석",
         "customPrompt": "맞춤 프롬프트"
       }
+    },
+    "create": {
+      "selectFromMusicLibrary": "음악 라이브러리에서 선택",
+      "selectFromImageLibrary": "이미지 라이브러리에서 선택",
+      "libraryImages": "라이브러리 이미지 (클릭하여 추가)"
     }
   },
   "startPage": {

@@ -1158,6 +1158,11 @@
         "aiAnalysis": "AI Analysis",
         "customPrompt": "Custom Prompt"
       }
+    },
+    "create": {
+      "selectFromMusicLibrary": "Select from Music Library",
+      "selectFromImageLibrary": "Select from Image Library",
+      "libraryImages": "Library images (click to add)"
     }
   },
   "startPage": {

@@ -752,8 +752,8 @@ function AssetUploadSection({
                   >
                     <Library className="h-4 w-4 mr-2" />
                     {language === "ko"
-                      ? `캠페인에서 선택 (${audioAssets.length})`
-                      : `Select from Campaign (${audioAssets.length})`}
+                      ? `음악 라이브러리에서 선택 (${audioAssets.length})`
+                      : `Select from Music Library (${audioAssets.length})`}
                   </Button>
                   {showAudioPicker && (
                     <div className="absolute z-10 mt-1 w-full bg-white border border-neutral-200 rounded-lg shadow-lg max-h-48 overflow-auto">
@@ -882,8 +882,8 @@ function AssetUploadSection({
                 >
                   <Library className="h-4 w-4 mr-2" />
                   {language === "ko"
-                    ? `캠페인에서 선택 (${imageAssetsFromCampaign.length})`
-                    : `Select from Campaign (${imageAssetsFromCampaign.length})`}
+                    ? `이미지 라이브러리에서 선택 (${imageAssetsFromCampaign.length})`
+                    : `Select from Image Library (${imageAssetsFromCampaign.length})`}
                 </Button>
               </div>
             )}
@@ -893,8 +893,8 @@ function AssetUploadSection({
               <div className="p-3 border border-neutral-200 rounded-lg bg-neutral-50">
                 <div className="text-xs text-neutral-500 mb-2">
                   {language === "ko"
-                    ? "캠페인 이미지 (클릭하여 추가)"
-                    : "Campaign images (click to add)"}
+                    ? "라이브러리 이미지 (클릭하여 추가)"
+                    : "Library images (click to add)"}
                 </div>
                 <div className="grid grid-cols-6 gap-1.5 max-h-32 overflow-auto">
                   {imageAssetsFromCampaign.map((asset) => {
