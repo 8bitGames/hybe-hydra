@@ -1,0 +1,39 @@
+# Service Account Keys (NEVER commit these!)
+*-*.json
+!clientLibraryConfig*.json
+!central-credential-config.json
+!job-def*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env.local
+.env.*.local
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temp files
+*.log
+*.tmp
+/tmp/
+compose-temp/
+
+# Test artifacts
+test_*.png
+test_*.mp4
+*.png
+*.jpg
+*.mp4
