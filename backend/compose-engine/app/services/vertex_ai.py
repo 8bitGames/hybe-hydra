@@ -3,11 +3,12 @@ Vertex AI Client for Video and Image Generation.
 
 Provides high-level interface for:
 - Veo 3.1: Video generation from text/image prompts
-- Gemini 3 Pro Image Preview: Image generation from text prompts (via direct HTTP API)
+- Imagen 4.0: Image generation from text prompts
+- Gemini 3 Pro Image: Advanced image generation with reasoning
 
-Uses GCP WIF authentication via gcp_auth module with self-signed JWT.
+Uses GCP WIF authentication via gcp_auth module.
 
-VERSION: v6 (2024-12-13) - Updated to Gemini 3 Pro Image Preview
+VERSION: v8 (2024-12-30) - Added Gemini 3 Pro Image support
 """
 
 import os
@@ -43,6 +44,24 @@ class ImageAspectRatio(str, Enum):
     PORTRAIT_3_4 = "3:4"
 
 
+class GeminiImageAspectRatio(str, Enum):
+    """
+    Supported image aspect ratios for Gemini 3 Pro Image.
+
+    Gemini supports more aspect ratios than Imagen.
+    """
+    SQUARE_1_1 = "1:1"
+    LANDSCAPE_3_2 = "3:2"
+    PORTRAIT_2_3 = "2:3"
+    LANDSCAPE_4_3 = "4:3"
+    PORTRAIT_3_4 = "3:4"
+    LANDSCAPE_4_5 = "4:5"
+    PORTRAIT_5_4 = "5:4"
+    PORTRAIT_9_16 = "9:16"
+    LANDSCAPE_16_9 = "16:9"
+    ULTRAWIDE_21_9 = "21:9"
+
+
 @dataclass
 class VideoGenerationConfig:
     """Configuration for video generation."""
@@ -60,7 +79,7 @@ class VideoGenerationConfig:
 
 @dataclass
 class ImageGenerationConfig:
-    """Configuration for image generation."""
+    """Configuration for image generation with Imagen."""
     prompt: str
     aspect_ratio: ImageAspectRatio = ImageAspectRatio.PORTRAIT_9_16  # Default for Veo 3.1 video previews
     negative_prompt: Optional[str] = None
@@ -68,6 +87,23 @@ class ImageGenerationConfig:
     number_of_images: int = 1
     safety_filter_level: str = "block_some"
     person_generation: str = "allow_adult"
+
+
+@dataclass
+class GeminiImageConfig:
+    """
+    Configuration for image generation with Gemini 3 Pro Image.
+
+    Gemini 3 Pro Image provides:
+    - Higher quality images with reasoning
+    - More aspect ratio options
+    - Text rendering capabilities
+    - Multi-turn image editing
+    """
+    prompt: str
+    aspect_ratio: GeminiImageAspectRatio = GeminiImageAspectRatio.SQUARE_1_1
+    number_of_images: int = 1
+    include_reasoning: bool = False  # Include model's reasoning in response
 
 
 @dataclass
@@ -119,7 +155,8 @@ class VertexAIClient:
 
     # Model endpoints
     VEO_MODEL = "veo-3.1-generate-001"  # Veo 3.1
-    IMAGE_MODEL = "gemini-3-pro-image-preview"  # Gemini 3 Pro Image Preview
+    IMAGE_MODEL = "imagen-4.0-generate-001"  # Imagen 4.0
+    GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview"  # Gemini 3 Pro Image (global endpoint only)
 
     def __init__(
         self,
@@ -443,10 +480,9 @@ class VertexAIClient:
         output_gcs_uri: Optional[str] = None,
     ) -> GenerationResult:
         """
-        Generate an image using Gemini 3 Pro Image Preview.
+        Generate an image using Imagen 4.0.
 
-        Uses direct HTTP API with self-signed JWT (most reliable method).
-        Does NOT use google-genai SDK to avoid id_token issues.
+        Uses Vertex AI predict API with service account authentication.
 
         Args:
             config: Image generation configuration
@@ -455,46 +491,39 @@ class VertexAIClient:
         Returns:
             GenerationResult with image data or error
         """
-        logger.info(f"[vertex_ai v5] Starting image generation: {config.prompt[:50]}...")
-
-        # Build prompt text
-        prompt_text = config.prompt
-        if config.negative_prompt:
-            prompt_text += f"\n\nAvoid: {config.negative_prompt}"
+        logger.info(f"[vertex_ai v7] Starting image generation with Imagen 4.0: {config.prompt[:50]}...")
 
         try:
             # Get auth headers with self-signed JWT
             headers = self.auth.get_auth_headers()
 
-            # Build endpoint URL for Gemini 3 Pro Image Preview
-            # Use "global" location for this model (NOT regional endpoint)
-            endpoint = f"https://aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/global/publishers/google/models/{self.IMAGE_MODEL}:generateContent"
+            # Build endpoint URL for Imagen 4.0
+            endpoint = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{self.IMAGE_MODEL}:predict"
 
-            logger.info(f"Calling Gemini Image endpoint: {endpoint}")
+            logger.info(f"Calling Imagen 4.0 endpoint: {endpoint}")
 
-            # Build request payload for generateContent API
-            # Reference: https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/gemini
+            # Build request payload for Imagen predict API
             request_body = {
-                "contents": [
-                    {
-                        "role": "user",
-                        "parts": [
-                            {"text": prompt_text}
-                        ]
-                    }
+                "instances": [
+                    {"prompt": config.prompt}
                 ],
-                "generationConfig": {
-                    "responseModalities": ["TEXT", "IMAGE"],
-                    "temperature": 1.0,
-                    "topP": 0.95,
-                    "topK": 40,
-                    "imageConfig": {
-                        "aspectRatio": config.aspect_ratio.value,
-                    },
+                "parameters": {
+                    "sampleCount": config.number_of_images,
+                    "aspectRatio": config.aspect_ratio.value,
+                    "safetyFilterLevel": config.safety_filter_level,
+                    "personGeneration": config.person_generation,
                 },
             }
 
-            # Make direct HTTP request with self-signed JWT
+            # Add negative prompt if provided
+            if config.negative_prompt:
+                request_body["parameters"]["negativePrompt"] = config.negative_prompt
+
+            # Add seed if provided
+            if config.seed is not None:
+                request_body["parameters"]["seed"] = config.seed
+
+            # Make direct HTTP request
             async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(endpoint, headers=headers, json=request_body)
 
@@ -510,49 +539,146 @@ class VertexAIClient:
 
                 result = response.json()
 
-            # Parse response - extract image from candidates
-            candidates = result.get("candidates", [])
-            if candidates and len(candidates) > 0:
-                content = candidates[0].get("content", {})
-                parts = content.get("parts", [])
+            # Parse response - extract image from predictions
+            predictions = result.get("predictions", [])
+            if predictions and len(predictions) > 0:
+                image_data = predictions[0].get("bytesBase64Encoded")
+                mime_type = predictions[0].get("mimeType", "image/png")
 
-                for part in parts:
-                    # Check for inlineData (image)
-                    inline_data = part.get("inlineData")
-                    if inline_data:
-                        image_data = inline_data.get("data")
-                        mime_type = inline_data.get("mimeType", "image/png")
+                if image_data:
+                    logger.info(f"Image generated successfully (base64, {mime_type})")
+                    return GenerationResult(
+                        success=True,
+                        image_base64=image_data,
+                        metadata={"model": self.IMAGE_MODEL, "mimeType": mime_type},
+                    )
 
-                        if image_data:
-                            logger.info(f"Image generated successfully (base64, {mime_type})")
-                            return GenerationResult(
-                                success=True,
-                                image_base64=image_data,
-                                metadata={"model": self.IMAGE_MODEL, "mimeType": mime_type},
-                            )
-
-                    # Log text parts for debugging
-                    text = part.get("text")
-                    if text:
-                        logger.info(f"Text response: {text[:100]}...")
-
-                # Check for blocked content
-                finish_reason = candidates[0].get("finishReason", "")
-                if "SAFETY" in finish_reason:
+                # Check for RAI filtering
+                rai_reasons = predictions[0].get("raiFilteredReason")
+                if rai_reasons:
                     return GenerationResult(
                         success=False,
-                        error="Image generation blocked by safety filters",
-                        metadata={"finishReason": finish_reason},
+                        error=f"Image generation blocked by safety filters: {rai_reasons}",
+                        metadata={"raiFilteredReason": rai_reasons},
                     )
 
             return GenerationResult(
                 success=False,
-                error="No image data returned from Gemini API",
+                error="No image data returned from Imagen API",
                 metadata={"response": result},
             )
 
         except Exception as e:
             logger.error(f"Image generation failed: {e}")
+            return GenerationResult(
+                success=False,
+                error=str(e),
+            )
+
+    async def generate_image_gemini(
+        self,
+        config: GeminiImageConfig,
+    ) -> GenerationResult:
+        """
+        Generate an image using Gemini 3 Pro Image.
+
+        Uses google.genai SDK with Vertex AI backend.
+        Requires global endpoint (not regional).
+
+        Args:
+            config: Gemini image generation configuration
+
+        Returns:
+            GenerationResult with image data or error
+
+        Note:
+            Gemini 3 Pro Image returns both reasoning text and image.
+            The image is extracted and returned as base64.
+        """
+        logger.info(f"[vertex_ai v8] Starting image generation with Gemini 3 Pro Image: {config.prompt[:50]}...")
+
+        try:
+            # Import google.genai SDK
+            from google import genai
+            from google.genai.types import GenerateContentConfig, Modality
+
+            # Get credentials from auth manager
+            credentials = self.auth.get_credentials()
+
+            # Create Gemini client with Vertex AI backend
+            # Gemini 3 requires global endpoint
+            client = genai.Client(
+                vertexai=True,
+                project=self.project_id,
+                location="global",  # Gemini 3 Pro Image requires global endpoint
+                credentials=credentials,
+            )
+
+            logger.info(f"Calling Gemini 3 Pro Image model: {self.GEMINI_IMAGE_MODEL}")
+            logger.info(f"Prompt: {config.prompt[:100]}...")
+
+            # Build generation config
+            gen_config = GenerateContentConfig(
+                response_modalities=[Modality.TEXT, Modality.IMAGE],
+            )
+
+            # Generate content
+            response = client.models.generate_content(
+                model=self.GEMINI_IMAGE_MODEL,
+                contents=config.prompt,
+                config=gen_config,
+            )
+
+            logger.info("Gemini response received, parsing...")
+
+            # Parse response - extract image and optionally reasoning
+            reasoning_texts = []
+            image_data = None
+            mime_type = None
+
+            for part in response.candidates[0].content.parts:
+                if part.text:
+                    reasoning_texts.append(part.text)
+                if part.inline_data:
+                    image_data = part.inline_data.data
+                    mime_type = part.inline_data.mime_type
+
+            if image_data:
+                # Encode to base64
+                image_base64 = base64.b64encode(image_data).decode('utf-8')
+
+                metadata = {
+                    "model": self.GEMINI_IMAGE_MODEL,
+                    "mimeType": mime_type or "image/png",
+                }
+
+                # Include reasoning if requested
+                if config.include_reasoning and reasoning_texts:
+                    metadata["reasoning"] = reasoning_texts
+
+                logger.info(f"Gemini image generated successfully ({mime_type}, {len(image_base64)} chars)")
+
+                return GenerationResult(
+                    success=True,
+                    image_base64=image_base64,
+                    metadata=metadata,
+                )
+
+            # No image in response
+            return GenerationResult(
+                success=False,
+                error="No image data returned from Gemini API",
+                metadata={"reasoning": reasoning_texts} if reasoning_texts else None,
+            )
+
+        except ImportError as e:
+            logger.error(f"google-genai SDK not installed: {e}")
+            return GenerationResult(
+                success=False,
+                error="google-genai SDK not installed. Run: pip install google-genai",
+            )
+        except Exception as e:
+            logger.error(f"Gemini image generation failed: {e}")
             return GenerationResult(
                 success=False,
                 error=str(e),
@@ -680,7 +806,7 @@ async def generate_image(
     **kwargs,
 ) -> GenerationResult:
     """
-    Convenience function for image generation.
+    Convenience function for image generation with Imagen 4.0.
 
     Args:
         prompt: Text prompt for image
@@ -700,23 +826,77 @@ async def generate_image(
     return await client.generate_image(config, output_gcs_uri)
 
 
+async def generate_image_gemini(
+    prompt: str,
+    aspect_ratio: str = "1:1",
+    include_reasoning: bool = False,
+    **kwargs,
+) -> GenerationResult:
+    """
+    Convenience function for image generation with Gemini 3 Pro Image.
+
+    Args:
+        prompt: Text prompt for image
+        aspect_ratio: Image aspect ratio (supports more ratios than Imagen)
+        include_reasoning: Include model's reasoning in metadata
+        **kwargs: Additional config options
+
+    Returns:
+        GenerationResult with image_base64 and optional reasoning
+
+    Example:
+        result = await generate_image_gemini(
+            prompt="A futuristic city with flying cars",
+            aspect_ratio="16:9",
+            include_reasoning=True,
+        )
+        if result.success:
+            print(f"Image: {len(result.image_base64)} chars")
+            if result.metadata.get("reasoning"):
+                print(f"Reasoning: {result.metadata['reasoning']}")
+    """
+    client = create_vertex_ai_client()
+    config = GeminiImageConfig(
+        prompt=prompt,
+        aspect_ratio=GeminiImageAspectRatio(aspect_ratio),
+        include_reasoning=include_reasoning,
+        **kwargs,
+    )
+    return await client.generate_image_gemini(config)
+
+
 # For testing
 if __name__ == "__main__":
     import asyncio
     logging.basicConfig(level=logging.INFO)
 
     async def test():
-        print("Testing Vertex AI Client...")
+        print("Testing Vertex AI Client (v8)...")
         print("-" * 50)
 
         client = create_vertex_ai_client()
         print(f"Project: {client.project_id}")
         print(f"Location: {client.location}")
+        print(f"Models:")
+        print(f"  - Veo: {client.VEO_MODEL}")
+        print(f"  - Imagen: {client.IMAGE_MODEL}")
+        print(f"  - Gemini Image: {client.GEMINI_IMAGE_MODEL}")
 
-        # Test image generation
-        config = ImageGenerationConfig(prompt="A beautiful sunset over mountains")
-        print(f"\nTesting image generation with prompt: {config.prompt}")
-        # result = await client.generate_image(config)
-        # print(f"Result: {result}")
+        # Test Gemini image generation
+        print("\n" + "=" * 50)
+        print("Testing Gemini 3 Pro Image...")
+        config = GeminiImageConfig(
+            prompt="A beautiful sunset over mountains with purple and orange sky",
+            include_reasoning=True,
+        )
+        print(f"Prompt: {config.prompt}")
+        result = await client.generate_image_gemini(config)
+        print(f"Success: {result.success}")
+        if result.success:
+            print(f"Image size: {len(result.image_base64)} chars")
+            if result.metadata.get("reasoning"):
+                print(f"Reasoning steps: {len(result.metadata['reasoning'])}")
+        else:
+            print(f"Error: {result.error}")
 
     asyncio.run(test())
