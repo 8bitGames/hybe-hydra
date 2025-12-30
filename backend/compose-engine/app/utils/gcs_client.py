@@ -58,11 +58,17 @@ class GCSClient:
         logger.info(f"[GCSClient] Initialized for bucket: {self.bucket_name}")
 
     def _get_client(self) -> storage.Client:
-        """Get or create GCS client."""
+        """Get or create GCS client with Target SA credentials."""
         if self._client is None:
-            # Use default credentials (from GOOGLE_APPLICATION_CREDENTIALS or service account)
-            self._client = storage.Client(project=self.auth_manager.project_id)
+            # Use Target SA credentials from auth manager (for WIF 2-hop)
+            # This ensures we use the correct service account for GCS access
+            credentials = self.auth_manager.get_credentials()
+            self._client = storage.Client(
+                project=self.auth_manager.project_id,
+                credentials=credentials,
+            )
             logger.info(f"[GCSClient] Created storage client for project: {self.auth_manager.project_id}")
+            logger.info(f"[GCSClient] Using credentials type: {type(credentials).__name__}")
         return self._client
 
     def _get_signing_credentials(self):
