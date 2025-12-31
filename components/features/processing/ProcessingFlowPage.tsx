@@ -108,6 +108,80 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     setIsInitializing(false);
   }, [searchParams, session?.id, initSession]);
 
+  // Recovery effect: Check for existing compose variations on page refresh
+  // This runs when we have an originalVideo but lost the variationBatchId from session
+  useEffect(() => {
+    // Only run recovery when:
+    // 1. Store is hydrated
+    // 2. We have an original video
+    // 3. We're not currently generating variations
+    // 4. We don't have variations in store yet
+    // 5. It's a compose/fast_cut content type
+    const shouldRecover =
+      isHydrated &&
+      originalVideo?.id &&
+      !isGeneratingVariations &&
+      (!variations || variations.length === 0) &&
+      session?.contentType !== 'ai_video' &&
+      session?.state === 'READY'; // Only recover in READY state
+
+    if (!shouldRecover) return;
+
+    const recoverVariations = async () => {
+      try {
+        console.log("[ProcessingFlowPage] Checking for existing compose variations...");
+
+        // Call API without batchId to get all variations for this seed
+        const status = await fastCutApi.getComposeVariationsStatus(originalVideo.id);
+
+        if (status.variations && status.variations.length > 0) {
+          console.log(`[ProcessingFlowPage] Found ${status.variations.length} existing variations, restoring...`);
+
+          // Restore variations to the store
+          status.variations.forEach((apiVar) => {
+            const existingVar = variations?.find(v => v.id === apiVar.id);
+            if (existingVar) return; // Already in store
+
+            // Extract style info from variation_label (e.g., "Pop", "Emotional")
+            const styleLabel = apiVar.variation_label || "Variation";
+            const styleId = styleLabel.toLowerCase().replace(/\s+/g, '_');
+
+            // Add to store
+            addVariation({
+              id: apiVar.id,
+              generationId: apiVar.id, // For recovered variations, id IS the generation ID
+              styleId,
+              styleName: styleLabel,
+              styleNameKo: styleLabel, // Use same label for Korean (or could map)
+              status: apiVar.status === "COMPLETED" ? "completed" :
+                      apiVar.status === "FAILED" ? "failed" :
+                      apiVar.status === "PROCESSING" ? "generating" : "pending",
+              progress: apiVar.progress,
+              outputUrl: apiVar.output_url,
+              thumbnailUrl: apiVar.thumbnail_url,
+              approval: "pending", // Recovered variations start with pending approval
+            });
+          });
+
+          // If all variations are done, transition to compare state
+          const allDone = status.variations.every(
+            v => v.status === "COMPLETED" || v.status === "FAILED"
+          );
+          if (allDone && status.variations.some(v => v.status === "COMPLETED")) {
+            setState("COMPARE_AND_APPROVE");
+          }
+        } else {
+          console.log("[ProcessingFlowPage] No existing variations found");
+        }
+      } catch (error) {
+        console.error("[ProcessingFlowPage] Failed to recover variations:", error);
+        // Silently fail - this is just recovery, not critical
+      }
+    };
+
+    recoverVariations();
+  }, [isHydrated, originalVideo?.id, isGeneratingVariations, variations, session?.contentType, session?.state, addVariation, setState]);
+
   // Poll for generation status when in GENERATING state
   useEffect(() => {
     // Only poll when in GENERATING state and we have a video ID
@@ -380,29 +454,23 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     try {
       if (isAIVideo) {
         // AI Video (VEO) variation generation
-        // NOTE: For AI Video, we call API FIRST, then create store variations from response
-        // This is because the API creates COMBINATIONS of presets, not 1:1 style mappings
+        // NEW: 1:1 mapping - each preset_id = 1 video (no combinations!)
         console.log("[ProcessingFlowPage] Starting AI Video variations for:", seedGenerationId);
 
-        // Map selected styles to style_categories for AI Video API
-        // NOTE: Categories must match database StylePreset categories:
-        // contrast, mood, motion, cinematic, aesthetic, kpop, effect, lighting
-        const styleCategoryMap: Record<string, string> = {
-          viral_tiktok: "aesthetic",  // TikTok styles → aesthetic presets
-          cinematic_mood: "cinematic", // Cinematic → cinematic presets
-          clean_minimal: "mood",       // Minimal → mood presets (soft pastel, etc.)
-          energetic_beat: "motion",    // Energetic → motion presets (dynamic motion)
-        };
+        // CRITICAL: Read selectedStyles directly from store to avoid stale closure issue
+        // When ReadyView calls setSelectedStyles() then onStartGeneration() immediately,
+        // the React component closure may still have the old selectedStyles value
+        const currentSelectedPresets = useProcessingSessionStore.getState().session?.variationConfig.selectedStyles || [];
+        console.log("[ProcessingFlowPage] Selected AI preset IDs (1:1 mapping):", currentSelectedPresets);
 
-        const styleCategories = selectedStyles.map(
-          (styleId) => styleCategoryMap[styleId] || styleId
-        );
+        // NEW: Send preset_ids directly (no category mapping, no combinations!)
+        // Preset IDs are: camera_closeup, camera_wide, move_dolly_in, color_warm, etc.
+        // Each preset will generate exactly ONE video variation
 
-        // Call AI Video variations API FIRST
+        // Call AI Video variations API with direct preset_ids
         const response = await variationsApi.create(seedGenerationId, {
-          style_categories: styleCategories.length > 0 ? styleCategories : ["aesthetic"],
-          enable_prompt_variation: false, // Disable prompt variations for simpler mapping
-          max_variations: selectedStyles.length || 4,
+          preset_ids: currentSelectedPresets, // Direct 1:1 mapping!
+          max_variations: currentSelectedPresets.length || 4,
         });
 
         // Check for API error response
@@ -473,9 +541,13 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
         console.log("[ProcessingFlowPage] Starting compose variations for:", seedGenerationId);
 
+        // Read selectedStyles directly from store for consistency (avoid stale closure)
+        const currentFastCutStyles = useProcessingSessionStore.getState().session?.variationConfig.selectedStyles || [];
+        console.log("[ProcessingFlowPage] Current FastCut styles from store:", currentFastCutStyles);
+
         // Call the API to start variation generation
         const response = await fastCutApi.startComposeVariations(seedGenerationId, {
-          variationCount: selectedStyles.length || 8,
+          variationCount: currentFastCutStyles.length || 8,
         });
 
         console.log("[ProcessingFlowPage] Compose variations started:", response);
@@ -521,7 +593,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
       // Mark all variations as failed
       cancelVariationGeneration();
     }
-  }, [startVariationGeneration, originalVideo?.id, session?.contentType, selectedStyles, variations, updateVariation, addVariation, cancelVariationGeneration]);
+  }, [startVariationGeneration, originalVideo?.id, session?.contentType, updateVariation, addVariation, cancelVariationGeneration]);
 
   const handleCancelGeneration = useCallback(() => {
     // Clear batch ID to stop polling

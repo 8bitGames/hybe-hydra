@@ -68,6 +68,8 @@ interface FastCutEffectStepProps {
   subtitleMode?: "script" | "lyrics";
   lyricsData?: LyricsData | null;
   audioStartTime?: number;
+  subtitleDisplayMode?: "sequential" | "static";
+  setSubtitleDisplayMode?: (mode: "sequential" | "static") => void;
 }
 
 // Format seconds to mm:ss.s
@@ -611,6 +613,8 @@ export function FastCutEffectStep({
   subtitleMode = "script",
   lyricsData,
   audioStartTime = 0,
+  subtitleDisplayMode = "sequential",
+  setSubtitleDisplayMode,
 }: FastCutEffectStepProps) {
   const { language, translate } = useI18n();
 
@@ -938,6 +942,33 @@ export function FastCutEffectStep({
                 </span>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Subtitle Display Mode Toggle */}
+        {setSubtitleDisplayMode && (
+          <div className="flex items-center gap-3 p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
+            <Type className="h-4 w-4 text-neutral-500" />
+            <span className="text-sm text-neutral-600">
+              {language === "ko" ? "자막 표시 방식" : "Subtitle Display"}
+            </span>
+            <div className="flex-1" />
+            <Select
+              value={subtitleDisplayMode}
+              onValueChange={(v) => setSubtitleDisplayMode(v as "sequential" | "static")}
+            >
+              <SelectTrigger className="w-36 h-8 bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sequential">
+                  {language === "ko" ? "순차 표시" : "Sequential"}
+                </SelectItem>
+                <SelectItem value="static">
+                  {language === "ko" ? "전체 표시" : "Static (All)"}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         )}
       </div>

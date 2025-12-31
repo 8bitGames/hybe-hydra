@@ -579,6 +579,7 @@ export function InlineFastCutFlow({
   const [analyzingAudio, setAnalyzingAudio] = useState(false);
   const [musicSkipped, setMusicSkipped] = useState(false);
   const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>("lyrics");
+  const [subtitleDisplayMode, setSubtitleDisplayMode] = useState<"sequential" | "static">("sequential");
   const [audioLyricsText, setAudioLyricsText] = useState<string | null>(null);
   const [triedStartTimes, setTriedStartTimes] = useState<number[]>([]);  // Track tried segments for variety
 
@@ -1317,6 +1318,8 @@ export function InlineFastCutFlow({
         tiktokSEO: tiktokSEO || undefined,
         // Use audio lyrics for subtitles when lyrics mode selected
         useAudioLyrics: subtitleMode === "lyrics",
+        // Subtitle display mode: sequential (one at a time) or static (all visible)
+        subtitleDisplayMode,
       });
       console.log("[FastCut] 📦 Render API response received");
 
@@ -1722,6 +1725,8 @@ export function InlineFastCutFlow({
                 subtitleMode={subtitleMode}
                 lyricsData={selectedAudioLyrics}
                 audioStartTime={audioStartTime}
+                subtitleDisplayMode={subtitleDisplayMode}
+                setSubtitleDisplayMode={setSubtitleDisplayMode}
               />
             )}
           </div>

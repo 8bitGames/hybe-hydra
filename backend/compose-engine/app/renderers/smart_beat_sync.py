@@ -133,21 +133,34 @@ class SmartBeatSync:
         if beats_per_image is None:
             beats_per_image = self.determine_beats_per_image()
 
-        # Find beats within target duration
+        # Calculate estimated clip duration based on beats
+        estimated_clip_duration = self.beat_interval * beats_per_image
+
+        # Calculate minimum clips needed to fill target_duration
+        # Use ceiling to ensure we have enough clips to reach target
+        min_clips_needed = int(np.ceil(self.target_duration / estimated_clip_duration))
+
+        # Maximum clips available from the entire audio (not just within target_duration)
+        # This allows us to use beats beyond target_duration to ensure we fill it
+        max_clips_from_audio = (len(self.beat_times) - 1) // beats_per_image
+
+        # Use the minimum of what we need and what's available
+        # This ensures we fill target_duration when possible
+        num_clips = min(min_clips_needed, max_clips_from_audio)
+        num_clips = max(1, num_clips)
+
+        # Find beats within target duration (for logging comparison)
         beats_in_target = self.beat_times[self.beat_times <= self.target_duration]
+        old_max_clips = len(beats_in_target) // beats_per_image
 
-        # Maximum number of clips that fit in target duration
-        max_clips = len(beats_in_target) // beats_per_image
-
-        # Use ALL clips that fit in target duration (images will be looped by the renderer)
-        # This ensures video fills the target_duration instead of stopping early
-        num_clips = max(1, max_clips)
-
-        logger.info(f"[SmartBeatSync] Clip calculation:")
-        logger.info(f"  Beats in {self.target_duration}s: {len(beats_in_target)}")
-        logger.info(f"  Max clips that fit: {max_clips}")
+        logger.info(f"[SmartBeatSync] Clip calculation (FIXED):")
+        logger.info(f"  Target duration: {self.target_duration}s")
+        logger.info(f"  Estimated clip duration: {estimated_clip_duration:.3f}s")
+        logger.info(f"  Min clips needed to fill target: {min_clips_needed}")
+        logger.info(f"  Max clips from audio: {max_clips_from_audio}")
+        logger.info(f"  OLD method would use: {old_max_clips} clips (beats within target)")
+        logger.info(f"  NEW method uses: {num_clips} clips")
         logger.info(f"  Images available: {self.num_images} (will loop if needed)")
-        logger.info(f"  Using: {num_clips} clips to fill {self.target_duration}s target")
 
         # Calculate exact duration for each clip
         durations = []

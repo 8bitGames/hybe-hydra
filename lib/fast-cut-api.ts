@@ -358,6 +358,8 @@ export interface RenderRequest {
   aiEffects?: SelectedEffects;  // Pre-selected AI effects (auto-selected if not provided)
   // Lyrics subtitle mode
   useAudioLyrics?: boolean;  // Use audio lyrics for subtitles instead of script
+  // Subtitle display mode: 'sequential' (default) or 'static' (all at once)
+  subtitleDisplayMode?: 'sequential' | 'static';
 }
 
 export interface RenderResponse {
@@ -777,15 +779,17 @@ export const fastCutApi = {
   /**
    * Get compose variations batch status
    * @param seedGenerationId - The original generation ID (compose video)
-   * @param batchId - The batch ID returned from startComposeVariations
+   * @param batchId - Optional batch ID. If not provided, fetches all variations for the seed generation.
+   *                  This enables recovery of variations when session state is lost after refresh.
    */
   getComposeVariationsStatus: async (
     seedGenerationId: string,
-    batchId: string
+    batchId?: string
   ): Promise<VariationsBatchStatus> => {
-    const response = await api.get<VariationsBatchStatus>(
-      `/api/v1/generations/${seedGenerationId}/compose-variations?batch_id=${batchId}`
-    );
+    const url = batchId
+      ? `/api/v1/generations/${seedGenerationId}/compose-variations?batch_id=${batchId}`
+      : `/api/v1/generations/${seedGenerationId}/compose-variations`;
+    const response = await api.get<VariationsBatchStatus>(url);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
@@ -810,14 +814,14 @@ export const fastCutApi = {
   /**
    * Poll for compose variations completion
    * @param seedGenerationId - The original generation ID (compose video)
-   * @param batchId - The batch ID
+   * @param batchId - Optional batch ID. If not provided, polls all variations for the seed generation.
    * @param onProgress - Callback for progress updates
    * @param pollInterval - Polling interval in ms (default 3000)
    * @param maxAttempts - Max polling attempts (default 600 = 30 min)
    */
   waitForComposeVariations: async (
     seedGenerationId: string,
-    batchId: string,
+    batchId?: string,
     onProgress?: (status: VariationsBatchStatus) => void,
     pollInterval = 3000,
     maxAttempts = 600

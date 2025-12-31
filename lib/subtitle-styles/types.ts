@@ -25,6 +25,11 @@ export type AnimationType =
 // Vertical position options
 export type VerticalPositionType = 'top' | 'center' | 'bottom';
 
+// Subtitle display mode options
+// - sequential: subtitles appear one at a time with individual timing
+// - static: all subtitles appear at once and stay visible throughout
+export type SubtitleDisplayMode = 'sequential' | 'static';
+
 // Subtitle purpose/type
 export type SubtitleType = 'lyrics' | 'hook' | 'verse' | 'chorus' | 'cta' | 'caption';
 
@@ -70,6 +75,9 @@ export interface SubtitleStyleSet {
   // Preview/UI
   previewColor: string;         // hex color for UI display
   icon: string;                 // emoji or icon identifier
+
+  // Display mode (optional preset default)
+  displayMode?: SubtitleDisplayMode;
 }
 
 /**
@@ -79,7 +87,7 @@ export interface LyricsData {
   // Metadata
   language: 'ko' | 'en' | 'ja' | 'mixed' | 'auto';
   extractedAt: string;          // ISO timestamp
-  source: 'gemini' | 'forced-alignment' | 'manual';  // extraction source
+  source: 'gemini' | 'forced-alignment' | 'manual' | 'tiktok-captions';  // extraction source
   confidence: number;           // 0-1 confidence score
   isInstrumental: boolean;      // true if no vocals detected
 
@@ -135,6 +143,7 @@ export interface SubtitleRenderSettings {
   animationOutDuration: number;
   verticalPosition: VerticalPositionType;
   bottomMargin: number;
+  displayMode?: SubtitleDisplayMode; // defaults to 'sequential'
 }
 
 /**
@@ -152,6 +161,7 @@ export function styleSetToRenderSettings(styleSet: SubtitleStyleSet): SubtitleRe
     animationOutDuration: styleSet.animation.outDuration,
     verticalPosition: styleSet.position.vertical,
     bottomMargin: styleSet.position.bottomMargin,
+    displayMode: styleSet.displayMode ?? 'sequential',
   };
 }
 

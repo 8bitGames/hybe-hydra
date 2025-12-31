@@ -37,6 +37,7 @@ from .ffmpeg_pipeline import (
     apply_filter_to_video,
     mix_audio_to_video,
     final_encode,
+    trim_video_to_duration,
 )
 from .filters.ken_burns import get_diverse_motion_styles
 from .filters.color_grading import build_color_grade_filter, combine_filters
@@ -521,6 +522,39 @@ class FFmpegRenderer:
                     logger.warning(f"[{job_id}] [STEP 10/11] Audio mix failed, continuing without audio")
             else:
                 logger.info(f"[{job_id}] [STEP 10/11] No audio to add (skipped)")
+
+            # =================================================================
+            # STEP 10.5: DURATION VERIFICATION & TRIMMING
+            # =================================================================
+            # Ensure final video matches target_duration exactly
+            step_start = time.time()
+            final_video_info = await get_video_info(video_path)
+            final_video_duration = final_video_info["duration"]
+
+            logger.info(f"[{job_id}] [STEP 10.5/11] Duration verification:")
+            logger.info(f"[{job_id}] [STEP 10.5/11]   Target duration: {target_duration:.2f}s")
+            logger.info(f"[{job_id}] [STEP 10.5/11]   Actual duration: {final_video_duration:.2f}s")
+            logger.info(f"[{job_id}] [STEP 10.5/11]   Difference: {final_video_duration - target_duration:.2f}s")
+
+            # Trim if video exceeds target duration by more than 0.5 seconds
+            if final_video_duration > target_duration + 0.5:
+                logger.info(f"[{job_id}] [STEP 10.5/11] Video exceeds target - trimming to {target_duration:.2f}s")
+                trimmed_output = os.path.join(job_dir, f"{job_id}_trimmed.mp4")
+                trim_success = await trim_video_to_duration(
+                    input_path=video_path,
+                    output_path=trimmed_output,
+                    target_duration=target_duration,
+                    use_gpu=is_nvenc_available(),
+                    job_id=job_id,
+                )
+                step_time = time.time() - step_start
+                if trim_success and os.path.exists(trimmed_output):
+                    video_path = trimmed_output
+                    logger.info(f"[{job_id}] [STEP 10.5/11] ✓ Video trimmed to {target_duration:.2f}s in {step_time:.1f}s")
+                else:
+                    logger.warning(f"[{job_id}] [STEP 10.5/11] Trim failed, using original video")
+            else:
+                logger.info(f"[{job_id}] [STEP 10.5/11] Duration OK - no trimming needed")
 
             # =================================================================
             # STEP 11: UPLOAD TO S3

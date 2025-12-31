@@ -168,7 +168,8 @@ export default function DashboardLayout({
       console.log("[DashboardLayout] Checking auth...", { isAuthenticated, hasUser: !!user });
       if (!isAuthenticated) {
         console.log("[DashboardLayout] Not authenticated, redirecting to login...");
-        router.push("/login");
+        // Use window.location for more reliable redirect when component unmounts
+        window.location.href = "/login";
         return;
       }
       if (!user) {

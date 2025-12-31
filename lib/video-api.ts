@@ -819,6 +819,9 @@ export interface SubtitleStyle {
   animation?: "fade" | "typewriter" | "karaoke" | "slide_up" | "scale_pop" | "bounce" | "glitch" | "wave";
   position?: "top" | "center" | "bottom";
   bottom_margin?: number;
+  // Display mode: 'sequential' (default) shows subtitles one at a time
+  // 'static' shows all subtitles at once and keeps them visible
+  display_mode?: "sequential" | "static";
 }
 
 export interface VideoEditAudioSettings {

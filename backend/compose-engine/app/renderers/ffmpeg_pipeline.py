@@ -697,3 +697,72 @@ async def final_encode(
         return False
 
     return True
+
+
+async def trim_video_to_duration(
+    input_path: str,
+    output_path: str,
+    target_duration: float,
+    use_gpu: bool = False,
+    job_id: str = "unknown",
+) -> bool:
+    """Trim video to exact target duration.
+
+    Uses FFmpeg's -t option to trim the video to the specified duration.
+    This ensures the final video is exactly the length the user requested.
+
+    Args:
+        input_path: Input video file path
+        output_path: Output video file path
+        target_duration: Target duration in seconds
+        use_gpu: Whether to use GPU encoding
+        job_id: Job ID for logging
+
+    Returns:
+        True if successful
+    """
+    ffmpeg = find_ffmpeg()
+
+    # Build encoder options
+    if use_gpu and is_nvenc_available():
+        encoder_opts = [
+            "-c:v", "h264_nvenc",
+            "-preset", "p1",
+            "-tune", "hq",
+            "-rc", "vbr",
+            "-cq", "18",
+            "-b:v", "0",
+        ]
+    else:
+        encoder_opts = [
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "18",
+        ]
+
+    cmd = [
+        ffmpeg,
+        "-i", input_path,
+        "-t", str(target_duration),
+        *encoder_opts,
+        "-c:a", "copy",
+        "-y",
+        output_path,
+    ]
+
+    logger.info(f"[{job_id}] Trimming video to {target_duration:.1f}s")
+    _log_ffmpeg_cmd(cmd, job_id)
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        logger.error(f"[{job_id}] Trim failed: {stderr.decode()}")
+        return False
+
+    logger.info(f"[{job_id}] Video trimmed successfully to {target_duration:.1f}s")
+    return True

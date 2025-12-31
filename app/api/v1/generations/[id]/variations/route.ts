@@ -25,44 +25,87 @@ interface StylePresetParams {
   [key: string]: string | number | boolean | null | undefined | string[] | number[];
 }
 
-// Prompt variation templates
-const CAMERA_VARIATIONS = [
-  "close-up shot of",
-  "wide shot showing",
-  "dynamic tracking shot of",
-  "low angle shot of",
-  "overhead view of",
-];
+// ==============================================
+// Subtle Variation Templates (1 preset = 1 video)
+// These apply MINOR modifications to preserve original video look
+// ==============================================
 
-const EXPRESSION_VARIATIONS = [
-  "with intense energy",
-  "in a dreamy atmosphere",
-  "with vibrant movements",
-  "in smooth flowing motion",
-  "with powerful presence",
-];
+// Camera presets - prepend to prompt (camera angle/position changes)
+const CAMERA_MODIFIERS: Record<string, string> = {
+  camera_closeup: "Close-up shot of",
+  camera_wide: "Wide shot showing",
+  camera_low_angle: "Low angle shot of",
+  camera_high_angle: "High angle shot of",
+  camera_dutch: "Dutch tilt shot of",
+};
 
-// Generate prompt variations
-function generatePromptVariations(
-  basePrompt: string,
-  types: ("camera" | "expression")[],
-  count: number
-): string[] {
-  const variations: string[] = [basePrompt]; // Always include original
+// Movement presets - append to prompt (camera movement changes)
+const MOVEMENT_MODIFIERS: Record<string, string> = {
+  move_dolly_in: ", with camera slowly dolly in",
+  move_dolly_out: ", with camera slowly dolly out",
+  move_orbit: ", with camera orbiting around subject",
+  move_pan: ", with slow horizontal pan",
+  move_steady: ", with steady locked-off camera",
+};
 
-  if (types.includes("camera")) {
-    CAMERA_VARIATIONS.slice(0, Math.ceil(count / 2)).forEach((mod) => {
-      variations.push(`${mod} ${basePrompt}`);
-    });
+// Color presets - append to prompt (color grading changes)
+const COLOR_MODIFIERS: Record<string, string> = {
+  color_warm: ", warm golden color grading",
+  color_cool: ", cool blue-tinted color grading",
+  color_vivid: ", vibrant saturated colors",
+  color_muted: ", desaturated muted tones",
+  color_vintage: ", vintage film color grading",
+};
+
+// Apply subtle modification based on preset ID
+function applySubtleModification(basePrompt: string, presetId: string): string {
+  // Camera presets - prepend
+  if (CAMERA_MODIFIERS[presetId]) {
+    return `${CAMERA_MODIFIERS[presetId]} ${basePrompt}`;
   }
 
-  if (types.includes("expression")) {
-    EXPRESSION_VARIATIONS.slice(0, Math.ceil(count / 2)).forEach((mod) => {
-      variations.push(`${basePrompt}, ${mod}`);
-    });
+  // Movement presets - append
+  if (MOVEMENT_MODIFIERS[presetId]) {
+    return `${basePrompt}${MOVEMENT_MODIFIERS[presetId]}`;
   }
 
-  return variations.slice(0, count);
+  // Color presets - append
+  if (COLOR_MODIFIERS[presetId]) {
+    return `${basePrompt}${COLOR_MODIFIERS[presetId]}`;
+  }
+
+  // Unknown preset - return original
+  return basePrompt;
+}
+
+// Get preset category from ID
+function getPresetCategory(presetId: string): "camera" | "movement" | "color" | "unknown" {
+  if (presetId.startsWith("camera_")) return "camera";
+  if (presetId.startsWith("move_")) return "movement";
+  if (presetId.startsWith("color_")) return "color";
+  return "unknown";
+}
+
+// Get preset display name
+function getPresetDisplayName(presetId: string): string {
+  const names: Record<string, string> = {
+    camera_closeup: "Close-up",
+    camera_wide: "Wide Shot",
+    camera_low_angle: "Low Angle",
+    camera_high_angle: "High Angle",
+    camera_dutch: "Dutch Tilt",
+    move_dolly_in: "Dolly In",
+    move_dolly_out: "Dolly Out",
+    move_orbit: "Orbit",
+    move_pan: "Slow Pan",
+    move_steady: "Steady",
+    color_warm: "Warm",
+    color_cool: "Cool",
+    color_vivid: "Vivid",
+    color_muted: "Muted",
+    color_vintage: "Vintage",
+  };
+  return names[presetId] || presetId;
 }
 
 // Helper: Convert aspect ratio string to EC2 AI format
@@ -455,119 +498,91 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const body = await request.json();
     const {
-      style_categories = [],
-      enable_prompt_variation = false,
-      prompt_variation_types = [],
-      max_variations = 10,
+      preset_ids = [],  // NEW: Direct preset IDs (1 preset = 1 video)
+      style_categories = [], // DEPRECATED: Kept for backward compatibility
+      max_variations = 15,
       auto_publish, // Auto-publish configuration
     } = body;
 
-    if (!style_categories || style_categories.length === 0) {
+    // ==============================================
+    // NEW: 1:1 Preset-to-Video Mapping (No Cartesian Product!)
+    // Each selected preset generates exactly ONE variation
+    // ==============================================
+
+    // Validate: Either preset_ids or style_categories must be provided
+    if ((!preset_ids || preset_ids.length === 0) && (!style_categories || style_categories.length === 0)) {
       return NextResponse.json(
-        { detail: "At least one style_category is required" },
+        { detail: "At least one preset_id is required" },
         { status: 400 }
       );
     }
 
-    // Fetch presets for selected categories
-    const presets = await prisma.stylePreset.findMany({
-      where: {
-        category: { in: style_categories },
-        isActive: true,
-      },
-      orderBy: { sortOrder: "asc" },
-    });
+    // Use preset_ids directly if provided, otherwise fall back to legacy category-based selection
+    let selectedPresetIds: string[] = [];
 
-    if (presets.length === 0) {
-      return NextResponse.json(
-        { detail: "No active presets found for selected categories" },
-        { status: 400 }
-      );
-    }
-
-    // Group presets by category
-    const presetsByCategory: Record<string, typeof presets> = {};
-    presets.forEach((preset) => {
-      if (!presetsByCategory[preset.category]) {
-        presetsByCategory[preset.category] = [];
-      }
-      presetsByCategory[preset.category].push(preset);
-    });
-
-    // Generate all combinations
-    type PresetCombination = typeof presets;
-    let combinations: PresetCombination[] = [[]];
-
-    style_categories.forEach((category: string) => {
-      const categoryPresets = presetsByCategory[category] || [];
-      if (categoryPresets.length > 0) {
-        const newCombinations: PresetCombination[] = [];
-        combinations.forEach((combo) => {
-          categoryPresets.forEach((preset) => {
-            newCombinations.push([...combo, preset]);
-          });
-        });
-        combinations = newCombinations;
-      }
-    });
-
-    // Apply prompt variations if enabled
-    let promptVariations = [seedGeneration.prompt];
-    if (enable_prompt_variation && prompt_variation_types.length > 0) {
-      promptVariations = generatePromptVariations(
-        seedGeneration.prompt,
-        prompt_variation_types,
-        3 // Max 3 prompt variations
-      );
-    }
-
-    // Calculate final variations (preset combos × prompt variations)
-    type VariationData = {
-      presetCombo: PresetCombination;
-      promptVariation: string;
-      promptIndex: number;
-    };
-    let allVariations: VariationData[] = [];
-
-    combinations.forEach((presetCombo) => {
-      promptVariations.forEach((promptVar, promptIndex) => {
-        allVariations.push({
-          presetCombo,
-          promptVariation: promptVar,
-          promptIndex,
-        });
+    if (preset_ids && preset_ids.length > 0) {
+      // NEW path: Direct 1:1 mapping
+      selectedPresetIds = preset_ids.slice(0, max_variations);
+      console.log(`[Variations] Using direct preset_ids (1:1 mapping): ${selectedPresetIds.join(", ")}`);
+    } else {
+      // LEGACY path: Fetch from DB by category (for backward compatibility)
+      // But still NO Cartesian product - just pick one preset per category
+      const legacyPresets = await prisma.stylePreset.findMany({
+        where: {
+          category: { in: style_categories },
+          isActive: true,
+        },
+        orderBy: { sortOrder: "asc" },
       });
-    });
 
-    // Limit to max_variations
-    allVariations = allVariations.slice(0, max_variations);
+      if (legacyPresets.length === 0) {
+        return NextResponse.json(
+          { detail: "No active presets found for selected categories" },
+          { status: 400 }
+        );
+      }
+
+      // Take first preset from each category (no combinations)
+      const seenCategories = new Set<string>();
+      legacyPresets.forEach((preset) => {
+        if (!seenCategories.has(preset.category)) {
+          selectedPresetIds.push(preset.id);
+          seenCategories.add(preset.category);
+        }
+      });
+      console.log(`[Variations] Legacy category mode - selected: ${selectedPresetIds.join(", ")}`);
+    }
+
+    // Build variations array (1:1 mapping - each preset = 1 video)
+    type VariationData = {
+      presetId: string;
+      presetName: string;
+      presetCategory: string;
+    };
+    const allVariations: VariationData[] = selectedPresetIds.map((presetId) => ({
+      presetId,
+      presetName: getPresetDisplayName(presetId),
+      presetCategory: getPresetCategory(presetId),
+    }));
 
     // Create batch ID
     const batchId = uuidv4();
 
-    // Create generations for each variation
+    // Create generations for each variation (1:1 mapping)
     const createdGenerations = await Promise.all(
-      allVariations.map(async ({ presetCombo, promptVariation, promptIndex }, variationIndex) => {
-        // Build variation label
-        const presetLabels = presetCombo.map((p) => `${p.category}:${p.name}`);
-        const variationLabel = presetLabels.join(" + ") +
-          (promptIndex > 0 ? ` (prompt v${promptIndex + 1})` : "");
+      allVariations.map(async ({ presetId, presetName, presetCategory }, variationIndex) => {
+        // Build variation label (simple: just preset name)
+        const variationLabel = `${presetCategory}:${presetName}`;
 
-        // Merge prompt with style modifiers
-        let finalPrompt = promptVariation;
-        const appliedPresets: { id: string; name: string; category: string }[] = [];
+        // Apply subtle modification to prompt (preserves original look)
+        const finalPrompt = applySubtleModification(seedGeneration.prompt, presetId);
 
-        presetCombo.forEach((preset) => {
-          const params = preset.parameters as StylePresetParams;
-          if (params?.promptModifier) {
-            finalPrompt = `${finalPrompt}. Style: ${params.promptModifier}`;
-          }
-          appliedPresets.push({
-            id: preset.id,
-            name: preset.name,
-            category: preset.category,
-          });
-        });
+        // Single preset applied (no combinations!)
+        const appliedPresets = [{
+          id: presetId,
+          name: presetName,
+          category: presetCategory,
+        }];
 
         // Create the generation
         const generation = await prisma.videoGeneration.create({
@@ -578,7 +593,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             durationSeconds: seedGeneration.durationSeconds,
             aspectRatio: seedGeneration.aspectRatio,
             referenceImageId: seedGeneration.referenceImageId,
-            referenceStyle: presetCombo.map((p) => p.name).join(", ") || null,
+            referenceStyle: presetName,
             audioAssetId: seedGeneration.audioAssetId,
             status: "PENDING",
             progress: 0,
@@ -587,14 +602,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             qualityMetadata: {
               batchId,
               seedGenerationId,
-              variationType: "variation",
+              variationType: "ai_video_variation",
               variationLabel,
-              appliedPresets: appliedPresets.map((p) => ({
-                id: p.id,
-                name: p.name,
-                category: p.category,
-              })),
-              promptModification: promptIndex > 0 ? `v${promptIndex + 1}` : null,
+              presetId, // Store the preset ID for reference
+              appliedPresets,
+              subtleModification: {
+                type: presetCategory,
+                modifier: presetId,
+                originalPrompt: seedGeneration.prompt,
+                modifiedPrompt: finalPrompt,
+              },
               // Auto-publish settings for scheduling on completion
               autoPublish: auto_publish ? {
                 enabled: true,
@@ -612,7 +629,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           generation,
           variationLabel,
           appliedPresets,
-          promptModification: promptIndex > 0 ? `prompt v${promptIndex + 1}` : undefined,
+          presetId,
         };
       })
     );
@@ -637,12 +654,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       });
     });
 
-    // Format response
-    const variations = createdGenerations.map(({ generation, variationLabel, appliedPresets, promptModification }) => ({
+    // Format response (1:1 mapping - simple and clear)
+    const variations = createdGenerations.map(({ generation, variationLabel, appliedPresets, presetId }) => ({
       id: generation.id,
+      preset_id: presetId,
       variation_label: variationLabel,
       applied_presets: appliedPresets,
-      prompt_modification: promptModification,
+      modified_prompt: generation.prompt,
       status: generation.status.toLowerCase(),
     }));
 

@@ -1385,5 +1385,12 @@
       "sortScore": "Viral Score",
       "sortRecent": "Recent"
     }
+  },
+  "subtitle": {
+    "displayMode": "Display Mode",
+    "sequential": "Sequential",
+    "static": "Static (All at once)",
+    "sequentialDescription": "Display subtitles one at a time in sequence",
+    "staticDescription": "Show all subtitles at once and keep them visible"
   }
 }

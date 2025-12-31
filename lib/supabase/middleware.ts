@@ -56,19 +56,21 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
-  // Redirect to dashboard if already logged in and trying to access auth pages
-  if (user && isAuthRoute) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/trend-dashboard';
-    return NextResponse.redirect(url);
-  }
+  // NOTE: Disabled middleware redirects - client-side auth-store handles auth
+  // The app uses custom JWT auth in localStorage, not Supabase auth cookies
+  // Middleware Supabase session and client auth-store can get out of sync
+  // causing infinite redirect loops. Let client handle all auth redirects.
 
-  // Redirect to login if not authenticated and trying to access protected pages
-  if (!user && !isAuthRoute) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    return NextResponse.redirect(url);
-  }
+  // if (user && isAuthRoute) {
+  //   const url = request.nextUrl.clone();
+  //   url.pathname = '/trend-dashboard';
+  //   return NextResponse.redirect(url);
+  // }
+  // if (!user && !isAuthRoute) {
+  //   const url = request.nextUrl.clone();
+  //   url.pathname = '/login';
+  //   return NextResponse.redirect(url);
+  // }
 
   return supabaseResponse;
 }

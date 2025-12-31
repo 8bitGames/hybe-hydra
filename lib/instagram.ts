@@ -76,9 +76,7 @@ export function getInstagramAuthorizationUrl(
   const scopes = [
     "instagram_basic",
     "instagram_content_publish",
-    "pages_read_engagement",
     "pages_show_list",
-    "business_management",
   ].join(",");
 
   const params = new URLSearchParams({

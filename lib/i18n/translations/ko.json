@@ -1385,5 +1385,12 @@
       "sortScore": "바이럴 점수",
       "sortRecent": "최신순"
     }
+  },
+  "subtitle": {
+    "displayMode": "표시 방식",
+    "sequential": "순차 표시",
+    "static": "전체 표시",
+    "sequentialDescription": "자막을 하나씩 순서대로 표시합니다",
+    "staticDescription": "모든 자막을 한 번에 표시하고 유지합니다"
   }
 }

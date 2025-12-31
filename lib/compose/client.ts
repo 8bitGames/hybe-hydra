@@ -124,6 +124,8 @@ export interface ComposeRenderRequest {
     use_ai_effects?: boolean;
     ai_prompt?: string;
     ai_effects?: AIEffectSelection;
+    // Subtitle display mode: 'sequential' (one at a time) or 'static' (all visible)
+    subtitle_display_mode?: 'sequential' | 'static';
   };
   output: {
     s3_bucket: string;

@@ -142,6 +142,7 @@ export function VideoEditModal({
     animation: "fade",
     position: "center",
     bottom_margin: 10,
+    display_mode: "sequential",
   });
 
   // UI state
@@ -245,6 +246,9 @@ export function VideoEditModal({
     top: language === "ko" ? "상단" : "Top",
     center: language === "ko" ? "중앙" : "Center",
     bottom: language === "ko" ? "하단" : "Bottom",
+    displayMode: language === "ko" ? "표시 방식" : "Display Mode",
+    sequential: language === "ko" ? "순차 표시" : "Sequential",
+    static: language === "ko" ? "전체 표시" : "Static (All at once)",
     textColor: language === "ko" ? "글자 색상" : "Text Color",
     strokeColor: language === "ko" ? "테두리 색상" : "Stroke Color",
     advancedSettings: language === "ko" ? "고급 설정" : "Advanced Settings",
@@ -734,6 +738,7 @@ export function VideoEditModal({
   };
 
   // Generate TikTok-style captions from audio lyrics
+  // Captions are pre-synced with even timing distribution, no additional sync required
   const handleGenerateTikTokCaptions = async () => {
     if (!selectedAudioLyrics) {
       setError(language === "ko" ? "가사가 포함된 음원을 선택해주세요" : "Please select audio with lyrics");
@@ -744,20 +749,41 @@ export function VideoEditModal({
     setError(null);
 
     try {
-      const response = await api.post<{ captions: string[] }>("/api/v1/video/tiktok-captions", {
+      const response = await api.post<{
+        captions: string[];
+        segments: Array<{ text: string; start: number; end: number }>;
+        language: string;
+        videoDuration: number;
+      }>("/api/v1/video/tiktok-captions", {
         lyrics: selectedAudioLyrics.fullText,
         language: selectedAudioLyrics.language || languageHint,
         videoDuration: sourceVideoDuration || videoDuration,
+        generationId, // Pass generationId to get video prompt and campaign context
       });
 
       if (response.error) {
         throw new Error(response.error.message || "Caption generation failed");
       }
 
-      if (response.data?.captions && response.data.captions.length > 0) {
+      if (response.data?.segments && response.data.segments.length > 0) {
         // Set the generated captions as lyrics text
         setLyricsText(response.data.captions.join('\n'));
-        setSyncedLyrics(null); // Reset synced lyrics to force re-sync
+
+        // Apply pre-synced segments directly - no additional sync needed!
+        setSyncedLyrics({
+          language: (response.data.language || languageHint) as 'ko' | 'en' | 'ja',
+          extractedAt: new Date().toISOString(),
+          source: 'tiktok-captions',
+          confidence: 1,
+          isInstrumental: false,
+          fullText: response.data.captions.join('\n'),
+          segments: response.data.segments,
+        });
+
+        // Auto-enable subtitles only if currently disabled (preserve manual mode)
+        if (subtitleMode === "none") {
+          setSubtitleMode("lyrics");
+        }
       }
     } catch (err) {
       console.error("TikTok caption generation error:", err);
@@ -861,13 +887,18 @@ export function VideoEditModal({
       }
 
       if (hasSubtitles && syncedLyrics) {
-        // Offset subtitle timing by audioStartTime to align with video
+        // TikTok captions are already timed to video (0 to videoDuration), not audio
+        // Only apply audioStartTime offset for audio-synced lyrics (gemini, forced-alignment, manual)
+        const isTikTokCaptions = syncedLyrics.source === 'tiktok-captions';
+        const timeOffset = isTikTokCaptions ? 0 : audioStartTime;
+
+        // Offset subtitle timing by timeOffset to align with video
         // Filter out segments that would have negative start times
         const adjustedLines = syncedLyrics.segments
           .map((seg) => ({
             text: seg.text,
-            start: seg.start - audioStartTime,
-            end: seg.end - audioStartTime,
+            start: seg.start - timeOffset,
+            end: seg.end - timeOffset,
           }))
           .filter((line) => line.end > 0); // Only include lines that are visible in video
 
@@ -1695,6 +1726,23 @@ export function VideoEditModal({
                               <SelectItem value="top">{t.top}</SelectItem>
                               <SelectItem value="center">{t.center}</SelectItem>
                               <SelectItem value="bottom">{t.bottom}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Display Mode */}
+                        <div className="space-y-1">
+                          <Label className="text-xs">{t.displayMode}</Label>
+                          <Select
+                            value={subtitleStyle.display_mode || "sequential"}
+                            onValueChange={(v) => setSubtitleStyle({ ...subtitleStyle, display_mode: v as SubtitleStyle["display_mode"] })}
+                          >
+                            <SelectTrigger className="h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="sequential">{t.sequential}</SelectItem>
+                              <SelectItem value="static">{t.static}</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>

@@ -664,10 +664,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { searchParams } = new URL(request.url);
     const batchId = searchParams.get("batch_id");
 
-    if (!batchId) {
-      return NextResponse.json({ detail: "batch_id query parameter is required" }, { status: 400 });
-    }
-
     // Fetch seed generation for access check
     const seedGeneration = await prisma.videoGeneration.findUnique({
       where: { id: seedGenerationId },
@@ -696,25 +692,43 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Find all compose variations with this batch ID (exclude soft-deleted)
+    // Find compose variations - by batch_id if provided, otherwise by seedGenerationId
+    // This allows recovery of variations when session state is lost
     const generations = await prisma.videoGeneration.findMany({
       where: {
         deletedAt: null,
-        qualityMetadata: {
-          path: ["batchId"],
-          equals: batchId,
-        },
+        ...(batchId
+          ? {
+              qualityMetadata: {
+                path: ["batchId"],
+                equals: batchId,
+              },
+            }
+          : {
+              qualityMetadata: {
+                path: ["seedGenerationId"],
+                equals: seedGenerationId,
+              },
+            }),
       },
       include: {
         audioAsset: {
           select: { id: true, filename: true, s3Url: true, originalFilename: true },
         },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" }, // Most recent first when querying by seedGenerationId
     });
 
     if (generations.length === 0) {
-      return NextResponse.json({ detail: "Compose variation batch not found" }, { status: 404 });
+      return NextResponse.json({
+        detail: batchId
+          ? "Compose variation batch not found"
+          : "No variations found for this generation",
+        batch_id: batchId,
+        seed_generation_id: seedGenerationId,
+        variations: [],
+        total: 0,
+      }, { status: 200 }); // Return empty array instead of 404 for better UX
     }
 
     // Check EC2 server status for PROCESSING jobs to update progress
@@ -864,10 +878,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       };
     }));
 
+    // Extract batchId from first generation if not provided in query
+    const resolvedBatchId = batchId ||
+      ((updatedGenerations[0]?.qualityMetadata as Record<string, unknown>)?.batchId as string) ||
+      null;
+
     console.log(`[Compose Variations] Returning ${variations.length} variations, ${completedCount} completed with URLs`);
 
     return NextResponse.json({
-      batch_id: batchId,
+      batch_id: resolvedBatchId,
       seed_generation_id: seedGenerationId,
       batch_status: batchStatus,
       overall_progress: overallProgress,

@@ -624,6 +624,8 @@ async def apply_text_overlays_ass(
     video_size: Tuple[int, int],
     job_id: str = "",
     ffmpeg_path: str = "ffmpeg",
+    display_mode: str = "sequential",
+    video_duration: Optional[float] = None,
 ) -> bool:
     """Apply text overlays using ASS subtitles - simpler and more reliable.
 
@@ -637,6 +639,8 @@ async def apply_text_overlays_ass(
         video_size: (width, height) tuple
         job_id: Job ID for logging
         ffmpeg_path: Path to FFmpeg binary
+        display_mode: 'sequential' (one at a time) or 'static' (all at once)
+        video_duration: Total video duration (required for static mode)
 
     Returns:
         True if successful, False otherwise
@@ -647,6 +651,7 @@ async def apply_text_overlays_ass(
     logger.info(f"[{job_id}] [ASS] Video size: {video_size}")
     logger.info(f"[{job_id}] [ASS] Number of overlays: {len(overlays)}")
     logger.info(f"[{job_id}] [ASS] FFmpeg path: {ffmpeg_path}")
+    logger.info(f"[{job_id}] [ASS] Display mode: {display_mode}")
 
     if not overlays:
         logger.info(f"[{job_id}] [ASS] No text overlays to apply - returning True")
@@ -665,7 +670,15 @@ async def apply_text_overlays_ass(
     try:
         # Generate ASS subtitle file
         logger.info(f"[{job_id}] [ASS] Generating ASS subtitle file...")
-        ass_content = _generate_ass_file(overlays, width, height, job_id)
+
+        # Calculate video duration for static mode if not provided
+        actual_video_duration = video_duration
+        if display_mode == "static" and actual_video_duration is None:
+            # Use max end time from overlays as fallback
+            actual_video_duration = max(o.start_time + o.duration for o in overlays)
+            logger.info(f"[{job_id}] [ASS] Static mode: calculated duration from overlays = {actual_video_duration:.2f}s")
+
+        ass_content = _generate_ass_file(overlays, width, height, job_id, display_mode, actual_video_duration)
         logger.info(f"[{job_id}] [ASS] ASS content length: {len(ass_content)} bytes")
         logger.info(f"[{job_id}] [ASS] ASS content preview:\n{ass_content[:1000]}...")
 
@@ -773,6 +786,8 @@ def _generate_ass_file(
     width: int,
     height: int,
     job_id: str = "",
+    display_mode: str = "sequential",
+    video_duration: Optional[float] = None,
 ) -> str:
     """Generate ASS subtitle file content.
 
@@ -781,6 +796,8 @@ def _generate_ass_file(
         width: Video width
         height: Video height
         job_id: Job ID for logging
+        display_mode: 'sequential' (one at a time) or 'static' (all at once)
+        video_duration: Total video duration (used for static mode)
 
     Returns:
         ASS file content as string
@@ -823,31 +840,68 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         "bottom": 2,   # Bottom-center
     }
 
-    # Generate dialogue lines
+    # Generate dialogue lines based on display mode
     dialogue_lines = []
-    for i, overlay in enumerate(overlays):
-        start_time = _seconds_to_ass_time(overlay.start_time)
-        end_time = _seconds_to_ass_time(overlay.start_time + overlay.duration)
 
-        # Get fade durations (default 300ms)
-        fade_in_ms = int(ANIMATION_REGISTRY.get(overlay.animation or "fade", {}).get("in_duration", 0.3) * 1000)
-        fade_out_ms = int(ANIMATION_REGISTRY.get(overlay.animation or "fade", {}).get("out_duration", 0.3) * 1000)
+    if display_mode == "static" and overlays:
+        # STATIC MODE: Merge all texts into a single dialogue entry
+        # All subtitles appear at once with entrance animation and stay visible
+        logger.info(f"[{job_id}] [ASS] Static mode: merging {len(overlays)} overlays into single dialogue")
 
-        # Get alignment based on position
-        position = getattr(overlay, 'position', 'bottom')
-        alignment = position_to_alignment.get(position, 2)
+        # Escape and collect all texts
+        escaped_texts = []
+        for overlay in overlays:
+            text = overlay.text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+            escaped_texts.append(text)
 
-        # Escape special ASS characters and add fade effect
-        text = overlay.text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+        # Join with ASS newline character (\N)
+        combined_text = "\\N".join(escaped_texts)
 
-        # Add alignment override and fade effect: \an{alignment}\fad(fade_in_ms, fade_out_ms)
-        text_with_effects = f"{{\\an{alignment}\\fad({fade_in_ms},{fade_out_ms})}}{text}"
+        # Use first overlay's settings for animation and position
+        first = overlays[0]
+        fade_in_ms = int(ANIMATION_REGISTRY.get(first.animation or "fade", {}).get("in_duration", 0.3) * 1000)
+        position = getattr(first, 'position', 'center')  # Default to center for static mode
+        alignment = position_to_alignment.get(position, 5)  # Middle-center default for static
+
+        # Static mode: fade-in only, no fade-out (text stays visible)
+        text_with_effects = f"{{\\an{alignment}\\fad({fade_in_ms},0)}}{combined_text}"
+
+        # Calculate timing: start at 0, end at video duration
+        start_time = _seconds_to_ass_time(0)
+        duration = video_duration if video_duration else max(o.start_time + o.duration for o in overlays)
+        end_time = _seconds_to_ass_time(duration)
 
         dialogue_lines.append(
             f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text_with_effects}"
         )
 
-        logger.debug(f"[{job_id}] ASS line {i}: '{overlay.text[:30]}...' @ {start_time}->{end_time}, position={position}, alignment={alignment}")
+        logger.info(f"[{job_id}] [ASS] Static dialogue: {len(escaped_texts)} lines, duration 0->{duration:.2f}s")
+
+    else:
+        # SEQUENTIAL MODE: Each subtitle has its own timing (original behavior)
+        for i, overlay in enumerate(overlays):
+            start_time = _seconds_to_ass_time(overlay.start_time)
+            end_time = _seconds_to_ass_time(overlay.start_time + overlay.duration)
+
+            # Get fade durations (default 300ms)
+            fade_in_ms = int(ANIMATION_REGISTRY.get(overlay.animation or "fade", {}).get("in_duration", 0.3) * 1000)
+            fade_out_ms = int(ANIMATION_REGISTRY.get(overlay.animation or "fade", {}).get("out_duration", 0.3) * 1000)
+
+            # Get alignment based on position
+            position = getattr(overlay, 'position', 'bottom')
+            alignment = position_to_alignment.get(position, 2)
+
+            # Escape special ASS characters and add fade effect
+            text = overlay.text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+
+            # Add alignment override and fade effect: \an{alignment}\fad(fade_in_ms, fade_out_ms)
+            text_with_effects = f"{{\\an{alignment}\\fad({fade_in_ms},{fade_out_ms})}}{text}"
+
+            dialogue_lines.append(
+                f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text_with_effects}"
+            )
+
+            logger.debug(f"[{job_id}] ASS line {i}: '{overlay.text[:30]}...' @ {start_time}->{end_time}, position={position}, alignment={alignment}")
 
     return ass_header + "\n".join(dialogue_lines) + "\n"
 
