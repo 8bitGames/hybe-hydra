@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCut } from "@/lib/stores/fast-cut-context";
@@ -16,10 +16,27 @@ import { useProcessingSessionStore } from "@/lib/stores/processing-session-store
 import { useAssets } from "@/lib/queries";
 import type { LyricsData } from "@/lib/subtitle-styles";
 
+
+// Dummy test lyrics for testing without actual audio lyrics
+const DUMMY_TEST_LYRICS: LyricsData = {
+  segments: [
+    { text: "Test line 1", start: 0, end: 2 },
+    { text: "Test line 2", start: 2, end: 4 },
+    { text: "Test line 3", start: 4, end: 6 },
+    { text: "Test line 4", start: 6, end: 8 },
+    { text: "Test line 5", start: 8, end: 10 },
+    { text: "Test line 6", start: 10, end: 12 },
+    { text: "Test line 7", start: 12, end: 14 },
+  ]
+};
+
 export default function FastCutEffectsPage() {
   const router = useRouter();
   const { language } = useI18n();
   const toast = useToast();
+
+  // Subtitle display mode state
+  const [subtitleDisplayMode, setSubtitleDisplayMode] = useState<"sequential" | "static">("sequential");
 
   // Get session ID from URL
   const searchParams = useSearchParams();
@@ -88,9 +105,9 @@ export default function FastCutEffectsPage() {
   });
 
   // Get lyrics data from selected audio asset's metadata
-  const selectedAudioLyrics = useMemo((): LyricsData | null => {
+  const selectedAudioLyrics = useMemo((): LyricsData => {
     if (!selectedAudio || !audioAssetsData?.items) {
-      return null;
+      console.log("[FastCut] No audio selected, using DUMMY_TEST_LYRICS"); return DUMMY_TEST_LYRICS;
     }
 
     const fullAsset = audioAssetsData.items.find(
@@ -98,7 +115,7 @@ export default function FastCutEffectsPage() {
     );
 
     if (!fullAsset?.metadata) {
-      return null;
+      console.log("[FastCut] No metadata, using DUMMY_TEST_LYRICS"); return DUMMY_TEST_LYRICS;
     }
 
     const metadata = fullAsset.metadata as Record<string, unknown>;
@@ -108,7 +125,8 @@ export default function FastCutEffectsPage() {
       return lyrics;
     }
 
-    return null;
+    console.log("[FastCut] No lyrics, using DUMMY_TEST_LYRICS");
+    return DUMMY_TEST_LYRICS;
   }, [selectedAudio, audioAssetsData]);
 
   // Check if we have valid data (from script step OR scene analysis from Start page)
@@ -209,6 +227,7 @@ export default function FastCutEffectsPage() {
         searchKeywords: editableKeywords,
         tiktokSEO: tiktokSEO || undefined,
         useAudioLyrics: subtitleMode === "lyrics",
+        subtitleDisplayMode,
       });
 
       toast.success(
@@ -345,6 +364,8 @@ export default function FastCutEffectsPage() {
               subtitleMode={subtitleMode}
               lyricsData={selectedAudioLyrics}
               audioStartTime={audioStartTime}
+              subtitleDisplayMode={subtitleDisplayMode}
+              setSubtitleDisplayMode={setSubtitleDisplayMode}
             />
           </div>
         </div>
