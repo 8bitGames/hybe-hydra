@@ -28,10 +28,10 @@ from ..models.responses import JobStatus
 from ..services.vertex_ai import (
     create_vertex_ai_client,
     VideoGenerationConfig,
-    ImageGenerationConfig,
+    GeminiImageConfig,
     VideoExtendConfig,
     VideoAspectRatio,
-    ImageAspectRatio,
+    GeminiImageAspectRatio,
     GenerationResult,
 )
 from ..utils.job_queue import JobQueue
@@ -392,13 +392,10 @@ async def process_image_generation(
 
         # Create Vertex AI client and config
         client = create_vertex_ai_client()
-        config = ImageGenerationConfig(
+        config = GeminiImageConfig(
             prompt=settings.prompt,
-            aspect_ratio=ImageAspectRatio(settings.aspect_ratio.value),
-            negative_prompt=settings.negative_prompt,
-            seed=settings.seed,
+            aspect_ratio=GeminiImageAspectRatio(settings.aspect_ratio.value),
             number_of_images=settings.number_of_images,
-            person_generation=settings.person_generation.value,
         )
 
         if job_queue:
@@ -408,8 +405,8 @@ async def process_image_generation(
                 current_step="Generating image with Gemini 3 Pro Image"
             )
 
-        # Generate image
-        result = await client.generate_image(config)
+        # Generate image with Gemini 3 Pro Image
+        result = await client.generate_image_gemini(config)
 
         if not result.success:
             raise RuntimeError(result.error or "Image generation failed")
@@ -1229,7 +1226,7 @@ async def ai_health_check():
             "project_id": client.project_id,
             "location": client.location,
             "veo_model": client.VEO_MODEL,
-            "image_model": client.IMAGE_MODEL,
+            "image_model": client.GEMINI_IMAGE_MODEL,
         }
     except Exception as e:
         return {
