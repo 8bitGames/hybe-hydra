@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
-import { generateVideo, VeoGenerationParams, getVeoConfig } from "@/lib/veo";
-import { generateImage, convertAspectRatioForGeminiImage } from "@/lib/imagen";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
-import { composeVideoWithAudio } from "@/lib/compose/client";
+import {
+  submitImageGeneration,
+  submitI2VGeneration,
+  submitVideoGeneration,
+  waitForAIJob,
+  composeVideoWithAudio,
+} from "@/lib/compose/client";
+import type { AIVideoAspectRatio, AIVideoDuration } from "@/lib/compose/client";
 import { getPresignedUrlFromS3Url } from "@/lib/storage";
 import type { AgentContext } from "@/lib/agents/types";
 
@@ -60,7 +65,24 @@ function generatePromptVariations(
   return variations.slice(0, count);
 }
 
-// Async video generation handler for variations (runs in background) - Uses I2V mode + Audio Composition
+// Helper: Convert aspect ratio string to EC2 AI format
+function convertAspectRatioForEC2(aspectRatio: string): AIVideoAspectRatio {
+  const mapping: Record<string, AIVideoAspectRatio> = {
+    "16:9": "16:9",
+    "9:16": "9:16",
+    "1:1": "1:1",
+  };
+  return mapping[aspectRatio] || "9:16";
+}
+
+// Helper: Convert duration to EC2 AI format
+function convertDurationForEC2(durationSeconds: number): AIVideoDuration {
+  if (durationSeconds <= 4) return 4;
+  if (durationSeconds <= 6) return 6;
+  return 8;
+}
+
+// Async video generation handler for variations (runs in background) - Uses EC2 AI endpoints
 function startVariationVideoGeneration(
   generationId: string,
   params: {
@@ -93,17 +115,15 @@ function startVariationVideoGeneration(
         },
       });
 
-      // Get VEO configuration (3-tier: production, fast, sample)
-      const veoConfig = getVeoConfig();
-      console.log(`[Variation ${generationId}] VEO mode: ${veoConfig.mode} (${veoConfig.description})`);
+      console.log(`[Variation ${generationId}] Starting via EC2 AI endpoints...`);
 
       // ============================================
-      // I2V Mode: Generate image first, then video
+      // I2V Mode: Generate image first, then video via EC2
       // ============================================
-      let generatedImageBase64: string | undefined;
+      let generatedImageUrl: string | undefined;
       let geminiVideoPrompt: string | undefined;
 
-      console.log(`[Variation ${generationId}] Starting I2V mode - Image generation first...`);
+      console.log(`[Variation ${generationId}] Starting I2V mode - Image generation via EC2...`);
 
       // Step 1: Use I2V Specialist Agent to generate optimized image prompt
       const i2vAgent = createI2VSpecialistAgent();
@@ -124,55 +144,84 @@ function startVariationVideoGeneration(
 
       if (imagePromptResult.success && imagePromptResult.data?.prompt) {
         const geminiImagePrompt = imagePromptResult.data.prompt;
-        console.log(`[Variation ${generationId}] Gemini image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
+        console.log(`[Variation ${generationId}] Image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
 
         await prisma.videoGeneration.update({
           where: { id: generationId },
-          data: { progress: 20 },
+          data: { progress: 15 },
         });
 
-        // Step 2: Generate image with Imagen using Gemini's prompt
+        // Step 2: Generate image via EC2 Imagen endpoint
         try {
-          const imageResult = await generateImage({
-            prompt: geminiImagePrompt,
-            negativePrompt: params.negativePrompt,
-            aspectRatio: convertAspectRatioForGeminiImage(params.aspectRatio || "16:9"),
-            style: params.style,
-          });
+          const imageJobId = `img-var-${generationId}`;
+          const s3Folder = params.campaignId || `quick-create/${params.userId}`;
 
-          if (imageResult.success && imageResult.imageBase64) {
-            generatedImageBase64 = imageResult.imageBase64;
-            console.log(`[Variation ${generationId}] Image generated successfully!`);
+          console.log(`[Variation ${generationId}] Submitting image generation to EC2...`);
 
-            await prisma.videoGeneration.update({
-              where: { id: generationId },
-              data: { progress: 35 },
-            });
-
-            // Step 3: Use I2V Specialist Agent to generate video prompt with animation instructions
-            const videoPromptResult = await i2vAgent.generateVideoPrompt(
-              {
-                visual_style: params.style || "cinematic",
-                color_palette: [],
-                mood: "dynamic",
-                main_subject: params.prompt,
-              },
-              params.prompt,
-              agentContext,
-              { duration: params.durationSeconds || 8, style: params.style }
-            );
-
-            if (videoPromptResult.success && videoPromptResult.data?.prompt) {
-              geminiVideoPrompt = videoPromptResult.data.prompt;
-              console.log(`[Variation ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
+          const imageSubmitResult = await submitImageGeneration(
+            imageJobId,
+            {
+              prompt: geminiImagePrompt,
+              negative_prompt: params.negativePrompt,
+              aspect_ratio: convertAspectRatioForEC2(params.aspectRatio || "9:16") as "16:9" | "9:16" | "1:1" | "4:3" | "3:4",
+              number_of_images: 1,
+            },
+            {
+              s3_bucket: process.env.AWS_S3_BUCKET || 'hydra-assets-hybe',
+              s3_key: `${s3Folder}/variation_image_${generationId}.png`,
             }
+          );
+
+          if (imageSubmitResult.status === 'queued' || imageSubmitResult.status === 'processing') {
+            console.log(`[Variation ${generationId}] Image job submitted, waiting for completion...`);
 
             await prisma.videoGeneration.update({
               where: { id: generationId },
-              data: { progress: 40 },
+              data: { progress: 20 },
             });
+
+            // Wait for image generation to complete
+            const imageResult = await waitForAIJob(imageJobId, {
+              maxWaitTime: 180000, // 3 minutes for image
+              pollInterval: 3000,
+            });
+
+            if (imageResult.status === 'completed' && imageResult.output_url) {
+              generatedImageUrl = imageResult.output_url;
+              console.log(`[Variation ${generationId}] Image generated: ${generatedImageUrl}`);
+
+              await prisma.videoGeneration.update({
+                where: { id: generationId },
+                data: { progress: 35 },
+              });
+
+              // Step 3: Use I2V Specialist Agent to generate video prompt with animation instructions
+              const videoPromptResult = await i2vAgent.generateVideoPrompt(
+                {
+                  visual_style: params.style || "cinematic",
+                  color_palette: [],
+                  mood: "dynamic",
+                  main_subject: params.prompt,
+                },
+                params.prompt,
+                agentContext,
+                { duration: params.durationSeconds || 8, style: params.style }
+              );
+
+              if (videoPromptResult.success && videoPromptResult.data?.prompt) {
+                geminiVideoPrompt = videoPromptResult.data.prompt;
+                console.log(`[Variation ${generationId}] Video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
+              }
+
+              await prisma.videoGeneration.update({
+                where: { id: generationId },
+                data: { progress: 40 },
+              });
+            } else {
+              console.warn(`[Variation ${generationId}] Image generation failed: ${imageResult.error}, falling back to T2V`);
+            }
           } else {
-            console.warn(`[Variation ${generationId}] Image generation failed, falling back to T2V`);
+            console.warn(`[Variation ${generationId}] Image job submission failed: ${imageSubmitResult.error}`);
           }
         } catch (imagenError) {
           console.error(`[Variation ${generationId}] Imagen error:`, imagenError);
@@ -181,127 +230,155 @@ function startVariationVideoGeneration(
         console.warn(`[Variation ${generationId}] Image prompt generation failed, falling back to T2V`);
       }
 
-      // Step 4: Generate video with VEO (I2V if image available, T2V as fallback)
+      // Step 4: Generate video via EC2 VEO endpoint (I2V if image available, T2V as fallback)
       let finalVideoPrompt = params.prompt;
-      if (generatedImageBase64 && geminiVideoPrompt) {
+      if (generatedImageUrl && geminiVideoPrompt) {
         finalVideoPrompt = geminiVideoPrompt;
         console.log(`[Variation ${generationId}] Using I2V mode with generated image`);
       } else {
         console.log(`[Variation ${generationId}] Using T2V mode (fallback)`);
       }
 
-      const veoParams: VeoGenerationParams = {
-        prompt: finalVideoPrompt,
-        negativePrompt: params.negativePrompt,
-        durationSeconds: params.durationSeconds,
-        aspectRatio: params.aspectRatio as "16:9" | "9:16" | "1:1",
-        referenceImageBase64: generatedImageBase64, // This enables I2V in VEO
-        style: params.style,
-        model: veoConfig.model,
-      };
+      const videoJobId = `vid-var-${generationId}`;
+      const s3Folder = params.campaignId || `quick-create/${params.userId}`;
+      const videoOutputKey = `${s3Folder}/variation_${generationId}.mp4`;
 
-      // Update progress
+      // Prepare audio overlay if audio asset exists
+      let audioOverlay = undefined;
+      if (params.audioAsset?.s3Url) {
+        try {
+          // Generate fresh presigned URL for audio
+          const audioPresignedUrl = await getPresignedUrlFromS3Url(params.audioAsset.s3Url, 172800);
+          console.log(`[Variation ${generationId}] Including audio overlay in video generation`);
+
+          audioOverlay = {
+            audio_url: audioPresignedUrl,
+            audio_start_time: params.audioStartTime || 0,
+            audio_volume: 1.0,
+            fade_in: 0.5,
+            fade_out: 0.5,
+          };
+        } catch (presignError) {
+          console.error(`[Variation ${generationId}] Failed to get audio presigned URL:`, presignError);
+        }
+      }
+
       await prisma.videoGeneration.update({
         where: { id: generationId },
         data: { progress: 50 },
       });
 
-      const result = await generateVideo(veoParams);
+      console.log(`[Variation ${generationId}] Submitting video generation to EC2...`);
 
-      if (result.success && result.videoUrl) {
-        const existingGen = await prisma.videoGeneration.findUnique({
-          where: { id: generationId },
-        });
-        const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
-
-        // ============================================
-        // Audio Composition (if audioAsset exists)
-        // ============================================
-        let finalOutputUrl = result.videoUrl;
-        let composedOutputUrl: string | undefined;
-
-        if (params.audioAsset?.s3Url) {
-          console.log(`[Variation ${generationId}] Starting audio composition with EC2 compose-engine...`);
-
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: { progress: 75, status: "PROCESSING" },
-          });
-
-          try {
-            // Generate fresh presigned URL for audio (stored s3Url may be expired)
-            let audioPresignedUrl: string;
-            try {
-              audioPresignedUrl = await getPresignedUrlFromS3Url(params.audioAsset.s3Url, 172800);
-              console.log(`[Variation ${generationId}] Generated fresh audio presigned URL`);
-            } catch (presignError) {
-              console.error(`[Variation ${generationId}] Failed to generate audio presigned URL:`, presignError);
-              audioPresignedUrl = params.audioAsset.s3Url; // Fallback to original
-            }
-
-            // Build S3 output key for composed video
-            const s3Folder = params.campaignId || `quick-create/${params.userId}`;
-            const outputS3Key = `${s3Folder}/composed_${generationId}.mp4`;
-
-            const composeResult = await composeVideoWithAudio({
-              video_url: result.videoUrl,
-              audio_url: audioPresignedUrl,
-              audio_start_time: params.audioStartTime || 0,
-              audio_volume: 1.0,
-              fade_in: 0.5,
-              fade_out: 0.5,
-              output_s3_bucket: process.env.AWS_S3_BUCKET || 'hydra-assets-hybe',
-              output_s3_key: outputS3Key,
-            });
-
-            if (composeResult.status === 'completed' && composeResult.output_url) {
-              composedOutputUrl = composeResult.output_url;
-              finalOutputUrl = composedOutputUrl;
-              console.log(`[Variation ${generationId}] Audio composition complete: ${composedOutputUrl}`);
-            } else {
-              console.warn(`[Variation ${generationId}] Audio composition failed: ${composeResult.error}`);
-              // Don't fail the whole generation - video is still usable without audio
-            }
-          } catch (composeError) {
-            console.error(`[Variation ${generationId}] Audio composition error:`, composeError);
-            // Don't fail - video is still usable
+      // Submit video generation (I2V if image URL available, otherwise T2V)
+      let videoSubmitResult;
+      if (generatedImageUrl) {
+        // I2V mode - use image as reference
+        videoSubmitResult = await submitI2VGeneration(
+          videoJobId,
+          {
+            prompt: finalVideoPrompt,
+            negative_prompt: params.negativePrompt,
+            aspect_ratio: convertAspectRatioForEC2(params.aspectRatio),
+            duration_seconds: convertDurationForEC2(params.durationSeconds),
+            reference_image_url: generatedImageUrl,
+            generate_audio: !audioOverlay, // Don't generate audio if we're overlaying
+            audio_overlay: audioOverlay,
+          },
+          {
+            s3_bucket: process.env.AWS_S3_BUCKET || 'hydra-assets-hybe',
+            s3_key: videoOutputKey,
           }
-        }
+        );
+      } else {
+        // T2V mode - text to video
+        videoSubmitResult = await submitVideoGeneration(
+          videoJobId,
+          {
+            prompt: finalVideoPrompt,
+            negative_prompt: params.negativePrompt,
+            aspect_ratio: convertAspectRatioForEC2(params.aspectRatio),
+            duration_seconds: convertDurationForEC2(params.durationSeconds),
+            generate_audio: !audioOverlay,
+            audio_overlay: audioOverlay,
+          },
+          {
+            s3_bucket: process.env.AWS_S3_BUCKET || 'hydra-assets-hybe',
+            s3_key: videoOutputKey,
+          }
+        );
+      }
+
+      if (videoSubmitResult.status === 'queued' || videoSubmitResult.status === 'processing') {
+        console.log(`[Variation ${generationId}] Video job submitted, waiting for completion...`);
 
         await prisma.videoGeneration.update({
           where: { id: generationId },
-          data: {
-            status: "COMPLETED",
-            progress: 100,
-            outputUrl: result.videoUrl, // Original VEO video
-            composedOutputUrl: composedOutputUrl || null, // Video with audio
-            qualityScore: 75 + Math.floor(Math.random() * 20),
-            qualityMetadata: {
-              ...existingMetadata,
-              veoMetadata: result.metadata,
-              generationMode: generatedImageBase64 ? "I2V" : "T2V",
-              audioComposition: composedOutputUrl ? {
-                audioAssetId: params.audioAsset?.id,
-                audioAssetFilename: params.audioAsset?.filename,
-                composedAt: new Date().toISOString(),
-              } : null,
-            },
-          },
+          data: { progress: 60 },
         });
 
-        // Trigger auto-schedule if configured
-        const autoPublish = existingMetadata?.autoPublish as { enabled?: boolean } | undefined;
-        if (autoPublish?.enabled) {
-          try {
-            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://hydra.ai.kr";
-            await fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-            });
-          } catch (scheduleError) {
-            console.error("Auto-schedule failed:", scheduleError);
-            // Don't fail the generation if scheduling fails
+        // Wait for video generation to complete (VEO can take up to 5+ minutes)
+        const videoResult = await waitForAIJob(videoJobId, {
+          maxWaitTime: 600000, // 10 minutes for video
+          pollInterval: 5000,
+        });
+
+        if (videoResult.status === 'completed' && videoResult.output_url) {
+          const existingGen = await prisma.videoGeneration.findUnique({
+            where: { id: generationId },
+          });
+          const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
+
+          // If audio overlay was included, the output already has audio composed
+          const finalOutputUrl = videoResult.output_url;
+          const composedOutputUrl = audioOverlay ? videoResult.output_url : null;
+
+          await prisma.videoGeneration.update({
+            where: { id: generationId },
+            data: {
+              status: "COMPLETED",
+              progress: 100,
+              outputUrl: finalOutputUrl,
+              composedOutputUrl: composedOutputUrl,
+              qualityScore: 75 + Math.floor(Math.random() * 20),
+              qualityMetadata: {
+                ...existingMetadata,
+                generationMode: generatedImageUrl ? "I2V" : "T2V",
+                generatedViaEC2: true,
+                imageUrl: generatedImageUrl || null,
+                audioComposition: composedOutputUrl ? {
+                  audioAssetId: params.audioAsset?.id,
+                  audioAssetFilename: params.audioAsset?.filename,
+                  composedAt: new Date().toISOString(),
+                } : null,
+              },
+            },
+          });
+
+          console.log(`[Variation ${generationId}] Video generation complete: ${finalOutputUrl}`);
+
+          // Trigger auto-schedule if configured
+          const autoPublish = existingMetadata?.autoPublish as { enabled?: boolean } | undefined;
+          if (autoPublish?.enabled) {
+            try {
+              const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://hydra.ai.kr";
+              await fetch(`${baseUrl}/api/v1/generations/${generationId}/auto-schedule`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+              });
+            } catch (scheduleError) {
+              console.error("Auto-schedule failed:", scheduleError);
+            }
           }
+        } else {
+          await prisma.videoGeneration.update({
+            where: { id: generationId },
+            data: {
+              status: "FAILED",
+              progress: 100,
+              errorMessage: videoResult.error || "Video generation failed",
+            },
+          });
         }
       } else {
         await prisma.videoGeneration.update({
@@ -309,7 +386,7 @@ function startVariationVideoGeneration(
           data: {
             status: "FAILED",
             progress: 100,
-            errorMessage: result.error || "Video generation failed",
+            errorMessage: videoSubmitResult.error || "Video job submission failed",
           },
         });
       }

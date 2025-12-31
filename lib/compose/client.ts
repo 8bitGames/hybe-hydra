@@ -784,3 +784,268 @@ export async function submitAutoCompose(
     search_results: data.search_results,
   };
 }
+
+// ============================================================================
+// EC2 AI Generation API (Vertex AI via EC2)
+// ============================================================================
+
+export type AIJobType = 'video_generation' | 'image_generation' | 'image_to_video' | 'video_extend';
+export type AIJobStatus = 'queued' | 'processing' | 'uploading' | 'completed' | 'failed';
+export type AIVideoAspectRatio = '16:9' | '9:16' | '1:1';
+export type AIImageAspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
+export type AIVideoDuration = 4 | 6 | 8;
+export type AIPersonGeneration = 'allow_adult' | 'dont_allow';
+
+export interface AISubtitleEntry {
+  text: string;
+  start: number;
+  end: number;
+}
+
+export interface AIAudioOverlaySettings {
+  audio_url: string;
+  audio_start_time?: number;
+  audio_volume?: number;
+  fade_in?: number;
+  fade_out?: number;
+  mix_original_audio?: boolean;
+  original_audio_volume?: number;
+  subtitles?: AISubtitleEntry[];
+}
+
+export interface AIVideoSettings {
+  prompt: string;
+  negative_prompt?: string;
+  aspect_ratio?: AIVideoAspectRatio;
+  duration_seconds?: AIVideoDuration;
+  person_generation?: AIPersonGeneration;
+  generate_audio?: boolean;
+  seed?: number;
+  audio_overlay?: AIAudioOverlaySettings;
+}
+
+export interface AIImageSettings {
+  prompt: string;
+  negative_prompt?: string;
+  aspect_ratio?: AIImageAspectRatio;
+  number_of_images?: number;
+  person_generation?: AIPersonGeneration;
+  seed?: number;
+}
+
+export interface AII2VSettings extends AIVideoSettings {
+  reference_image_url: string;
+}
+
+export interface AIOutputSettings {
+  s3_bucket: string;
+  s3_key: string;
+  gcs_bucket?: string;
+}
+
+export interface AIJobRequest {
+  job_id: string;
+  job_type: AIJobType;
+  video_settings?: AIVideoSettings;
+  image_settings?: AIImageSettings;
+  i2v_settings?: AII2VSettings;
+  output: AIOutputSettings;
+  callback_url?: string;
+  callback_secret?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AIJobResponse {
+  job_id: string;
+  job_type: AIJobType;
+  status: AIJobStatus;
+  message?: string;
+  error?: string;
+}
+
+export interface AIJobStatusResponse {
+  job_id: string;
+  status: AIJobStatus;
+  progress: number;
+  current_step?: string;
+  output_url?: string;
+  error?: string;
+  metadata?: {
+    gcs_uri?: string;
+    extension_count?: number;
+    storage?: string;
+  };
+  is_final: boolean;
+}
+
+/**
+ * Submit an AI generation job to EC2 (Vertex AI via EC2 GPU server)
+ * This routes AI generation through EC2 which has proper GCP authentication
+ */
+export async function submitAIJob(
+  request: AIJobRequest
+): Promise<AIJobResponse> {
+  const baseUrl = isEc2Mode() ? EC2_COMPOSE_URL : LOCAL_COMPOSE_URL;
+  const url = `${baseUrl}/api/v1/ai/generate`;
+  const modeName = isEc2Mode() ? 'EC2' : 'Local';
+
+  console.log(`[${modeName} AI] Submitting ${request.job_type} job:`, request.job_id);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`${modeName} AI job submit failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Submit an image generation job to EC2 (Imagen 3 via Vertex AI)
+ */
+export async function submitImageGeneration(
+  jobId: string,
+  settings: AIImageSettings,
+  output: AIOutputSettings,
+  options?: {
+    callback_url?: string;
+    callback_secret?: string;
+    metadata?: Record<string, unknown>;
+  }
+): Promise<AIJobResponse> {
+  return submitAIJob({
+    job_id: jobId,
+    job_type: 'image_generation',
+    image_settings: settings,
+    output,
+    ...options,
+  });
+}
+
+/**
+ * Submit a video generation job to EC2 (Veo 3.1 via Vertex AI)
+ */
+export async function submitVideoGeneration(
+  jobId: string,
+  settings: AIVideoSettings,
+  output: AIOutputSettings,
+  options?: {
+    callback_url?: string;
+    callback_secret?: string;
+    metadata?: Record<string, unknown>;
+  }
+): Promise<AIJobResponse> {
+  return submitAIJob({
+    job_id: jobId,
+    job_type: 'video_generation',
+    video_settings: settings,
+    output,
+    ...options,
+  });
+}
+
+/**
+ * Submit an image-to-video job to EC2 (Veo 3.1 I2V via Vertex AI)
+ */
+export async function submitI2VGeneration(
+  jobId: string,
+  settings: AII2VSettings,
+  output: AIOutputSettings,
+  options?: {
+    callback_url?: string;
+    callback_secret?: string;
+    metadata?: Record<string, unknown>;
+  }
+): Promise<AIJobResponse> {
+  return submitAIJob({
+    job_id: jobId,
+    job_type: 'image_to_video',
+    i2v_settings: settings,
+    output,
+    ...options,
+  });
+}
+
+/**
+ * Get AI job status from EC2
+ */
+export async function getAIJobStatus(jobId: string): Promise<AIJobStatusResponse> {
+  const baseUrl = isEc2Mode() ? EC2_COMPOSE_URL : LOCAL_COMPOSE_URL;
+  const url = `${baseUrl}/api/v1/ai/job/${jobId}/status`;
+  const modeName = isEc2Mode() ? 'EC2' : 'Local';
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (response.status === 404) {
+    return {
+      job_id: jobId,
+      status: 'failed',
+      progress: 0,
+      error: `Job ${jobId} not found`,
+      is_final: true,
+    };
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`${modeName} AI status check failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Wait for AI job to complete with polling
+ */
+export async function waitForAIJob(
+  jobId: string,
+  options: {
+    pollInterval?: number;
+    maxWaitTime?: number;
+    onProgress?: (status: AIJobStatusResponse) => void;
+  } = {}
+): Promise<AIJobStatusResponse> {
+  const {
+    pollInterval = 5000,  // AI jobs take longer, poll every 5 seconds
+    maxWaitTime = 600000, // 10 minutes max for AI generation
+    onProgress,
+  } = options;
+
+  const startTime = Date.now();
+
+  while (true) {
+    const status = await getAIJobStatus(jobId);
+
+    if (onProgress) {
+      onProgress(status);
+    }
+
+    if (status.is_final) {
+      return status;
+    }
+
+    if (Date.now() - startTime > maxWaitTime) {
+      return {
+        job_id: jobId,
+        status: 'failed',
+        progress: 0,
+        error: 'Timeout waiting for AI job',
+        is_final: true,
+      };
+    }
+
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+}

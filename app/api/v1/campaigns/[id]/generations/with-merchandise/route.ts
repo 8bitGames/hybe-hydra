@@ -2,8 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
-import { generateVideo, VeoGenerationParams, getVeoConfig } from "@/lib/veo";
 import { MerchandiseContext } from "@prisma/client";
+import {
+  submitVideoGeneration,
+  submitImageToVideo,
+  waitForAIJob,
+  generateAIJobId,
+  type VideoAspectRatio,
+  type VideoDuration,
+} from "@/lib/ec2/ai-client";
+// Note: AI generation now handled by EC2 compose-engine via submitVideoGeneration/submitImageToVideo
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -72,7 +80,27 @@ function generateI2VPromptWithMerchandise(
   return `${animation} Scene context: ${basePrompt}. Maintain visual consistency with the reference product image throughout the video. Smooth, professional motion, product clearly recognizable.`;
 }
 
+const AWS_S3_BUCKET = process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
+
+// Helper: Convert aspect ratio for video generation
+function convertAspectRatioForVideo(aspectRatio: string): VideoAspectRatio {
+  const mapping: Record<string, VideoAspectRatio> = {
+    "16:9": "16:9",
+    "9:16": "9:16",
+    "1:1": "1:1",
+  };
+  return mapping[aspectRatio] || "9:16";
+}
+
+// Helper: Convert duration for video generation
+function convertDurationForEC2(durationSeconds: number): VideoDuration {
+  if (durationSeconds <= 4) return 4;
+  if (durationSeconds <= 6) return 6;
+  return 8;
+}
+
 // Async video generation handler with merchandise references
+// Uses EC2 compose-engine for all AI generation (GPU with Vertex AI WIF auth)
 function startMerchandiseVideoGeneration(
   generationId: string,
   campaignId: string,
@@ -88,6 +116,8 @@ function startMerchandiseVideoGeneration(
   }
 ) {
   (async () => {
+    const logPrefix = `[Merchandise Gen ${generationId}]`;
+
     try {
       await prisma.videoGeneration.update({
         where: { id: generationId },
@@ -101,63 +131,138 @@ function startMerchandiseVideoGeneration(
       const useI2VMode = !!params.primaryMerchandiseUrl;
       const finalPrompt = useI2VMode ? params.i2vPrompt : params.prompt;
 
-      console.log(`[Merchandise Gen ${generationId}] Mode: ${useI2VMode ? "I2V with product image" : "T2V text only"}`);
+      console.log(`${logPrefix} Mode: ${useI2VMode ? "I2V with product image" : "T2V text only"}`);
       if (useI2VMode) {
-        console.log(`[Merchandise Gen ${generationId}] Reference image: ${params.primaryMerchandiseUrl}`);
+        console.log(`${logPrefix} Reference image: ${params.primaryMerchandiseUrl}`);
       }
 
-      // Get VEO configuration (3-tier: production, fast, sample)
-      const veoConfig = getVeoConfig();
-      console.log(`[Merchandise Gen ${generationId}] VEO mode: ${veoConfig.mode} (${veoConfig.description})`);
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: { progress: 30 },
+      });
 
-      const veoParams: VeoGenerationParams = {
-        prompt: finalPrompt,
-        negativePrompt: params.negativePrompt,
-        durationSeconds: params.durationSeconds,
-        aspectRatio: params.aspectRatio as "16:9" | "9:16" | "1:1",
-        style: params.style,
-        model: veoConfig.model,
-        // Pass primary merchandise image as reference for I2V mode
-        referenceImageUrl: params.primaryMerchandiseUrl,
-      };
+      // Generate video via EC2 compose-engine
+      const videoJobId = generateAIJobId("merch-vid");
+      const videoS3Key = `campaigns/${campaignId}/merchandise/${generationId}/video-${videoJobId}.mp4`;
+
+      console.log(`${logPrefix} Submitting video generation to EC2: ${videoJobId}`);
+
+      let videoSubmitResult;
+      try {
+        if (useI2VMode && params.primaryMerchandiseUrl) {
+          // I2V mode: Use image-to-video endpoint
+          console.log(`${logPrefix} Using I2V mode with merchandise image`);
+          videoSubmitResult = await submitImageToVideo(
+            videoJobId,
+            {
+              prompt: finalPrompt,
+              reference_image_url: params.primaryMerchandiseUrl,
+              negative_prompt: params.negativePrompt,
+              aspect_ratio: convertAspectRatioForVideo(params.aspectRatio),
+              duration_seconds: convertDurationForEC2(params.durationSeconds),
+            },
+            {
+              s3_bucket: AWS_S3_BUCKET,
+              s3_key: videoS3Key,
+            }
+          );
+        } else {
+          // T2V mode: Text-to-video endpoint
+          console.log(`${logPrefix} Using T2V mode (no reference image)`);
+          videoSubmitResult = await submitVideoGeneration(
+            videoJobId,
+            {
+              prompt: finalPrompt,
+              negative_prompt: params.negativePrompt,
+              aspect_ratio: convertAspectRatioForVideo(params.aspectRatio),
+              duration_seconds: convertDurationForEC2(params.durationSeconds),
+            },
+            {
+              s3_bucket: AWS_S3_BUCKET,
+              s3_key: videoS3Key,
+            }
+          );
+        }
+      } catch (submitError) {
+        console.error(`${logPrefix} Video submit error:`, submitError);
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: "FAILED",
+            progress: 100,
+            errorMessage: `EC2 submit error: ${submitError instanceof Error ? submitError.message : "Unknown error"}`,
+          },
+        });
+        return;
+      }
+
+      if (videoSubmitResult.status === "error") {
+        console.error(`${logPrefix} Video submit failed: ${videoSubmitResult.error}`);
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: "FAILED",
+            progress: 100,
+            errorMessage: `EC2 submit failed: ${videoSubmitResult.error}`,
+          },
+        });
+        return;
+      }
+
+      console.log(`${logPrefix} Video job queued: ${videoSubmitResult.ec2_job_id || videoSubmitResult.job_id}`);
 
       await prisma.videoGeneration.update({
         where: { id: generationId },
         data: { progress: 50 },
       });
 
-      const result = await generateVideo(veoParams, campaignId);
+      // Poll for video completion
+      const videoResult = await waitForAIJob(
+        videoSubmitResult.ec2_job_id || videoSubmitResult.job_id,
+        {
+          jobType: useI2VMode ? "image_to_video" : "video_generation",
+          maxWaitTime: 600000, // 10 minutes for video
+          pollInterval: 5000,
+        }
+      );
 
-      if (result.success && result.videoUrl) {
-        const existingGen = await prisma.videoGeneration.findUnique({
-          where: { id: generationId },
-        });
-        const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
-
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: {
-            status: "COMPLETED",
-            progress: 100,
-            outputUrl: result.videoUrl,
-            qualityScore: 75 + Math.floor(Math.random() * 20),
-            qualityMetadata: {
-              ...existingMetadata,
-              veoMetadata: result.metadata,
-              merchandiseReferenced: true,
-            },
-          },
-        });
-      } else {
+      if (videoResult.mappedStatus !== "completed" || !videoResult.output_url) {
+        console.error(`${logPrefix} Video generation failed: ${videoResult.error}`);
         await prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "FAILED",
             progress: 100,
-            errorMessage: result.error || "Video generation failed",
+            errorMessage: videoResult.error || "Video generation failed",
           },
         });
+        return;
       }
+
+      console.log(`${logPrefix} Video generated successfully! URL: ${videoResult.output_url.slice(0, 80)}...`);
+
+      const existingGen = await prisma.videoGeneration.findUnique({
+        where: { id: generationId },
+      });
+      const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
+
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: {
+          status: "COMPLETED",
+          progress: 100,
+          outputUrl: videoResult.output_url,
+          qualityScore: 75 + Math.floor(Math.random() * 20),
+          qualityMetadata: {
+            ...existingMetadata,
+            ec2_job_id: videoSubmitResult.ec2_job_id || videoSubmitResult.job_id,
+            mode: useI2VMode ? "i2v" : "t2v",
+            merchandiseReferenced: true,
+          },
+        },
+      });
+
+      console.log(`${logPrefix} Complete!`);
     } catch (error) {
       console.error("Merchandise video generation error:", error);
       await prisma.videoGeneration.update({

@@ -97,28 +97,41 @@ export function getProxiedImageUrl(url: string | null | undefined): string | nul
 }
 
 /**
- * Download file from URL (handles cross-origin like S3)
- * Uses server-side streaming for S3 URLs to avoid CORS issues
+ * Download file from URL (handles cross-origin like S3 and GCS)
+ * Uses server-side streaming for S3/GCS URLs to avoid CORS issues
  */
 export async function downloadFile(url: string, filename?: string): Promise<void> {
   try {
     const finalFilename = filename || getFilenameFromUrl(url) || 'download';
 
-    // Check if it's an S3 URL - use server-side streaming to avoid CORS
+    // Check if it's an S3 or GCS URL - use server-side streaming to avoid CORS
     const isS3Url = url.includes('.s3.') && url.includes('.amazonaws.com');
+    const isGcsUrl = url.includes('storage.googleapis.com') || url.includes('storage.cloud.google.com');
 
-    if (isS3Url) {
-      // Use server-side streaming for S3 URLs
+    if (isS3Url || isGcsUrl) {
+      // Use server-side streaming for S3/GCS URLs
       const downloadUrl = `/api/v1/assets/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(finalFilename)}&stream=true`;
 
+      // Fetch as blob through our API (handles CORS properly)
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
       const link = document.createElement('a');
-      link.href = downloadUrl;
+      link.href = blobUrl;
       link.download = finalFilename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      // Cleanup blob URL after a short delay
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
     } else {
-      // For non-S3 URLs, try direct fetch
+      // For non-S3/GCS URLs, try direct fetch
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`Failed to fetch: ${response.status}`);
@@ -139,8 +152,9 @@ export async function downloadFile(url: string, filename?: string): Promise<void
     }
   } catch (error) {
     console.error('Download failed:', error);
-    // Fallback: open in new tab
-    window.open(url, '_blank');
+    // Fallback: open in new tab via download API
+    const finalFilename = filename || getFilenameFromUrl(url) || 'download';
+    window.open(`/api/v1/assets/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(finalFilename)}&stream=true`, '_blank');
   }
 }
 

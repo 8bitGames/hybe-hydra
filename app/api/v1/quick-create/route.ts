@@ -2,12 +2,53 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getUserFromHeader } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
-import { generateVideo, VeoGenerationParams, getVeoConfig } from "@/lib/veo";
-import { generateImage, convertAspectRatioForGeminiImage } from "@/lib/imagen";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import type { AgentContext } from "@/lib/agents/types";
+import {
+  submitImageGeneration,
+  submitImageToVideo,
+  submitVideoGeneration,
+  waitForAIJob,
+  generateAIJobId,
+  type ImageAspectRatio,
+  type VideoAspectRatio,
+  type VideoDuration,
+} from "@/lib/ec2/ai-client";
+// Note: AI generation now handled by EC2 compose-engine via submitImageGeneration, submitVideoGeneration, etc.
+
+const AWS_S3_BUCKET = process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
+
+// Helper: Convert aspect ratio for image generation
+function convertAspectRatioForImage(aspectRatio: string): ImageAspectRatio {
+  const mapping: Record<string, ImageAspectRatio> = {
+    "16:9": "16:9",
+    "9:16": "9:16",
+    "1:1": "1:1",
+    "4:3": "4:3",
+    "3:4": "3:4",
+  };
+  return mapping[aspectRatio] || "9:16";
+}
+
+// Helper: Convert aspect ratio for video generation
+function convertAspectRatioForVideo(aspectRatio: string): VideoAspectRatio {
+  const mapping: Record<string, VideoAspectRatio> = {
+    "16:9": "16:9",
+    "9:16": "9:16",
+    "1:1": "1:1",
+  };
+  return mapping[aspectRatio] || "9:16";
+}
+
+// Helper: Convert duration for video generation
+function convertDurationForEC2(durationSeconds: number): VideoDuration {
+  if (durationSeconds <= 4) return 4;
+  if (durationSeconds <= 6) return 6;
+  return 8;
+}
 
 // Async video generation handler for Quick Create (no audio composition)
+// Uses EC2 compose-engine for all AI generation (GPU with Vertex AI WIF auth)
 async function startQuickVideoGeneration(
   generationId: string,
   params: {
@@ -22,6 +63,8 @@ async function startQuickVideoGeneration(
 ) {
   // Don't await - let it run in background
   (async () => {
+    const logPrefix = `[QuickCreate ${generationId}]`;
+
     try {
       // Update status to processing
       await prisma.videoGeneration.update({
@@ -33,11 +76,11 @@ async function startQuickVideoGeneration(
       });
 
       // Step 1: I2V Mode - Generate image first using Gemini-optimized prompts
-      let generatedImageBase64: string | undefined;
+      let generatedImageUrl: string | undefined;
       let geminiVideoPrompt: string | undefined;
 
       if (params.enableI2V && params.imageDescription) {
-        console.log(`[QuickCreate ${generationId}] I2V mode enabled - Starting Gemini prompt generation...`);
+        console.log(`${logPrefix} I2V mode enabled - Starting Gemini prompt generation...`);
 
         // Step 1a: Use I2V Specialist Agent to generate optimized image prompt
         const i2vAgent = createI2VSpecialistAgent();
@@ -58,121 +101,196 @@ async function startQuickVideoGeneration(
 
         if (imagePromptResult.success && imagePromptResult.data?.prompt) {
           const geminiImagePrompt = imagePromptResult.data.prompt;
-          console.log(`[QuickCreate ${generationId}] Gemini image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
+          console.log(`${logPrefix} Gemini image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
 
           await prisma.videoGeneration.update({
             where: { id: generationId },
             data: { progress: 20 },
           });
 
-          // Step 1b: Generate image with Imagen using Gemini's prompt
+          // Step 1b: Generate image via EC2 compose-engine
           try {
-            const imageResult = await generateImage({
-              prompt: geminiImagePrompt,
-              negativePrompt: params.negativePrompt,
-              aspectRatio: convertAspectRatioForGeminiImage(params.aspectRatio || "16:9"),
-              style: params.style,
-            });
+            const imageJobId = generateAIJobId("quickcreate-img");
+            const s3Key = `quick-create/${generationId}/reference-image-${imageJobId}.png`;
 
-            if (imageResult.success && imageResult.imageBase64) {
-              generatedImageBase64 = imageResult.imageBase64;
-              console.log(`[QuickCreate ${generationId}] Image generated successfully!`);
+            console.log(`${logPrefix} Submitting image generation to EC2: ${imageJobId}`);
 
-              await prisma.videoGeneration.update({
-                where: { id: generationId },
-                data: { progress: 35 },
-              });
+            const imageSubmitResult = await submitImageGeneration(
+              imageJobId,
+              {
+                prompt: geminiImagePrompt,
+                negative_prompt: params.negativePrompt || "blurry, low quality, text, watermark, logo, distorted",
+                aspect_ratio: convertAspectRatioForImage(params.aspectRatio || "16:9"),
+                number_of_images: 1,
+                safety_filter_level: "block_some",
+                person_generation: "allow_adult",
+              },
+              {
+                s3_bucket: AWS_S3_BUCKET,
+                s3_key: s3Key,
+              }
+            );
 
-              // Step 1c: Use I2V Specialist Agent to generate video prompt with animation instructions
-              const videoPromptResult = await i2vAgent.generateVideoPrompt(
+            if (imageSubmitResult.status === "error") {
+              console.warn(`${logPrefix} Image generation submit failed: ${imageSubmitResult.error}`);
+            } else {
+              // Poll for image completion
+              const imageResult = await waitForAIJob(
+                imageSubmitResult.ec2_job_id || imageSubmitResult.job_id,
                 {
-                  visual_style: params.style || "cinematic",
-                  color_palette: [],
-                  mood: "dynamic",
-                  main_subject: params.imageDescription || params.prompt,
-                },
-                `${params.prompt}. ${params.imageDescription}`,
-                agentContext,
-                { duration: params.durationSeconds || 8, style: params.style }
+                  jobType: "image_generation",
+                  maxWaitTime: 180000, // 3 minutes
+                  pollInterval: 3000,
+                }
               );
 
-              if (videoPromptResult.success && videoPromptResult.data?.prompt) {
-                geminiVideoPrompt = videoPromptResult.data.prompt;
-                console.log(`[QuickCreate ${generationId}] Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
-              }
+              if (imageResult.mappedStatus === "completed" && imageResult.output_url) {
+                generatedImageUrl = imageResult.output_url;
+                console.log(`${logPrefix} Image generated successfully! URL: ${generatedImageUrl.slice(0, 80)}...`);
 
-              await prisma.videoGeneration.update({
-                where: { id: generationId },
-                data: { progress: 40 },
-              });
-            } else {
-              console.warn(`[QuickCreate ${generationId}] Image generation failed, falling back to T2V`);
+                await prisma.videoGeneration.update({
+                  where: { id: generationId },
+                  data: { progress: 35 },
+                });
+
+                // Step 1c: Use I2V Specialist Agent to generate video prompt with animation instructions
+                const videoPromptResult = await i2vAgent.generateVideoPrompt(
+                  {
+                    visual_style: params.style || "cinematic",
+                    color_palette: [],
+                    mood: "dynamic",
+                    main_subject: params.imageDescription || params.prompt,
+                  },
+                  `${params.prompt}. ${params.imageDescription}`,
+                  agentContext,
+                  { duration: params.durationSeconds || 8, style: params.style }
+                );
+
+                if (videoPromptResult.success && videoPromptResult.data?.prompt) {
+                  geminiVideoPrompt = videoPromptResult.data.prompt;
+                  console.log(`${logPrefix} Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
+                }
+
+                await prisma.videoGeneration.update({
+                  where: { id: generationId },
+                  data: { progress: 40 },
+                });
+              } else {
+                console.warn(`${logPrefix} Image generation failed: ${imageResult.error}, falling back to T2V`);
+              }
             }
           } catch (imagenError) {
-            console.error(`[QuickCreate ${generationId}] Imagen error:`, imagenError);
+            console.error(`${logPrefix} Imagen error:`, imagenError);
           }
         }
       }
 
-      // Step 2: Generate video with VEO
-      console.log(`[QuickCreate ${generationId}] Generating video with VEO...`);
+      // Step 2: Generate video via EC2 compose-engine
+      console.log(`${logPrefix} Generating video via EC2...`);
 
       let finalVideoPrompt = params.prompt;
-      if (generatedImageBase64 && geminiVideoPrompt) {
+      if (generatedImageUrl && geminiVideoPrompt) {
         finalVideoPrompt = geminiVideoPrompt;
-        console.log(`[QuickCreate ${generationId}] Using Gemini-generated video prompt`);
+        console.log(`${logPrefix} Using Gemini-generated video prompt`);
       }
-
-      // Get VEO configuration (3-tier: production, fast, sample)
-      const veoConfig = getVeoConfig();
-      console.log(`[QuickCreate ${generationId}] VEO mode: ${veoConfig.mode} (${veoConfig.description})`);
-
-      const veoParams: VeoGenerationParams = {
-        prompt: finalVideoPrompt,
-        negativePrompt: params.negativePrompt,
-        durationSeconds: params.durationSeconds || 8,
-        aspectRatio: (params.aspectRatio as "16:9" | "9:16" | "1:1") || "16:9",
-        referenceImageBase64: generatedImageBase64,
-        style: params.style,
-        model: veoConfig.model,
-      };
 
       await prisma.videoGeneration.update({
         where: { id: generationId },
         data: { progress: 50 },
       });
 
-      let result;
+      const videoJobId = generateAIJobId("quickcreate-vid");
+      const videoS3Key = `quick-create/${generationId}/video-${videoJobId}.mp4`;
+
+      console.log(`${logPrefix} Submitting video generation to EC2: ${videoJobId}`);
+
+      let videoSubmitResult;
       try {
-        // For Quick Create, we use a special "quick-create" folder in S3
-        result = await generateVideo(veoParams, "quick-create");
-      } catch (veoError) {
-        console.error(`[QuickCreate ${generationId}] VEO API error:`, veoError);
+        if (generatedImageUrl) {
+          // I2V mode: Use image-to-video endpoint
+          console.log(`${logPrefix} Using I2V mode with reference image`);
+          videoSubmitResult = await submitImageToVideo(
+            videoJobId,
+            {
+              prompt: finalVideoPrompt,
+              reference_image_url: generatedImageUrl,
+              aspect_ratio: convertAspectRatioForVideo(params.aspectRatio || "16:9"),
+              duration_seconds: convertDurationForEC2(params.durationSeconds || 8),
+            },
+            {
+              s3_bucket: AWS_S3_BUCKET,
+              s3_key: videoS3Key,
+            }
+          );
+        } else {
+          // T2V mode: Text-to-video endpoint
+          console.log(`${logPrefix} Using T2V mode (no reference image)`);
+          videoSubmitResult = await submitVideoGeneration(
+            videoJobId,
+            {
+              prompt: finalVideoPrompt,
+              negative_prompt: params.negativePrompt,
+              aspect_ratio: convertAspectRatioForVideo(params.aspectRatio || "16:9"),
+              duration_seconds: convertDurationForEC2(params.durationSeconds || 8),
+            },
+            {
+              s3_bucket: AWS_S3_BUCKET,
+              s3_key: videoS3Key,
+            }
+          );
+        }
+      } catch (submitError) {
+        console.error(`${logPrefix} Video submit error:`, submitError);
         await prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "FAILED",
             progress: 100,
-            errorMessage: `VEO API error: ${veoError instanceof Error ? veoError.message : "Unknown error"}`,
+            errorMessage: `EC2 submit error: ${submitError instanceof Error ? submitError.message : "Unknown error"}`,
           },
         });
         return;
       }
 
-      if (!result.success || !result.videoUrl) {
-        console.error(`[QuickCreate ${generationId}] VEO returned failure:`, result.error);
+      if (videoSubmitResult.status === "error") {
+        console.error(`${logPrefix} Video submit failed: ${videoSubmitResult.error}`);
         await prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "FAILED",
             progress: 100,
-            errorMessage: result.error || "Video generation failed",
+            errorMessage: `EC2 submit failed: ${videoSubmitResult.error}`,
           },
         });
         return;
       }
 
-      console.log(`[QuickCreate ${generationId}] VEO succeeded, video URL: ${result.videoUrl}`);
+      console.log(`${logPrefix} Video job queued: ${videoSubmitResult.ec2_job_id || videoSubmitResult.job_id}`);
+
+      // Poll for video completion
+      const videoResult = await waitForAIJob(
+        videoSubmitResult.ec2_job_id || videoSubmitResult.job_id,
+        {
+          jobType: generatedImageUrl ? "image_to_video" : "video_generation",
+          maxWaitTime: 600000, // 10 minutes for video
+          pollInterval: 5000,
+        }
+      );
+
+      if (videoResult.mappedStatus !== "completed" || !videoResult.output_url) {
+        console.error(`${logPrefix} Video generation failed: ${videoResult.error}`);
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: "FAILED",
+            progress: 100,
+            errorMessage: videoResult.error || "Video generation failed",
+          },
+        });
+        return;
+      }
+
+      console.log(`${logPrefix} Video generated successfully! URL: ${videoResult.output_url.slice(0, 80)}...`);
 
       // Success - Quick Create doesn't require audio composition
       await prisma.videoGeneration.update({
@@ -180,12 +298,16 @@ async function startQuickVideoGeneration(
         data: {
           status: "COMPLETED",
           progress: 100,
-          outputUrl: result.videoUrl,
-          qualityMetadata: result.metadata as object,
+          outputUrl: videoResult.output_url,
+          qualityMetadata: {
+            ec2_job_id: videoSubmitResult.ec2_job_id || videoSubmitResult.job_id,
+            mode: generatedImageUrl ? "i2v" : "t2v",
+            reference_image_url: generatedImageUrl,
+          },
         },
       });
 
-      console.log(`[QuickCreate ${generationId}] Complete!`);
+      console.log(`${logPrefix} Complete!`);
     } catch (error) {
       console.error("Quick Create generation error:", error);
       await prisma.videoGeneration.update({
