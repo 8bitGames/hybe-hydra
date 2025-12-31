@@ -24,28 +24,41 @@ export async function GET(request: NextRequest) {
     let presignedUrl: string;
     let extractedFilename: string;
 
+    // Check if it's a GCS presigned URL - pass through as-is
+    // GCS URLs can be in different formats:
+    // - https://storage.googleapis.com/bucket/path (public or signed)
+    // - https://storage.cloud.google.com/bucket/path (console/authenticated)
+    const isGcsUrl = url.includes('storage.googleapis.com/') || url.includes('storage.cloud.google.com/');
+    if (isGcsUrl) {
+      // GCS URLs are already presigned (or public), extract filename from path
+      const gcsPath = new URL(url).pathname;
+      presignedUrl = url; // Use original GCS URL (already has signature if needed)
+      extractedFilename = extractFilename(gcsPath);
+    }
     // Check if it's a full S3 URL (from any bucket)
-    const s3UrlMatch = url.match(/https:\/\/([^.]+)\.s3\.([^.]+)\.amazonaws\.com\/(.+)/);
+    else {
+      const s3UrlMatch = url.match(/https:\/\/([^.]+)\.s3\.([^.]+)\.amazonaws\.com\/(.+)/);
 
-    if (s3UrlMatch) {
-      // Full S3 URL - use cross-bucket presigned URL generation
-      const [, , , key] = s3UrlMatch;
-      presignedUrl = await getPresignedUrlFromS3Url(url, 3600);
-      extractedFilename = extractFilename(key);
-    } else {
-      // Try to extract key for default bucket
-      const s3Key = extractS3Key(url);
+      if (s3UrlMatch) {
+        // Full S3 URL - use cross-bucket presigned URL generation
+        const [, , , key] = s3UrlMatch;
+        presignedUrl = await getPresignedUrlFromS3Url(url, 3600);
+        extractedFilename = extractFilename(key);
+      } else {
+        // Try to extract key for default bucket
+        const s3Key = extractS3Key(url);
 
-      if (!s3Key) {
-        return NextResponse.json(
-          { error: "Invalid S3 URL format" },
-          { status: 400 }
-        );
+        if (!s3Key) {
+          return NextResponse.json(
+            { error: "Invalid S3 URL format" },
+            { status: 400 }
+          );
+        }
+
+        // Generate presigned URL (valid for 1 hour)
+        presignedUrl = await getPresignedUrl(s3Key, 3600);
+        extractedFilename = extractFilename(s3Key);
       }
-
-      // Generate presigned URL (valid for 1 hour)
-      presignedUrl = await getPresignedUrl(s3Key, 3600);
-      extractedFilename = extractFilename(s3Key);
     }
 
     const finalFilename = filename || extractedFilename;

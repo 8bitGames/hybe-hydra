@@ -160,25 +160,35 @@ const generateFilename = (video: VideoItem): string => {
   return `${filename}.mp4`;
 };
 
-// Download video with custom filename
+// Download video with custom filename using server-side streaming
 const downloadVideo = async (video: VideoItem) => {
   if (!video.outputUrl) return;
 
   try {
-    const response = await fetch(video.outputUrl);
+    const filename = generateFilename(video);
+    // Use download API with stream=true to handle GCS/S3 CORS properly
+    const downloadUrl = `/api/v1/assets/download?url=${encodeURIComponent(video.outputUrl)}&filename=${encodeURIComponent(filename)}&stream=true`;
+
+    // Fetch as blob through our API (handles CORS)
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`);
+    }
+
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = generateFilename(video);
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   } catch (error) {
     console.error("Download failed:", error);
-    // Fallback: open in new tab
-    window.open(video.outputUrl, "_blank");
+    // Fallback: try opening download API directly (will trigger browser download)
+    const filename = generateFilename(video);
+    window.open(`/api/v1/assets/download?url=${encodeURIComponent(video.outputUrl)}&filename=${encodeURIComponent(filename)}&stream=true`, "_blank");
   }
 };
 

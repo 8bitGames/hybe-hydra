@@ -275,8 +275,10 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
     const fetchPlayableUrl = async () => {
       if (!originalVideo?.outputUrl) return;
 
-      // If already a presigned URL (contains X-Amz-Signature), use it directly
-      if (originalVideo.outputUrl.includes('X-Amz-Signature')) {
+      // If already a presigned URL (S3 or GCS), use it directly
+      const isPresignedUrl = originalVideo.outputUrl.includes('X-Amz-Signature') ||
+                             originalVideo.outputUrl.includes('X-Goog-Signature');
+      if (isPresignedUrl) {
         setPlayableVideoUrl(originalVideo.outputUrl);
         return;
       }
@@ -372,17 +374,30 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
       const filename = `video-${session?.id || "output"}.mp4`;
       const downloadUrl = `/api/v1/assets/download?url=${encodeURIComponent(originalVideo.outputUrl)}&filename=${encodeURIComponent(filename)}&stream=true`;
 
+      // Fetch as blob through our API (handles CORS properly)
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
       // Create a hidden link and trigger download
       const link = document.createElement("a");
-      link.href = downloadUrl;
+      link.href = blobUrl;
       link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      // Cleanup blob URL after a short delay
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
     } catch (error) {
       console.error("Download failed:", error);
-      // Fallback: open in new tab
-      window.open(originalVideo.outputUrl, "_blank");
+      // Fallback: try download API in new tab
+      const filename = `video-${session?.id || "output"}.mp4`;
+      window.open(`/api/v1/assets/download?url=${encodeURIComponent(originalVideo.outputUrl)}&filename=${encodeURIComponent(filename)}&stream=true`, "_blank");
     } finally {
       // Small delay before resetting to show feedback
       setTimeout(() => setIsDownloading(false), 1000);
