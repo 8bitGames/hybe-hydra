@@ -536,6 +536,7 @@ export function SessionDashboard() {
   // Local state
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isInProgressExpanded, setIsInProgressExpanded] = useState(false);
   const [isCompletedExpanded, setIsCompletedExpanded] = useState(false);
   const [selectedDetailSessionId, setSelectedDetailSessionId] = useState<string | null>(null);
 
@@ -700,7 +701,10 @@ export function SessionDashboard() {
             {/* In Progress Sessions */}
             {inProgressSessions.length > 0 && (
               <section>
-                <div className="flex items-center gap-2 mb-4">
+                <button
+                  onClick={() => setIsInProgressExpanded(!isInProgressExpanded)}
+                  className="flex items-center gap-2 mb-4 w-full group"
+                >
                   <div className="w-2 h-2 rounded-full bg-blue-500" />
                   <h2 className="text-sm font-semibold text-neutral-700 uppercase tracking-wide">
                     {language === "ko" ? "진행 중인 작업" : "In Progress"}
@@ -708,9 +712,23 @@ export function SessionDashboard() {
                   <Badge variant="secondary" className="text-xs">
                     {inProgressSessions.length}
                   </Badge>
-                </div>
+                  {inProgressSessions.length > 6 && (
+                    <div className="ml-auto flex items-center gap-1 text-neutral-400 group-hover:text-neutral-600 transition-colors">
+                      <span className="text-xs">
+                        {isInProgressExpanded
+                          ? (language === "ko" ? "접기" : "Collapse")
+                          : (language === "ko" ? "펼치기" : "Expand")}
+                      </span>
+                      {isInProgressExpanded ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  )}
+                </button>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {inProgressSessions.map((session) => (
+                  {(isInProgressExpanded ? inProgressSessions : inProgressSessions.slice(0, 6)).map((session) => (
                     <SessionCard
                       key={session.id}
                       session={session}
@@ -723,6 +741,13 @@ export function SessionDashboard() {
                     />
                   ))}
                 </div>
+                {!isInProgressExpanded && inProgressSessions.length > 6 && (
+                  <p className="mt-3 text-center text-xs text-neutral-400">
+                    {language === "ko"
+                      ? `최근 6개만 표시됩니다. (전체 ${inProgressSessions.length}개)`
+                      : `Showing 6 most recent. (${inProgressSessions.length} total)`}
+                  </p>
+                )}
               </section>
             )}
 
