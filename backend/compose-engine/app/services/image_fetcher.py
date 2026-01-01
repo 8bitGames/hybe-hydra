@@ -27,6 +27,7 @@ BLOCKED_DOMAINS = [
     'alamy.com',
     'pond5.com',
     'envato.com',
+    'pixta.jp',
 ]
 
 

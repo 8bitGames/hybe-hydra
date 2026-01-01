@@ -135,9 +135,11 @@ export async function POST(request: NextRequest) {
         const keywordCandidates: ImageCandidate[] = [];
         const blockedDomains = [
           'lookaside.fbsbx.com', 'scontent-',
+          // Stock photo sites (complete block)
+          'shutterstock.com', 'gettyimages.com', 'istockphoto.com', 'alamy.com',
           'vecteezy.com', 'dreamstime.com', '123rf.com', 'depositphotos.com',
           'bigstockphoto.com', 'canstockphoto.com', 'vectorstock.com', 'freepik.com',
-          'stock.adobe.com',
+          'stock.adobe.com', 'pond5.com', 'pixta.jp', 'envato.com',
         ];
 
         for (const result of searchResults) {
