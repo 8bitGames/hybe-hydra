@@ -217,8 +217,9 @@ export async function POST(request: NextRequest) {
     const isComposeVideo: boolean = result.metadata?.is_photo_post === true ||
                           (result.metadata?.image_urls && result.metadata.image_urls.length > 1) || false;
 
-    // Build concept details
+    // Build concept details (enhanced with scene breakdown for precise recreation)
     const conceptDetails = {
+      // Style analysis
       visualStyle: result.style_analysis?.visual_style,
       colorPalette: result.style_analysis?.color_palette,
       lighting: result.style_analysis?.lighting,
@@ -227,11 +228,15 @@ export async function POST(request: NextRequest) {
       effects: result.style_analysis?.effects,
       mood: result.style_analysis?.mood,
       pace: result.style_analysis?.pace,
+      // Content analysis
       mainSubject: result.content_analysis?.main_subject,
       actions: result.content_analysis?.actions,
       setting: result.content_analysis?.setting,
       props: result.content_analysis?.props,
       clothingStyle: result.content_analysis?.clothing_style,
+      // NEW: Enhanced fields for precise video recreation (100% clone support)
+      sceneBreakdown: result.scene_breakdown || null,
+      spatialComposition: result.spatial_composition || null,
     };
 
     // Cache to S3 and database (async, don't block response)

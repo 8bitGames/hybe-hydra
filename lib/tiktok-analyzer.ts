@@ -5,6 +5,12 @@
 
 import { getTikTokVisionAgent } from "@/lib/agents/analyzers/tiktok-vision";
 import type { AgentContext } from "@/lib/agents/types";
+import { z } from "zod";
+import { SceneBreakdownSchema, SpatialCompositionSchema } from "@/lib/agents/analyzers/tiktok-vision";
+
+// Types for scene breakdown and spatial composition
+type SceneBreakdown = z.infer<typeof SceneBreakdownSchema>;
+type SpatialComposition = z.infer<typeof SpatialCompositionSchema>;
 
 // TikTok API types
 interface TikTokAuthor {
@@ -117,6 +123,9 @@ export interface TikTokAnalysisResult {
       camera_style: string;
     };
   };
+  // NEW: Enhanced fields for precise video recreation (100% clone support)
+  scene_breakdown?: SceneBreakdown[];
+  spatial_composition?: SpatialComposition;
 }
 
 // Create agent context for TikTok analysis
@@ -215,6 +224,8 @@ export async function analyzeVideoWithGemini(
   content_analysis?: VideoContentAnalysis;
   suggested_prompt?: string;
   prompt_elements?: TikTokAnalysisResult["prompt_elements"];
+  scene_breakdown?: SceneBreakdown[];
+  spatial_composition?: SpatialComposition;
 }> {
   try {
     // Download video and convert to base64
@@ -295,6 +306,9 @@ export async function analyzeVideoWithGemini(
       content_analysis: analysis.content_analysis,
       suggested_prompt: analysis.suggested_prompt,
       prompt_elements: analysis.prompt_elements,
+      // NEW: Enhanced fields for precise recreation
+      scene_breakdown: analysis.scene_breakdown,
+      spatial_composition: analysis.spatial_composition,
     };
   } catch (error) {
     console.error("[TIKTOK-VISION] ❌ Analysis error:", error);
@@ -324,6 +338,9 @@ export async function analyzeImageWithGemini(
   content_analysis?: VideoContentAnalysis;
   suggested_prompt?: string;
   prompt_elements?: TikTokAnalysisResult["prompt_elements"];
+  // NEW: Optional fields for video recreation (images don't have scene breakdown)
+  scene_breakdown?: SceneBreakdown[];
+  spatial_composition?: SpatialComposition;
 }> {
   try {
     // Download image and convert to base64
@@ -400,6 +417,9 @@ function analyzeFromMetadataOnly(metadata: {
   content_analysis?: VideoContentAnalysis;
   suggested_prompt?: string;
   prompt_elements?: TikTokAnalysisResult["prompt_elements"];
+  // NEW: Optional fields for video recreation (will be undefined for metadata-only analysis)
+  scene_breakdown?: SceneBreakdown[];
+  spatial_composition?: SpatialComposition;
 } {
   console.log("[FALLBACK] Using metadata-only analysis - Vision AI analysis failed or unavailable");
   console.log("[FALLBACK] Description:", metadata.description?.slice(0, 100));
@@ -706,7 +726,16 @@ export async function analyzeTikTokVideo(url: string): Promise<TikTokAnalysisRes
   });
 
   // Step 2: Analyze with Gemini
-  let analysisResult;
+  let analysisResult: {
+    success: boolean;
+    error?: string;
+    style_analysis?: VideoStyleAnalysis;
+    content_analysis?: VideoContentAnalysis;
+    suggested_prompt?: string;
+    prompt_elements?: TikTokAnalysisResult["prompt_elements"];
+    scene_breakdown?: SceneBreakdown[];
+    spatial_composition?: SpatialComposition;
+  };
 
   if (metadata.video_url) {
     // Video analysis
@@ -740,6 +769,9 @@ export async function analyzeTikTokVideo(url: string): Promise<TikTokAnalysisRes
     content_analysis: analysisResult.content_analysis,
     suggested_prompt: analysisResult.suggested_prompt,
     prompt_elements: analysisResult.prompt_elements,
+    // NEW: Enhanced fields for precise video recreation (100% clone support)
+    scene_breakdown: analysisResult.scene_breakdown,
+    spatial_composition: analysisResult.spatial_composition,
   };
 
   console.log("[ANALYZER] Final result:", {
@@ -749,6 +781,9 @@ export async function analyzeTikTokVideo(url: string): Promise<TikTokAnalysisRes
     hasSuggestedPrompt: !!finalResult.suggested_prompt,
     suggestedPromptPreview: finalResult.suggested_prompt?.slice(0, 100),
     promptElementsKeys: finalResult.prompt_elements ? Object.keys(finalResult.prompt_elements) : [],
+    // NEW: Enhanced recreation fields
+    sceneBreakdownCount: finalResult.scene_breakdown?.length || 0,
+    hasSpatialComposition: !!finalResult.spatial_composition,
   });
 
   return finalResult;

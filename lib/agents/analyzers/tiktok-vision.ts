@@ -45,6 +45,26 @@ export const VideoContentAnalysisSchema = z.object({
   clothing_style: z.string(),
 });
 
+// NEW: Scene breakdown for precise recreation
+export const SceneBreakdownSchema = z.object({
+  scene_number: z.number(),
+  start_time: z.string(), // e.g., "0:00"
+  end_time: z.string(),   // e.g., "0:03"
+  shot_type: z.string(),  // e.g., "close-up", "medium shot", "wide shot"
+  subject_position: z.string(), // e.g., "center frame", "left third", "right side"
+  action_description: z.string(), // Detailed action with direction
+  camera_movement: z.string(), // Specific camera movement for this scene
+  background_visible: z.array(z.string()), // What's visible in background
+});
+
+export const SpatialCompositionSchema = z.object({
+  frame_position: z.string(), // Where subject is positioned in frame
+  background_layout: z.string(), // Spatial arrangement of background elements
+  depth_layers: z.array(z.string()), // Foreground, midground, background elements
+  camera_angle: z.string(), // e.g., "eye-level", "slightly low angle", "high angle"
+  camera_distance: z.string(), // e.g., "intimate close-up", "arm's length", "full body visible"
+});
+
 export const PromptElementsSchema = z.object({
   style_keywords: z.array(z.string()),
   mood_keywords: z.array(z.string()),
@@ -61,6 +81,9 @@ export const TikTokVisionOutputSchema = z.object({
   content_analysis: VideoContentAnalysisSchema,
   suggested_prompt: z.string(),
   prompt_elements: PromptElementsSchema,
+  // NEW: Enhanced fields for precise video recreation
+  scene_breakdown: z.array(SceneBreakdownSchema).optional(), // Scene-by-scene analysis
+  spatial_composition: SpatialCompositionSchema.optional(), // Spatial layout details
 });
 
 export type TikTokVisionOutput = z.infer<typeof TikTokVisionOutputSchema>;
@@ -98,13 +121,15 @@ IMPORTANT RULES:
 
     templates: {
       analyzeVideo: `Watch this TikTok video carefully and provide an EXTREMELY DETAILED breakdown.
+This analysis will be used to recreate EXACT CLONES of this video, so PRECISION IS CRITICAL.
 
 Context from the video:
 - Original description: "{{description}}"
 - Hashtags: {{hashtags}}
 {{#musicTitle}}- Music: "{{musicTitle}}"{{/musicTitle}}
 
-IMPORTANT: Analyze what you ACTUALLY SEE in the video. Be specific and detailed, not generic.
+IMPORTANT: Analyze what you ACTUALLY SEE in the video with FRAME-BY-FRAME precision.
+Your goal is to capture enough detail that someone could recreate this video IDENTICALLY.
 
 Respond in this exact JSON format:
 {
@@ -120,20 +145,39 @@ Respond in this exact JSON format:
   },
   "content_analysis": {
     "main_subject": "DETAILED description of who/what is in the video. For people: describe gender, approximate age, hair (color, length, style), facial features, body type, skin tone. For objects: describe size, shape, color, material. Example: 'Young woman in her early 20s with long wavy brown hair, light skin, wearing minimal makeup with pink lip gloss'",
-    "actions": ["list SPECIFIC actions observed, e.g., 'lip-syncing to lyrics while looking at camera', 'dancing with arms raised above head', 'walking slowly towards camera with confident stride', 'laughing and covering mouth with hand'"],
+    "actions": ["list SPECIFIC actions observed WITH DIRECTION AND TRAJECTORY, e.g., 'lip-syncing to lyrics while looking directly at camera lens', 'dancing with arms raised above head, swaying left to right', 'walking slowly FROM background TOWARDS camera with confident stride', 'turning head from left to right while laughing'"],
     "setting": "DETAILED description of the location/environment. Include: indoor/outdoor, specific location type, background elements, time of day, weather if visible. Example: 'Modern minimalist bedroom with white walls, large window on the left letting in natural light, small succulent plant on wooden nightstand, unmade bed with gray linen sheets visible in background'",
-    "props": ["list ALL visible objects and items, e.g., 'iPhone with pink case', 'iced coffee in clear plastic cup', 'small gold hoop earrings', 'beige tote bag'"],
+    "props": ["list ALL visible objects and items WITH THEIR POSITIONS, e.g., 'iPhone with pink case held at shoulder height', 'iced coffee in clear plastic cup on desk to the right', 'small gold hoop earrings', 'beige tote bag hanging on door behind'"],
     "clothing_style": "DETAILED description of outfit. Include: specific garment types, colors, patterns, brands if visible, accessories. Example: 'Oversized cream-colored knit sweater, high-waisted light blue mom jeans, white Nike Air Force 1 sneakers, delicate gold layered necklaces'"
+  },
+  "scene_breakdown": [
+    {
+      "scene_number": 1,
+      "start_time": "0:00",
+      "end_time": "0:03",
+      "shot_type": "close-up / medium shot / wide shot / extreme close-up",
+      "subject_position": "exactly where in frame - e.g., 'center frame', 'left third looking right', 'right side of frame', 'bottom center'",
+      "action_description": "precise action WITH DIRECTION - e.g., 'subject tilts head slowly to the left while making eye contact with camera', 'hand reaches from bottom of frame upward toward face'",
+      "camera_movement": "what camera does in THIS scene - e.g., 'static', 'slow push-in', 'slight pan right following subject'",
+      "background_visible": ["list what background elements are visible in this specific shot"]
+    }
+  ],
+  "spatial_composition": {
+    "frame_position": "where subject is positioned - e.g., 'centered in frame', 'rule of thirds left', 'slightly off-center right', 'lower third of frame'",
+    "background_layout": "spatial arrangement - e.g., 'wall directly behind subject 2 feet away, window to the left, door visible on right edge'",
+    "depth_layers": ["foreground: subject's hands", "midground: subject's face and body", "background: bedroom wall and window"],
+    "camera_angle": "e.g., 'eye-level direct', 'slightly low angle looking up', 'high angle looking down at 30 degrees'",
+    "camera_distance": "e.g., 'intimate close-up showing only face and shoulders', 'medium shot from waist up', 'full body visible with 1 foot of headroom'"
   },
   "suggested_prompt": "Write a 2-3 sentence detailed Veo video generation prompt that captures the essence of this video. Include subject description, setting, actions, visual style, and mood. Do NOT use real names - describe appearance instead.",
   "prompt_elements": {
     "style_keywords": ["5-7 specific style descriptors, e.g., 'warm vintage aesthetic', 'soft natural lighting', 'intimate close-up framing'"],
     "mood_keywords": ["3-5 emotion/atmosphere words, e.g., 'nostalgic', 'playful', 'dreamy', 'confident'"],
-    "action_keywords": ["3-5 specific movement descriptions, e.g., 'lip-syncing', 'slow head tilt', 'dancing freestyle', 'walking towards camera'"],
+    "action_keywords": ["3-5 specific movement descriptions WITH DIRECTION, e.g., 'lip-syncing facing camera', 'slow head tilt to the left', 'walking towards camera from background', 'hand gesture from right to left'"],
     "technical_suggestions": {
       "aspect_ratio": "9:16 for vertical, 16:9 for horizontal, 1:1 for square - based on the video",
       "duration": "5, 8, or 10 seconds based on content pacing",
-      "camera_style": "primary camera technique to recreate, e.g., 'static close-up', 'slow handheld movement', 'smooth tracking shot'"
+      "camera_style": "primary camera technique to recreate, e.g., 'static close-up centered on face', 'slow handheld tracking left to right', 'smooth push-in from medium to close-up'"
     }
   }
 }`,

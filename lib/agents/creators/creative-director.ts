@@ -16,6 +16,25 @@ import { BaseAgent } from '../base-agent';
 import { GEMINI_PRO } from '../constants';
 import type { AgentConfig, AgentContext, ReflectionConfig, ReflectionResult } from '../types';
 
+// Video Analysis Schema (for video-based idea generation)
+const VideoAnalysisForCreativeSchema = z.object({
+  styleAnalysis: z.string().optional(),
+  hookAnalysis: z.string().optional(),
+  conceptDetails: z.object({
+    visualStyle: z.string().optional(),
+    colorPalette: z.array(z.string()).optional(),
+    lighting: z.string().optional(),
+    cameraMovement: z.array(z.string()).optional(),
+    mood: z.string().optional(),
+    pace: z.string().optional(),
+    mainSubject: z.string().optional(),
+    actions: z.array(z.string()).optional(),
+    setting: z.string().optional(),
+    props: z.array(z.string()).optional(),
+    clothingStyle: z.string().optional(),
+  }).optional(),
+}).optional();
+
 // Input Schema
 export const CreativeDirectorInputSchema = z.object({
   userIdea: z.string().optional(),
@@ -45,6 +64,8 @@ export const CreativeDirectorInputSchema = z.object({
     avgEngagement: z.number().optional(),
     topPerformers: z.array(z.string()).optional(),
   }).optional(),
+  // NEW: Video analysis data for grounded creative ideas
+  videoAnalysis: VideoAnalysisForCreativeSchema,
 });
 
 export type CreativeDirectorInput = z.infer<typeof CreativeDirectorInputSchema>;
@@ -170,17 +191,52 @@ To avoid Vertex AI content filter blocks, you MUST follow these rules in ALL opt
 - ❌ BLOCKED: "A musician transforming from casual to pop icon look"
 
 CRITICAL MINDSET:
-- RESPECT THE GENRE FIRST - all content must authentically represent the artist's music style
-- Then adapt trending formats to fit that genre
-- Find the intersection of "what's trending" and "what fits the genre"
-- If a trend doesn't fit the genre, skip it or transform it appropriately
+- When VIDEO ANALYSIS is provided, use it as the FOUNDATION for all ideas
+- Your ideas should be GROUNDED in the original video's core elements
+- Be creative BUT NOT too different - stay recognizable to the original
+- Find the intersection of "original video's essence" and "trending formats"
+
+## 🎬 VIDEO-GROUNDED CREATIVITY (WHEN videoAnalysis IS PROVIDED):
+When you have original video analysis data, you MUST:
+1. **PRESERVE the MAIN SUBJECT (MOST CRITICAL)** - If it's a truck, ALL ideas must feature a truck. If it's a cat, ALL ideas must feature a cat. NEVER introduce a different main subject.
+2. PRESERVE the original's core visual identity (setting type, mood, color palette)
+3. MAINTAIN similar actions and interactions appropriate for that subject
+4. KEEP the same general aesthetic and pacing
+5. ADD creative twists within these boundaries - NOT complete reinventions
+
+**🚨 MAIN SUBJECT RULE (ABSOLUTE - NEVER VIOLATE):**
+The mainSubject from video analysis is SACRED and CANNOT be changed:
+- If mainSubject = "truck" → ALL your ideas MUST be about trucks (different angles, settings, but ALWAYS truck)
+- If mainSubject = "cat" → ALL your ideas MUST feature a cat
+- If mainSubject = "product" → ALL your ideas MUST showcase that product
+- If mainSubject = "person" → Then and ONLY then can your ideas feature a person
+- NEVER replace an object/animal main subject with a person
+- NEVER replace a non-human main subject with a human main subject
+
+**GROUNDING RULES:**
+- If original has indoor setting → your ideas should be indoor (maybe different room type)
+- If original has warm lighting → your ideas should have warm lighting variations
+- If original has casual clothing → don't jump to formal wear
+- If original has slow pace → don't make hyperactive content
+- Creative = fresh angle on SAME foundation, NOT a completely different video
+
+**BAD EXAMPLES (FORBIDDEN):**
+- Original: Truck driving on highway → Your idea: Person dancing in studio (WRONG - subject changed!)
+- Original: Cat playing with toy → Your idea: Person lip-syncing (WRONG - subject changed!)
+- Original: Product showcase → Your idea: Person using product as minor prop (WRONG - subject became secondary!)
+
+**GOOD EXAMPLES (CORRECT):**
+- Original: Truck driving on highway → Your idea: Same truck in different scenic route with dramatic lighting
+- Original: Cat playing with toy → Your idea: Cat in different playful scenario with different toy
+- Original: Product showcase → Your idea: Same product in different creative angle/setting
 
 GENRE-TREND BALANCE RULES:
 1. The artist's music genre is the PRIMARY constraint - never violate it
-2. Trending formats can be ADAPTED but visual style must match the genre
-3. If the artist is country, content should feel country (rural, authentic, warm)
-4. If the artist is K-pop, content should feel K-pop (polished, energetic, stylized)
-5. If the artist is hip-hop, content should feel hip-hop (urban, bold, rhythmic)
+2. The original video's visual identity is the SECONDARY constraint - stay grounded
+3. Trending formats can be ADAPTED but must respect both constraints
+4. If the artist is country, content should feel country (rural, authentic, warm)
+5. If the artist is K-pop, content should feel K-pop (polished, energetic, stylized)
+6. If the artist is hip-hop, content should feel hip-hop (urban, bold, rhythmic)
 
 Your expertise includes:
 - Analyzing successful TikTok videos and extracting winning patterns
@@ -259,6 +315,31 @@ Always respond in valid JSON format.`,
 {{genre}}
 
 ⚠️ CRITICAL: All content MUST feel authentic to {{genre}} music. Visual style, mood, settings, and aesthetics must match this genre.
+
+{{#if videoAnalysis}}
+## 🎬 ORIGINAL VIDEO ANALYSIS (CRITICAL CONSTRAINT - STAY GROUNDED):
+{{videoAnalysis}}
+
+## 🚨 MAIN SUBJECT: {{mainSubject}}
+THIS IS THE MOST CRITICAL CONSTRAINT. ALL your ideas MUST feature "{{mainSubject}}" as the PRIMARY subject.
+- If mainSubject is NOT a person (e.g., truck, cat, product) → DO NOT introduce people as main subjects
+- If mainSubject IS a person → You may feature a person
+- The mainSubject CANNOT be changed, replaced, or made secondary
+
+⚠️ GROUNDING REQUIREMENT: Your ideas MUST preserve the core elements from this analysis.
+- 🚨 MAIN SUBJECT (SACRED): {{mainSubject}} - MUST remain the star of ALL ideas
+- PRESERVE: setting type ({{originalSetting}}), mood ({{originalMood}}), lighting ({{originalLighting}})
+- MAINTAIN: similar action style and pacing ({{originalPace}})
+- KEEP: color palette feel ({{originalColors}})
+- ADD: creative twists WITHIN these boundaries - NOT complete reinventions
+
+🚫 ABSOLUTELY FORBIDDEN:
+- Changing the main subject ({{mainSubject}} → something else)
+- Adding people as main subjects when original has non-human subject
+- Making the original subject secondary to a new subject
+
+✅ DO: Create fresh variations featuring {{mainSubject}} in different scenarios/angles/settings
+{{/if}}
 
 USER CONCEPT: {{userIdea}}
 
@@ -372,6 +453,10 @@ export class CreativeDirectorAgent extends BaseAgent<CreativeDirectorInput, Crea
     // Genre is CRITICAL - it determines the visual style of all content
     const genre = context.workflow.genre || 'pop'; // Default to pop if not specified
 
+    // Extract video analysis details for grounded creativity
+    const videoAnalysis = input.videoAnalysis;
+    const conceptDetails = videoAnalysis?.conceptDetails;
+
     return this.fillTemplate(template, {
       campaignDescription: input.campaignDescription || 'General content campaign',  // Central context for all prompts
       genre: genre,  // PRIMARY VISUAL CONSTRAINT - must match the music style
@@ -383,6 +468,20 @@ export class CreativeDirectorAgent extends BaseAgent<CreativeDirectorInput, Crea
       artistName: context.workflow.artistName,
       platform: context.workflow.platform,
       language: context.workflow.language,
+      // Video analysis data for grounded creativity
+      videoAnalysis: videoAnalysis ? JSON.stringify({
+        styleAnalysis: videoAnalysis.styleAnalysis,
+        hookAnalysis: videoAnalysis.hookAnalysis,
+        conceptDetails: conceptDetails,
+      }, null, 2) : '',
+      // CRITICAL: Main subject - the most important constraint
+      mainSubject: conceptDetails?.mainSubject || 'not specified',
+      // Individual elements for template placeholders
+      originalSetting: conceptDetails?.setting || 'not specified',
+      originalMood: conceptDetails?.mood || 'not specified',
+      originalLighting: conceptDetails?.lighting || 'not specified',
+      originalPace: conceptDetails?.pace || 'not specified',
+      originalColors: conceptDetails?.colorPalette?.join(', ') || 'not specified',
     });
   }
 

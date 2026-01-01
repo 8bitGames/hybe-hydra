@@ -266,6 +266,24 @@ export async function POST(request: NextRequest) {
         avgEngagement: performance_metrics.avgEngagement,
         topPerformers: extractTopPerformers(inspiration_videos),
       } : undefined,
+      // Video analysis data for grounded creativity (when started from video)
+      videoAnalysis: video_analysis ? {
+        styleAnalysis: video_analysis.styleAnalysis,
+        hookAnalysis: video_analysis.hookAnalysis,
+        conceptDetails: video_analysis.conceptDetails ? {
+          visualStyle: video_analysis.conceptDetails.visualStyle,
+          colorPalette: video_analysis.conceptDetails.colorPalette,
+          lighting: video_analysis.conceptDetails.lighting,
+          cameraMovement: video_analysis.conceptDetails.cameraMovement,
+          mood: video_analysis.conceptDetails.mood,
+          pace: video_analysis.conceptDetails.pace,
+          mainSubject: video_analysis.conceptDetails.mainSubject,
+          actions: video_analysis.conceptDetails.actions,
+          setting: video_analysis.conceptDetails.setting,
+          props: video_analysis.conceptDetails.props,
+          clothingStyle: video_analysis.conceptDetails.clothingStyle,
+        } : undefined,
+      } : undefined,
     };
 
     // Handle streaming response (only for non-video based)
