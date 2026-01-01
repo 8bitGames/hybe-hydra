@@ -898,19 +898,10 @@ class FFmpegRenderer:
                 ))
 
             # Map transition names to safe xfade names
-            # Only the FIRST transition uses the style set's effect, rest use fade
-            xfade_names = []
-            for i in range(len(clip_paths) - 1):
-                if i == 0 and len(transitions) > 0:
-                    # First transition: use style set's first transition for initial impact
-                    effect_name = transitions[0]
-                    safe_name = get_safe_transition(effect_name, fallback="fade")
-                    xfade_names.append(safe_name)
-                else:
-                    # All other transitions: use simple fade for consistency
-                    xfade_names.append("fade")
+            # Use simple fade for all transitions (consistent and stable)
+            xfade_names = ["fade"] * (len(clip_paths) - 1)
 
-            logger.info(f"[{job_id}] Mapped to xfade effects: first={xfade_names[0] if xfade_names else 'none'}, rest=fade ({len(xfade_names)} total)")
+            logger.info(f"[{job_id}] Using default fade transitions ({len(xfade_names)} total)")
 
             # Calculate transition duration based on clip durations
             # Use shorter transition for fast cuts
