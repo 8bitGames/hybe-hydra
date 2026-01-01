@@ -709,11 +709,12 @@ export interface AutoPublishConfig {
 
 // Variation Generation Types
 export interface VariationConfigRequest {
-  style_categories: string[];
-  enable_prompt_variation: boolean;
+  style_categories?: string[];
+  enable_prompt_variation?: boolean;
   prompt_variation_types?: ("camera" | "expression")[];
   max_variations?: number;
   auto_publish?: AutoPublishConfig;
+  preset_ids?: string[]; // Direct preset IDs for 1:1 variation mapping
 }
 
 export interface VariationItem {

@@ -19,6 +19,12 @@ import type { LyricsData } from "@/lib/subtitle-styles";
 
 // Dummy test lyrics for testing without actual audio lyrics
 const DUMMY_TEST_LYRICS: LyricsData = {
+  language: "en",
+  extractedAt: new Date().toISOString(),
+  source: "manual",
+  confidence: 1.0,
+  isInstrumental: false,
+  fullText: "Test line 1\nTest line 2\nTest line 3\nTest line 4\nTest line 5\nTest line 6\nTest line 7",
   segments: [
     { text: "Test line 1", start: 0, end: 2 },
     { text: "Test line 2", start: 2, end: 4 },
@@ -27,7 +33,7 @@ const DUMMY_TEST_LYRICS: LyricsData = {
     { text: "Test line 5", start: 8, end: 10 },
     { text: "Test line 6", start: 10, end: 12 },
     { text: "Test line 7", start: 12, end: 14 },
-  ]
+  ],
 };
 
 export default function FastCutEffectsPage() {
