@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@hybe/agent-framework": ["./packages/agent-framework/src"],
+      "@hybe/agent-framework/*": ["./packages/agent-framework/src/*"]
     }
   },
   "include": [

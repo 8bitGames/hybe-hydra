@@ -704,17 +704,38 @@ export abstract class BaseAgent<
   private validateInput(input: TInput): TInput {
     const result = this.config.inputSchema.safeParse(input);
     if (!result.success) {
-      throw new Error(`Input validation failed: ${result.error.message}`);
+      const errorMessage = this.formatValidationError(result.error);
+      throw new Error(`Input validation failed: ${errorMessage}`);
     }
-    return result.data;
+    return result.data as TInput;
   }
 
   private validateOutput(output: unknown): TOutput {
     const result = this.config.outputSchema.safeParse(output);
     if (!result.success) {
-      throw new Error(`Output validation failed: ${result.error.message}`);
+      const errorMessage = this.formatValidationError(result.error);
+      throw new Error(`Output validation failed: ${errorMessage}`);
     }
-    return result.data;
+    return result.data as TOutput;
+  }
+
+  /**
+   * Format validation error from unknown error type (Zod v3/v4 compatible)
+   */
+  private formatValidationError(error: unknown): string {
+    if (!error) return 'Unknown validation error';
+    if (typeof error === 'string') return error;
+    if (error instanceof Error) return error.message;
+    // Zod error objects have message property
+    if (typeof error === 'object' && 'message' in error) {
+      return String((error as { message: unknown }).message);
+    }
+    // Zod v3/v4 error might have issues array
+    if (typeof error === 'object' && 'issues' in error) {
+      const issues = (error as { issues: Array<{ message: string }> }).issues;
+      return issues.map(i => i.message).join(', ');
+    }
+    return String(error);
   }
 
   // ============================================================================

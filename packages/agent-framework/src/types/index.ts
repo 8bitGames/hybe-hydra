@@ -5,11 +5,29 @@
  * These types are framework-level and can be used across any project.
  */
 
-import type { ZodSchema } from 'zod';
 import type { ModelName } from './constants';
 
 // Re-export constants and model types
 export * from './constants';
+
+// ================================
+// Schema Types (Zod-version agnostic)
+// ================================
+
+/**
+ * Generic schema interface that works with both Zod v3 and v4.
+ * This abstraction allows the framework to be compatible with either version.
+ */
+export interface SchemaLike<T> {
+  parse: (data: unknown) => T;
+  safeParse: (data: unknown) => SafeParseResult<T>;
+}
+
+export interface SafeParseResult<T> {
+  success: boolean;
+  data?: T;
+  error?: unknown;
+}
 
 // ================================
 // Model Configuration Types
@@ -64,8 +82,14 @@ export interface AgentConfig<TInput = unknown, TOutput = unknown> {
    * Fallback prompts - used only if database/storage prompts not loaded.
    */
   prompts: AgentPrompts;
-  inputSchema: ZodSchema<TInput>;
-  outputSchema: ZodSchema<TOutput>;
+  /**
+   * Input validation schema (Zod v3 or v4 compatible)
+   */
+  inputSchema: SchemaLike<TInput>;
+  /**
+   * Output validation schema (Zod v3 or v4 compatible)
+   */
+  outputSchema: SchemaLike<TOutput>;
   dependencies?: string[];
 }
 
