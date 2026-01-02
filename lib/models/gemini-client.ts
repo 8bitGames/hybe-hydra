@@ -271,6 +271,9 @@ export class GeminiClient implements IModelClient {
     try {
       console.log(`[GeminiClient] Request config (Vertex AI): model=${this.actualModelId}, maxOutputTokens=${generationConfig.maxOutputTokens}, temp=${generationConfig.temperature}, project=${VERTEX_AI_PROJECT}`);
 
+      if (!this.authManager) {
+        throw new Error('[GeminiClient] authManager not initialized - Vertex AI mode requires GCP credentials');
+      }
       const headers = await this.authManager.getAuthHeaders();
       const endpoint = this.getEndpoint(false);
 
@@ -371,6 +374,9 @@ export class GeminiClient implements IModelClient {
     }
 
     try {
+      if (!this.authManager) {
+        throw new Error('[GeminiClient] authManager not initialized - Vertex AI mode requires GCP credentials');
+      }
       const headers = await this.authManager.getAuthHeaders();
       const endpoint = this.getEndpoint(true) + '?alt=sse';
 

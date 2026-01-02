@@ -105,10 +105,10 @@ export const I2VSpecialistOutputSchema = z.object({
     soundEffects: z.string().optional(), // Specific sound effects
   }).optional(),
   dialogueContent: z.object({
-    text: z.string().optional(), // Spoken dialogue (6-12 words for 8s)
-    speaker: z.string().optional(), // Who speaks
-    tone: z.string().optional(), // Emotional tone
-  }).optional(),
+    text: z.string().nullish(), // Spoken dialogue (6-12 words for 8s) - nullish allows null/undefined
+    speaker: z.string().nullish(), // Who speaks
+    tone: z.string().nullish(), // Emotional tone
+  }).nullish(),
   motionQuality: z.enum(['smooth', 'dynamic', 'subtle', 'fluid', 'dramatic']).optional(),
 });
 

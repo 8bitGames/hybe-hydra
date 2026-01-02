@@ -292,21 +292,27 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
           // React state `variations` may be stale during polling due to closure capture timing
           const currentAIVariations = useProcessingSessionStore.getState().session?.variations || [];
           status.variations.forEach((apiVar) => {
-            // Find matching variation in store by ID
-            const storeVar = currentAIVariations.find((v) => v.id === apiVar.id);
-            if (!storeVar) return;
+            // Find matching variation in store by generationId (API UUID)
+            // NOTE: Store variation's `id` is internal, `generationId` is the API UUID
+            const storeVar = currentAIVariations.find((v) => v.generationId === apiVar.id || v.id === apiVar.id);
+            if (!storeVar) {
+              console.warn(`[ProcessingFlowPage] AI Video: No store match for API var ${apiVar.id}`);
+              return;
+            }
 
             // AI Video API returns status as lowercase
             const apiStatus = apiVar.status?.toUpperCase?.() || apiVar.status;
             const generation = apiVar.generation;
 
             if (apiStatus === "COMPLETED" && generation?.output_url) {
-              setVariationCompleted(apiVar.id, generation.output_url, undefined);
+              // Use storeVar.id (internal ID) for store operations, not apiVar.id (API UUID)
+              setVariationCompleted(storeVar.id, generation.output_url, undefined);
             } else if (apiStatus === "FAILED") {
-              setVariationFailed(apiVar.id, generation?.error_message || undefined);
+              setVariationFailed(storeVar.id, generation?.error_message || undefined);
             } else {
               // Update progress for pending/processing
-              updateVariation(apiVar.id, {
+              // Use storeVar.id (internal ID) for store operations
+              updateVariation(storeVar.id, {
                 progress: generation?.progress || 0,
                 status: apiStatus === "PROCESSING" ? "generating" : "pending",
                 currentStep: apiStatus === "PROCESSING" ? "Generating..." : "Queued",
