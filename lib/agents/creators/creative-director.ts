@@ -357,7 +357,12 @@ CONTENT GOALS: {{goals}}
 
 ARTIST/BRAND: {{artistName}}
 PLATFORM: {{platform}}
-LANGUAGE: {{language}}
+
+## 🌐 OUTPUT LANGUAGE: {{language}}
+🚨 CRITICAL: ALL text output (title, hook, description, scriptOutline) MUST be in {{language}}:
+- If {{language}} = "en" → Write ALL text fields in English
+- If {{language}} = "ko" → Write ALL text fields in Korean (제목, 훅, 설명 등 모두 한글로)
+- The optimizedPrompt should ALWAYS be in English (for Veo 3.1 API compatibility)
 
 ## GENRE-FIRST ADAPTATION PROCESS:
 1. FILTER: Which trends can work for {{genre}} music? Skip incompatible ones.
@@ -412,16 +417,16 @@ For each idea provide:
 Return JSON (IMPORTANT: bpm MUST be a number like 120, not a string):
 {
   "ideas": [{
-    "title": "title that fits {{genre}} (max 50 chars)",
-    "hook": "hook adapted for {{genre}} audience (max 100 chars)",
-    "description": "2-3 sentences explaining how this adapts a trending format for {{genre}} music",
+    "title": "[DESCRIPTIVE TITLE in {{language}}] - Describe what the video shows (max 50 chars). Examples: ko='마룬 크롬 트럭 미학', en='Maroon Chrome Truck Aesthetic'",
+    "hook": "[HOOK in {{language}}] adapted for {{genre}} audience (max 100 chars)",
+    "description": "[DESCRIPTION in {{language}}] 2-3 sentences explaining how this adapts a trending format for {{genre}} music",
     "estimatedEngagement": "high",
-    "optimizedPrompt": "[FULL VEO 3.1 PROMPT - 300+ words]: A [{{genre}}-appropriate subject with 15+ physical attributes including age, gender, hair, skin tone, and {{genre}}-style clothing] [{{genre}}-authentic action with timing and expressions] in [{{genre}}-appropriate scene with detailed environment and props]. [{{genre}} visual style with matching color palette, camera shot type]. [Camera movement matching {{genre}} energy]. [{{genre}}-appropriate lighting creating {{genre}} mood atmosphere]. No watermarks, no text overlays, maintain {{genre}}-appropriate pacing, high quality 9:16 vertical format.",
+    "optimizedPrompt": "[ALWAYS IN ENGLISH - 300+ words VEO 3.1 PROMPT]: A [{{genre}}-appropriate subject with 15+ physical attributes including age, gender, hair, skin tone, and {{genre}}-style clothing] [{{genre}}-authentic action with timing and expressions] in [{{genre}}-appropriate scene with detailed environment and props]. [{{genre}} visual style with matching color palette, camera shot type]. [Camera movement matching {{genre}} energy]. [{{genre}}-appropriate lighting creating {{genre}} mood atmosphere]. No watermarks, no text overlays, maintain {{genre}}-appropriate pacing, high quality 9:16 vertical format.",
     "suggestedMusic": { "bpm": 120, "genre": "{{genre}} or subgenre" },
-    "scriptOutline": ["scene1: {{genre}}-style hook with trending format adaptation", "scene2: genre-authentic build up", "scene3: {{genre}}-appropriate climax"]
+    "scriptOutline": ["[in {{language}}] scene1: {{genre}}-style hook", "scene2: genre-authentic build up", "scene3: {{genre}}-appropriate climax"]
   }],
   "optimizedHashtags": ["hashtags for {{genre}} audience + trending format tags"],
-  "contentStrategy": "how we're adapting trends to serve {{genre}} music fans authentically using Veo 3.1 7-component prompts"
+  "contentStrategy": "[in {{language}}] how we're adapting trends to serve {{genre}} music fans authentically"
 }`,
     },
   },

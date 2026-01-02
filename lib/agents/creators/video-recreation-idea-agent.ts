@@ -115,8 +115,10 @@ export type VideoRecreationIdeaOutput = z.infer<typeof VideoRecreationIdeaOutput
 // Agent Configuration
 /**
  * @agent VideoRecreationIdeaAgent
- * @version 5
+ * @version 7
  * @changelog
+ * - v7: Added Korean language prohibitions for forbidden title terms (완전 복제, 미세 변형, etc.)
+ * - v6: Improved title format (descriptive content-based, not "Clone/Variation"), exclude on-screen text from prompts
  * - v5: Added language-aware output + mainSubject constraint to prevent unrelated prompts
  * - v4: Strengthened recreation types - exact=100% clone (all details), variation=5-10% micro-change only
  * - v3: Added Vertex AI content filter compliance guidelines to prevent blocks
@@ -150,6 +152,14 @@ The mainSubject from video analysis is SACRED and CANNOT be changed:
 - If mainSubject = "food" → ALL your prompts MUST feature food
 - NEVER replace an object/animal main subject with a person
 - NEVER introduce new subjects that weren't in the original video
+
+## 🚫 TEXT EXCLUSION RULE (IMPORTANT):
+DO NOT include on-screen text or captions in your prompts:
+- EXCLUDE any text overlays, captions, or watermarks visible in the original video
+- EXCLUDE song lyrics or dialogue text that appears on screen
+- EXCLUDE very long descriptive text - keep prompts visual, not textual
+- Focus on VISUAL elements only: subjects, actions, settings, lighting, camera work
+- Text is handled separately by the video editor, not in the Veo prompt
 
 **BAD EXAMPLE (FORBIDDEN):**
 - Original video mainSubject: "truck driving on highway"
@@ -369,27 +379,27 @@ Return JSON (IMPORTANT: bpm MUST be a number, not a string):
 {
   "ideas": [
     {
-      "title": "[{{language}}=en: 'Perfect Clone of Original' | {{language}}=ko: '원본 영상 완전 복제'] (max 50 chars, in {{language}})",
-      "hook": "[Hook text in {{language}} - IDENTICAL concept to original] (max 100 chars)",
-      "description": "[Description in {{language}}] This is a 100% CLONE. Every element - [list specific elements from original: setting, props, clothing, lighting, actions] - is replicated exactly as in the original video.",
+      "title": "[DESCRIPTIVE TITLE based on video content - e.g., 'Maroon Chrome Truck Aesthetic', 'Cinematic Kitchen Reveal', 'Golden Hour Portrait'] (max 50 chars, in {{language}}). 🚫 FORBIDDEN TERMS: 'Perfect Clone', 'Clone of Original', 'Exact Clone', '완전 복제', '원본 복제', '완벽한 클론', '정확한 복제' - describe WHAT the video shows instead!",
+      "hook": "[Hook text in {{language}} - catchy TikTok caption style] (max 100 chars)",
+      "description": "[Description in {{language}}] A faithful recreation capturing [list specific visual elements from original: setting, lighting, camera work, mood].",
       "estimatedEngagement": "high",
-      "optimizedPrompt": "[FULL VEO 3.1 PROMPT - 300+ words, ALWAYS IN ENGLISH]: A [EXACT subject description from mainSubject - age, gender, build, skin, hair color/length/style, facial features] wearing [EXACT clothing from clothingStyle with specific colors and textures], [EXACT actions from actions with precise timing and gestures], [EXACT facial expressions]. Set in [EXACT setting description] with [ALL props listed from props in their exact positions]. [EXACT visualStyle] with [EXACT colorPalette colors]. [EXACT cameraMovement]. [EXACT lighting setup]. No watermarks, no text overlays, maintain [EXACT pace] pacing, high quality 9:16 vertical format.",
+      "optimizedPrompt": "[FULL VEO 3.1 PROMPT - 300+ words, ALWAYS IN ENGLISH, NO ON-SCREEN TEXT]: A [EXACT subject description from mainSubject - age, gender, build, skin, hair color/length/style, facial features] wearing [EXACT clothing from clothingStyle with specific colors and textures], [EXACT actions from actions with precise timing and gestures], [EXACT facial expressions]. Set in [EXACT setting description] with [ALL props listed from props in their exact positions]. [EXACT visualStyle] with [EXACT colorPalette colors]. [EXACT cameraMovement]. [EXACT lighting setup]. No watermarks, no text overlays, no on-screen captions, maintain [EXACT pace] pacing, high quality 9:16 vertical format.",
       "suggestedMusic": { "bpm": 120, "genre": "EXACT match to original mood" },
-      "scriptOutline": ["[In {{language}}] scene1: EXACT recreation of opening - same framing, same action, same timing", "[In {{language}}] scene2: EXACT recreation of middle - identical flow and pacing", "[In {{language}}] scene3: EXACT recreation of climax - same emotional peak"],
+      "scriptOutline": ["[In {{language}}] scene1: Opening - same framing, action, timing", "[In {{language}}] scene2: Middle - identical flow and pacing", "[In {{language}}] scene3: Climax - same emotional peak"],
       "recreationType": "exact"
     },
     {
-      "title": "[{{language}}=en: 'Micro Variation Version' | {{language}}=ko: '미세 변형 버전'] (max 50 chars, in {{language}})",
-      "hook": "[Hook text in {{language}} - 99% same, tiny twist] (max 100 chars)",
-      "description": "[Description in {{language}}] This is 95% IDENTICAL to the original. The ONLY change is [specify the ONE element changed, e.g., 'background color changed from white to soft blue']. Everything else remains exactly the same.",
+      "title": "[VARIATION TITLE describing the change - e.g., 'Sunset Version: Chrome Truck', 'Blue Tone Kitchen Reveal', 'Soft Light Portrait'] (max 50 chars, in {{language}}). 🚫 FORBIDDEN TERMS: 'Micro Variation', 'Variation Version', '미세 변형', '변형 버전', '마이크로 변형' - describe the actual visual change instead!",
+      "hook": "[Hook text in {{language}} - catchy TikTok caption with subtle twist] (max 100 chars)",
+      "description": "[Description in {{language}}] Same visual style with [specify the ONE element changed, e.g., 'sunset lighting instead of noon', 'blue backdrop instead of white'].",
       "estimatedEngagement": "high",
-      "optimizedPrompt": "[FULL VEO 3.1 PROMPT - 300+ words, ALWAYS IN ENGLISH]: [COPY 95% from IDEA 1's prompt]. The ONLY difference: [specify the ONE micro-change, e.g., 'the wall color is now soft blue instead of white' or 'wearing a red sweater instead of cream']. All other elements remain IDENTICAL: same subject, same actions, same props, same camera, same lighting.",
+      "optimizedPrompt": "[FULL VEO 3.1 PROMPT - 300+ words, ALWAYS IN ENGLISH, NO ON-SCREEN TEXT]: [COPY 95% from IDEA 1's prompt]. The ONLY difference: [specify the ONE micro-change, e.g., 'the wall color is now soft blue instead of white' or 'wearing a red sweater instead of cream']. All other elements remain IDENTICAL: same subject, same actions, same props, same camera, same lighting. No on-screen text or captions.",
       "suggestedMusic": { "bpm": 120, "genre": "SAME as original" },
-      "scriptOutline": ["[In {{language}}] scene1: same as exact clone with [ONE micro change]", "[In {{language}}] scene2: identical to exact clone", "[In {{language}}] scene3: identical to exact clone"],
+      "scriptOutline": ["[In {{language}}] scene1: same composition with [ONE visual change]", "[In {{language}}] scene2: identical to first idea", "[In {{language}}] scene3: identical to first idea"],
       "recreationType": "variation"
     }
   ],
-  "recreationStrategy": "[In {{language}}] IDEA 1 is a frame-by-frame clone capturing every detail. IDEA 2 is 95% identical with only [specify the one change] modified. Both maintain absolute fidelity to the original's core visual identity."
+  "recreationStrategy": "[In {{language}}] Both ideas capture the original's visual identity. IDEA 1 is a faithful recreation. IDEA 2 adds a subtle [specify the one change] variation while maintaining the same aesthetic."
 }`,
     },
   },
