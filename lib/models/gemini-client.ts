@@ -1,14 +1,16 @@
 /**
- * Gemini Model Client
- * ====================
- * Unified client for Gemini 2.5 Flash and Gemini 3 Pro models
+ * Gemini Model Client (Vertex AI)
+ * ================================
+ * Unified client for Gemini models via Vertex AI
  *
  * Models:
  * - gemini-3-flash-preview: Fast analysis, pattern recognition (Analyzers, Transformers)
  * - gemini-3-pro-preview: Deep reasoning, strategic thinking (Creative Director)
+ *
+ * Authentication: GCP Service Account (poised-time-480910-r2 project)
  */
 
-import { GoogleGenAI } from '@google/genai';
+import { GCPAuthManager } from './gcp-auth';
 import type {
   IModelClient,
   ModelClientConfig,
@@ -18,6 +20,10 @@ import type {
   TokenUsage,
 } from './types';
 import { GEMINI_FLASH, GEMINI_PRO, type GeminiModelName } from '../agents/constants';
+
+// Vertex AI configuration for text generation
+const VERTEX_AI_PROJECT = 'poised-time-480910-r2';
+const VERTEX_AI_LOCATION = 'us-central1';
 
 export interface GeminiClientConfig extends ModelClientConfig {
   model: GeminiModelName;
@@ -31,18 +37,33 @@ const MODEL_MAP: Record<string, string> = {
   [GEMINI_PRO]: GEMINI_PRO,
 };
 
+// Vertex AI response types
+interface VertexAIResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+    };
+    finishReason?: string;
+  }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
+}
+
 export class GeminiClient implements IModelClient {
-  private ai: GoogleGenAI;
+  private authManager: GCPAuthManager;
   private config: GeminiClientConfig;
   private actualModelId: string;
 
   constructor(config: GeminiClientConfig) {
-    const apiKey = process.env.GOOGLE_AI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GOOGLE_AI_API_KEY environment variable is required');
-    }
+    // Initialize GCP Auth Manager with the text generation project
+    this.authManager = new GCPAuthManager({
+      projectId: VERTEX_AI_PROJECT,
+      location: VERTEX_AI_LOCATION,
+    });
 
-    this.ai = new GoogleGenAI({ apiKey });
     this.config = {
       temperature: 0.7,
       maxTokens: 8192,
@@ -51,16 +72,23 @@ export class GeminiClient implements IModelClient {
       ...config,
     };
     this.actualModelId = MODEL_MAP[config.model] || config.model;
+
+    console.log(`[GeminiClient] Initialized with Vertex AI project: ${VERTEX_AI_PROJECT}`);
   }
 
   getModelName(): string {
     return this.config.model;
   }
 
+  private getEndpoint(stream: boolean = false): string {
+    const action = stream ? 'streamGenerateContent' : 'generateContent';
+    return `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_AI_PROJECT}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${this.actualModelId}:${action}`;
+  }
+
   async generate(options: GenerateOptions): Promise<ModelResponse> {
     const { system, user, images, responseFormat } = options;
 
-    // Build configuration
+    // Build generation config
     const generationConfig: Record<string, unknown> = {
       temperature: this.config.temperature,
       maxOutputTokens: this.config.maxTokens,
@@ -68,14 +96,13 @@ export class GeminiClient implements IModelClient {
       topK: this.config.topK,
     };
 
-    // Build tools array first (needed to check for JSON compatibility)
+    // Build tools array
     const tools: Array<Record<string, unknown>> = [];
     if (this.config.enableGoogleSearch) {
       tools.push({ googleSearch: {} });
     }
 
     // JSON response format - NOT compatible with tools (Google Search)
-    // When tools are enabled, we rely on prompt to request JSON and parse from text
     if (responseFormat === 'json' && tools.length === 0) {
       generationConfig.responseMimeType = 'application/json';
     }
@@ -106,42 +133,73 @@ export class GeminiClient implements IModelClient {
     // Add text prompt
     parts.push({ text: user });
 
-    try {
-      // Debug: log actual config being sent
-      console.log(`[GeminiClient] Request config: model=${this.actualModelId}, maxOutputTokens=${generationConfig.maxOutputTokens}, temp=${generationConfig.temperature}`);
-
-      const response = await this.ai.models.generateContent({
-        model: this.actualModelId,
-        config: {
-          ...generationConfig,
-          systemInstruction: system,
-          ...(tools.length > 0 && { tools }),
-          ...(thinkingConfig && { thinkingConfig }),
+    // Build request body
+    const requestBody: Record<string, unknown> = {
+      contents: [
+        {
+          role: 'user',
+          parts,
         },
-        contents: [
-          {
-            role: 'user',
-            parts,
-          },
-        ],
+      ],
+      generationConfig,
+    };
+
+    // Add system instruction if provided
+    if (system) {
+      requestBody.systemInstruction = {
+        parts: [{ text: system }],
+      };
+    }
+
+    // Add tools if any
+    if (tools.length > 0) {
+      requestBody.tools = tools;
+    }
+
+    // Add thinking config if set
+    if (thinkingConfig) {
+      requestBody.generationConfig = {
+        ...generationConfig,
+        ...thinkingConfig,
+      };
+    }
+
+    try {
+      console.log(`[GeminiClient] Request config: model=${this.actualModelId}, maxOutputTokens=${generationConfig.maxOutputTokens}, temp=${generationConfig.temperature}, project=${VERTEX_AI_PROJECT}`);
+
+      const headers = await this.authManager.getAuthHeaders();
+      const endpoint = this.getEndpoint(false);
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
       });
 
-      // Extract text from response
-      const text = response.text || '';
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[GeminiClient] API error: ${response.status} - ${errorText}`);
+        throw new Error(`Vertex AI API error: ${response.status} - ${errorText}`);
+      }
 
-      // Calculate token usage (estimated if not provided)
+      const data: VertexAIResponse = await response.json();
+
+      // Extract text from response
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      // Calculate token usage
       const usage: TokenUsage = {
-        input: response.usageMetadata?.promptTokenCount || this.estimateTokens(system + user),
-        output: response.usageMetadata?.candidatesTokenCount || this.estimateTokens(text),
-        total: response.usageMetadata?.totalTokenCount ||
+        input: data.usageMetadata?.promptTokenCount || this.estimateTokens(system + user),
+        output: data.usageMetadata?.candidatesTokenCount || this.estimateTokens(text),
+        total: data.usageMetadata?.totalTokenCount ||
           (this.estimateTokens(system + user) + this.estimateTokens(text)),
       };
 
       return {
         content: text,
         usage,
-        finishReason: response.candidates?.[0]?.finishReason || 'STOP',
-        rawResponse: response,
+        finishReason: data.candidates?.[0]?.finishReason || 'STOP',
+        rawResponse: data,
       };
     } catch (error) {
       console.error('[GeminiClient] Generation error:', error);
@@ -152,7 +210,7 @@ export class GeminiClient implements IModelClient {
   async *generateStream(options: GenerateOptions): AsyncGenerator<StreamChunk> {
     const { system, user, images, responseFormat } = options;
 
-    // Build configuration
+    // Build generation config
     const generationConfig: Record<string, unknown> = {
       temperature: this.config.temperature,
       maxOutputTokens: this.config.maxTokens,
@@ -160,13 +218,13 @@ export class GeminiClient implements IModelClient {
       topK: this.config.topK,
     };
 
-    // Build tools array first (needed to check for JSON compatibility)
+    // Build tools array
     const tools: Array<Record<string, unknown>> = [];
     if (this.config.enableGoogleSearch) {
       tools.push({ googleSearch: {} });
     }
 
-    // JSON response format - NOT compatible with tools (Google Search)
+    // JSON response format
     if (responseFormat === 'json' && tools.length === 0) {
       generationConfig.responseMimeType = 'application/json';
     }
@@ -187,29 +245,76 @@ export class GeminiClient implements IModelClient {
 
     parts.push({ text: user });
 
-    try {
-      const response = await this.ai.models.generateContentStream({
-        model: this.actualModelId,
-        config: {
-          ...generationConfig,
-          systemInstruction: system,
-          ...(tools.length > 0 && { tools }),
+    // Build request body
+    const requestBody: Record<string, unknown> = {
+      contents: [
+        {
+          role: 'user',
+          parts,
         },
-        contents: [
-          {
-            role: 'user',
-            parts,
-          },
-        ],
+      ],
+      generationConfig,
+    };
+
+    if (system) {
+      requestBody.systemInstruction = {
+        parts: [{ text: system }],
+      };
+    }
+
+    if (tools.length > 0) {
+      requestBody.tools = tools;
+    }
+
+    try {
+      const headers = await this.authManager.getAuthHeaders();
+      const endpoint = this.getEndpoint(true) + '?alt=sse';
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
       });
 
-      for await (const chunk of response) {
-        const text = chunk.text || '';
-        if (text) {
-          yield {
-            content: text,
-            done: false,
-          };
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Vertex AI API error: ${response.status} - ${errorText}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr && jsonStr !== '[DONE]') {
+              try {
+                const data: VertexAIResponse = JSON.parse(jsonStr);
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                if (text) {
+                  yield {
+                    content: text,
+                    done: false,
+                  };
+                }
+              } catch {
+                // Skip invalid JSON
+              }
+            }
+          }
         }
       }
 
