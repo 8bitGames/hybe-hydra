@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/auth-store";
@@ -149,6 +149,32 @@ export default function DashboardLayout({
   const isLoading = useAuthStore((state) => state.isLoading);
   const logout = useAuthStore((state) => state.logout);
   const fetchUser = useAuthStore((state) => state.fetchUser);
+  const initializeSession = useAuthStore((state) => state.initializeSession);
+  const stopSessionMonitor = useAuthStore((state) => state.stopSessionMonitor);
+
+  // Track if session monitor has been initialized
+  const sessionInitializedRef = useRef(false);
+
+  // Initialize session monitoring on mount (only once)
+  useEffect(() => {
+    if (_hasHydrated && isAuthenticated && !sessionInitializedRef.current) {
+      console.log("[DashboardLayout] Initializing session monitor...");
+      sessionInitializedRef.current = true;
+      initializeSession();
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (sessionInitializedRef.current) {
+        sessionInitializedRef.current = false;
+        stopSessionMonitor();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_hasHydrated, isAuthenticated]); // Remove function deps to prevent re-runs
+
+  // Track if user fetch has been attempted
+  const userFetchAttemptedRef = useRef(false);
 
   useEffect(() => {
     console.log("[DashboardLayout] Auth state:", {
@@ -172,13 +198,16 @@ export default function DashboardLayout({
         window.location.href = "/login";
         return;
       }
-      if (!user) {
+      // Only fetch user once per session
+      if (!user && !userFetchAttemptedRef.current) {
         console.log("[DashboardLayout] No user, fetching...");
+        userFetchAttemptedRef.current = true;
         await fetchUser();
       }
     };
     checkAuth();
-  }, [_hasHydrated, isAuthenticated, user, router, fetchUser, isLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_hasHydrated, isAuthenticated, user]); // Remove function deps
 
   const handleLogout = () => {
     logout();

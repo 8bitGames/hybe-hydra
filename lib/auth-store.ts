@@ -2,14 +2,28 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { api, authApi, usersApi } from "./api";
 
 // Create Supabase client for client-side auth operations
+// Enable autoRefreshToken to automatically refresh sessions before expiry
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+    },
+  }
 );
+
+// Session refresh interval (check every 4 minutes)
+const SESSION_CHECK_INTERVAL = 4 * 60 * 1000;
+let sessionCheckInterval: NodeJS.Timeout | null = null;
+let visibilityChangeHandler: (() => void) | null = null;
+let isSessionMonitorRunning = false; // Prevent duplicate monitor starts
 
 interface User {
   id: string;
@@ -37,6 +51,13 @@ interface AuthState {
   fetchUser: () => Promise<void>;
   setTokens: (accessToken: string, refreshToken: string) => void;
   setHasHydrated: (state: boolean) => void;
+
+  // Session management
+  initializeSession: () => Promise<void>;
+  refreshSession: () => Promise<boolean>;
+  startSessionMonitor: () => void;
+  stopSessionMonitor: () => void;
+  checkSessionOnVisibility: () => Promise<void>;
 }
 
 // Setup global auth:logout event listener
@@ -141,6 +162,9 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
+        // Stop session monitoring first
+        get().stopSessionMonitor();
+
         // Sign out from Supabase
         try {
           await supabase.auth.signOut();
@@ -207,6 +231,244 @@ export const useAuthStore = create<AuthState>()(
           refreshToken,
           isAuthenticated: true,
         });
+      },
+
+      // Initialize session - called once on app load
+      initializeSession: async () => {
+        console.log("[AuthStore] Initializing session...");
+
+        try {
+          // Get current Supabase session
+          const { data: { session }, error } = await supabase.auth.getSession();
+
+          if (error) {
+            console.error("[AuthStore] Error getting session:", error);
+            return;
+          }
+
+          if (session) {
+            console.log("[AuthStore] Found existing Supabase session, syncing tokens...");
+            const { accessToken, refreshToken } = get();
+
+            // If we have a Supabase session but our store is out of sync, update it
+            if (session.access_token !== accessToken) {
+              console.log("[AuthStore] Syncing tokens from Supabase session");
+              api.setAccessToken(session.access_token);
+              set({
+                accessToken: session.access_token,
+                refreshToken: session.refresh_token,
+                isAuthenticated: true,
+              });
+
+              // Fetch user if we don't have it
+              if (!get().user) {
+                await get().fetchUser();
+              }
+            }
+          }
+
+          // Start session monitoring
+          get().startSessionMonitor();
+        } catch (error) {
+          console.error("[AuthStore] Session initialization error:", error);
+        }
+      },
+
+      // Manually refresh the session using backend API
+      refreshSession: async () => {
+        console.log("[AuthStore] Refreshing session...");
+
+        try {
+          const { refreshToken } = get();
+
+          if (!refreshToken) {
+            console.error("[AuthStore] No refresh token available");
+            return false;
+          }
+
+          // Use backend API for token refresh
+          const refreshResponse = await authApi.refresh(refreshToken);
+
+          if (refreshResponse.data) {
+            console.log("[AuthStore] Session refreshed successfully via backend API");
+            api.setAccessToken(refreshResponse.data.access_token);
+            set({
+              accessToken: refreshResponse.data.access_token,
+              refreshToken: refreshResponse.data.refresh_token,
+            });
+            return true;
+          }
+
+          console.error("[AuthStore] Session refresh failed:", refreshResponse.error);
+          return false;
+        } catch (error) {
+          console.error("[AuthStore] Session refresh error:", error);
+          return false;
+        }
+      },
+
+      // Check session when tab becomes visible
+      checkSessionOnVisibility: async () => {
+        const { isAuthenticated, accessToken } = get();
+
+        if (!isAuthenticated || !accessToken) {
+          console.log("[AuthStore] Visibility check: Not authenticated, skipping");
+          return;
+        }
+
+        console.log("[AuthStore] Tab became visible, checking session...");
+
+        try {
+          // Verify session by calling backend API
+          api.setAccessToken(accessToken);
+          const response = await usersApi.getMe();
+
+          if (response.error) {
+            console.warn("[AuthStore] Visibility check: Token invalid, attempting refresh...");
+
+            // Try to refresh the token
+            const refreshed = await get().refreshSession();
+
+            if (refreshed) {
+              console.log("[AuthStore] Visibility check: Token refreshed successfully");
+              // Fetch fresh user data
+              await get().fetchUser();
+            } else {
+              console.log("[AuthStore] Visibility check: Refresh failed, logging out");
+              get().logout();
+            }
+          } else {
+            console.log("[AuthStore] Visibility check: Session is valid");
+            // Update user data if returned
+            if (response.data) {
+              set({ user: response.data });
+            }
+          }
+        } catch (error) {
+          console.error("[AuthStore] Visibility check error:", error);
+        }
+      },
+
+      // Start periodic session monitoring
+      startSessionMonitor: () => {
+        if (typeof window === "undefined") return;
+
+        // Prevent duplicate monitor starts
+        if (isSessionMonitorRunning) {
+          console.log("[AuthStore] Session monitor already running, skipping...");
+          return;
+        }
+
+        // Clear existing interval if any (just in case)
+        if (sessionCheckInterval) {
+          clearInterval(sessionCheckInterval);
+        }
+
+        // Remove existing visibility change handler if any
+        if (visibilityChangeHandler) {
+          document.removeEventListener("visibilitychange", visibilityChangeHandler);
+        }
+
+        isSessionMonitorRunning = true;
+        console.log("[AuthStore] Starting session monitor (every 4 minutes + visibility check)");
+
+        // Set up visibility change listener for when tab becomes active
+        visibilityChangeHandler = () => {
+          if (document.visibilityState === "visible") {
+            get().checkSessionOnVisibility();
+          }
+        };
+        document.addEventListener("visibilitychange", visibilityChangeHandler);
+
+        // Set up Supabase auth state change listener
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          async (event: AuthChangeEvent, session: Session | null) => {
+            console.log("[AuthStore] Auth state changed:", event, { hasSession: !!session });
+
+            if (event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
+              if (event === "TOKEN_REFRESHED" && session) {
+                // Session was automatically refreshed - update our store
+                console.log("[AuthStore] Token auto-refreshed by Supabase");
+                api.setAccessToken(session.access_token);
+                set({
+                  accessToken: session.access_token,
+                  refreshToken: session.refresh_token,
+                });
+              } else if (event === "SIGNED_OUT") {
+                // User signed out - clear our store
+                console.log("[AuthStore] User signed out, clearing session");
+                get().logout();
+              }
+            }
+          }
+        );
+
+        // Store subscription for cleanup
+        (window as any).__supabaseAuthSubscription = subscription;
+
+        // Periodic session check using backend API
+        sessionCheckInterval = setInterval(async () => {
+          const { isAuthenticated, accessToken } = get();
+
+          if (!isAuthenticated || !accessToken) {
+            console.log("[AuthStore] Session check: Not authenticated, skipping");
+            return;
+          }
+
+          console.log("[AuthStore] Session check: Verifying session validity...");
+
+          try {
+            // Verify session by calling backend API
+            api.setAccessToken(accessToken);
+            const response = await usersApi.getMe();
+
+            if (response.error) {
+              console.warn("[AuthStore] Session check: Session invalid or expired");
+
+              // Try to refresh
+              const refreshed = await get().refreshSession();
+              if (!refreshed) {
+                console.log("[AuthStore] Session check: Refresh failed, logging out");
+                get().logout();
+              }
+            } else {
+              console.log("[AuthStore] Session check: Session is valid");
+              // Update user data if returned
+              if (response.data) {
+                set({ user: response.data });
+              }
+            }
+          } catch (error) {
+            console.error("[AuthStore] Session check error:", error);
+          }
+        }, SESSION_CHECK_INTERVAL);
+      },
+
+      // Stop session monitoring
+      stopSessionMonitor: () => {
+        if (!isSessionMonitorRunning) {
+          return; // Already stopped
+        }
+
+        console.log("[AuthStore] Stopping session monitor");
+        isSessionMonitorRunning = false;
+
+        if (sessionCheckInterval) {
+          clearInterval(sessionCheckInterval);
+          sessionCheckInterval = null;
+        }
+
+        // Remove visibility change listener
+        if (visibilityChangeHandler) {
+          document.removeEventListener("visibilitychange", visibilityChangeHandler);
+          visibilityChangeHandler = null;
+        }
+
+        // Unsubscribe from Supabase auth changes
+        if (typeof window !== "undefined" && (window as any).__supabaseAuthSubscription) {
+          (window as any).__supabaseAuthSubscription.unsubscribe();
+          (window as any).__supabaseAuthSubscription = null;
+        }
       },
     }),
     {

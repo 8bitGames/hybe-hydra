@@ -186,13 +186,13 @@ export function optimizePromptForI2V(prompt: string, videoAspectRatio: string): 
  */
 export function convertAspectRatioForGeminiImage(videoAspectRatio: string): "1:1" | "3:4" | "4:3" | "9:16" | "16:9" {
   switch (videoAspectRatio) {
-    case "9:16":
-      return "9:16";
+    case "16:9":
+      return "16:9";
     case "1:1":
       return "1:1";
-    case "16:9":
+    case "9:16":
     default:
-      return "16:9";
+      return "9:16";  // Default to portrait (9:16) for TikTok/Reels
   }
 }
 
