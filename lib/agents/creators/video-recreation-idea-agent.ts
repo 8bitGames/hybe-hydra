@@ -115,8 +115,9 @@ export type VideoRecreationIdeaOutput = z.infer<typeof VideoRecreationIdeaOutput
 // Agent Configuration
 /**
  * @agent VideoRecreationIdeaAgent
- * @version 7
+ * @version 8
  * @changelog
+ * - v8: Added CAMERA vs SUBJECT MOVEMENT section to prevent Veo 3.1 from misinterpreting camera movement as subject movement
  * - v7: Added Korean language prohibitions for forbidden title terms (완전 복제, 미세 변형, etc.)
  * - v6: Improved title format (descriptive content-based, not "Clone/Variation"), exclude on-screen text from prompts
  * - v5: Added language-aware output + mainSubject constraint to prevent unrelated prompts
@@ -233,7 +234,29 @@ You MUST structure every optimizedPrompt using these 7 components in a flowing p
 5. **CAMERA** (movement):
    - Specific camera techniques
    - Movement direction and speed
+   - ⚠️ CRITICAL: Always specify if the subject is STATIONARY or MOVING separately
    - Example: "slow push-in from medium to close-up shot, maintaining steady eye-level framing"
+
+   ## 🚨 CAMERA vs SUBJECT MOVEMENT (CRITICAL - Veo 3.1 INTERPRETS LITERALLY):
+   Veo 3.1 often MISINTERPRETS camera movement descriptions as subject movement!
+
+   **❌ PROBLEMATIC PHRASES (Veo makes the SUBJECT move instead of camera):**
+   - "camera orbits around the car" → Veo rotates the CAR, not the camera!
+   - "360-degree rotation around the subject" → Veo spins the SUBJECT!
+   - "camera circles the truck" → Veo makes the TRUCK spin!
+   - "orbit shot" → Veo interprets as subject rotating!
+
+   **✅ CORRECT PHRASING (Explicit subject stillness + camera movement):**
+   - "The [subject] is PARKED and COMPLETELY STATIONARY, engine off, not moving at all. The CAMERA smoothly pans from left to right, revealing all sides of the vehicle."
+   - "The [subject] remains FROZEN in place like a statue. A slow DOLLY SHOT moves around the scene."
+   - "STATIC SUBJECT: The truck does not move, does not rotate, stays perfectly still. CAMERA ONLY: gentle horizontal pan across the frame."
+   - "The car is IMMOBILE and UNMOVING throughout. The viewpoint gradually shifts from front to side angle."
+
+   **RULE: When the original video has a STATIONARY subject with camera movement:**
+   1. FIRST state that the subject is STATIONARY/FROZEN/IMMOBILE/PARKED/STILL
+   2. THEN describe the camera movement separately
+   3. Use "The camera..." or "The viewpoint..." to make it clear the CAMERA moves, not the subject
+   4. Add "The [subject] does NOT move, does NOT rotate, remains FIXED in position" for extra clarity
 
 6. **AMBIANCE** (lighting):
    - Lighting setup description
@@ -365,11 +388,21 @@ Each optimizedPrompt MUST be a flowing paragraph (300+ words) that includes ALL 
 3. Add SCENE: Use {{setting}} and {{props}} for detailed environment description
 4. Include STYLE: Apply {{visualStyle}} and {{colorPalette}} for visual aesthetic
 5. Describe CAMERA: Use {{cameraMovement}} for specific camera techniques
+   ⚠️ CRITICAL FOR STATIONARY SUBJECTS: If the original subject (like a parked car/truck) is NOT MOVING:
+   - FIRST explicitly state: "The [subject] is PARKED/STATIONARY/IMMOBILE, does NOT move, does NOT rotate"
+   - THEN describe camera: "The CAMERA pans/dollies/shifts viewpoint..." (NOT "orbit" or "circle")
+   - AVOID: "orbit around", "360-degree rotation", "circle the subject" (Veo misinterprets as subject moving)
+   - USE: "pan across", "dolly shot", "viewpoint shifts", "camera angle changes"
 6. Set AMBIANCE: Apply {{lighting}} and {{mood}} for lighting and atmosphere
 7. End with TECHNICAL: Add negative prompts (no watermarks, maintain {{pace}} pacing)
 
 ## EXAMPLE VEO 3.1 PROMPT FORMAT:
+
+**For MOVING subjects (person walking, dancing, etc.):**
 "A [age] [gender] with [hair description from mainSubject], [skin tone], wearing [detailed clothing from clothingStyle], [action from actions] while [additional gestures], making [facial expression]. Set in [detailed setting description from setting], with [props from props list] visible in the [background position]. [visualStyle from analysis], with [colorPalette colors] dominating the palette, shallow depth of field with creamy bokeh. [Camera movement from cameraMovement], maintaining [framing style]. [lighting description from lighting], creating [mood from mood analysis] atmosphere. No watermarks, no text overlays, maintain [pace from pace analysis] pacing, high quality 9:16 vertical TikTok format."
+
+**For STATIONARY subjects (parked car, still object, etc.):**
+"A [detailed vehicle/object description] is PARKED and COMPLETELY STATIONARY, engine off, absolutely IMMOBILE and UNMOVING throughout the entire shot. The vehicle does NOT move, does NOT rotate, remains FIXED in its position. The CAMERA smoothly pans from [direction] to [direction], revealing [what is shown]. Set in [detailed setting description from setting], with [props from props list] visible. [visualStyle from analysis], with [colorPalette colors] dominating the palette. The VIEWPOINT gradually shifts from [angle] to [angle] while the subject stays perfectly still. [lighting description from lighting], creating [mood from mood analysis] atmosphere. No watermarks, no text overlays, the subject remains stationary throughout, high quality 9:16 vertical TikTok format."
 
 Return JSON (IMPORTANT: bpm MUST be a number, not a string):
 🚨 REMEMBER:
