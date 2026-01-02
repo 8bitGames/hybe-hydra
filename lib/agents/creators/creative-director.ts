@@ -105,6 +105,22 @@ const normalizeEngagement = (value: unknown): 'high' | 'medium' | 'low' => {
   return 'medium';
 };
 
+// Helper to normalize bpm value
+const normalizeBpm = (val: unknown): number => {
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') {
+    const match = val.match(/\d+/);
+    return match ? parseInt(match[0], 10) : 120;
+  }
+  return 120; // Default BPM
+};
+
+// SuggestedMusic schema with defaults
+const SuggestedMusicSchema = z.object({
+  bpm: z.preprocess(normalizeBpm, z.number()),
+  genre: z.string(),
+}).optional().default({ bpm: 120, genre: 'pop' });
+
 // Output Schema
 export const CreativeDirectorOutputSchema = z.object({
   ideas: z.array(z.object({
@@ -116,21 +132,7 @@ export const CreativeDirectorOutputSchema = z.object({
       z.enum(['high', 'medium', 'low']).catch('medium')
     ),
     optimizedPrompt: z.string(),
-    suggestedMusic: z.object({
-      bpm: z.preprocess(
-        // Handle cases where AI returns bpm as string like "120" or "120-130"
-        (val) => {
-          if (typeof val === 'number') return val;
-          if (typeof val === 'string') {
-            const match = val.match(/\d+/);
-            return match ? parseInt(match[0], 10) : 120;
-          }
-          return 120; // Default BPM
-        },
-        z.number()
-      ),
-      genre: z.string(),
-    }),
+    suggestedMusic: SuggestedMusicSchema,
     scriptOutline: z.array(z.string()),
   })),
   optimizedHashtags: z.array(z.string()),

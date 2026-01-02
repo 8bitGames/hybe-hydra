@@ -62,8 +62,24 @@ const normalizeEngagement = (value: unknown): 'high' | 'medium' | 'low' => {
   return 'medium';
 };
 
-// Output Schema - 2 recreation ideas
-export const VideoRecreationIdeaOutputSchema = z.object({
+// Helper to normalize bpm value
+const normalizeBpm = (val: unknown): number => {
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') {
+    const match = val.match(/\d+/);
+    return match ? parseInt(match[0], 10) : 120;
+  }
+  return 120; // Default BPM
+};
+
+// SuggestedMusic schema with defaults (matching creative-director pattern)
+const SuggestedMusicSchema = z.object({
+  bpm: z.preprocess(normalizeBpm, z.number()),
+  genre: z.string(),
+}).optional().default({ bpm: 120, genre: 'pop' });
+
+// Inner output schema
+const VideoRecreationIdeaOutputInnerSchema = z.object({
   ideas: z.array(z.object({
     title: z.string(),
     hook: z.string(),
@@ -73,15 +89,26 @@ export const VideoRecreationIdeaOutputSchema = z.object({
       z.enum(['high', 'medium', 'low']).catch('medium')
     ),
     optimizedPrompt: z.string(),
-    suggestedMusic: z.object({
-      bpm: z.number(),
-      genre: z.string(),
-    }),
+    suggestedMusic: SuggestedMusicSchema,
     scriptOutline: z.array(z.string()),
     recreationType: z.enum(['exact', 'variation']),  // exact = 정확히 재현, variation = 변형 재현
   })),
   recreationStrategy: z.string(),
 });
+
+// Output Schema - 2 recreation ideas
+// Preprocessor handles AI returning array wrapper: [{ideas:...}] → {ideas:...}
+export const VideoRecreationIdeaOutputSchema = z.preprocess(
+  (val) => {
+    // If AI returned an array with one object, unwrap it
+    if (Array.isArray(val) && val.length === 1 && typeof val[0] === 'object' && val[0] !== null) {
+      console.log('[video-recreation-idea] Unwrapping array response to object');
+      return val[0];
+    }
+    return val;
+  },
+  VideoRecreationIdeaOutputInnerSchema
+);
 
 export type VideoRecreationIdeaOutput = z.infer<typeof VideoRecreationIdeaOutputSchema>;
 
