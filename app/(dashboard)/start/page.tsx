@@ -1131,8 +1131,8 @@ export default function StartPage() {
                     <CardContent>
                       <div className="max-h-[160px] overflow-y-auto">
                         <div className="flex flex-wrap gap-2">
-                          {startSource.hashtags.map((tag) => (
-                            <Badge key={tag} variant="secondary" className="text-xs">
+                          {startSource.hashtags.map((tag, index) => (
+                            <Badge key={`${tag}-${index}`} variant="secondary" className="text-xs">
                               #{tag}
                             </Badge>
                           ))}

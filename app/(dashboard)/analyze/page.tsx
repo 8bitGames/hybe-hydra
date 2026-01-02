@@ -267,9 +267,9 @@ function ContextReceptionPanel() {
               />
             </div>
             <div className="flex flex-wrap gap-1">
-              {displayKeywords.map((k) => (
+              {displayKeywords.map((k, index) => (
                 <Badge
-                  key={k}
+                  key={`${k}-${index}`}
                   variant="outline"
                   className="text-xs border-neutral-300 text-neutral-600"
                 >
