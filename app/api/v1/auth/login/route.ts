@@ -96,6 +96,9 @@ export async function POST(request: NextRequest) {
     const finalResponse = NextResponse.json(responseData);
 
     // Copy cookies from the response object that Supabase set
+    // Set long expiry for persistent login (30 days)
+    const cookieMaxAge = 30 * 24 * 60 * 60; // 30 days in seconds
+
     response.cookies.getAll().forEach((cookie) => {
       finalResponse.cookies.set(cookie.name, cookie.value, {
         ...cookie,
@@ -104,6 +107,7 @@ export async function POST(request: NextRequest) {
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         path: "/",
+        maxAge: cookieMaxAge,
       });
     });
 
