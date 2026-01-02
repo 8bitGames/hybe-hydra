@@ -1,15 +1,20 @@
 /**
- * Gemini Model Client (Vertex AI)
- * ================================
- * Unified client for Gemini models via Vertex AI
+ * Gemini Model Client (Google AI Studio / Vertex AI)
+ * ===================================================
+ * Unified client for Gemini models
+ *
+ * Authentication Priority:
+ * 1. GOOGLE_AI_API_KEY - Google AI Studio (preferred, works without GCP setup)
+ * 2. GCP_SERVICE_ACCOUNT_KEY_FILE - Vertex AI with service account
+ * 3. GOOGLE_SERVICE_ACCOUNT_JSON - Vertex AI with JSON credentials
+ * 4. Application Default Credentials - Vertex AI fallback
  *
  * Models:
  * - gemini-3-flash-preview: Fast analysis, pattern recognition (Analyzers, Transformers)
  * - gemini-3-pro-preview: Deep reasoning, strategic thinking (Creative Director)
- *
- * Authentication: GCP Service Account (poised-time-480910-r2 project)
  */
 
+import { GoogleGenAI } from '@google/genai';
 import { GCPAuthManager } from './gcp-auth';
 import type {
   IModelClient,
@@ -53,17 +58,13 @@ interface VertexAIResponse {
 }
 
 export class GeminiClient implements IModelClient {
-  private authManager: GCPAuthManager;
+  private authManager: GCPAuthManager | null = null;
+  private googleAI: GoogleGenAI | null = null;
+  private useGoogleAIStudio: boolean = false;
   private config: GeminiClientConfig;
   private actualModelId: string;
 
   constructor(config: GeminiClientConfig) {
-    // Initialize GCP Auth Manager with the text generation project
-    this.authManager = new GCPAuthManager({
-      projectId: VERTEX_AI_PROJECT,
-      location: VERTEX_AI_LOCATION,
-    });
-
     this.config = {
       temperature: 0.7,
       maxTokens: 8192,
@@ -73,7 +74,20 @@ export class GeminiClient implements IModelClient {
     };
     this.actualModelId = MODEL_MAP[config.model] || config.model;
 
-    console.log(`[GeminiClient] Initialized with Vertex AI project: ${VERTEX_AI_PROJECT}`);
+    // Check for Google AI Studio API key first (preferred - simpler auth)
+    const apiKey = process.env.GOOGLE_AI_API_KEY;
+    if (apiKey && apiKey.length > 0) {
+      this.googleAI = new GoogleGenAI({ apiKey });
+      this.useGoogleAIStudio = true;
+      console.log(`[GeminiClient] Initialized with Google AI Studio (API key)`);
+    } else {
+      // Fall back to Vertex AI with GCP credentials
+      this.authManager = new GCPAuthManager({
+        projectId: VERTEX_AI_PROJECT,
+        location: VERTEX_AI_LOCATION,
+      });
+      console.log(`[GeminiClient] Initialized with Vertex AI project: ${VERTEX_AI_PROJECT}`);
+    }
   }
 
   getModelName(): string {
@@ -86,7 +100,97 @@ export class GeminiClient implements IModelClient {
   }
 
   async generate(options: GenerateOptions): Promise<ModelResponse> {
+    // Use Google AI Studio if available
+    if (this.useGoogleAIStudio && this.googleAI) {
+      return this.generateWithGoogleAIStudio(options);
+    }
+
+    // Otherwise use Vertex AI
+    return this.generateWithVertexAI(options);
+  }
+
+  /**
+   * Generate using Google AI Studio (@google/genai SDK with API key)
+   */
+  private async generateWithGoogleAIStudio(options: GenerateOptions): Promise<ModelResponse> {
     const { system, user, images, responseFormat } = options;
+
+    if (!this.googleAI) {
+      throw new Error('Google AI Studio client not initialized');
+    }
+
+    // Build content parts
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+
+    // Add images/video if provided
+    if (images && images.length > 0) {
+      for (const image of images) {
+        parts.push({
+          inlineData: {
+            mimeType: image.mimeType,
+            data: image.data,
+          },
+        });
+      }
+    }
+
+    // Add text prompt
+    parts.push({ text: user });
+
+    try {
+      console.log(`[GeminiClient] Request config (Google AI Studio): model=${this.actualModelId}, maxOutputTokens=${this.config.maxTokens}, temp=${this.config.temperature}`);
+
+      const response = await this.googleAI.models.generateContent({
+        model: this.actualModelId,
+        config: {
+          temperature: this.config.temperature,
+          maxOutputTokens: this.config.maxTokens,
+          topP: this.config.topP,
+          topK: this.config.topK,
+          ...(responseFormat === 'json' && !this.config.enableGoogleSearch
+            ? { responseMimeType: 'application/json' }
+            : {}),
+        },
+        ...(system ? { systemInstruction: system } : {}),
+        contents: [{
+          role: 'user',
+          parts,
+        }],
+      });
+
+      // Extract text from response
+      const text = response.text || '';
+
+      // Calculate token usage
+      const usageMetadata = response.usageMetadata;
+      const usage: TokenUsage = {
+        input: usageMetadata?.promptTokenCount || this.estimateTokens((system || '') + user),
+        output: usageMetadata?.candidatesTokenCount || this.estimateTokens(text),
+        total: usageMetadata?.totalTokenCount ||
+          (this.estimateTokens((system || '') + user) + this.estimateTokens(text)),
+      };
+
+      return {
+        content: text,
+        usage,
+        finishReason: response.candidates?.[0]?.finishReason || 'STOP',
+        rawResponse: response,
+      };
+    } catch (error) {
+      console.error('[GeminiClient] Google AI Studio generation error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate using Vertex AI (GCP credentials)
+   */
+  private async generateWithVertexAI(options: GenerateOptions): Promise<ModelResponse> {
+    const { system, user, images, responseFormat } = options;
+
+    if (!this.authManager) {
+      throw new Error('Vertex AI auth manager not initialized');
+    }
 
     // Build generation config
     const generationConfig: Record<string, unknown> = {
@@ -165,7 +269,7 @@ export class GeminiClient implements IModelClient {
     }
 
     try {
-      console.log(`[GeminiClient] Request config: model=${this.actualModelId}, maxOutputTokens=${generationConfig.maxOutputTokens}, temp=${generationConfig.temperature}, project=${VERTEX_AI_PROJECT}`);
+      console.log(`[GeminiClient] Request config (Vertex AI): model=${this.actualModelId}, maxOutputTokens=${generationConfig.maxOutputTokens}, temp=${generationConfig.temperature}, project=${VERTEX_AI_PROJECT}`);
 
       const headers = await this.authManager.getAuthHeaders();
       const endpoint = this.getEndpoint(false);
@@ -178,7 +282,7 @@ export class GeminiClient implements IModelClient {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[GeminiClient] API error: ${response.status} - ${errorText}`);
+        console.error(`[GeminiClient] Vertex AI API error: ${response.status} - ${errorText}`);
         throw new Error(`Vertex AI API error: ${response.status} - ${errorText}`);
       }
 
@@ -189,10 +293,10 @@ export class GeminiClient implements IModelClient {
 
       // Calculate token usage
       const usage: TokenUsage = {
-        input: data.usageMetadata?.promptTokenCount || this.estimateTokens(system + user),
+        input: data.usageMetadata?.promptTokenCount || this.estimateTokens((system || '') + user),
         output: data.usageMetadata?.candidatesTokenCount || this.estimateTokens(text),
         total: data.usageMetadata?.totalTokenCount ||
-          (this.estimateTokens(system + user) + this.estimateTokens(text)),
+          (this.estimateTokens((system || '') + user) + this.estimateTokens(text)),
       };
 
       return {
@@ -202,7 +306,7 @@ export class GeminiClient implements IModelClient {
         rawResponse: data,
       };
     } catch (error) {
-      console.error('[GeminiClient] Generation error:', error);
+      console.error('[GeminiClient] Vertex AI generation error:', error);
       throw error;
     }
   }

@@ -71,7 +71,12 @@ export const PromptElementsSchema = z.object({
   action_keywords: z.array(z.string()),
   technical_suggestions: z.object({
     aspect_ratio: z.string(),
-    duration: z.number(),
+    // Accept number or string (model may return "5" or "3-5 seconds"), extract first number
+    duration: z.union([z.number(), z.string()]).transform((val) => {
+      if (typeof val === 'number') return val;
+      const match = val.match(/\d+/);
+      return match ? parseInt(match[0], 10) : 5; // Default to 5 seconds
+    }),
     camera_style: z.string(),
   }),
 });

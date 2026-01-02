@@ -163,6 +163,53 @@ export async function downloadTikTok(url: string): Promise<{
     }) as TikTokDownloadResult;
     console.log("[TIKTOK] v1 result status:", result.status);
 
+    // v1 with showOriginalResponse puts data in resultNotParsed.content instead of result
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const v1Result = result as any;
+    if (result.status === "success" && !result.result && v1Result.resultNotParsed?.content) {
+      console.log("[TIKTOK] v1 using resultNotParsed.content");
+      const content = v1Result.resultNotParsed.content;
+      // Map v1 content structure to expected result format
+      result.result = {
+        type: content.video ? "video" : "image",
+        id: content.aweme_id || content.id,
+        createTime: content.create_time,
+        description: content.desc || "",
+        hashtag: content.text_extra?.filter((t: { hashtag_name?: string }) => t.hashtag_name)
+          .map((t: { hashtag_name: string }) => t.hashtag_name) || [],
+        isADS: content.is_ads || false,
+        author: {
+          uid: content.author?.uid || "",
+          username: content.author?.unique_id || content.author?.nickname || "",
+          nickname: content.author?.nickname || "",
+          signature: content.author?.signature || "",
+          avatar: content.author?.avatar_thumb?.url_list?.[0] || "",
+        },
+        statistics: {
+          plays: content.statistics?.play_count || 0,
+          likes: content.statistics?.digg_count || 0,
+          comments: content.statistics?.comment_count || 0,
+          shares: content.statistics?.share_count || 0,
+          saves: content.statistics?.collect_count || 0,
+        },
+        video: content.video ? {
+          duration: content.video.duration || 0,
+          ratio: content.video.ratio || "720p",
+          cover: content.video.cover?.url_list?.[0] || content.video.origin_cover?.url_list?.[0] || "",
+          playAddr: content.video.play_addr?.url_list || [],
+          downloadAddr: content.video.download_addr?.url_list || [],
+        } : undefined,
+        music: content.music ? {
+          id: content.music.id?.toString() || "",
+          title: content.music.title || "",
+          author: content.music.author || "",
+          cover: content.music.cover_large?.url_list?.[0] || "",
+          duration: content.music.duration || 0,
+        } : undefined,
+      };
+      console.log("[TIKTOK] v1 mapped result:", Object.keys(result.result));
+    }
+
     // If v1 fails, try v2
     if (result.status !== "success" || !result.result) {
       console.log("[TIKTOK] v1 failed, trying v2...");
@@ -182,7 +229,12 @@ export async function downloadTikTok(url: string): Promise<{
     }
 
     console.log("[TIKTOK] Download result status:", result.status);
-    console.log("[TIKTOK] Full response:", JSON.stringify(result, null, 2));
+    console.log("[TIKTOK] Result summary:", {
+      type: result.result?.type,
+      id: result.result?.id,
+      hasVideo: !!result.result?.video,
+      hasDescription: !!(result.result?.description || result.result?.hashtag?.length),
+    });
 
     if (result.status !== "success" || !result.result) {
       return {
