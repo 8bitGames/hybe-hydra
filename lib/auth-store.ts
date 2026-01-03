@@ -21,9 +21,44 @@ const supabase = createClient(
 
 // Session refresh interval (check every 4 minutes)
 const SESSION_CHECK_INTERVAL = 4 * 60 * 1000;
+// Proactive refresh threshold (refresh 30 minutes before expiry)
+const PROACTIVE_REFRESH_THRESHOLD = 30 * 60 * 1000;
+// Default token lifetime (1 hour) - used when expires_in is not provided
+const DEFAULT_TOKEN_LIFETIME = 60 * 60 * 1000;
+// Minimum time between refresh attempts to prevent spam
+const MIN_REFRESH_INTERVAL = 60 * 1000; // 1 minute
+
 let sessionCheckInterval: NodeJS.Timeout | null = null;
 let visibilityChangeHandler: (() => void) | null = null;
 let isSessionMonitorRunning = false; // Prevent duplicate monitor starts
+let lastRefreshAttemptTime = 0; // Track last refresh attempt to prevent spam
+
+/**
+ * Check if token should be refreshed proactively (before expiry)
+ */
+const shouldRefreshProactively = (tokenExpiresAt: number | null): boolean => {
+  if (!tokenExpiresAt) return false;
+  const now = Date.now();
+  const timeUntilExpiry = tokenExpiresAt - now;
+  // Refresh if within threshold and not already expired
+  return timeUntilExpiry < PROACTIVE_REFRESH_THRESHOLD && timeUntilExpiry > 0;
+};
+
+/**
+ * Check if enough time has passed since last refresh attempt
+ */
+const canAttemptRefresh = (): boolean => {
+  const now = Date.now();
+  return now - lastRefreshAttemptTime > MIN_REFRESH_INTERVAL;
+};
+
+/**
+ * Calculate token expiration timestamp from expires_in (seconds)
+ */
+const calculateTokenExpiry = (expiresIn?: number): number => {
+  const lifetime = expiresIn ? expiresIn * 1000 : DEFAULT_TOKEN_LIFETIME;
+  return Date.now() + lifetime;
+};
 
 interface User {
   id: string;
@@ -40,6 +75,7 @@ interface AuthState {
   user: User | null;
   accessToken: string | null;
   refreshToken: string | null;
+  tokenExpiresAt: number | null; // Timestamp when access token expires
   isLoading: boolean;
   isAuthenticated: boolean;
   _hasHydrated: boolean;
@@ -49,7 +85,7 @@ interface AuthState {
   register: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
-  setTokens: (accessToken: string, refreshToken: string) => void;
+  setTokens: (accessToken: string, refreshToken: string, expiresIn?: number) => void;
   setHasHydrated: (state: boolean) => void;
 
   // Session management
@@ -74,6 +110,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       accessToken: null,
       refreshToken: null,
+      tokenExpiresAt: null,
       isLoading: false,
       isAuthenticated: false,
       _hasHydrated: false,
@@ -93,20 +130,26 @@ export const useAuthStore = create<AuthState>()(
         }
 
         if (response.data) {
-          const { access_token, refresh_token, user } = response.data;
+          const { access_token, refresh_token, user, expires_in } = response.data;
           console.log("[AuthStore] Login successful, setting token...", {
             hasAccessToken: !!access_token,
             hasUser: !!user,
+            expiresIn: expires_in,
           });
 
           // Set token in API client
           api.setAccessToken(access_token);
+
+          // Calculate token expiration timestamp
+          const tokenExpiresAt = calculateTokenExpiry(expires_in);
+          console.log("[AuthStore] Token expires at:", new Date(tokenExpiresAt).toISOString());
 
           // If user data is included in login response, use it directly
           if (user) {
             set({
               accessToken: access_token,
               refreshToken: refresh_token,
+              tokenExpiresAt,
               isAuthenticated: true,
               isLoading: false,
               user: {
@@ -124,11 +167,13 @@ export const useAuthStore = create<AuthState>()(
               accessToken: !!get().accessToken,
               isAuthenticated: get().isAuthenticated,
               user: !!get().user,
+              tokenExpiresAt: new Date(tokenExpiresAt).toISOString(),
             });
           } else {
             set({
               accessToken: access_token,
               refreshToken: refresh_token,
+              tokenExpiresAt,
               isAuthenticated: true,
               isLoading: false,
             });
@@ -177,6 +222,7 @@ export const useAuthStore = create<AuthState>()(
           user: null,
           accessToken: null,
           refreshToken: null,
+          tokenExpiresAt: null,
           isAuthenticated: false,
         });
       },
@@ -194,15 +240,29 @@ export const useAuthStore = create<AuthState>()(
         const response = await usersApi.getMe();
 
         if (response.error) {
+          // Check if this is an auth error or network error
+          const statusCode = (response.error as { status?: number }).status;
+          const isAuthError = statusCode === 401 || statusCode === 403;
+
+          if (!isAuthError) {
+            // Network error - don't logout, just log
+            console.warn("[AuthStore] fetchUser: Network error, skipping refresh:", response.error);
+            return;
+          }
+
           // Token might be expired, try to refresh
           const { refreshToken } = get();
           if (refreshToken) {
             const refreshResponse = await authApi.refresh(refreshToken);
             if (refreshResponse.data) {
-              api.setAccessToken(refreshResponse.data.access_token);
+              const { access_token, refresh_token, expires_in } = refreshResponse.data;
+              const newTokenExpiresAt = calculateTokenExpiry(expires_in);
+
+              api.setAccessToken(access_token);
               set({
-                accessToken: refreshResponse.data.access_token,
-                refreshToken: refreshResponse.data.refresh_token,
+                accessToken: access_token,
+                refreshToken: refresh_token,
+                tokenExpiresAt: newTokenExpiresAt,
               });
               // Retry fetching user
               const retryResponse = await usersApi.getMe();
@@ -224,11 +284,13 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      setTokens: (accessToken: string, refreshToken: string) => {
+      setTokens: (accessToken: string, refreshToken: string, expiresIn?: number) => {
         api.setAccessToken(accessToken);
+        const tokenExpiresAt = calculateTokenExpiry(expiresIn);
         set({
           accessToken,
           refreshToken,
+          tokenExpiresAt,
           isAuthenticated: true,
         });
       },
@@ -238,25 +300,46 @@ export const useAuthStore = create<AuthState>()(
         console.log("[AuthStore] Initializing session...");
 
         try {
+          // Check if we have a persisted session that needs proactive refresh
+          const { tokenExpiresAt, refreshToken: storedRefreshToken, isAuthenticated } = get();
+
+          if (isAuthenticated && storedRefreshToken) {
+            // Check if token should be proactively refreshed
+            if (shouldRefreshProactively(tokenExpiresAt)) {
+              const timeUntilExpiry = tokenExpiresAt ? Math.round((tokenExpiresAt - Date.now()) / 1000 / 60) : 0;
+              console.log(`[AuthStore] Session init: Token expires in ${timeUntilExpiry} minutes, refreshing proactively...`);
+
+              const refreshed = await get().refreshSession();
+              if (refreshed) {
+                console.log("[AuthStore] Session init: Proactive refresh successful");
+              } else {
+                console.warn("[AuthStore] Session init: Proactive refresh failed, will use existing token");
+              }
+            }
+          }
+
           // Get current Supabase session
           const { data: { session }, error } = await supabase.auth.getSession();
 
           if (error) {
             console.error("[AuthStore] Error getting session:", error);
-            return;
+            // Don't return early - we might have a valid stored session
           }
 
           if (session) {
             console.log("[AuthStore] Found existing Supabase session, syncing tokens...");
-            const { accessToken, refreshToken } = get();
+            const { accessToken } = get();
 
             // If we have a Supabase session but our store is out of sync, update it
             if (session.access_token !== accessToken) {
               console.log("[AuthStore] Syncing tokens from Supabase session");
+              const newTokenExpiresAt = calculateTokenExpiry(session.expires_in);
+
               api.setAccessToken(session.access_token);
               set({
                 accessToken: session.access_token,
                 refreshToken: session.refresh_token,
+                tokenExpiresAt: newTokenExpiresAt,
                 isAuthenticated: true,
               });
 
@@ -278,6 +361,12 @@ export const useAuthStore = create<AuthState>()(
       refreshSession: async () => {
         console.log("[AuthStore] Refreshing session...");
 
+        // Prevent refresh spam
+        if (!canAttemptRefresh()) {
+          console.log("[AuthStore] Refresh attempt throttled, waiting for cooldown");
+          return false;
+        }
+
         try {
           const { refreshToken } = get();
 
@@ -286,30 +375,53 @@ export const useAuthStore = create<AuthState>()(
             return false;
           }
 
+          // Update last refresh attempt time
+          lastRefreshAttemptTime = Date.now();
+
           // Use backend API for token refresh
           const refreshResponse = await authApi.refresh(refreshToken);
 
           if (refreshResponse.data) {
-            console.log("[AuthStore] Session refreshed successfully via backend API");
-            api.setAccessToken(refreshResponse.data.access_token);
+            const { access_token, refresh_token, expires_in } = refreshResponse.data;
+            const newTokenExpiresAt = calculateTokenExpiry(expires_in);
+
+            console.log("[AuthStore] Session refreshed successfully via backend API", {
+              newExpiresAt: new Date(newTokenExpiresAt).toISOString(),
+            });
+
+            api.setAccessToken(access_token);
             set({
-              accessToken: refreshResponse.data.access_token,
-              refreshToken: refreshResponse.data.refresh_token,
+              accessToken: access_token,
+              refreshToken: refresh_token,
+              tokenExpiresAt: newTokenExpiresAt,
             });
             return true;
           }
 
-          console.error("[AuthStore] Session refresh failed:", refreshResponse.error);
+          // Check if this is an auth error (should logout) vs network error (should retry)
+          const error = refreshResponse.error;
+          if (error) {
+            const statusCode = (error as { status?: number }).status;
+            const isAuthError = statusCode === 401 || statusCode === 403;
+
+            if (isAuthError) {
+              console.error("[AuthStore] Session refresh failed with auth error, will logout:", error);
+            } else {
+              console.warn("[AuthStore] Session refresh failed with network/server error, will retry:", error);
+            }
+          }
+
           return false;
         } catch (error) {
-          console.error("[AuthStore] Session refresh error:", error);
+          // Network errors - don't logout immediately, allow retry
+          console.error("[AuthStore] Session refresh network error (will retry):", error);
           return false;
         }
       },
 
       // Check session when tab becomes visible
       checkSessionOnVisibility: async () => {
-        const { isAuthenticated, accessToken } = get();
+        const { isAuthenticated, accessToken, tokenExpiresAt } = get();
 
         if (!isAuthenticated || !accessToken) {
           console.log("[AuthStore] Visibility check: Not authenticated, skipping");
@@ -318,24 +430,46 @@ export const useAuthStore = create<AuthState>()(
 
         console.log("[AuthStore] Tab became visible, checking session...");
 
+        // Check if token should be proactively refreshed
+        if (shouldRefreshProactively(tokenExpiresAt)) {
+          const timeUntilExpiry = tokenExpiresAt ? Math.round((tokenExpiresAt - Date.now()) / 1000 / 60) : 0;
+          console.log(`[AuthStore] Visibility check: Token expires in ${timeUntilExpiry} minutes, refreshing proactively...`);
+
+          const refreshed = await get().refreshSession();
+          if (refreshed) {
+            console.log("[AuthStore] Visibility check: Proactive refresh successful");
+            return;
+          }
+          // Continue to verify if refresh failed
+        }
+
         try {
           // Verify session by calling backend API
           api.setAccessToken(accessToken);
           const response = await usersApi.getMe();
 
           if (response.error) {
-            console.warn("[AuthStore] Visibility check: Token invalid, attempting refresh...");
+            // Check if this is an auth error or network error
+            const statusCode = (response.error as { status?: number }).status;
+            const isAuthError = statusCode === 401 || statusCode === 403;
 
-            // Try to refresh the token
-            const refreshed = await get().refreshSession();
+            if (isAuthError) {
+              console.warn("[AuthStore] Visibility check: Token invalid (auth error), attempting refresh...");
 
-            if (refreshed) {
-              console.log("[AuthStore] Visibility check: Token refreshed successfully");
-              // Fetch fresh user data
-              await get().fetchUser();
+              // Try to refresh the token
+              const refreshed = await get().refreshSession();
+
+              if (refreshed) {
+                console.log("[AuthStore] Visibility check: Token refreshed successfully");
+                // Fetch fresh user data
+                await get().fetchUser();
+              } else {
+                console.log("[AuthStore] Visibility check: Refresh failed, logging out");
+                get().logout();
+              }
             } else {
-              console.log("[AuthStore] Visibility check: Refresh failed, logging out");
-              get().logout();
+              // Network error - don't logout, just log
+              console.warn("[AuthStore] Visibility check: Network error, will retry:", response.error);
             }
           } else {
             console.log("[AuthStore] Visibility check: Session is valid");
@@ -345,7 +479,8 @@ export const useAuthStore = create<AuthState>()(
             }
           }
         } catch (error) {
-          console.error("[AuthStore] Visibility check error:", error);
+          // Network errors - don't logout
+          console.error("[AuthStore] Visibility check error (will retry):", error);
         }
       },
 
@@ -406,13 +541,27 @@ export const useAuthStore = create<AuthState>()(
         // Store subscription for cleanup
         (window as any).__supabaseAuthSubscription = subscription;
 
-        // Periodic session check using backend API
+        // Periodic session check using backend API with proactive refresh
         sessionCheckInterval = setInterval(async () => {
-          const { isAuthenticated, accessToken } = get();
+          const { isAuthenticated, accessToken, tokenExpiresAt } = get();
 
           if (!isAuthenticated || !accessToken) {
             console.log("[AuthStore] Session check: Not authenticated, skipping");
             return;
+          }
+
+          // Check if token should be proactively refreshed (before it expires)
+          if (shouldRefreshProactively(tokenExpiresAt)) {
+            const timeUntilExpiry = tokenExpiresAt ? Math.round((tokenExpiresAt - Date.now()) / 1000 / 60) : 0;
+            console.log(`[AuthStore] Session check: Token expires in ${timeUntilExpiry} minutes, refreshing proactively...`);
+
+            const refreshed = await get().refreshSession();
+            if (refreshed) {
+              console.log("[AuthStore] Session check: Proactive refresh successful");
+              return; // No need to verify, we just got a fresh token
+            } else {
+              console.warn("[AuthStore] Session check: Proactive refresh failed, will verify session");
+            }
           }
 
           console.log("[AuthStore] Session check: Verifying session validity...");
@@ -423,13 +572,22 @@ export const useAuthStore = create<AuthState>()(
             const response = await usersApi.getMe();
 
             if (response.error) {
-              console.warn("[AuthStore] Session check: Session invalid or expired");
+              // Check if this is an auth error or network error
+              const statusCode = (response.error as { status?: number }).status;
+              const isAuthError = statusCode === 401 || statusCode === 403;
 
-              // Try to refresh
-              const refreshed = await get().refreshSession();
-              if (!refreshed) {
-                console.log("[AuthStore] Session check: Refresh failed, logging out");
-                get().logout();
+              if (isAuthError) {
+                console.warn("[AuthStore] Session check: Session invalid or expired (auth error)");
+
+                // Try to refresh
+                const refreshed = await get().refreshSession();
+                if (!refreshed) {
+                  console.log("[AuthStore] Session check: Refresh failed, logging out");
+                  get().logout();
+                }
+              } else {
+                // Network error - don't logout, just log
+                console.warn("[AuthStore] Session check: Network error, will retry next interval:", response.error);
               }
             } else {
               console.log("[AuthStore] Session check: Session is valid");
@@ -439,7 +597,8 @@ export const useAuthStore = create<AuthState>()(
               }
             }
           } catch (error) {
-            console.error("[AuthStore] Session check error:", error);
+            // Network errors - don't logout immediately
+            console.error("[AuthStore] Session check error (will retry):", error);
           }
         }, SESSION_CHECK_INTERVAL);
       },
@@ -476,6 +635,7 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
+        tokenExpiresAt: state.tokenExpiresAt,
         isAuthenticated: state.isAuthenticated,
         user: state.user,
       }),
