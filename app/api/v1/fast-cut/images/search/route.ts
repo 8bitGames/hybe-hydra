@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
           'shutterstock.com', 'gettyimages.com', 'istockphoto.com', 'alamy.com',
           'vecteezy.com', 'dreamstime.com', '123rf.com', 'depositphotos.com',
           'bigstockphoto.com', 'canstockphoto.com', 'vectorstock.com', 'freepik.com',
-          'stock.adobe.com', 'pond5.com', 'pixta.jp', 'envato.com',
+          'stock.adobe.com', 'pond5.com', 'pixta.jp', 'envato.com', 'unsplash.com',
         ];
 
         for (const result of searchResults) {
@@ -297,7 +297,7 @@ function calculateQualityScore(
   // Heavy penalty for stock photo sites
   const stockSites = [
     'shutterstock', 'gettyimages', 'istockphoto', 'alamy',
-    'vecteezy', 'dreamstime', '123rf', 'depositphotos',
+    'vecteezy', 'dreamstime', '123rf', 'depositphotos', 'unsplash',
   ];
   if (stockSites.some(s => domain.includes(s))) {
     score -= 0.5;

@@ -28,6 +28,7 @@ BLOCKED_DOMAINS = [
     'pond5.com',
     'envato.com',
     'pixta.jp',
+    'unsplash.com',
 ]
 
 

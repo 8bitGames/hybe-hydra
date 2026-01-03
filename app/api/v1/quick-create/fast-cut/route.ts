@@ -177,6 +177,7 @@ async function searchAndProxyImages(
     'scontent-',
     'tiktok.com/api',
     'tiktokcdn.com',
+    'unsplash.com',
   ];
 
   const validResults = searchResults.filter((result: ImageSearchResult) => {
