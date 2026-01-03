@@ -115,8 +115,9 @@ export type VideoRecreationIdeaOutput = z.infer<typeof VideoRecreationIdeaOutput
 // Agent Configuration
 /**
  * @agent VideoRecreationIdeaAgent
- * @version 10
+ * @version 10.1
  * @changelog
+ * - v10.1: Adjusted SHORT video guidance: allow 1 scene transition (2 angles), not zero
  * - v10: Duration-aware prompts: SHORT (5-8s) = single continuous shot with subtle push-in, NO cuts; LONGER (10s+) = max 2-3 angles held 4-5 seconds each
  * - v9: Improved stationary subject prompts - use POSITIVE stillness (museum exhibit, photo slideshow) instead of negative words (does NOT move, IMMOBILE)
  * - v8: Added CAMERA vs SUBJECT MOVEMENT section to prevent Veo 3.1 from misinterpreting camera movement as subject movement
@@ -264,7 +265,7 @@ You MUST structure every optimizedPrompt using these 7 components in a flowing p
    5. AVOID motion cues: No "handheld jitter", "fast-paced editing", "dynamic" - use "tripod stability", "photo transitions"
 
    **📏 DURATION-AWARE CAMERA GUIDANCE (CRITICAL FOR SHORT VIDEOS):**
-   - **SHORT VIDEOS (5-8 seconds):** Use SINGLE CONTINUOUS SHOT - one locked-off camera angle with subtle slow push-in. NO scene transitions, NO angle changes. The entire video is ONE smooth, uninterrupted take. Example: "SINGLE CONTINUOUS SHOT: The truck sits motionless like a showroom display. Camera holds steady on a three-quarter front view with an extremely subtle slow push-in over 8 seconds, never cutting away."
+   - **SHORT VIDEOS (5-8 seconds):** Maximum 2 angles with 1 clean transition. Each angle held for 4+ seconds. Example: "MINIMAL TRANSITION FORMAT: The truck sits motionless like a showroom display. Wide establishing shot held for 4 seconds, then ONE clean cut to a detail close-up of the chrome grille for 4 seconds. Only 2 angles total, no rapid cuts."
    - **LONGER VIDEOS (10+ seconds):** Allow maximum 2-3 angles with smooth transitions, each angle held for 4-5 seconds minimum. Example: "PHOTO SLIDESHOW FORMAT: Three distinct angles - wide establishing shot (4 sec), detail close-up (3 sec), dramatic low angle (3 sec) - with clean hard cuts between tripod-stable frames."
 
 6. **AMBIANCE** (lighting):
@@ -402,7 +403,7 @@ Each optimizedPrompt MUST be a flowing paragraph (300+ words) that includes ALL 
    - Use PHOTOGRAPHY metaphors: "PHOTO SLIDESHOW FORMAT", "STILL PHOTOGRAPHY TRANSITIONS", "tripod-mounted stability"
    - AVOID negative words: Never use "does NOT move", "IMMOBILE", "UNMOVING" - these still trigger movement!
    - AVOID motion cues: No "handheld jitter", "fast-paced", "dynamic" - use "frozen photograph", "exhibit piece"
-   - 📏 DURATION CHECK: For SHORT videos (5-8s) = SINGLE CONTINUOUS SHOT with subtle push-in, NO cuts; For LONGER (10s+) = max 2-3 angles
+   - 📏 DURATION CHECK: For SHORT videos (5-8s) = max 2 angles with 1 transition; For LONGER (10s+) = max 2-3 angles
 6. Set AMBIANCE: Apply {{lighting}} and {{mood}} for lighting and atmosphere
 7. End with TECHNICAL: Add negative prompts (no watermarks, maintain {{pace}} pacing)
 
@@ -412,7 +413,7 @@ Each optimizedPrompt MUST be a flowing paragraph (300+ words) that includes ALL 
 "A [age] [gender] with [hair description from mainSubject], [skin tone], wearing [detailed clothing from clothingStyle], [action from actions] while [additional gestures], making [facial expression]. Set in [detailed setting description from setting], with [props from props list] visible in the [background position]. [visualStyle from analysis], with [colorPalette colors] dominating the palette, shallow depth of field with creamy bokeh. [Camera movement from cameraMovement], maintaining [framing style]. [lighting description from lighting], creating [mood from mood analysis] atmosphere. No watermarks, no text overlays, maintain [pace from pace analysis] pacing, high quality 9:16 vertical TikTok format."
 
 **For STATIONARY subjects - SHORT VIDEO (5-8 seconds):**
-"A [detailed vehicle/object description] displayed like a premium auto show exhibit piece. SINGLE CONTINUOUS SHOT: The vehicle sits perfectly still, parked with engine off, wheels locked in position like a museum display model. Camera holds steady on a three-quarter front view with an extremely subtle slow push-in over the entire duration - NO scene transitions, NO angle changes, just one smooth uninterrupted take. Set in [detailed setting description from setting], with [props from props list] visible. HIGH-END AUTOMOTIVE PHOTOGRAPHY style with [colorPalette colors] dominating the palette. [lighting description from lighting], creating [mood from mood analysis] atmosphere. No watermarks, no text overlays, high quality 9:16 vertical TikTok format."
+"A [detailed vehicle/object description] displayed like a premium auto show exhibit piece. MINIMAL TRANSITION FORMAT: The vehicle sits perfectly still, parked with engine off, wheels locked in position like a museum display model. Wide establishing shot held for 4 seconds showing the full vehicle, then ONE clean cut to a detail close-up of [specific feature] held for 4 seconds. Only 2 angles total with 1 smooth transition - no rapid cuts. Set in [detailed setting description from setting], with [props from props list] visible. HIGH-END AUTOMOTIVE PHOTOGRAPHY style with [colorPalette colors] dominating the palette. [lighting description from lighting], creating [mood from mood analysis] atmosphere. No watermarks, no text overlays, high quality 9:16 vertical TikTok format."
 
 **For STATIONARY subjects - LONGER VIDEO (10+ seconds):**
 "A [detailed vehicle/object description] displayed like a premium auto show exhibit piece. STATIC SHOWROOM PRESENTATION: The vehicle sits perfectly still, parked with engine off, wheels locked in position like a museum display model. PHOTO SLIDESHOW FORMAT with tripod-mounted stability - maximum 3 angles: a wide establishing shot held for 4-5 seconds, then a detail close-up of [specific feature] held for 3-4 seconds, then a dramatic low-angle perspective for 3-4 seconds. Clean hard cuts between static tripod angles. Set in [detailed setting description from setting], with [props from props list] visible. HIGH-END AUTOMOTIVE PHOTOGRAPHY style with [colorPalette colors] dominating the palette. [lighting description from lighting], creating [mood from mood analysis] atmosphere. No watermarks, no text overlays, high quality 9:16 vertical TikTok format."
