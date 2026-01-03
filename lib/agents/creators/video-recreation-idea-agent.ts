@@ -115,8 +115,9 @@ export type VideoRecreationIdeaOutput = z.infer<typeof VideoRecreationIdeaOutput
 // Agent Configuration
 /**
  * @agent VideoRecreationIdeaAgent
- * @version 8
+ * @version 9
  * @changelog
+ * - v9: Improved stationary subject prompts - use POSITIVE stillness (museum exhibit, photo slideshow) instead of negative words (does NOT move, IMMOBILE)
  * - v8: Added CAMERA vs SUBJECT MOVEMENT section to prevent Veo 3.1 from misinterpreting camera movement as subject movement
  * - v7: Added Korean language prohibitions for forbidden title terms (완전 복제, 미세 변형, etc.)
  * - v6: Improved title format (descriptive content-based, not "Clone/Variation"), exclude on-screen text from prompts
@@ -245,18 +246,21 @@ You MUST structure every optimizedPrompt using these 7 components in a flowing p
    - "360-degree rotation around the subject" → Veo spins the SUBJECT!
    - "camera circles the truck" → Veo makes the TRUCK spin!
    - "orbit shot" → Veo interprets as subject rotating!
+   - "does NOT move", "IMMOBILE", "UNMOVING" → Negative words still trigger movement concepts!
+   - "handheld jitter", "fast-paced editing" → Motion cues cause subject movement!
 
-   **✅ CORRECT PHRASING (Explicit subject stillness + camera movement):**
-   - "The [subject] is PARKED and COMPLETELY STATIONARY, engine off, not moving at all. The CAMERA smoothly pans from left to right, revealing all sides of the vehicle."
-   - "The [subject] remains FROZEN in place like a statue. A slow DOLLY SHOT moves around the scene."
-   - "STATIC SUBJECT: The truck does not move, does not rotate, stays perfectly still. CAMERA ONLY: gentle horizontal pan across the frame."
-   - "The car is IMMOBILE and UNMOVING throughout. The viewpoint gradually shifts from front to side angle."
+   **✅ CORRECT PHRASING (Use POSITIVE stillness + photography/display metaphors):**
+   - "STATIC SHOWROOM PRESENTATION: The [subject] sits perfectly still like a premium auto show exhibit, parked with engine off, wheels locked in position. Each shot captures a FROZEN PHOTOGRAPH as if shot for an automotive magazine cover."
+   - "PHOTO SLIDESHOW FORMAT: The vehicle is displayed like a museum exhibit piece on the pavement. STILL PHOTOGRAPHY TRANSITIONS with tripod-mounted stability show different angles held for 2-4 seconds each."
+   - "AUTO SHOW EXHIBIT STYLE: The truck remains absolutely motionless as a dealership display model. The video presents pristine PHOTOGRAPH TRANSITIONS - a low-angle rear view, then a detail close-up, then a wide perspective."
+   - "HIGH-END AUTOMOTIVE PHOTOGRAPHY: Each frame is a pristine still photograph. The subject is a parked display piece with zero motion, zero vibration, zero wheel rotation. Clean hard cuts between static tripod angles."
 
-   **RULE: When the original video has a STATIONARY subject with camera movement:**
-   1. FIRST state that the subject is STATIONARY/FROZEN/IMMOBILE/PARKED/STILL
-   2. THEN describe the camera movement separately
-   3. Use "The camera..." or "The viewpoint..." to make it clear the CAMERA moves, not the subject
-   4. Add "The [subject] does NOT move, does NOT rotate, remains FIXED in position" for extra clarity
+   **RULE: When the original video has a STATIONARY subject:**
+   1. Use POSITIVE stillness: "sits perfectly still", "parked display", "exhibit piece", "photographed for magazine"
+   2. Use PHOTOGRAPHY metaphors: "still photography", "photo slideshow", "frozen photograph", "tripod-mounted"
+   3. Use DISPLAY metaphors: "museum exhibit", "showroom display", "auto show piece", "dealership model"
+   4. AVOID negative words: Never use "does NOT move", "IMMOBILE", "UNMOVING" - these still trigger movement!
+   5. AVOID motion cues: No "handheld jitter", "fast-paced editing", "dynamic" - use "tripod stability", "photo transitions"
 
 6. **AMBIANCE** (lighting):
    - Lighting setup description
@@ -388,11 +392,11 @@ Each optimizedPrompt MUST be a flowing paragraph (300+ words) that includes ALL 
 3. Add SCENE: Use {{setting}} and {{props}} for detailed environment description
 4. Include STYLE: Apply {{visualStyle}} and {{colorPalette}} for visual aesthetic
 5. Describe CAMERA: Use {{cameraMovement}} for specific camera techniques
-   ⚠️ CRITICAL FOR STATIONARY SUBJECTS: If the original subject (like a parked car/truck) is NOT MOVING:
-   - FIRST explicitly state: "The [subject] is PARKED/STATIONARY/IMMOBILE, does NOT move, does NOT rotate"
-   - THEN describe camera: "The CAMERA pans/dollies/shifts viewpoint..." (NOT "orbit" or "circle")
-   - AVOID: "orbit around", "360-degree rotation", "circle the subject" (Veo misinterprets as subject moving)
-   - USE: "pan across", "dolly shot", "viewpoint shifts", "camera angle changes"
+   ⚠️ CRITICAL FOR STATIONARY SUBJECTS: If the original subject (like a parked car/truck) is STATIONARY:
+   - Use POSITIVE stillness language: "sits perfectly still like a museum exhibit", "parked like a showroom display"
+   - Use PHOTOGRAPHY metaphors: "PHOTO SLIDESHOW FORMAT", "STILL PHOTOGRAPHY TRANSITIONS", "tripod-mounted stability"
+   - AVOID negative words: Never use "does NOT move", "IMMOBILE", "UNMOVING" - these still trigger movement!
+   - AVOID motion cues: No "handheld jitter", "fast-paced", "dynamic" - use "frozen photograph", "exhibit piece"
 6. Set AMBIANCE: Apply {{lighting}} and {{mood}} for lighting and atmosphere
 7. End with TECHNICAL: Add negative prompts (no watermarks, maintain {{pace}} pacing)
 
@@ -402,7 +406,7 @@ Each optimizedPrompt MUST be a flowing paragraph (300+ words) that includes ALL 
 "A [age] [gender] with [hair description from mainSubject], [skin tone], wearing [detailed clothing from clothingStyle], [action from actions] while [additional gestures], making [facial expression]. Set in [detailed setting description from setting], with [props from props list] visible in the [background position]. [visualStyle from analysis], with [colorPalette colors] dominating the palette, shallow depth of field with creamy bokeh. [Camera movement from cameraMovement], maintaining [framing style]. [lighting description from lighting], creating [mood from mood analysis] atmosphere. No watermarks, no text overlays, maintain [pace from pace analysis] pacing, high quality 9:16 vertical TikTok format."
 
 **For STATIONARY subjects (parked car, still object, etc.):**
-"A [detailed vehicle/object description] is PARKED and COMPLETELY STATIONARY, engine off, absolutely IMMOBILE and UNMOVING throughout the entire shot. The vehicle does NOT move, does NOT rotate, remains FIXED in its position. The CAMERA smoothly pans from [direction] to [direction], revealing [what is shown]. Set in [detailed setting description from setting], with [props from props list] visible. [visualStyle from analysis], with [colorPalette colors] dominating the palette. The VIEWPOINT gradually shifts from [angle] to [angle] while the subject stays perfectly still. [lighting description from lighting], creating [mood from mood analysis] atmosphere. No watermarks, no text overlays, the subject remains stationary throughout, high quality 9:16 vertical TikTok format."
+"A [detailed vehicle/object description] displayed like a premium auto show exhibit piece. STATIC SHOWROOM PRESENTATION: The vehicle sits perfectly still, parked with engine off, wheels locked in position like a museum display model. Each shot captures a FROZEN PHOTOGRAPH as if shot for an automotive magazine cover. PHOTO SLIDESHOW FORMAT with tripod-mounted stability: a low-angle rear view held for 2-3 seconds, then a detail close-up of [specific feature], then a wide perspective. Set in [detailed setting description from setting], with [props from props list] visible. HIGH-END AUTOMOTIVE PHOTOGRAPHY style with [colorPalette colors] dominating the palette. [lighting description from lighting], creating [mood from mood analysis] atmosphere. Photo slideshow format with clean hard cuts between static tripod angles, no watermarks, no text overlays, high quality 9:16 vertical TikTok format."
 
 Return JSON (IMPORTANT: bpm MUST be a number, not a string):
 🚨 REMEMBER:
