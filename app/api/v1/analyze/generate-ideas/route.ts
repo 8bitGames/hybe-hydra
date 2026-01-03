@@ -129,6 +129,11 @@ interface GenerateIdeasResponse {
 }
 
 // ============================================================================
+// API Version (for debugging deployment issues)
+// ============================================================================
+const API_VERSION = "2.1.0"; // Bump to verify deployment
+
+// ============================================================================
 // POST Handler
 // ============================================================================
 
@@ -209,6 +214,7 @@ export async function POST(request: NextRequest) {
           {
             success: false,
             error: agentResult.error || "Failed to generate Fast Cut ideas",
+            _apiVersion: API_VERSION,
           },
           { status: 500 }
         );
@@ -318,6 +324,7 @@ export async function POST(request: NextRequest) {
           {
             success: false,
             error: agentResult.error || "Failed to generate trend ideas",
+            _apiVersion: API_VERSION,
           },
           { status: 500 }
         );
@@ -381,6 +388,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: agentResult.error || "Failed to generate ideas",
+          _apiVersion: API_VERSION,
         },
         { status: 500 }
       );
@@ -413,6 +421,7 @@ export async function POST(request: NextRequest) {
       {
         success: false,
         error: error instanceof Error ? error.message : "Failed to generate ideas",
+        _apiVersion: API_VERSION,
       },
       { status: 500 }
     );
