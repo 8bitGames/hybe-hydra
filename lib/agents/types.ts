@@ -345,13 +345,27 @@ export const ContentStrategySchema = z.object({
   confidenceScore: z.number().min(0).max(1),
 });
 
+// Helper function to normalize estimatedEngagement values from LLM output
+const normalizeEngagement = (value: unknown): 'high' | 'medium' | 'low' => {
+  if (value === 'high' || value === 'medium' || value === 'low') return value;
+  if (typeof value !== 'string') return 'medium';
+  const normalized = value.toLowerCase().trim();
+  if (normalized.includes('high') || normalized.includes('높') || normalized === 'h') return 'high';
+  if (normalized.includes('low') || normalized.includes('낮') || normalized === 'l') return 'low';
+  if (normalized.includes('medium') || normalized.includes('med') || normalized.includes('중') || normalized === 'm') return 'medium';
+  return 'medium';
+};
+
 // Creative Director Output
 export const CreativeIdeasSchema = z.object({
   ideas: z.array(z.object({
     title: z.string(),
     hook: z.string(),
     description: z.string(),
-    estimatedEngagement: z.enum(['high', 'medium', 'low']).catch('medium'),
+    estimatedEngagement: z.preprocess(
+      normalizeEngagement,
+      z.enum(['high', 'medium', 'low']).catch('medium')
+    ),
     optimizedPrompt: z.string(),
     suggestedMusic: z.object({
       bpm: z.number(),
