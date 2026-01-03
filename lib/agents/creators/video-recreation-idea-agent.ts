@@ -52,15 +52,15 @@ export const VideoRecreationIdeaInputSchema = z.object({
 
 export type VideoRecreationIdeaInput = z.infer<typeof VideoRecreationIdeaInputSchema>;
 
-// Helper to normalize engagement value from AI output
-const normalizeEngagement = (value: unknown): 'high' | 'medium' | 'low' => {
-  if (value === 'high' || value === 'medium' || value === 'low') return value;
-  if (typeof value !== 'string') return 'medium';
-  const normalized = value.toLowerCase().trim();
-  if (normalized.includes('high') || normalized.includes('높')) return 'high';
-  if (normalized.includes('low') || normalized.includes('낮')) return 'low';
+// Robust engagement schema - handles any LLM output and normalizes to valid enum
+const EngagementSchema = z.any().transform((val): 'high' | 'medium' | 'low' => {
+  if (val === 'high' || val === 'medium' || val === 'low') return val;
+  if (typeof val !== 'string') return 'medium';
+  const normalized = String(val).toLowerCase().trim();
+  if (normalized.includes('high') || normalized.includes('높') || normalized === 'h') return 'high';
+  if (normalized.includes('low') || normalized.includes('낮') || normalized === 'l') return 'low';
   return 'medium';
-};
+});
 
 // Helper to normalize bpm value
 const normalizeBpm = (val: unknown): number => {
@@ -84,10 +84,7 @@ const VideoRecreationIdeaOutputInnerSchema = z.object({
     title: z.string(),
     hook: z.string(),
     description: z.string(),
-    estimatedEngagement: z.preprocess(
-      normalizeEngagement,
-      z.enum(['high', 'medium', 'low']).catch('medium')
-    ),
+    estimatedEngagement: EngagementSchema,
     optimizedPrompt: z.string(),
     suggestedMusic: SuggestedMusicSchema,
     scriptOutline: z.array(z.string()),

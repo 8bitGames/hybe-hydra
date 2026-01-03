@@ -121,16 +121,23 @@ const SuggestedMusicSchema = z.object({
   genre: z.string(),
 }).optional().default({ bpm: 120, genre: 'pop' });
 
+// Robust engagement schema - handles any LLM output and normalizes to valid enum
+const EngagementSchema = z.any().transform((val): 'high' | 'medium' | 'low' => {
+  if (val === 'high' || val === 'medium' || val === 'low') return val;
+  if (typeof val !== 'string') return 'medium';
+  const normalized = String(val).toLowerCase().trim();
+  if (normalized.includes('high') || normalized.includes('높') || normalized === 'h') return 'high';
+  if (normalized.includes('low') || normalized.includes('낮') || normalized === 'l') return 'low';
+  return 'medium';
+});
+
 // Output Schema
 export const CreativeDirectorOutputSchema = z.object({
   ideas: z.array(z.object({
     title: z.string(),
     hook: z.string(),
     description: z.string(),
-    estimatedEngagement: z.preprocess(
-      normalizeEngagement,
-      z.enum(['high', 'medium', 'low']).catch('medium')
-    ),
+    estimatedEngagement: EngagementSchema,
     optimizedPrompt: z.string(),
     suggestedMusic: SuggestedMusicSchema,
     scriptOutline: z.array(z.string()),
