@@ -1738,16 +1738,34 @@ export default function CreatePage() {
 
         // Initialize processing session before navigating
         // This ensures the /processing page has a valid session to display
+
+        // Build images array: prioritize AI-generated preview, then user-uploaded images
+        const sessionImages: Array<{ id: string; url: string; thumbnailUrl: string }> = [];
+
+        // Add AI-generated preview image if available (from Imagen 3)
+        if (metadata.previewImage?.image_url) {
+          sessionImages.push({
+            id: metadata.previewImage.preview_id || 'ai-preview',
+            url: metadata.previewImage.image_url,
+            thumbnailUrl: metadata.previewImage.image_url,
+          });
+        }
+
+        // Add user-uploaded images
+        imageAssets.forEach((asset) => {
+          sessionImages.push({
+            id: asset.id,
+            url: asset.url,
+            thumbnailUrl: asset.url,
+          });
+        });
+
         initProcessingSession({
           campaignId: selectedCampaignId,
           campaignName: selectedCampaignName,
           content: {
             script: prompt,
-            images: imageAssets.map((asset) => ({
-              id: asset.id,
-              url: asset.url,
-              thumbnailUrl: asset.url,
-            })),
+            images: sessionImages,
             musicTrack: audioAsset ? {
               id: audioAsset.id,
               name: audioAsset.name,
