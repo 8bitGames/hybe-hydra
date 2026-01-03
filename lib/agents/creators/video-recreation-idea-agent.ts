@@ -115,8 +115,9 @@ export type VideoRecreationIdeaOutput = z.infer<typeof VideoRecreationIdeaOutput
 // Agent Configuration
 /**
  * @agent VideoRecreationIdeaAgent
- * @version 10.1
+ * @version 10.2
  * @changelog
+ * - v10.2: Follow original video's transition pattern - only add transitions if original has them
  * - v10.1: Adjusted SHORT video guidance: allow 1 scene transition (2 angles), not zero
  * - v10: Duration-aware prompts: SHORT (5-8s) = single continuous shot with subtle push-in, NO cuts; LONGER (10s+) = max 2-3 angles held 4-5 seconds each
  * - v9: Improved stationary subject prompts - use POSITIVE stillness (museum exhibit, photo slideshow) instead of negative words (does NOT move, IMMOBILE)
@@ -264,9 +265,11 @@ You MUST structure every optimizedPrompt using these 7 components in a flowing p
    4. AVOID negative words: Never use "does NOT move", "IMMOBILE", "UNMOVING" - these still trigger movement!
    5. AVOID motion cues: No "handheld jitter", "fast-paced editing", "dynamic" - use "tripod stability", "photo transitions"
 
-   **📏 DURATION-AWARE CAMERA GUIDANCE (CRITICAL FOR SHORT VIDEOS):**
-   - **SHORT VIDEOS (5-8 seconds):** Maximum 2 angles with 1 clean transition. Each angle held for 4+ seconds. Example: "MINIMAL TRANSITION FORMAT: The truck sits motionless like a showroom display. Wide establishing shot held for 4 seconds, then ONE clean cut to a detail close-up of the chrome grille for 4 seconds. Only 2 angles total, no rapid cuts."
-   - **LONGER VIDEOS (10+ seconds):** Allow maximum 2-3 angles with smooth transitions, each angle held for 4-5 seconds minimum. Example: "PHOTO SLIDESHOW FORMAT: Three distinct angles - wide establishing shot (4 sec), detail close-up (3 sec), dramatic low angle (3 sec) - with clean hard cuts between tripod-stable frames."
+   **📏 DURATION-AWARE CAMERA GUIDANCE (FOLLOW ORIGINAL VIDEO'S PATTERN):**
+   ⚠️ IMPORTANT: Match the original video's transition style. If the original has NO scene transitions, keep it as a single continuous shot. If the original HAS transitions, follow these limits:
+   - **SHORT VIDEOS (5-8 seconds) with transitions:** Reduce to maximum 2 angles with 1 clean transition. Each angle held for 4+ seconds. Example: "MINIMAL TRANSITION FORMAT: Wide shot held for 4 seconds, then ONE clean cut to detail close-up for 4 seconds."
+   - **SHORT VIDEOS (5-8 seconds) without transitions:** Keep as SINGLE CONTINUOUS SHOT with subtle camera movement matching the original.
+   - **LONGER VIDEOS (10+ seconds):** Maximum 2-3 angles with smooth transitions, each angle held for 4-5 seconds.
 
 6. **AMBIANCE** (lighting):
    - Lighting setup description
@@ -403,7 +406,7 @@ Each optimizedPrompt MUST be a flowing paragraph (300+ words) that includes ALL 
    - Use PHOTOGRAPHY metaphors: "PHOTO SLIDESHOW FORMAT", "STILL PHOTOGRAPHY TRANSITIONS", "tripod-mounted stability"
    - AVOID negative words: Never use "does NOT move", "IMMOBILE", "UNMOVING" - these still trigger movement!
    - AVOID motion cues: No "handheld jitter", "fast-paced", "dynamic" - use "frozen photograph", "exhibit piece"
-   - 📏 DURATION CHECK: For SHORT videos (5-8s) = max 2 angles with 1 transition; For LONGER (10s+) = max 2-3 angles
+   - 📏 DURATION CHECK: Follow original's transition pattern. SHORT (5-8s) with transitions = max 2 angles; without = single shot
 6. Set AMBIANCE: Apply {{lighting}} and {{mood}} for lighting and atmosphere
 7. End with TECHNICAL: Add negative prompts (no watermarks, maintain {{pace}} pacing)
 
