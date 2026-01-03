@@ -13,9 +13,81 @@ function getS3Client(): S3Client {
   });
 }
 
+// Check if URL is a GCS URL
+function isGcsUrl(url: string): boolean {
+  return url.includes('storage.googleapis.com/') || url.includes('storage.cloud.google.com/');
+}
+
+// Handle GCS URL proxy with range request support
+async function handleGcsProxy(url: string, rangeHeader: string | null): Promise<NextResponse> {
+  // First, get the content length with a HEAD request
+  const headResponse = await fetch(url, { method: 'HEAD' });
+
+  if (!headResponse.ok) {
+    return NextResponse.json(
+      { error: `GCS request failed: ${headResponse.status}` },
+      { status: headResponse.status }
+    );
+  }
+
+  const contentType = headResponse.headers.get('content-type') || 'video/mp4';
+  const contentLength = parseInt(headResponse.headers.get('content-length') || '0', 10);
+
+  // Handle range request for video streaming
+  if (rangeHeader && contentLength > 0) {
+    const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+    if (match) {
+      const start = parseInt(match[1], 10);
+      const end = match[2] ? parseInt(match[2], 10) : contentLength - 1;
+
+      // Fetch partial content from GCS
+      const rangeResponse = await fetch(url, {
+        headers: { 'Range': `bytes=${start}-${end}` }
+      });
+
+      if (rangeResponse.ok || rangeResponse.status === 206) {
+        const buffer = await rangeResponse.arrayBuffer();
+
+        return new NextResponse(buffer, {
+          status: 206,
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': buffer.byteLength.toString(),
+            'Content-Range': `bytes ${start}-${end}/${contentLength}`,
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        });
+      }
+    }
+  }
+
+  // Full content response
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    return NextResponse.json(
+      { error: `GCS request failed: ${response.status}` },
+      { status: response.status }
+    );
+  }
+
+  const buffer = await response.arrayBuffer();
+
+  return new NextResponse(buffer, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': buffer.byteLength.toString(),
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
+}
+
 /**
- * GET /api/v1/assets/proxy?url=<s3_url>
- * Proxies S3 requests through the server to handle private bucket access
+ * GET /api/v1/assets/proxy?url=<s3_or_gcs_url>
+ * Proxies S3/GCS requests through the server to handle private bucket access and CORS
  */
 export async function GET(request: NextRequest) {
   try {
@@ -26,6 +98,13 @@ export async function GET(request: NextRequest) {
         { error: "Missing 'url' query parameter" },
         { status: 400 }
       );
+    }
+
+    const rangeHeader = request.headers.get("range");
+
+    // Handle GCS URLs separately (they come with signed params)
+    if (isGcsUrl(url)) {
+      return handleGcsProxy(url, rangeHeader);
     }
 
     // Extract the S3 key from the URL
@@ -59,9 +138,7 @@ export async function GET(request: NextRequest) {
     const contentType = response.ContentType || "application/octet-stream";
     const contentLength = response.ContentLength;
 
-    // Handle range requests for video streaming
-    const rangeHeader = request.headers.get("range");
-
+    // Handle range requests for video streaming (rangeHeader already extracted above)
     if (rangeHeader && contentLength) {
       // Parse range header
       const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);

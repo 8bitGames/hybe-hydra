@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useRef, useState, useCallback, useMemo } from "react";
+import React, { useRef, useState, useCallback, useMemo, useEffect } from "react";
 import { useI18n } from "@/lib/i18n";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -27,6 +29,8 @@ import {
   Bold,
   Star,
   Lightbulb,
+  Image as ImageIcon,
+  Search,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -36,8 +40,11 @@ import {
   selectSelectedStyles,
   selectIsGeneratingVariations,
   selectVariations,
+  selectImageSelectionMode,
+  selectSelectedImageUrls,
   STYLE_SETS,
 } from "@/lib/stores/processing-session-store";
+import { VariationImageSelector, type VariationImageCandidate } from "../VariationImageSelector";
 
 // Icon mapping for style sets
 const STYLE_ICONS: Record<string, LucideIcon> = {
@@ -72,10 +79,25 @@ export function VariationConfigView({
   const selectedStyles = useProcessingSessionStore(selectSelectedStyles);
   const isGenerating = useProcessingSessionStore(selectIsGeneratingVariations);
   const variations = useProcessingSessionStore(selectVariations);
+  const imageSelectionMode = useProcessingSessionStore(selectImageSelectionMode);
+  const selectedImageUrls = useProcessingSessionStore(selectSelectedImageUrls);
 
   const toggleStyleSelection = useProcessingSessionStore((state) => state.toggleStyleSelection);
   const selectAllStyles = useProcessingSessionStore((state) => state.selectAllStyles);
   const clearStyleSelection = useProcessingSessionStore((state) => state.clearStyleSelection);
+  const setImageSelectionMode = useProcessingSessionStore((state) => state.setImageSelectionMode);
+  const setSelectedImageUrls = useProcessingSessionStore((state) => state.setSelectedImageUrls);
+
+  // Image selector state
+  const [showImageSelector, setShowImageSelector] = useState(false);
+  const [variationImages, setVariationImages] = useState<{
+    originalImages: VariationImageCandidate[];
+    searchedImages: VariationImageCandidate[];
+    keywords: string[];
+  }>({ originalImages: [], searchedImages: [], keywords: [] });
+  const [isLoadingImages, setIsLoadingImages] = useState(false);
+  const [isSearchingImages, setIsSearchingImages] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<VariationImageCandidate[]>([]);
 
   // Video player state
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -138,11 +160,145 @@ export function VariationConfigView({
     return { total, completed, failed, inProgress };
   }, [variations]);
 
-  // Check if can start
-  const canStart = selectedStyles.length > 0 && !isGenerating;
+  // Load variation images when entering manual mode
+  const loadVariationImages = useCallback(async () => {
+    if (!session?.originalVideo?.id) return;
+
+    setIsLoadingImages(true);
+    try {
+      const response = await fetch(`/api/v1/generations/${session.originalVideo.id}/variation-images`, {
+        headers: {
+          "Authorization": `Bearer ${localStorage.getItem("auth_token") || ""}`,
+        },
+      });
+
+      if (!response.ok) {
+        console.error("Failed to load variation images");
+        return;
+      }
+
+      const data = await response.json();
+      setVariationImages({
+        originalImages: data.originalImages || [],
+        searchedImages: data.searchedImages || [],
+        keywords: data.keywords || [],
+      });
+
+      // Pre-select original images
+      const originalSelected = (data.originalImages || []).map((img: VariationImageCandidate) => ({
+        ...img,
+        isSelected: true,
+      }));
+      setSelectedImages(originalSelected);
+    } catch (error) {
+      console.error("Error loading variation images:", error);
+    } finally {
+      setIsLoadingImages(false);
+    }
+  }, [session?.originalVideo?.id]);
+
+  // Search with custom keywords
+  const handleSearchKeywords = useCallback(async (keywords: string[], forceRefresh = false) => {
+    if (!session?.originalVideo?.id || keywords.length === 0) return;
+
+    setIsSearchingImages(true);
+    try {
+      const response = await fetch(`/api/v1/generations/${session.originalVideo.id}/variation-images`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${localStorage.getItem("auth_token") || ""}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ keywords, forceRefresh, maxImages: 50 }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to search images");
+        return;
+      }
+
+      const data = await response.json();
+      // Merge new search results with existing
+      setVariationImages(prev => ({
+        ...prev,
+        searchedImages: [
+          ...prev.searchedImages,
+          ...(data.candidates || []).filter(
+            (newImg: VariationImageCandidate) =>
+              !prev.searchedImages.some(existing => existing.sourceUrl === newImg.sourceUrl)
+          ),
+        ],
+        keywords: [...new Set([...prev.keywords, ...keywords])],
+      }));
+    } catch (error) {
+      console.error("Error searching images:", error);
+    } finally {
+      setIsSearchingImages(false);
+    }
+  }, [session?.originalVideo?.id]);
+
+  // Handle image toggle
+  const handleToggleSelection = useCallback((image: VariationImageCandidate) => {
+    setSelectedImages(prev => {
+      const isSelected = prev.some(img => img.id === image.id);
+      if (isSelected) {
+        return prev.filter(img => img.id !== image.id);
+      } else {
+        return [...prev, { ...image, isSelected: true }];
+      }
+    });
+  }, []);
+
+  // Handle image reorder
+  const handleReorderImages = useCallback((newImages: VariationImageCandidate[]) => {
+    setSelectedImages(newImages);
+  }, []);
+
+  // Confirm image selection
+  const handleConfirmSelection = useCallback(() => {
+    const urls = selectedImages.map(img => img.sourceUrl);
+    setSelectedImageUrls(urls);
+    setShowImageSelector(false);
+  }, [selectedImages, setSelectedImageUrls]);
+
+  // Open image selector
+  const handleOpenImageSelector = useCallback(() => {
+    setShowImageSelector(true);
+    loadVariationImages();
+  }, [loadVariationImages]);
+
+  // Check if can start - for manual mode, also need selected images
+  const canStart = useMemo(() => {
+    if (isGenerating) return false;
+    if (selectedStyles.length === 0) return false;
+    if (imageSelectionMode === "manual" && selectedImageUrls.length < 3) return false;
+    return true;
+  }, [isGenerating, selectedStyles.length, imageSelectionMode, selectedImageUrls.length]);
 
   if (!session || !originalVideo) {
     return null;
+  }
+
+  // Show image selector view (full screen replacement)
+  if (showImageSelector) {
+    return (
+      <div className={cn("flex flex-col h-full min-h-[60vh]", className)}>
+        <VariationImageSelector
+          generationId={session.originalVideo?.id || ""}
+          originalImages={variationImages.originalImages}
+          searchedImages={variationImages.searchedImages}
+          selectedImages={selectedImages}
+          keywords={variationImages.keywords}
+          isLoading={isLoadingImages}
+          isSearching={isSearchingImages}
+          onToggleSelection={handleToggleSelection}
+          onReorderImages={handleReorderImages}
+          onSearchKeywords={handleSearchKeywords}
+          onBack={() => setShowImageSelector(false)}
+          onConfirm={handleConfirmSelection}
+        />
+      </div>
+    );
   }
 
   return (
@@ -261,16 +417,101 @@ export function VariationConfigView({
         </div>
 
         {/* Right: Style selection / Generation progress */}
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-3 space-y-4">
           {!isGenerating ? (
-            /* Style Selection Grid */
-            <Card className="h-full">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold text-neutral-900">
-                    {isKorean ? "생성할 스타일 선택" : "Select Styles to Generate"}
-                    <span className="text-neutral-400 font-normal ml-2">(1-8개)</span>
+            <>
+              {/* Image Selection Mode */}
+              <Card>
+                <CardContent className="p-4">
+                  <h3 className="font-semibold text-neutral-900 mb-3">
+                    {isKorean ? "이미지 선택 방식" : "Image Selection Mode"}
                   </h3>
+                  <RadioGroup
+                    value={imageSelectionMode}
+                    onValueChange={(v) => setImageSelectionMode(v as "auto" | "manual")}
+                    className="flex flex-col sm:flex-row gap-4"
+                  >
+                    <div className={cn(
+                      "flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all flex-1",
+                      imageSelectionMode === "auto"
+                        ? "border-neutral-900 bg-neutral-50"
+                        : "border-neutral-200 hover:border-neutral-300"
+                    )}>
+                      <RadioGroupItem value="auto" id="mode-auto" className="mt-1" />
+                      <div className="flex-1">
+                        <Label htmlFor="mode-auto" className="font-medium cursor-pointer">
+                          {isKorean ? "자동 생성" : "Auto Generate"}
+                        </Label>
+                        <p className="text-xs text-neutral-500 mt-1">
+                          {isKorean
+                            ? "AI가 키워드로 이미지를 자동 검색하여 베리에이션 생성"
+                            : "AI auto-searches images with keywords for variations"}
+                        </p>
+                      </div>
+                      <Zap className="w-5 h-5 text-neutral-400 mt-0.5" />
+                    </div>
+
+                    <div className={cn(
+                      "flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all flex-1",
+                      imageSelectionMode === "manual"
+                        ? "border-neutral-900 bg-neutral-50"
+                        : "border-neutral-200 hover:border-neutral-300"
+                    )}>
+                      <RadioGroupItem value="manual" id="mode-manual" className="mt-1" />
+                      <div className="flex-1">
+                        <Label htmlFor="mode-manual" className="font-medium cursor-pointer">
+                          {isKorean ? "직접 선택" : "Manual Selection"}
+                        </Label>
+                        <p className="text-xs text-neutral-500 mt-1">
+                          {isKorean
+                            ? "원본 이미지와 검색 이미지 중에서 직접 선택"
+                            : "Choose from original and searched images"}
+                        </p>
+                      </div>
+                      <ImageIcon className="w-5 h-5 text-neutral-400 mt-0.5" />
+                    </div>
+                  </RadioGroup>
+
+                  {/* Manual mode - image selection button */}
+                  {imageSelectionMode === "manual" && (
+                    <div className="mt-4 flex items-center gap-3">
+                      <Button
+                        variant="outline"
+                        onClick={handleOpenImageSelector}
+                        className="gap-2"
+                      >
+                        <Search className="w-4 h-4" />
+                        {isKorean ? "이미지 선택하기" : "Select Images"}
+                      </Button>
+
+                      {selectedImageUrls.length > 0 && (
+                        <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">
+                          <Check className="w-3 h-3 mr-1" />
+                          {selectedImageUrls.length}
+                          {isKorean ? "장 선택됨" : " selected"}
+                        </Badge>
+                      )}
+
+                      {selectedImageUrls.length > 0 && selectedImageUrls.length < 3 && (
+                        <span className="text-xs text-amber-600">
+                          {isKorean
+                            ? `최소 3장 필요 (${3 - selectedImageUrls.length}장 더 필요)`
+                            : `Min 3 required (${3 - selectedImageUrls.length} more needed)`}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Style Selection Grid */}
+              <Card className="flex-1">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold text-neutral-900">
+                      {isKorean ? "생성할 스타일 선택" : "Select Styles to Generate"}
+                      <span className="text-neutral-400 font-normal ml-2">(1-8개)</span>
+                    </h3>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
@@ -362,6 +603,7 @@ export function VariationConfigView({
                 </div>
               </CardContent>
             </Card>
+            </>
           ) : (
             /* Generation Progress */
             <Card className="h-full">
@@ -515,6 +757,7 @@ export function VariationConfigView({
           )}
         </div>
       </div>
+
     </div>
   );
 }

@@ -305,6 +305,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Check for new style_presets format first
     const stylePresets: string[] = body.style_presets || body.stylePresets || [];
 
+    // Manual image selection mode - if provided, use these images directly (skip auto-search)
+    const manualSelectedImages: string[] = body.selected_image_urls || body.selectedImageUrls || [];
+    const isManualMode = manualSelectedImages.length >= 3;
+
     // Legacy fields (for backwards compatibility)
     const maxVariations = body.variation_count || body.max_variations || 9;
     const effectPresets: string[] = body.effect_presets || body.effectPresets || [];
@@ -511,14 +515,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Prepare auto-compose requests for each variation
-    // Uses 70% original images + 30% new search (keyword transformation disabled)
+    // Manual mode: use provided images directly (no search)
+    // Auto mode: Uses 70% original images + 30% new search
     // NOTE: Using polling (not callback) to check job status - GET endpoint polls EC2
     const autoComposeRequests: AutoComposeRequest[] = createdGenerations.map(({ generation, settings }) => {
+      // For manual mode, pass all selected images as original_image_urls with skip_search flag
+      // For auto mode, pass original images for 70/30 split
+      const imageUrlsToUse = isManualMode ? manualSelectedImages : originalImageUrls;
+
       return {
         job_id: generation.id,
         search_query: seedGeneration.prompt,
-        search_tags: searchTags,
+        search_tags: isManualMode ? [] : searchTags, // No search tags in manual mode
         audio_url: audioPresignedUrl,
+        audio_start_time: seedGeneration.audioStartTime || 0,  // Preserve original audio position
         vibe: settings.vibe,
         effect_preset: settings.effectPreset,
         color_grade: settings.colorGrade,
@@ -535,14 +545,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               duration: line.duration,
             }))
           : undefined,
-        // Original image URLs for 70/30 split (70% original + 30% new search)
-        original_image_urls: originalImageUrls.length > 0 ? originalImageUrls : undefined,
+        // Image URLs: manual mode uses all selected, auto mode uses 70/30 split
+        original_image_urls: imageUrlsToUse.length > 0 ? imageUrlsToUse : undefined,
+        // Skip image search in manual mode - use provided images only
+        skip_image_search: isManualMode,
       };
     });
 
+    console.log(`[Compose Variations] Mode: ${isManualMode ? 'MANUAL' : 'AUTO'}`);
     console.log(`[Compose Variations] Submitting ${autoComposeRequests.length} jobs to /api/v1/compose/auto`);
-    console.log(`[Compose Variations] Search tags: ${searchTags.join(", ")}`);
-    console.log(`[Compose Variations] Original images for 70/30 split: ${originalImageUrls.length}`);
+    if (isManualMode) {
+      console.log(`[Compose Variations] Manual selected images: ${manualSelectedImages.length}`);
+    } else {
+      console.log(`[Compose Variations] Search tags: ${searchTags.join(", ")}`);
+      console.log(`[Compose Variations] Original images for 70/30 split: ${originalImageUrls.length}`);
+    }
 
     // Submit each job to auto-compose endpoint (EC2 handles image search internally)
     try {

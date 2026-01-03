@@ -29,6 +29,19 @@ import {
   VariationVideo,
 } from "@/lib/stores/processing-session-store";
 
+// Convert GCS URLs to proxy URLs to avoid CORS issues
+function getVideoProxyUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+
+  // Check if it's a GCS URL that needs proxying
+  const isGcsUrl = url.includes('storage.googleapis.com/') || url.includes('storage.cloud.google.com/');
+  if (isGcsUrl) {
+    return `/api/v1/assets/proxy?url=${encodeURIComponent(url)}`;
+  }
+
+  return url;
+}
+
 interface CompareApproveViewProps {
   className?: string;
   onBack: () => void;
@@ -226,7 +239,7 @@ export function CompareApproveView({
                       ref={(el) => {
                         videoRefs.current[0] = el;
                       }}
-                      src={originalVideo.outputUrl}
+                      src={getVideoProxyUrl(originalVideo.outputUrl)}
                       className="w-full h-full object-contain cursor-pointer"
                       loop
                       playsInline
@@ -315,7 +328,7 @@ export function CompareApproveView({
                           ref={(el) => {
                             videoRefs.current[index + 1] = el;
                           }}
-                          src={variation.outputUrl}
+                          src={getVideoProxyUrl(variation.outputUrl)}
                           className="w-full h-full object-contain cursor-pointer"
                           loop
                           playsInline

@@ -269,7 +269,7 @@ export function FastCutMusicStep({
   }, []);
 
   // Fetch presigned URL for selected audio
-  const fetchAudioUrl = useCallback(async (audioId: string) => {
+  const fetchAudioUrl = useCallback(async (s3Url: string) => {
     setLoadingAudioUrl(true);
     setAudioLoaded(false);
     setIsPlaying(false);
@@ -277,19 +277,8 @@ export function FastCutMusicStep({
     setDuration(0);
 
     try {
-      const authState = useAuthStore.getState();
-      const accessToken = authState.accessToken;
-
-      if (!accessToken || !campaignId) {
-        console.error('[FastCut Audio] No token or campaignId for audio URL');
-        return;
-      }
-
       const response = await fetch(
-        `/api/v1/campaigns/${campaignId}/assets/presign?asset_id=${audioId}`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }
+        `/api/v1/assets/presign?url=${encodeURIComponent(s3Url)}`
       );
 
       if (!response.ok) throw new Error("Failed to get audio URL");
@@ -302,17 +291,17 @@ export function FastCutMusicStep({
     } finally {
       setLoadingAudioUrl(false);
     }
-  }, [campaignId]);
+  }, []);
 
   // Fetch audio URL when audio is selected
   useEffect(() => {
-    if (selectedAudio?.id) {
-      fetchAudioUrl(selectedAudio.id);
+    if (selectedAudio?.s3Url) {
+      fetchAudioUrl(selectedAudio.s3Url);
     } else {
       setAudioUrl(null);
       setAudioLoaded(false);
     }
-  }, [selectedAudio?.id, fetchAudioUrl]);
+  }, [selectedAudio?.s3Url, fetchAudioUrl]);
 
   // Audio player controls
   const togglePlayPause = async () => {

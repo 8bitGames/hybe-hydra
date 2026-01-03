@@ -102,6 +102,8 @@ export interface ProcessingSession {
   variationConfig: {
     selectedStyles: string[]; // style IDs
     isGenerating: boolean;
+    imageSelectionMode: "auto" | "manual"; // auto = EC2 auto-search, manual = user selects
+    selectedImageUrls: string[]; // URLs selected by user in manual mode
   };
 
   // Generated variations
@@ -202,6 +204,8 @@ const createInitialSession = (): ProcessingSession => ({
   variationConfig: {
     selectedStyles: [],
     isGenerating: false,
+    imageSelectionMode: "auto",
+    selectedImageUrls: [],
   },
   variations: [],
 });
@@ -243,6 +247,8 @@ interface ProcessingSessionStoreState {
   setSelectedStyles: (styleIds: string[]) => void;
   selectAllStyles: () => void;
   clearStyleSelection: () => void;
+  setImageSelectionMode: (mode: "auto" | "manual") => void;
+  setSelectedImageUrls: (urls: string[]) => void;
 
   // Actions - Variation generation
   startVariationGeneration: () => void;
@@ -318,6 +324,8 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
               variationConfig: {
                 selectedStyles: [],
                 isGenerating: false,
+                imageSelectionMode: "auto",
+                selectedImageUrls: [],
               },
               variations: [],
             },
@@ -471,6 +479,38 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
                 variationConfig: {
                   ...s.session.variationConfig,
                   selectedStyles: [],
+                },
+              },
+            };
+          });
+        },
+
+        setImageSelectionMode: (mode) => {
+          set((s) => {
+            if (!s.session) return s;
+            return {
+              session: {
+                ...s.session,
+                variationConfig: {
+                  ...s.session.variationConfig,
+                  imageSelectionMode: mode,
+                  // Clear selected images when switching to auto mode
+                  selectedImageUrls: mode === "auto" ? [] : s.session.variationConfig.selectedImageUrls,
+                },
+              },
+            };
+          });
+        },
+
+        setSelectedImageUrls: (urls) => {
+          set((s) => {
+            if (!s.session) return s;
+            return {
+              session: {
+                ...s.session,
+                variationConfig: {
+                  ...s.session.variationConfig,
+                  selectedImageUrls: urls,
                 },
               },
             };
@@ -840,3 +880,7 @@ export const selectSelectedStyles = (state: ProcessingSessionStoreState) =>
   state.session?.variationConfig.selectedStyles ?? EMPTY_STYLES;
 export const selectIsGeneratingVariations = (state: ProcessingSessionStoreState) =>
   state.session?.variationConfig.isGenerating ?? false;
+export const selectImageSelectionMode = (state: ProcessingSessionStoreState) =>
+  state.session?.variationConfig.imageSelectionMode ?? "auto";
+export const selectSelectedImageUrls = (state: ProcessingSessionStoreState) =>
+  state.session?.variationConfig.selectedImageUrls ?? EMPTY_STYLES;

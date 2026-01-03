@@ -343,15 +343,17 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
           console.log("[ProcessingFlowPage] Polling - Store vs API IDs:", {
             storeIds: currentComposeVars.map(v => v.id),
+            storeGenerationIds: currentComposeVars.map(v => v.generationId),
             apiIds: status.variations.map(v => v.id),
           });
 
           status.variations.forEach((apiVar) => {
-            // Find matching variation in store by ID
-            const storeVar = currentComposeVars.find((v) => v.id === apiVar.id);
+            // Find matching variation in store by generationId (API UUID) or id (fallback)
+            // CRITICAL: Store variations have their own `id` but receive API's UUID as `generationId`
+            const storeVar = currentComposeVars.find((v) => v.generationId === apiVar.id || v.id === apiVar.id);
 
             if (!storeVar) {
-              console.warn(`[ProcessingFlowPage] No store match for API var ${apiVar.id}! Store IDs: ${currentComposeVars.map(v => v.id).join(', ')}`);
+              console.warn(`[ProcessingFlowPage] No store match for API var ${apiVar.id}! Store IDs: ${currentComposeVars.map(v => v.id).join(', ')}, GenerationIDs: ${currentComposeVars.map(v => v.generationId).join(', ')}`);
               return;
             }
 

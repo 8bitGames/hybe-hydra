@@ -38,6 +38,7 @@ import {
   Camera,
   Wand2,
   Sparkles,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -1042,23 +1043,14 @@ export function ReadyView({ className, onGoToVariation, onGoToPublish, onStartGe
                       <Button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleStartVariationGeneration();
+                          onGoToVariation();
                         }}
                         disabled={!canStart}
                         size="lg"
                         className="bg-neutral-900 hover:bg-neutral-800 text-white"
                       >
-                        {isStartingGeneration ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            {isKorean ? "시작 중..." : "Starting..."}
-                          </>
-                        ) : (
-                          <>
-                            <Rocket className="w-4 h-4 mr-2" />
-                            {isKorean ? "베리에이션 생성 시작" : "Start Variations"}
-                          </>
-                        )}
+                        <Settings className="w-4 h-4 mr-2" />
+                        {isKorean ? "베리에이션 설정" : "Variation Settings"}
                       </Button>
                     </div>
                   </>

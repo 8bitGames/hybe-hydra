@@ -126,6 +126,8 @@ export interface ComposeRenderRequest {
     ai_effects?: AIEffectSelection;
     // Subtitle display mode: 'sequential' (one at a time) or 'static' (all visible)
     subtitle_display_mode?: 'sequential' | 'static';
+    // Subtitle position: 'top', 'center', or 'bottom' (default: 'bottom')
+    subtitle_position?: 'top' | 'center' | 'bottom';
   };
   output: {
     s3_bucket: string;
@@ -729,6 +731,7 @@ export interface AutoComposeRequest {
   search_query: string;
   search_tags: string[];
   audio_url?: string | null;
+  audio_start_time?: number;  // Start time in seconds for audio (default: 0)
   vibe?: string;
   effect_preset?: string;
   color_grade?: string;
@@ -739,7 +742,10 @@ export interface AutoComposeRequest {
   callback_url?: string;
   script_lines?: AutoComposeScriptLine[];
   // Original image URLs for 70/30 split (70% original + 30% new search)
+  // In manual mode, this contains all user-selected images
   original_image_urls?: string[];
+  // If true, skip image search and use only original_image_urls (manual mode)
+  skip_image_search?: boolean;
 }
 
 export interface AutoComposeResponse {
