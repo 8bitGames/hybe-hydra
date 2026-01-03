@@ -32,5 +32,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "e2e", "scripts"]
+  "exclude": ["node_modules", "e2e", "scripts", "packages/*/tsup.config.ts", "packages/*/tests"]
 }
