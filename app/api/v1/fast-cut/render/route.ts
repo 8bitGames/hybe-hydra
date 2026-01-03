@@ -90,6 +90,10 @@ interface RenderRequest {
   aiEffects?: AIEffectSelection;
   // Lyrics/Subtitle options
   useAudioLyrics?: boolean;  // Auto-load lyrics from audio asset for subtitles
+  // Subtitle display mode: 'sequential' (one at a time) or 'static' (all visible)
+  subtitleDisplayMode?: 'sequential' | 'static';
+  // Subtitle position: 'top', 'center', or 'bottom' (default: 'bottom')
+  subtitlePosition?: 'top' | 'center' | 'bottom';
 }
 
 export async function POST(request: NextRequest) {
@@ -128,6 +132,8 @@ export async function POST(request: NextRequest) {
       searchKeywords = [],
       tiktokSEO,
       useAudioLyrics = false,
+      subtitleDisplayMode = 'sequential',
+      subtitlePosition = 'bottom',
     } = body;
 
     console.log(`${LOG_PREFIX} Request body parsed:`, {
@@ -539,6 +545,9 @@ export async function POST(request: NextRequest) {
         use_ai_effects: useAiEffects,
         ai_prompt: aiPrompt || prompt,
         ai_effects: aiEffects,
+        // Subtitle options
+        subtitle_display_mode: subtitleDisplayMode,
+        subtitle_position: subtitlePosition,
       },
       output: {
         s3_bucket: S3_BUCKET,

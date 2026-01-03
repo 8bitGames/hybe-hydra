@@ -360,6 +360,8 @@ export interface RenderRequest {
   useAudioLyrics?: boolean;  // Use audio lyrics for subtitles instead of script
   // Subtitle display mode: 'sequential' (default) or 'static' (all at once)
   subtitleDisplayMode?: 'sequential' | 'static';
+  // Subtitle position: 'top', 'center', or 'bottom' (default: 'bottom')
+  subtitlePosition?: 'top' | 'center' | 'bottom';
 }
 
 export interface RenderResponse {

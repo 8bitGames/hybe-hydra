@@ -70,6 +70,8 @@ interface FastCutEffectStepProps {
   audioStartTime?: number;
   subtitleDisplayMode?: "sequential" | "static";
   setSubtitleDisplayMode?: (mode: "sequential" | "static") => void;
+  subtitlePosition?: "top" | "center" | "bottom";
+  setSubtitlePosition?: (position: "top" | "center" | "bottom") => void;
 }
 
 // Format seconds to mm:ss.s
@@ -615,6 +617,8 @@ export function FastCutEffectStep({
   audioStartTime = 0,
   subtitleDisplayMode = "sequential",
   setSubtitleDisplayMode,
+  subtitlePosition = "bottom",
+  setSubtitlePosition,
 }: FastCutEffectStepProps) {
   const { language, translate } = useI18n();
 
@@ -966,6 +970,36 @@ export function FastCutEffectStep({
                 </SelectItem>
                 <SelectItem value="static">
                   {language === "ko" ? "전체 표시" : "Static (All)"}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Subtitle Position */}
+        {setSubtitlePosition && (
+          <div className="flex items-center gap-3 p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
+            <Type className="h-4 w-4 text-neutral-500" />
+            <span className="text-sm text-neutral-600">
+              {language === "ko" ? "자막 위치" : "Subtitle Position"}
+            </span>
+            <div className="flex-1" />
+            <Select
+              value={subtitlePosition}
+              onValueChange={(v) => setSubtitlePosition(v as "top" | "center" | "bottom")}
+            >
+              <SelectTrigger className="w-36 h-8 bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="top">
+                  {language === "ko" ? "상단" : "Top"}
+                </SelectItem>
+                <SelectItem value="center">
+                  {language === "ko" ? "중앙" : "Center"}
+                </SelectItem>
+                <SelectItem value="bottom">
+                  {language === "ko" ? "하단" : "Bottom"}
                 </SelectItem>
               </SelectContent>
             </Select>

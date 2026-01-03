@@ -580,6 +580,7 @@ export function InlineFastCutFlow({
   const [musicSkipped, setMusicSkipped] = useState(false);
   const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>("lyrics");
   const [subtitleDisplayMode, setSubtitleDisplayMode] = useState<"sequential" | "static">("sequential");
+  const [subtitlePosition, setSubtitlePosition] = useState<"top" | "center" | "bottom">("bottom");
   const [audioLyricsText, setAudioLyricsText] = useState<string | null>(null);
   const [triedStartTimes, setTriedStartTimes] = useState<number[]>([]);  // Track tried segments for variety
 
@@ -1320,6 +1321,8 @@ export function InlineFastCutFlow({
         useAudioLyrics: subtitleMode === "lyrics",
         // Subtitle display mode: sequential (one at a time) or static (all visible)
         subtitleDisplayMode,
+        // Subtitle position: top, center, or bottom
+        subtitlePosition,
       });
       console.log("[FastCut] 📦 Render API response received");
 
@@ -1727,6 +1730,8 @@ export function InlineFastCutFlow({
                 audioStartTime={audioStartTime}
                 subtitleDisplayMode={subtitleDisplayMode}
                 setSubtitleDisplayMode={setSubtitleDisplayMode}
+                subtitlePosition={subtitlePosition}
+                setSubtitlePosition={setSubtitlePosition}
               />
             )}
           </div>
