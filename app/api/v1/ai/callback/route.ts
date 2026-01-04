@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from '@supabase/supabase-js';
+import { prisma } from "@/lib/db/prisma";
 
 // Initialize Supabase client for session updates
 const supabase = createClient(
@@ -110,14 +111,74 @@ async function updateSessionOnAIComplete(generationId: string, success: boolean)
 }
 
 /**
+ * Save gcs_uri and output_url to video_generations table
+ * This is critical for video extension feature which requires gcs_uri
+ */
+async function saveVideoGenerationData(
+  jobId: string,
+  outputUrl?: string,
+  gcsUri?: string,
+  status?: string,
+  errorMsg?: string
+): Promise<void> {
+  try {
+    // Find the video generation record by id (job_id is the generation id)
+    const generation = await prisma.videoGeneration.findUnique({
+      where: { id: jobId },
+    });
+
+    if (!generation) {
+      console.log(`[AI Callback] No video_generation found for job: ${jobId}`);
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateData: Record<string, any> = {};
+
+    if (gcsUri) {
+      updateData.gcsUri = gcsUri;
+      console.log(`[AI Callback] Saving gcs_uri: ${gcsUri.slice(0, 60)}...`);
+    }
+
+    if (outputUrl) {
+      updateData.outputUrl = outputUrl;
+      console.log(`[AI Callback] Saving output_url: ${outputUrl.slice(0, 60)}...`);
+    }
+
+    if (status === 'completed') {
+      updateData.status = 'completed';
+    } else if (status === 'failed') {
+      updateData.status = 'failed';
+      if (errorMsg) {
+        updateData.errorMessage = errorMsg;
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      console.log('[AI Callback] No data to update for video_generation');
+      return;
+    }
+
+    await prisma.videoGeneration.update({
+      where: { id: generation.id },
+      data: updateData,
+    });
+
+    console.log(`[AI Callback] ✓ video_generation ${generation.id} updated with gcs_uri/output_url`);
+  } catch (err) {
+    console.error('[AI Callback] Error saving video_generation data:', err);
+  }
+}
+
+/**
  * POST /api/v1/ai/callback
  *
  * Receive job status callbacks from EC2 AI Worker.
  *
- * NOTE: This callback is for NOTIFICATION ONLY.
- * - Does NOT save to database (data is already in AI service Job Queue)
- * - Only updates creation_session for workflow progression
- * - Frontend should query AI service status API directly for job data
+ * This callback:
+ * - Saves gcs_uri and output_url to video_generations table (for video extension)
+ * - Updates creation_session for workflow progression
+ * - Frontend can query AI service status API for additional job data
  * - See: GET /api/v1/ai/job/{job_id}/status on AI service
  */
 export async function POST(request: NextRequest) {
@@ -146,6 +207,12 @@ export async function POST(request: NextRequest) {
     }
     if (error) {
       console.log(`[AI Callback] Error: ${error}`);
+    }
+
+    // Save gcs_uri and output_url to video_generations table (critical for video extension)
+    if (status === 'completed' || status === 'failed') {
+      const gcsUri = metadata?.gcs_uri as string | undefined;
+      await saveVideoGenerationData(job_id, output_url, gcsUri, status, error);
     }
 
     // Update creation_session when completed or failed (for workflow progression)
