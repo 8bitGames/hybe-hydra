@@ -28,7 +28,6 @@ import { PipelineActionsMenu } from "../shared/pipeline-actions-menu";
 interface FastCutPipelineCardProps {
   pipeline: PipelineItem;
   metadata?: FastCutPipelineMetadata;
-  onCreateVariations?: (pipeline: PipelineItem) => void;
   onDelete?: (pipeline: PipelineItem) => void;
   className?: string;
   selectionMode?: boolean;
@@ -39,7 +38,6 @@ interface FastCutPipelineCardProps {
 export function FastCutPipelineCard({
   pipeline,
   metadata,
-  onCreateVariations,
   onDelete,
   className,
   selectionMode = false,
@@ -48,10 +46,6 @@ export function FastCutPipelineCard({
 }: FastCutPipelineCardProps) {
   const { language } = useI18n();
   const isKorean = language === "ko";
-
-  const handleCreateVariations = () => {
-    onCreateVariations?.(pipeline);
-  };
 
   const handleDelete = () => {
     onDelete?.(pipeline);
@@ -226,7 +220,6 @@ export function FastCutPipelineCard({
           <PipelineActionsMenu
             pipeline={pipeline}
             pipelineType="fast-cut"
-            onCreateVariations={handleCreateVariations}
             onDelete={handleDelete}
           />
         </div>

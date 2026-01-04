@@ -24,7 +24,6 @@ import { PipelineActionsMenu } from "../shared/pipeline-actions-menu";
 
 interface AIPipelineCardProps {
   pipeline: PipelineItem;
-  onCreateVariations?: (pipeline: PipelineItem) => void;
   onDelete?: (pipeline: PipelineItem) => void;
   className?: string;
   selectionMode?: boolean;
@@ -34,7 +33,6 @@ interface AIPipelineCardProps {
 
 export function AIPipelineCard({
   pipeline,
-  onCreateVariations,
   onDelete,
   className,
   selectionMode = false,
@@ -43,10 +41,6 @@ export function AIPipelineCard({
 }: AIPipelineCardProps) {
   const { language } = useI18n();
   const isKorean = language === "ko";
-
-  const handleCreateVariations = () => {
-    onCreateVariations?.(pipeline);
-  };
 
   const handleDelete = () => {
     onDelete?.(pipeline);
@@ -188,7 +182,6 @@ export function AIPipelineCard({
           <PipelineActionsMenu
             pipeline={pipeline}
             pipelineType="ai"
-            onCreateVariations={handleCreateVariations}
             onDelete={handleDelete}
           />
         </div>

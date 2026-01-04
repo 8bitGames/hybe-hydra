@@ -13,9 +13,7 @@ import {
   ArrowRight,
   Eye,
   MoreHorizontal,
-  Sparkles,
   Trash2,
-  XCircle,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { PipelineItem, PipelineType } from "../types";
@@ -24,20 +22,16 @@ interface PipelineActionsMenuProps {
   pipeline: PipelineItem;
   pipelineType: PipelineType;
   onViewDetails?: () => void;
-  onCreateVariations?: () => void;
   onDelete?: () => void;
   showViewButton?: boolean;
-  showVariationsButton?: boolean;
 }
 
 export function PipelineActionsMenu({
   pipeline,
   pipelineType,
   onViewDetails,
-  onCreateVariations,
   onDelete,
   showViewButton = true,
-  showVariationsButton = true,
 }: PipelineActionsMenuProps) {
   const router = useRouter();
   const { language } = useI18n();
@@ -71,17 +65,6 @@ export function PipelineActionsMenu({
         </Button>
       )}
 
-      {showVariationsButton && pipeline.status === "completed" && onCreateVariations && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 px-2"
-          onClick={onCreateVariations}
-        >
-          <Sparkles className="w-4 h-4" />
-        </Button>
-      )}
-
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -93,13 +76,6 @@ export function PipelineActionsMenu({
             <Eye className="w-4 h-4 mr-2" />
             {isKorean ? "상세 보기" : "View Details"}
           </DropdownMenuItem>
-
-          {pipeline.status === "completed" && onCreateVariations && (
-            <DropdownMenuItem onClick={onCreateVariations}>
-              <Sparkles className="w-4 h-4 mr-2" />
-              {isKorean ? "추가 변형 생성" : "Create More Variations"}
-            </DropdownMenuItem>
-          )}
 
           <DropdownMenuItem onClick={handleGoToCuration}>
             <ArrowRight className="w-4 h-4 mr-2" />

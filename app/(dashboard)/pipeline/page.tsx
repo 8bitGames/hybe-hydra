@@ -210,17 +210,6 @@ export default function GlobalPipelinePage() {
     }
   }, [refetchPipelines]);
 
-  const handleCreateMoreVariations = (pipeline: PipelineItem) => {
-    setSelectedSeedGeneration(pipeline.seed_generation);
-    setSelectedGenerationType(pipeline.type || "ai");
-
-    if (pipeline.type === "fast-cut") {
-      setComposeVariationModalOpen(true);
-    } else {
-      setAIVariationModalOpen(true);
-    }
-  };
-
   const handleDeletePipeline = async (pipeline: PipelineItem) => {
     const confirmMessage = isKorean
       ? `이 베리에이션의 모든 변형(${pipeline.total}개)을 삭제하시겠습니까?`
@@ -904,7 +893,6 @@ export default function GlobalPipelinePage() {
                           <FastCutPipelineTableRow
                             key={pipeline.batch_id}
                             pipeline={pipeline}
-                            onCreateVariations={() => handleCreateMoreVariations(pipeline)}
                             onDelete={() => handleDeletePipeline(pipeline)}
                             selectionMode={selectionMode}
                             isSelected={selectedPipelines.has(pipeline.batch_id)}
@@ -914,7 +902,6 @@ export default function GlobalPipelinePage() {
                           <AIPipelineTableRow
                             key={pipeline.batch_id}
                             pipeline={pipeline}
-                            onCreateVariations={() => handleCreateMoreVariations(pipeline)}
                             onDelete={() => handleDeletePipeline(pipeline)}
                             selectionMode={selectionMode}
                             isSelected={selectedPipelines.has(pipeline.batch_id)}
@@ -934,7 +921,6 @@ export default function GlobalPipelinePage() {
                     <FastCutPipelineCard
                       key={pipeline.batch_id}
                       pipeline={pipeline}
-                      onCreateVariations={() => handleCreateMoreVariations(pipeline)}
                       onDelete={() => handleDeletePipeline(pipeline)}
                       selectionMode={selectionMode}
                       isSelected={selectedPipelines.has(pipeline.batch_id)}
@@ -944,7 +930,6 @@ export default function GlobalPipelinePage() {
                     <AIPipelineCard
                       key={pipeline.batch_id}
                       pipeline={pipeline}
-                      onCreateVariations={() => handleCreateMoreVariations(pipeline)}
                       onDelete={() => handleDeletePipeline(pipeline)}
                       selectionMode={selectionMode}
                       isSelected={selectedPipelines.has(pipeline.batch_id)}

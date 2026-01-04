@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 
 interface AIPipelineTableRowProps {
   pipeline: PipelineItem;
-  onCreateVariations?: (pipeline: PipelineItem) => void;
   onDelete?: (pipeline: PipelineItem) => void;
   selectionMode?: boolean;
   isSelected?: boolean;
@@ -22,7 +21,6 @@ interface AIPipelineTableRowProps {
 
 export function AIPipelineTableRow({
   pipeline,
-  onCreateVariations,
   onDelete,
   selectionMode = false,
   isSelected = false,
@@ -30,10 +28,6 @@ export function AIPipelineTableRow({
 }: AIPipelineTableRowProps) {
   const { language } = useI18n();
   const isKorean = language === "ko";
-
-  const handleCreateVariations = () => {
-    onCreateVariations?.(pipeline);
-  };
 
   const handleDelete = () => {
     onDelete?.(pipeline);
@@ -161,7 +155,6 @@ export function AIPipelineTableRow({
         <PipelineActionsMenu
           pipeline={pipeline}
           pipelineType="ai"
-          onCreateVariations={handleCreateVariations}
           onDelete={handleDelete}
         />
       </td>

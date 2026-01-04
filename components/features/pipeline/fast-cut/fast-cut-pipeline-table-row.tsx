@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 interface FastCutPipelineTableRowProps {
   pipeline: PipelineItem;
   metadata?: FastCutPipelineMetadata;
-  onCreateVariations?: (pipeline: PipelineItem) => void;
   onDelete?: (pipeline: PipelineItem) => void;
   selectionMode?: boolean;
   isSelected?: boolean;
@@ -24,7 +23,6 @@ interface FastCutPipelineTableRowProps {
 export function FastCutPipelineTableRow({
   pipeline,
   metadata,
-  onCreateVariations,
   onDelete,
   selectionMode = false,
   isSelected = false,
@@ -32,10 +30,6 @@ export function FastCutPipelineTableRow({
 }: FastCutPipelineTableRowProps) {
   const { language } = useI18n();
   const isKorean = language === "ko";
-
-  const handleCreateVariations = () => {
-    onCreateVariations?.(pipeline);
-  };
 
   const handleDelete = () => {
     onDelete?.(pipeline);
@@ -175,7 +169,6 @@ export function FastCutPipelineTableRow({
         <PipelineActionsMenu
           pipeline={pipeline}
           pipelineType="fast-cut"
-          onCreateVariations={handleCreateVariations}
           onDelete={handleDelete}
         />
       </td>
