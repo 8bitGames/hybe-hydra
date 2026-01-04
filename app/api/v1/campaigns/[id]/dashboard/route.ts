@@ -40,178 +40,256 @@ export async function GET(
       CacheKeys.campaignDashboard(campaignId),
       CacheTTL.CAMPAIGN_DASH, // 2.5 minutes
       async () => {
-        // Get campaign with all related data
-        const campaign = await withRetry(() => prisma.campaign.findUnique({
-      where: { id: campaignId },
-      include: {
-        artist: {
-          select: {
-            id: true,
-            name: true,
-            stageName: true,
-            groupName: true,
-            labelId: true,
-            profileImageUrl: true,
-          },
-        },
-        creator: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-        assets: {
-          select: {
-            id: true,
-            type: true,
-            filename: true,
-            originalFilename: true,
-            s3Url: true,
-            thumbnailUrl: true,
-            fileSize: true,
-            mimeType: true,
-            merchandiseType: true,
-            createdAt: true,
-          },
-          orderBy: { createdAt: "desc" },
-        },
-        videoGenerations: {
-          select: {
-            id: true,
-            prompt: true,
-            status: true,
-            progress: true,
-            durationSeconds: true,
-            aspectRatio: true,
-            outputUrl: true,
-            qualityScore: true,
-            qualityMetadata: true,
-            errorMessage: true,
-            referenceStyle: true,
-            createdAt: true,
-            updatedAt: true,
-            merchandiseReferences: {
-              include: {
-                merchandise: {
-                  select: {
-                    id: true,
-                    name: true,
-                    type: true,
-                    thumbnailUrl: true,
+        // Fetch campaign and scheduled posts in parallel
+        const [campaign, scheduledPosts] = await Promise.all([
+          withRetry(() => prisma.campaign.findUnique({
+            where: { id: campaignId },
+            include: {
+              artist: {
+                select: {
+                  id: true,
+                  name: true,
+                  stageName: true,
+                  groupName: true,
+                  labelId: true,
+                  profileImageUrl: true,
+                },
+              },
+              creator: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+              assets: {
+                select: {
+                  id: true,
+                  type: true,
+                  filename: true,
+                  originalFilename: true,
+                  s3Url: true,
+                  thumbnailUrl: true,
+                  fileSize: true,
+                  mimeType: true,
+                  merchandiseType: true,
+                  createdAt: true,
+                },
+                orderBy: { createdAt: "desc" },
+              },
+              videoGenerations: {
+                select: {
+                  id: true,
+                  prompt: true,
+                  status: true,
+                  progress: true,
+                  durationSeconds: true,
+                  aspectRatio: true,
+                  outputUrl: true,
+                  qualityScore: true,
+                  qualityMetadata: true,
+                  errorMessage: true,
+                  referenceStyle: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  merchandiseReferences: {
+                    include: {
+                      merchandise: {
+                        select: {
+                          id: true,
+                          name: true,
+                          type: true,
+                          thumbnailUrl: true,
+                        },
+                      },
+                    },
                   },
+                },
+                orderBy: { createdAt: "desc" },
+              },
+            },
+          })),
+          withRetry(() => prisma.scheduledPost.findMany({
+            where: { campaignId },
+            include: {
+              socialAccount: {
+                select: {
+                  id: true,
+                  platform: true,
+                  accountName: true,
+                  profileUrl: true,
                 },
               },
             },
-          },
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    }));
+            orderBy: { createdAt: "desc" },
+          })),
+        ]);
 
     if (!campaign) {
       return null; // Will be handled outside cached block
     }
 
-    // Get scheduled posts for this campaign
-    const scheduledPosts = await withRetry(() => prisma.scheduledPost.findMany({
-      where: { campaignId },
-      include: {
-        socialAccount: {
-          select: {
-            id: true,
-            platform: true,
-            accountName: true,
-            profileUrl: true,
-          },
+    // Fetch aggregated stats in parallel with the main data
+    // This is more efficient than filtering large arrays in JavaScript
+    const [
+      assetTypeCounts,
+      assetSizeAgg,
+      generationStatusCounts,
+      generationScoreAgg,
+      highQualityGenCount,
+      postStatusCounts,
+      postPlatformCounts,
+      snsGlobalAgg,
+      snsByPlatform,
+    ] = await Promise.all([
+      // Asset counts by type
+      withRetry(() => prisma.asset.groupBy({
+        by: ["type"],
+        where: { campaignId },
+        _count: true,
+      })),
+      // Asset total size
+      withRetry(() => prisma.asset.aggregate({
+        where: { campaignId },
+        _sum: { fileSize: true },
+        _count: true,
+      })),
+      // Generation counts by status
+      withRetry(() => prisma.videoGeneration.groupBy({
+        by: ["status"],
+        where: { campaignId },
+        _count: true,
+      })),
+      // Generation score aggregate
+      withRetry(() => prisma.videoGeneration.aggregate({
+        where: { campaignId, qualityScore: { not: null } },
+        _count: { qualityScore: true },
+        _avg: { qualityScore: true },
+      })),
+      // High quality generations count
+      withRetry(() => prisma.videoGeneration.count({
+        where: { campaignId, qualityScore: { gte: 70 } },
+      })),
+      // Post counts by status
+      withRetry(() => prisma.scheduledPost.groupBy({
+        by: ["status"],
+        where: { campaignId },
+        _count: true,
+      })),
+      // Post counts by platform
+      withRetry(() => prisma.scheduledPost.groupBy({
+        by: ["platform"],
+        where: { campaignId },
+        _count: true,
+      })),
+      // SNS aggregate for published posts
+      withRetry(() => prisma.scheduledPost.aggregate({
+        where: { campaignId, status: "PUBLISHED" },
+        _count: true,
+        _sum: {
+          viewCount: true,
+          likeCount: true,
+          commentCount: true,
+          shareCount: true,
+          saveCount: true,
         },
-      },
-      orderBy: { createdAt: "desc" },
-    }));
+        _avg: { engagementRate: true },
+      })),
+      // SNS by platform for published posts
+      withRetry(() => prisma.scheduledPost.groupBy({
+        by: ["platform"],
+        where: { campaignId, status: "PUBLISHED" },
+        _count: true,
+        _sum: { viewCount: true, likeCount: true },
+      })),
+    ]);
 
-    // Calculate statistics
+    // Helper function to get count from groupBy result
+    const getCount = <T extends { _count: number }>(
+      arr: T[],
+      key: keyof T,
+      value: string
+    ): number => {
+      const found = arr.find((item) => item[key] === value);
+      return found?._count || 0;
+    };
+
+    // Calculate asset statistics from aggregations
     const assetStats = {
-      total: campaign.assets.length,
+      total: assetSizeAgg._count || 0,
       by_type: {
-        IMAGE: campaign.assets.filter(a => a.type === "IMAGE").length,
-        VIDEO: campaign.assets.filter(a => a.type === "VIDEO").length,
-        AUDIO: campaign.assets.filter(a => a.type === "AUDIO").length,
-        GOODS: campaign.assets.filter(a => a.type === "GOODS").length,
+        IMAGE: getCount(assetTypeCounts, "type", "IMAGE"),
+        VIDEO: getCount(assetTypeCounts, "type", "VIDEO"),
+        AUDIO: getCount(assetTypeCounts, "type", "AUDIO"),
+        GOODS: getCount(assetTypeCounts, "type", "GOODS"),
       },
-      total_size: campaign.assets.reduce((sum, a) => sum + (a.fileSize || 0), 0),
+      total_size: assetSizeAgg._sum.fileSize || 0,
     };
 
+    // Calculate total generations from groupBy
+    const totalGenerations = generationStatusCounts.reduce((sum, g) => sum + g._count, 0);
+
+    // Calculate generation statistics from aggregations
     const generationStats = {
-      total: campaign.videoGenerations.length,
+      total: totalGenerations,
       by_status: {
-        PENDING: campaign.videoGenerations.filter(v => v.status === "PENDING").length,
-        PROCESSING: campaign.videoGenerations.filter(v => v.status === "PROCESSING").length,
-        COMPLETED: campaign.videoGenerations.filter(v => v.status === "COMPLETED").length,
-        FAILED: campaign.videoGenerations.filter(v => v.status === "FAILED").length,
-        CANCELLED: campaign.videoGenerations.filter(v => v.status === "CANCELLED").length,
+        PENDING: getCount(generationStatusCounts, "status", "PENDING"),
+        PROCESSING: getCount(generationStatusCounts, "status", "PROCESSING"),
+        COMPLETED: getCount(generationStatusCounts, "status", "COMPLETED"),
+        FAILED: getCount(generationStatusCounts, "status", "FAILED"),
+        CANCELLED: getCount(generationStatusCounts, "status", "CANCELLED"),
       },
-      scored: campaign.videoGenerations.filter(v => v.qualityScore !== null).length,
-      avg_quality_score: (() => {
-        const scored = campaign.videoGenerations.filter(v => v.qualityScore !== null);
-        if (scored.length === 0) return null;
-        return scored.reduce((sum, v) => sum + (v.qualityScore || 0), 0) / scored.length;
-      })(),
-      high_quality_count: campaign.videoGenerations.filter(v => (v.qualityScore || 0) >= 70).length,
+      scored: generationScoreAgg._count.qualityScore || 0,
+      avg_quality_score: generationScoreAgg._avg.qualityScore,
+      high_quality_count: highQualityGenCount,
     };
 
+    // Calculate total posts from groupBy
+    const totalPosts = postStatusCounts.reduce((sum, p) => sum + p._count, 0);
+
+    // Calculate publishing statistics from aggregations
     const publishingStats = {
-      total: scheduledPosts.length,
+      total: totalPosts,
       by_status: {
-        DRAFT: scheduledPosts.filter(p => p.status === "DRAFT").length,
-        SCHEDULED: scheduledPosts.filter(p => p.status === "SCHEDULED").length,
-        PUBLISHING: scheduledPosts.filter(p => p.status === "PUBLISHING").length,
-        PUBLISHED: scheduledPosts.filter(p => p.status === "PUBLISHED").length,
-        FAILED: scheduledPosts.filter(p => p.status === "FAILED").length,
-        CANCELLED: scheduledPosts.filter(p => p.status === "CANCELLED").length,
+        DRAFT: getCount(postStatusCounts, "status", "DRAFT"),
+        SCHEDULED: getCount(postStatusCounts, "status", "SCHEDULED"),
+        PUBLISHING: getCount(postStatusCounts, "status", "PUBLISHING"),
+        PUBLISHED: getCount(postStatusCounts, "status", "PUBLISHED"),
+        FAILED: getCount(postStatusCounts, "status", "FAILED"),
+        CANCELLED: getCount(postStatusCounts, "status", "CANCELLED"),
       },
       by_platform: {
-        TIKTOK: scheduledPosts.filter(p => p.platform === "TIKTOK").length,
-        YOUTUBE: scheduledPosts.filter(p => p.platform === "YOUTUBE").length,
-        INSTAGRAM: scheduledPosts.filter(p => p.platform === "INSTAGRAM").length,
-        TWITTER: scheduledPosts.filter(p => p.platform === "TWITTER").length,
+        TIKTOK: getCount(postPlatformCounts, "platform", "TIKTOK"),
+        YOUTUBE: getCount(postPlatformCounts, "platform", "YOUTUBE"),
+        INSTAGRAM: getCount(postPlatformCounts, "platform", "INSTAGRAM"),
+        TWITTER: getCount(postPlatformCounts, "platform", "TWITTER"),
       },
     };
 
-    // Calculate SNS analytics totals
-    const publishedPosts = scheduledPosts.filter(p => p.status === "PUBLISHED");
+    // Helper to get SNS by platform stats
+    const getSnsPlatformStats = (platform: string) => {
+      const found = snsByPlatform.find((p) => p.platform === platform);
+      return {
+        posts: found?._count || 0,
+        views: found?._sum.viewCount || 0,
+        likes: found?._sum.likeCount || 0,
+      };
+    };
+
+    // Calculate SNS analytics from aggregations
     const analyticsStats = {
-      total_published: publishedPosts.length,
-      total_views: publishedPosts.reduce((sum, p) => sum + (p.viewCount || 0), 0),
-      total_likes: publishedPosts.reduce((sum, p) => sum + (p.likeCount || 0), 0),
-      total_comments: publishedPosts.reduce((sum, p) => sum + (p.commentCount || 0), 0),
-      total_shares: publishedPosts.reduce((sum, p) => sum + (p.shareCount || 0), 0),
-      total_saves: publishedPosts.reduce((sum, p) => sum + (p.saveCount || 0), 0),
-      avg_engagement_rate: (() => {
-        const withEngagement = publishedPosts.filter(p => p.engagementRate !== null);
-        if (withEngagement.length === 0) return null;
-        return withEngagement.reduce((sum, p) => sum + (p.engagementRate || 0), 0) / withEngagement.length;
-      })(),
+      total_published: snsGlobalAgg._count || 0,
+      total_views: snsGlobalAgg._sum.viewCount || 0,
+      total_likes: snsGlobalAgg._sum.likeCount || 0,
+      total_comments: snsGlobalAgg._sum.commentCount || 0,
+      total_shares: snsGlobalAgg._sum.shareCount || 0,
+      total_saves: snsGlobalAgg._sum.saveCount || 0,
+      avg_engagement_rate: snsGlobalAgg._avg.engagementRate,
       by_platform: {
-        TIKTOK: {
-          posts: publishedPosts.filter(p => p.platform === "TIKTOK").length,
-          views: publishedPosts.filter(p => p.platform === "TIKTOK").reduce((sum, p) => sum + (p.viewCount || 0), 0),
-          likes: publishedPosts.filter(p => p.platform === "TIKTOK").reduce((sum, p) => sum + (p.likeCount || 0), 0),
-        },
-        YOUTUBE: {
-          posts: publishedPosts.filter(p => p.platform === "YOUTUBE").length,
-          views: publishedPosts.filter(p => p.platform === "YOUTUBE").reduce((sum, p) => sum + (p.viewCount || 0), 0),
-          likes: publishedPosts.filter(p => p.platform === "YOUTUBE").reduce((sum, p) => sum + (p.likeCount || 0), 0),
-        },
-        INSTAGRAM: {
-          posts: publishedPosts.filter(p => p.platform === "INSTAGRAM").length,
-          views: publishedPosts.filter(p => p.platform === "INSTAGRAM").reduce((sum, p) => sum + (p.viewCount || 0), 0),
-          likes: publishedPosts.filter(p => p.platform === "INSTAGRAM").reduce((sum, p) => sum + (p.likeCount || 0), 0),
-        },
-        TWITTER: {
-          posts: publishedPosts.filter(p => p.platform === "TWITTER").length,
-          views: publishedPosts.filter(p => p.platform === "TWITTER").reduce((sum, p) => sum + (p.viewCount || 0), 0),
-          likes: publishedPosts.filter(p => p.platform === "TWITTER").reduce((sum, p) => sum + (p.likeCount || 0), 0),
-        },
+        TIKTOK: getSnsPlatformStats("TIKTOK"),
+        YOUTUBE: getSnsPlatformStats("YOUTUBE"),
+        INSTAGRAM: getSnsPlatformStats("INSTAGRAM"),
+        TWITTER: getSnsPlatformStats("TWITTER"),
       },
     };
 

@@ -165,6 +165,11 @@ model Campaign {
   videoGenerations VideoGeneration[]
   scheduledPosts   ScheduledPost[]
 
+  // Performance indexes
+  @@index([artistId])
+  @@index([status])
+  @@index([createdBy])
+  @@index([deletedAt])
   @@map("campaigns")
 }
 
@@ -223,6 +228,10 @@ model Asset {
   audioVideoGenerations     VideoGeneration[] @relation("AudioAsset")
   projectAudioAssets        Project[]         @relation("ProjectAudioAsset")
 
+  // Performance indexes
+  @@index([campaignId])
+  @@index([type])
+  @@index([createdBy])
   @@map("assets")
 }
 
@@ -309,7 +318,13 @@ model VideoGeneration {
   extensionsAsSource VideoExtensionHistory[] @relation("ExtensionSource") // 이 영상에서 확장된 기록들
   extensionsAsResult VideoExtensionHistory[] @relation("ExtensionResult") // 이 영상이 확장 결과인 기록
 
+  // Performance indexes
   @@index([projectId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([createdBy])
+  @@index([deletedAt])
+  @@index([campaignId, status]) // Composite for filtered campaign queries
   @@map("video_generations")
 }
 

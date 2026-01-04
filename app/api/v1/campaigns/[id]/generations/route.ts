@@ -230,6 +230,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const pageSize = parseInt(searchParams.get("page_size") || "20");
     const status = searchParams.get("status") as VideoGenerationStatus | null;
     const generationType = searchParams.get("generation_type") as "AI" | "COMPOSE" | null;
+    // Cursor-based pagination support (takes precedence over page)
+    const cursor = searchParams.get("cursor");
+    const useCursor = !!cursor;
 
     // Check campaign access
     const campaign = await withRetry(() => prisma.campaign.findUnique({
@@ -263,27 +266,41 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const total = await withRetry(() => prisma.videoGeneration.count({ where }));
-
-    const generations = await withRetry(() => prisma.videoGeneration.findMany({
-      where,
-      include: {
-        referenceImage: {
-          select: { id: true, filename: true, s3Url: true },
+    // Fetch count and data in parallel
+    // Use cursor-based pagination when cursor is provided (O(1) vs O(n) for offset)
+    const [total, generations] = await Promise.all([
+      withRetry(() => prisma.videoGeneration.count({ where })),
+      withRetry(() => prisma.videoGeneration.findMany({
+        where,
+        include: {
+          referenceImage: {
+            select: { id: true, filename: true, s3Url: true },
+          },
+          outputAsset: {
+            select: { id: true, filename: true, s3Url: true },
+          },
+          audioAsset: {
+            select: { id: true, filename: true, s3Url: true, originalFilename: true },
+          },
         },
-        outputAsset: {
-          select: { id: true, filename: true, s3Url: true },
-        },
-        audioAsset: {
-          select: { id: true, filename: true, s3Url: true, originalFilename: true },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }));
+        orderBy: { createdAt: "desc" },
+        // Cursor-based pagination: skip the cursor item, then take pageSize
+        // Offset-based pagination: skip (page-1)*pageSize items
+        ...(useCursor
+          ? { cursor: { id: cursor! }, skip: 1, take: pageSize }
+          : { skip: (page - 1) * pageSize, take: pageSize }
+        ),
+      })),
+    ]);
 
     const pages = Math.ceil(total / pageSize) || 1;
+
+    // Calculate next_cursor for cursor-based pagination
+    // If we got a full page of results, there may be more
+    const hasMore = generations.length === pageSize;
+    const nextCursor = hasMore && generations.length > 0
+      ? generations[generations.length - 1].id
+      : null;
 
     // Generate presigned URLs for video playback
     const items = await Promise.all(generations.map(async (gen) => {
@@ -365,6 +382,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       page,
       page_size: pageSize,
       pages,
+      // Cursor-based pagination fields
+      next_cursor: nextCursor,
+      has_more: hasMore,
     });
   } catch (error) {
     console.error("Get generations error:", error);

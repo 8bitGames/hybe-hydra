@@ -41,24 +41,29 @@ export async function GET(
       return NextResponse.json({ detail: "Access denied" }, { status: 403 });
     }
 
-    // Get all published posts for this campaign
-    const posts = await withRetry(() => prisma.scheduledPost.findMany({
-      where: {
-        campaignId,
-        status: "PUBLISHED",
-      },
-      include: {
-        socialAccount: {
-          select: {
-            id: true,
-            platform: true,
-            accountName: true,
-            profileUrl: true,
+    // Fetch published posts and total count in parallel
+    const [posts, totalPosts] = await Promise.all([
+      withRetry(() => prisma.scheduledPost.findMany({
+        where: {
+          campaignId,
+          status: "PUBLISHED",
+        },
+        include: {
+          socialAccount: {
+            select: {
+              id: true,
+              platform: true,
+              accountName: true,
+              profileUrl: true,
+            },
           },
         },
-      },
-      orderBy: { viewCount: "desc" },
-    }));
+        orderBy: { viewCount: "desc" },
+      })),
+      withRetry(() => prisma.scheduledPost.count({
+        where: { campaignId },
+      })),
+    ]);
 
     // Calculate totals
     const totals = posts.reduce(
@@ -109,11 +114,6 @@ export async function GET(
           : 0,
       };
     });
-
-    // Get total posts count (including non-published)
-    const totalPosts = await withRetry(() => prisma.scheduledPost.count({
-      where: { campaignId },
-    }));
 
     // Top 5 posts
     const topPosts = posts.slice(0, 5).map((p) => ({

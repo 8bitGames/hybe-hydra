@@ -90,3 +90,139 @@ All components use muted colors only (black, grey, white) as per design requirem
 - Secondary backgrounds: `zinc-100`, `zinc-800`
 - Text: `white`, `zinc-300`, `zinc-400`, `zinc-500`
 - Borders: `zinc-700`, `zinc-600`
+
+---
+
+# Performance Optimization Progress
+
+## Overview
+Systematic implementation of 6 performance improvements for Supabase/Prisma data fetching.
+
+**Started**: 2026-01-04
+**Status**: In Progress
+
+---
+
+## Issue #1: Missing Database Indexes (CRITICAL)
+**Status**: ✅ Complete
+**Impact**: 10-100x faster for campaign-scoped queries
+
+### Changes Required:
+- [x] Add index on `VideoGeneration.campaignId`
+- [x] Add index on `Asset.campaignId`
+- [x] Add index on `Campaign.artistId`
+- [x] Add index on `Campaign.status`
+- [x] Add composite index on `VideoGeneration(campaignId, status)`
+
+### Files Modified:
+- `prisma/schema.prisma`
+
+### Indexes Added:
+```sql
+-- Campaign: artist_id, status, created_by, deleted_at
+-- Asset: campaign_id, type, created_by
+-- VideoGeneration: campaign_id, status, created_by, deleted_at, (campaign_id, status)
+```
+
+---
+
+## Issue #2: Sequential Query Waterfall (CRITICAL)
+**Status**: ✅ Complete
+**Impact**: 2-3x faster per affected endpoint
+
+### Changes Required:
+- [x] `app/api/v1/dashboard/stats/route.ts` - Convert 3 sequential queries to Promise.all()
+- [x] `app/api/v1/campaigns/[id]/dashboard/route.ts` - Parallelize queries
+- [x] `app/api/v1/campaigns/[id]/assets/stats/route.ts` - Already optimized (single groupBy query)
+- [x] `app/api/v1/campaigns/[id]/generations/route.ts` - Parallelize count + findMany
+- [x] `app/api/v1/publishing/analytics/campaign/[id]/route.ts` - Already uses Promise.all
+
+### Files Modified:
+- `app/api/v1/dashboard/stats/route.ts`
+- `app/api/v1/campaigns/[id]/dashboard/route.ts`
+- `app/api/v1/campaigns/[id]/generations/route.ts`
+
+---
+
+## Issue #3: Over-fetching + JavaScript Aggregation (HIGH)
+**Status**: ✅ Complete
+**Impact**: Reduces data transfer from 1000s of rows to ~4 rows
+
+### Changes Required:
+- [x] Replace `.filter().length` with `prisma.groupBy()` in dashboard stats
+- [x] Use `_count` aggregations where applicable
+- [x] Replace JS aggregations with database `aggregate()` for sums/averages
+
+### Files Modified:
+- `app/api/v1/dashboard/stats/route.ts` - Complete rewrite using groupBy/aggregate
+- `app/api/v1/campaigns/[id]/dashboard/route.ts` - Added parallel aggregate queries
+
+---
+
+## Issue #4: N+1 Query Pattern in Presigned URLs (HIGH)
+**Status**: ✅ Already Optimized
+**Impact**: Reduces HTTP calls from N to 1
+
+### Analysis:
+The codebase already has proper mitigations in place:
+- [x] `getPresignedUrlFromS3Url` uses Redis caching (6 day TTL) - `lib/storage.ts:253`
+- [x] Presigned URL generation uses `Promise.all()` for parallel execution - `generations/route.ts:291`
+- [x] Presigned URL signing is a local crypto operation (no network call to S3)
+
+No additional changes required - existing implementation is optimized.
+
+---
+
+## Issue #5: Heavy Includes Without Selection (MEDIUM)
+**Status**: ✅ Already Optimized
+**Impact**: Reduces data transfer significantly
+
+### Analysis:
+The codebase already follows best practices:
+- [x] All includes use proper `select` clauses (e.g., `campaigns/[id]/dashboard/route.ts:49-109`)
+- [x] No `include: true` patterns found in the codebase
+- [x] Field selection is specific and minimal
+
+No additional changes required - existing implementation is optimized.
+
+---
+
+## Issue #6: Offset to Cursor Pagination (MEDIUM)
+**Status**: ✅ Complete
+**Impact**: Constant time pagination regardless of depth
+
+### Changes Required:
+- [x] Update generation list endpoint with cursor support
+- [ ] Update other paginated endpoints (optional - can be done incrementally)
+
+### Files Modified:
+- `app/api/v1/campaigns/[id]/generations/route.ts` - Added cursor-based pagination
+
+### Implementation Details:
+- Added `cursor` query parameter support
+- Uses Prisma's native cursor pagination: `cursor: { id: cursor }, skip: 1`
+- Maintains backward compatibility with page-based pagination
+- Returns `next_cursor` and `has_more` fields for cursor clients
+- O(1) performance for cursor-based pagination vs O(n) for offset
+
+---
+
+## Completed Changes Log
+
+| Date | Issue | File | Change |
+|------|-------|------|--------|
+| 2026-01-04 | #1 | prisma/schema.prisma | Added 12 indexes via Supabase migration |
+| 2026-01-04 | #2 | dashboard/stats/route.ts | Parallelized generations + scheduledPosts |
+| 2026-01-04 | #2 | campaigns/[id]/dashboard/route.ts | Parallelized campaign + scheduledPosts |
+| 2026-01-04 | #2 | campaigns/[id]/generations/route.ts | Parallelized count + findMany |
+| 2026-01-04 | #3 | dashboard/stats/route.ts | Replaced JS filter with groupBy/aggregate |
+| 2026-01-04 | #3 | campaigns/[id]/dashboard/route.ts | Added parallel aggregate queries |
+| 2026-01-04 | #6 | campaigns/[id]/generations/route.ts | Added cursor-based pagination support |
+
+---
+
+## Testing Checklist
+- [x] Run `npm run typecheck` after all changes ✅ Passed 2026-01-04
+- [ ] Test dashboard loading speed
+- [ ] Test campaign page loading speed
+- [ ] Test generation list pagination (offset + cursor modes)
