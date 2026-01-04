@@ -29,13 +29,19 @@ import {
   VariationVideo,
 } from "@/lib/stores/processing-session-store";
 
-// Convert GCS URLs to proxy URLs to avoid CORS issues
+// Convert GCS/S3 URLs to proxy URLs to avoid CORS issues and handle private buckets
 function getVideoProxyUrl(url: string | undefined): string | undefined {
   if (!url) return undefined;
 
   // Check if it's a GCS URL that needs proxying
   const isGcsUrl = url.includes('storage.googleapis.com/') || url.includes('storage.cloud.google.com/');
   if (isGcsUrl) {
+    return `/api/v1/assets/proxy?url=${encodeURIComponent(url)}`;
+  }
+
+  // Check if it's an S3 URL that needs proxying (private bucket)
+  const isS3Url = url.includes('.s3.') && url.includes('.amazonaws.com');
+  if (isS3Url) {
     return `/api/v1/assets/proxy?url=${encodeURIComponent(url)}`;
   }
 
