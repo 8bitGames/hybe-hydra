@@ -28,6 +28,25 @@ import {
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
+/**
+ * Get proxied URL for S3/GCS video URLs
+ * Private bucket URLs need to be proxied through our API for browser access
+ */
+function getVideoProxyUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  // Check for GCS URLs
+  const isGcsUrl = url.includes('storage.googleapis.com/') || url.includes('storage.cloud.google.com/');
+  if (isGcsUrl) {
+    return `/api/v1/assets/proxy?url=${encodeURIComponent(url)}`;
+  }
+  // Check for S3 URLs
+  const isS3Url = url.includes('.s3.') && url.includes('.amazonaws.com');
+  if (isS3Url) {
+    return `/api/v1/assets/proxy?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
 type ViewMode = "grid" | "list";
 
 export default function PipelineDetailPage() {
@@ -211,7 +230,7 @@ export default function PipelineDetailPage() {
             <div className="w-48 h-28 bg-muted rounded-lg overflow-hidden shrink-0">
               {pipeline.seed_generation.output_url ? (
                 <LazyVideo
-                  src={pipeline.seed_generation.output_url}
+                  src={getVideoProxyUrl(pipeline.seed_generation.output_url)!}
                   className="w-full h-full object-cover"
                   controls
                   muted
@@ -219,7 +238,7 @@ export default function PipelineDetailPage() {
                 />
               ) : pipeline.seed_generation.composed_output_url ? (
                 <LazyVideo
-                  src={pipeline.seed_generation.composed_output_url}
+                  src={getVideoProxyUrl(pipeline.seed_generation.composed_output_url)!}
                   className="w-full h-full object-cover"
                   controls
                   muted
@@ -326,7 +345,7 @@ export default function PipelineDetailPage() {
                 <div className="relative aspect-video bg-muted">
                   {variation.generation?.output_url ? (
                     <LazyVideo
-                      src={variation.generation.output_url}
+                      src={getVideoProxyUrl(variation.generation.output_url)!}
                       className="w-full h-full object-cover"
                       autoPlay={false}
                       muted
@@ -335,7 +354,7 @@ export default function PipelineDetailPage() {
                     />
                   ) : variation.generation?.composed_output_url ? (
                     <LazyVideo
-                      src={variation.generation.composed_output_url}
+                      src={getVideoProxyUrl(variation.generation.composed_output_url)!}
                       className="w-full h-full object-cover"
                       autoPlay={false}
                       muted

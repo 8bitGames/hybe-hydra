@@ -209,9 +209,10 @@ export default function CampaignWorkspaceLayout({
   }
 
   // Standalone pages should render without the campaign workspace tabs
+  // but still need padding for proper layout
   if (isStandalonePage) {
     return (
-      <div className="min-h-full">
+      <div className="min-h-full px-[7%] py-6">
         {children}
       </div>
     );
