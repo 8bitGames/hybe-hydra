@@ -107,9 +107,10 @@ async def upload_to_s3(
     import boto3
     from botocore.config import Config
 
+    region = os.environ.get('AWS_REGION', 'ap-northeast-2')
     s3_client = boto3.client(
         's3',
-        region_name=os.environ.get('AWS_REGION', 'ap-northeast-2'),
+        region_name=region,
         config=Config(signature_version='s3v4')
     )
 
@@ -120,10 +121,51 @@ async def upload_to_s3(
         ContentType=content_type,
     )
 
-    # Generate presigned URL or return direct S3 URL
-    url = f"https://{bucket}.s3.amazonaws.com/{key}"
+    # Return direct S3 URL (Next.js will generate presigned URLs as needed)
+    url = f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
     logger.info(f"Uploaded to S3: {url}")
     return url
+
+
+def get_s3_bucket() -> str:
+    """Get the S3 bucket for AI-generated assets."""
+    return os.environ.get('AWS_S3_BUCKET', 'hydra-assets-seoul')
+
+
+async def copy_gcs_to_s3(
+    gcs_uri: str,
+    s3_key: str,
+    job_id: str = "",
+) -> str:
+    """
+    Copy a video from GCS to S3.
+
+    Args:
+        gcs_uri: GCS URI (gs://bucket/path)
+        s3_key: S3 key to upload to (e.g., "ai/videos/job-id.mp4")
+        job_id: Job ID for logging
+
+    Returns:
+        S3 URL of the uploaded video
+    """
+    gcs = get_gcs_client()
+
+    # Download from GCS
+    logger.info(f"[{job_id}] Downloading video from GCS: {gcs_uri}")
+    video_bytes = gcs.download_from_uri(gcs_uri)
+    logger.info(f"[{job_id}] Downloaded {len(video_bytes)} bytes from GCS")
+
+    # Upload to S3
+    s3_bucket = get_s3_bucket()
+    s3_url = await upload_to_s3(
+        video_bytes,
+        s3_bucket,
+        s3_key,
+        content_type="video/mp4",
+    )
+    logger.info(f"[{job_id}] Copied video to S3: {s3_url}")
+
+    return s3_url
 
 
 async def download_image(url: str) -> tuple[bytes, str]:
@@ -415,34 +457,31 @@ async def process_image_generation(
             await job_queue.update_job(
                 job_id,
                 progress=70,
-                current_step="Uploading to GCS"
+                current_step="Uploading to S3"
             )
 
-        # Upload to GCS (instead of S3)
+        # Upload to S3 (images go directly to S3, no GCS needed)
         image_bytes = base64.b64decode(result.image_base64)
 
-        gcs = get_gcs_client()
-        gcs_bucket = os.environ.get('GCS_AI_BUCKET', 'hyb-hydra-dev-ai-output')
-        gcs_key = f"images/{job_id}.png"
-        gcs_uri = gcs.upload_bytes(
+        s3_bucket = get_s3_bucket()
+        s3_key = f"ai/images/{job_id}.png"
+        output_url = await upload_to_s3(
             image_bytes,
-            gcs_key,
+            s3_bucket,
+            s3_key,
             content_type="image/png",
-            bucket_name=gcs_bucket,
         )
-        logger.info(f"[{job_id}] Image uploaded to GCS: {gcs_uri}")
-
-        # Generate signed URL
-        output_url = gcs.generate_signed_url_from_uri(gcs_uri)
-        logger.info(f"[{job_id}] Generated GCS signed URL for image")
+        logger.info(f"[{job_id}] Image uploaded to S3: {output_url}")
 
         # Update completion status
         duration_ms = int((time.time() - start_time) * 1000)
 
-        # Include GCS URI in metadata
+        # S3 storage metadata
         generation_metadata = {
-            "gcs_uri": gcs_uri,
-            "storage": "gcs",
+            "s3_url": output_url,
+            "s3_bucket": s3_bucket,
+            "s3_key": s3_key,
+            "storage": "s3",
         }
 
         if job_queue:
@@ -455,7 +494,7 @@ async def process_image_generation(
                 metadata=generation_metadata,
             )
 
-        logger.info(f"[{job_id}] Image generation completed in {duration_ms}ms (gcs_uri: {gcs_uri})")
+        logger.info(f"[{job_id}] Image generation completed in {duration_ms}ms (s3_url: {output_url})")
 
     except Exception as e:
         logger.error(f"[{job_id}] Image generation failed: {e}")
@@ -575,24 +614,27 @@ async def process_video_generation(
             except Exception as e:
                 logger.warning(f"[{job_id}] Audio overlay failed, using original video: {e}")
 
-        # Generate signed URL directly from GCS (no S3 copy needed)
+        # Copy video from GCS to S3 for universal access
         if job_queue:
             await job_queue.update_job(
                 job_id,
-                progress=95,
-                current_step="Generating signed URL"
+                progress=90,
+                current_step="Copying video to S3"
             )
 
-        output_url = gcs.generate_signed_url_from_uri(actual_video_uri)
-        logger.info(f"[{job_id}] Generated GCS signed URL for video")
+        s3_key = f"ai/videos/{job_id}.mp4"
+        output_url = await copy_gcs_to_s3(actual_video_uri, s3_key, job_id)
+        logger.info(f"[{job_id}] Video copied to S3: {output_url}")
 
         duration_ms = int((time.time() - start_time) * 1000)
 
-        # Include GCS URI in metadata for future video extensions
+        # Include GCS URI in metadata for future video extensions (Veo requires GCS)
+        # S3 URL is used for output_url (universal access)
         generation_metadata = {
             "gcs_uri": actual_video_uri,
+            "s3_url": output_url,
             "extension_count": 0,
-            "storage": "gcs",  # Mark as GCS storage
+            "storage": "s3",  # Primary storage is now S3
         }
 
         if job_queue:
@@ -605,7 +647,7 @@ async def process_video_generation(
                 metadata=generation_metadata,
             )
 
-        logger.info(f"[{job_id}] Video generation completed in {duration_ms}ms (gcs_uri: {actual_video_uri})")
+        logger.info(f"[{job_id}] Video generation completed in {duration_ms}ms (s3_url: {output_url}, gcs_uri: {actual_video_uri})")
 
         # Send callback to Next.js with gcs_uri in metadata
         await send_callback(
@@ -767,24 +809,27 @@ async def process_image_to_video(
             except Exception as e:
                 logger.warning(f"[{job_id}] Audio overlay failed, using original video: {e}")
 
-        # Generate signed URL directly from GCS (no S3 copy needed)
+        # Copy video from GCS to S3 for universal access
         if job_queue:
             await job_queue.update_job(
                 job_id,
-                progress=95,
-                current_step="Generating signed URL"
+                progress=90,
+                current_step="Copying video to S3"
             )
 
-        output_url = gcs.generate_signed_url_from_uri(actual_video_uri)
-        logger.info(f"[{job_id}] Generated GCS signed URL for video")
+        s3_key = f"ai/videos/{job_id}.mp4"
+        output_url = await copy_gcs_to_s3(actual_video_uri, s3_key, job_id)
+        logger.info(f"[{job_id}] Video copied to S3: {output_url}")
 
         duration_ms = int((time.time() - start_time) * 1000)
 
-        # Include GCS URI in metadata for future video extensions
+        # Include GCS URI in metadata for future video extensions (Veo requires GCS)
+        # S3 URL is used for output_url (universal access)
         generation_metadata = {
             "gcs_uri": actual_video_uri,
+            "s3_url": output_url,
             "extension_count": 0,
-            "storage": "gcs",  # Mark as GCS storage
+            "storage": "s3",  # Primary storage is now S3
         }
 
         if job_queue:
@@ -797,7 +842,7 @@ async def process_image_to_video(
                 metadata=generation_metadata,
             )
 
-        logger.info(f"[{job_id}] Image-to-video generation completed in {duration_ms}ms (gcs_uri: {actual_video_uri})")
+        logger.info(f"[{job_id}] Image-to-video generation completed in {duration_ms}ms (s3_url: {output_url}, gcs_uri: {actual_video_uri})")
 
         # Send callback to Next.js with gcs_uri in metadata
         await send_callback(
@@ -942,27 +987,30 @@ async def process_video_extend(
             except Exception as e:
                 logger.warning(f"[{job_id}] Audio overlay failed, using original video: {e}")
 
-        # Generate signed URL directly from GCS (no S3 copy needed)
+        # Copy video from GCS to S3 for universal access
         if job_queue:
             await job_queue.update_job(
                 job_id,
-                progress=95,
-                current_step="Generating signed URL"
+                progress=90,
+                current_step="Copying video to S3"
             )
 
-        output_url = gcs.generate_signed_url_from_uri(actual_video_uri)
-        logger.info(f"[{job_id}] Generated GCS signed URL for extended video")
+        s3_key = f"ai/videos/extended/{job_id}.mp4"
+        output_url = await copy_gcs_to_s3(actual_video_uri, s3_key, job_id)
+        logger.info(f"[{job_id}] Extended video copied to S3: {output_url}")
 
         duration_ms = int((time.time() - start_time) * 1000)
 
-        # Include the new GCS URI in metadata for future extensions
+        # Include the new GCS URI in metadata for future extensions (Veo requires GCS)
         # Merge with original request metadata to preserve generation_id
+        # S3 URL is used for output_url (universal access)
         extended_metadata = {
             **(request.metadata or {}),  # Preserve generation_id from original request
             "gcs_uri": actual_video_uri,
+            "s3_url": output_url,
             "extension_count": settings.extension_count + 1,
             "source_gcs_uri": settings.source_gcs_uri,
-            "storage": "gcs",  # Mark as GCS storage
+            "storage": "s3",  # Primary storage is now S3
         }
 
         if job_queue:
@@ -975,7 +1023,7 @@ async def process_video_extend(
                 metadata=extended_metadata,
             )
 
-        logger.info(f"[{job_id}] Video extension completed in {duration_ms}ms (extension #{settings.extension_count + 1})")
+        logger.info(f"[{job_id}] Video extension completed in {duration_ms}ms (extension #{settings.extension_count + 1}, s3_url: {output_url})")
 
         # Send callback to Next.js with updated gcs_uri in metadata
         await send_callback(
