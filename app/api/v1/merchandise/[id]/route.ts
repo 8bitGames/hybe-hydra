@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { MerchandiseType } from "@prisma/client";
 
 interface RouteParams {
@@ -10,8 +10,8 @@ interface RouteParams {
 // GET /api/v1/merchandise/:id - Get single merchandise item
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const merchandise = await prisma.merchandiseItem.findUnique({
+    const merchandise = await withRetry(() => prisma.merchandiseItem.findUnique({
       where: { id },
       include: {
         artist: {
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!merchandise) {
       return NextResponse.json({ detail: "Merchandise not found" }, { status: 404 });
@@ -82,8 +82,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // PATCH /api/v1/merchandise/:id - Update merchandise item
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -95,14 +95,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const merchandise = await prisma.merchandiseItem.findUnique({
+    const merchandise = await withRetry(() => prisma.merchandiseItem.findUnique({
       where: { id },
       include: {
         artist: {
           select: { labelId: true },
         },
       },
-    });
+    }));
 
     if (!merchandise) {
       return NextResponse.json({ detail: "Merchandise not found" }, { status: 404 });
@@ -146,7 +146,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const updated = await prisma.merchandiseItem.update({
+    const updated = await withRetry(() => prisma.merchandiseItem.update({
       where: { id },
       data: updateData,
       include: {
@@ -159,7 +159,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     return NextResponse.json({
       id: updated.id,
@@ -191,8 +191,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/v1/merchandise/:id - Delete merchandise item
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -205,14 +205,14 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const merchandise = await prisma.merchandiseItem.findUnique({
+    const merchandise = await withRetry(() => prisma.merchandiseItem.findUnique({
       where: { id },
       include: {
         _count: {
           select: { generationMerchandise: true },
         },
       },
-    });
+    }));
 
     if (!merchandise) {
       return NextResponse.json({ detail: "Merchandise not found" }, { status: 404 });
@@ -220,10 +220,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     // Soft delete if there are associated generations, hard delete otherwise
     if (merchandise._count.generationMerchandise > 0) {
-      await prisma.merchandiseItem.update({
+      await withRetry(() => prisma.merchandiseItem.update({
         where: { id },
         data: { isActive: false },
-      });
+      }));
 
       return NextResponse.json({
         message: "Merchandise deactivated (has associated generations)",
@@ -231,9 +231,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    await prisma.merchandiseItem.delete({
+    await withRetry(() => prisma.merchandiseItem.delete({
       where: { id },
-    });
+    }));
 
     return NextResponse.json({
       message: "Merchandise deleted successfully",

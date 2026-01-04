@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 import { PublishPlatform, PublishStatus } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
 
@@ -12,8 +12,8 @@ const getComposeEngineUrl = () =>
 // GET /api/v1/publishing/schedule - List scheduled posts
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -52,22 +52,22 @@ export async function GET(request: NextRequest) {
 
     // Get accessible accounts based on user's labels
     if (user.role !== "ADMIN") {
-      const accessibleAccounts = await prisma.socialAccount.findMany({
+      const accessibleAccounts = await withRetry(() => prisma.socialAccount.findMany({
         where: {
           labelId: { in: user.labelIds },
         },
         select: { id: true },
-      });
+      }));
       whereClause.socialAccountId = {
         in: accessibleAccounts.map((a) => a.id),
       };
     }
 
     // Get total count
-    const total = await prisma.scheduledPost.count({ where: whereClause });
+    const total = await withRetry(() => prisma.scheduledPost.count({ where: whereClause }));
 
     // Get scheduled posts
-    const posts = await prisma.scheduledPost.findMany({
+    const posts = await withRetry(() => prisma.scheduledPost.findMany({
       where: whereClause,
       orderBy: [
         { scheduledAt: "asc" },
@@ -91,11 +91,11 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-    });
+    }));
 
     // Get generation details for each post (exclude soft-deleted)
     const generationIds = [...new Set(posts.map((p) => p.generationId))];
-    const generations = await prisma.videoGeneration.findMany({
+    const generations = await withRetry(() => prisma.videoGeneration.findMany({
       where: { id: { in: generationIds }, deletedAt: null },
       select: {
         id: true,
@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
         durationSeconds: true,
         qualityScore: true,
       },
-    });
+    }));
     const generationMap = new Map(generations.map((g) => [g.id, g]));
 
     // Transform response
@@ -171,8 +171,8 @@ export async function GET(request: NextRequest) {
 // POST /api/v1/publishing/schedule - Create a scheduled post
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -204,14 +204,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify generation exists and belongs to campaign (exclude soft-deleted)
-    const generation = await prisma.videoGeneration.findFirst({
+    const generation = await withRetry(() => prisma.videoGeneration.findFirst({
       where: {
         id: generation_id,
         campaignId: campaign_id,
         status: "COMPLETED",
         deletedAt: null,
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json(
@@ -221,9 +221,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify social account exists and user has access
-    const socialAccount = await prisma.socialAccount.findUnique({
+    const socialAccount = await withRetry(() => prisma.socialAccount.findUnique({
       where: { id: social_account_id },
-    });
+    }));
 
     if (!socialAccount) {
       return NextResponse.json(
@@ -246,7 +246,7 @@ export async function POST(request: NextRequest) {
     const status: PublishStatus = isNow ? "PUBLISHING" : "SCHEDULED";
 
     // Create scheduled post
-    const post = await prisma.scheduledPost.create({
+    const post = await withRetry(() => prisma.scheduledPost.create({
       data: {
         campaignId: campaign_id,
         generationId: generation_id,
@@ -271,7 +271,7 @@ export async function POST(request: NextRequest) {
           },
         },
       },
-    });
+    }));
 
     // If NOW (immediate publish), call EC2 backend
     if (isNow) {

@@ -2,63 +2,21 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { createClient, AuthChangeEvent, Session } from "@supabase/supabase-js";
-import { api, authApi, usersApi } from "./api";
-
-// Create Supabase client for client-side auth operations
-// Enable autoRefreshToken to automatically refresh sessions before expiry
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: true,
-    },
-  }
-);
-
-// Session refresh interval (check every 4 minutes)
-const SESSION_CHECK_INTERVAL = 4 * 60 * 1000;
-// Proactive refresh threshold (refresh 30 minutes before expiry)
-const PROACTIVE_REFRESH_THRESHOLD = 30 * 60 * 1000;
-// Default token lifetime (1 hour) - used when expires_in is not provided
-const DEFAULT_TOKEN_LIFETIME = 60 * 60 * 1000;
-// Minimum time between refresh attempts to prevent spam
-const MIN_REFRESH_INTERVAL = 60 * 1000; // 1 minute
-
-let sessionCheckInterval: NodeJS.Timeout | null = null;
-let visibilityChangeHandler: (() => void) | null = null;
-let isSessionMonitorRunning = false; // Prevent duplicate monitor starts
-let lastRefreshAttemptTime = 0; // Track last refresh attempt to prevent spam
+import { createClient } from "@/lib/supabase/client";
 
 /**
- * Check if token should be refreshed proactively (before expiry)
+ * Auth Store - Cookie-based authentication with in-memory token access
+ *
+ * This store:
+ * - Uses Supabase SSR cookies for auth (primary)
+ * - Keeps accessToken in memory for components that need it (NOT persisted)
+ * - Persists only user profile to localStorage
+ * - Works with the unified middleware for session management
+ *
+ * NOTE: accessToken is available in memory for backward compatibility
+ * but is NOT persisted to localStorage. Components should migrate to
+ * using `credentials: 'include'` for API calls.
  */
-const shouldRefreshProactively = (tokenExpiresAt: number | null): boolean => {
-  if (!tokenExpiresAt) return false;
-  const now = Date.now();
-  const timeUntilExpiry = tokenExpiresAt - now;
-  // Refresh if within threshold and not already expired
-  return timeUntilExpiry < PROACTIVE_REFRESH_THRESHOLD && timeUntilExpiry > 0;
-};
-
-/**
- * Check if enough time has passed since last refresh attempt
- */
-const canAttemptRefresh = (): boolean => {
-  const now = Date.now();
-  return now - lastRefreshAttemptTime > MIN_REFRESH_INTERVAL;
-};
-
-/**
- * Calculate token expiration timestamp from expires_in (seconds)
- */
-const calculateTokenExpiry = (expiresIn?: number): number => {
-  const lifetime = expiresIn ? expiresIn * 1000 : DEFAULT_TOKEN_LIFETIME;
-  return Date.now() + lifetime;
-};
 
 interface User {
   id: string;
@@ -73,9 +31,6 @@ interface User {
 
 interface AuthState {
   user: User | null;
-  accessToken: string | null;
-  refreshToken: string | null;
-  tokenExpiresAt: number | null; // Timestamp when access token expires
   isLoading: boolean;
   isAuthenticated: boolean;
   _hasHydrated: boolean;
@@ -85,16 +40,30 @@ interface AuthState {
   register: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
-  setTokens: (accessToken: string, refreshToken: string, expiresIn?: number) => void;
   setHasHydrated: (state: boolean) => void;
-
-  // Session management
   initializeSession: () => Promise<void>;
-  refreshSession: () => Promise<boolean>;
+  syncTokenFromSession: () => Promise<void>;
+
+  // Token properties - kept in memory (NOT persisted) for backward compatibility
+  // Components should migrate to using `credentials: 'include'` instead
+  accessToken: string | null;
+  refreshToken: string | null;
+  tokenExpiresAt: number | null;
+
+  // Legacy methods - kept for backward compatibility (no-op or minimal implementation)
   startSessionMonitor: () => void;
   stopSessionMonitor: () => void;
+  setTokens: (accessToken: string, refreshToken: string, expiresIn?: number) => void;
+  refreshSession: () => Promise<boolean>;
   checkSessionOnVisibility: () => Promise<void>;
 }
+
+// Create Supabase client for auth operations
+const getSupabase = () => createClient();
+
+// Track auth subscription to prevent memory leaks
+// Stored outside Zustand to avoid persistence issues
+let authSubscription: { unsubscribe: () => void } | null = null;
 
 // Setup global auth:logout event listener
 if (typeof window !== "undefined") {
@@ -108,12 +77,15 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      accessToken: null,
-      refreshToken: null,
-      tokenExpiresAt: null,
       isLoading: false,
       isAuthenticated: false,
       _hasHydrated: false,
+
+      // Token properties - kept in memory for backward compatibility
+      // NOT persisted to localStorage - synced from Supabase session
+      accessToken: null,
+      refreshToken: null,
+      tokenExpiresAt: null,
 
       setHasHydrated: (state: boolean) => {
         set({ _hasHydrated: state });
@@ -122,543 +94,289 @@ export const useAuthStore = create<AuthState>()(
       login: async (email: string, password: string) => {
         set({ isLoading: true });
 
-        const response = await authApi.login({ email, password });
-
-        if (response.error) {
-          set({ isLoading: false });
-          return { success: false, error: response.error.message };
-        }
-
-        if (response.data) {
-          const { access_token, refresh_token, user, expires_in } = response.data;
-          console.log("[AuthStore] Login successful, setting token...", {
-            hasAccessToken: !!access_token,
-            hasUser: !!user,
-            expiresIn: expires_in,
+        try {
+          // Use our backend API which sets cookies properly
+          const response = await fetch("/api/v1/auth/login", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
           });
 
-          // Set token in API client
-          api.setAccessToken(access_token);
+          const data = await response.json();
 
-          // Calculate token expiration timestamp
-          const tokenExpiresAt = calculateTokenExpiry(expires_in);
-          console.log("[AuthStore] Token expires at:", new Date(tokenExpiresAt).toISOString());
+          if (!response.ok) {
+            set({ isLoading: false });
+            return { success: false, error: data.detail || "Login failed" };
+          }
 
-          // If user data is included in login response, use it directly
-          if (user) {
+          // Calculate token expiry (default 1 hour if not provided)
+          const expiresIn = data.expires_in || 3600;
+          const tokenExpiresAt = Date.now() + expiresIn * 1000;
+
+          // Set user and tokens from API response
+          if (data.user) {
             set({
-              accessToken: access_token,
-              refreshToken: refresh_token,
-              tokenExpiresAt,
               isAuthenticated: true,
               isLoading: false,
+              accessToken: data.access_token || null,
+              refreshToken: data.refresh_token || null,
+              tokenExpiresAt,
               user: {
-                id: user.id,
-                email: user.email,
-                name: user.name,
-                role: user.role,
-                label_ids: user.label_ids || [],
+                id: data.user.id,
+                email: data.user.email,
+                name: data.user.name,
+                role: data.user.role,
+                label_ids: data.user.label_ids || [],
                 is_active: true,
                 created_at: "",
                 updated_at: "",
               },
             });
-            console.log("[AuthStore] State set with user, current state:", {
-              accessToken: !!get().accessToken,
-              isAuthenticated: get().isAuthenticated,
-              user: !!get().user,
-              tokenExpiresAt: new Date(tokenExpiresAt).toISOString(),
-            });
           } else {
             set({
-              accessToken: access_token,
-              refreshToken: refresh_token,
-              tokenExpiresAt,
               isAuthenticated: true,
               isLoading: false,
+              accessToken: data.access_token || null,
+              refreshToken: data.refresh_token || null,
+              tokenExpiresAt,
             });
-            console.log("[AuthStore] State set, fetching user...");
-
-            // Fetch user info if not included in response
             await get().fetchUser();
           }
 
           return { success: true };
+        } catch (error) {
+          console.error("[AuthStore] Login error:", error);
+          set({ isLoading: false });
+          return { success: false, error: "Network error" };
         }
-
-        set({ isLoading: false });
-        return { success: false, error: "Unknown error" };
       },
 
       register: async (email: string, password: string, name: string) => {
         set({ isLoading: true });
 
-        const response = await authApi.register({ email, password, name });
+        try {
+          const response = await fetch("/api/v1/auth/register", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password, name }),
+          });
 
-        if (response.error) {
+          const data = await response.json();
+
+          if (!response.ok) {
+            set({ isLoading: false });
+            return { success: false, error: data.detail || "Registration failed" };
+          }
+
           set({ isLoading: false });
-          return { success: false, error: response.error.message };
+
+          // Auto login after registration
+          return get().login(email, password);
+        } catch (error) {
+          console.error("[AuthStore] Registration error:", error);
+          set({ isLoading: false });
+          return { success: false, error: "Network error" };
         }
-
-        set({ isLoading: false });
-
-        // Auto login after registration
-        return get().login(email, password);
       },
 
       logout: async () => {
-        // Stop session monitoring first
-        get().stopSessionMonitor();
-
-        // Sign out from Supabase
-        try {
-          await supabase.auth.signOut();
-        } catch (error) {
-          console.error("[Auth] Supabase signOut error:", error);
+        // Unsubscribe from auth state changes to prevent memory leaks
+        if (authSubscription) {
+          authSubscription.unsubscribe();
+          authSubscription = null;
         }
 
-        api.setAccessToken(null);
+        try {
+          // Sign out from Supabase (clears cookies)
+          const supabase = getSupabase();
+          await supabase.auth.signOut();
+
+          // Also call our backend for clean logout
+          await fetch("/api/v1/auth/logout", {
+            method: "POST",
+            credentials: "include",
+          }).catch(() => {});
+        } catch (error) {
+          console.error("[Auth] Logout error:", error);
+        }
+
         set({
           user: null,
+          isAuthenticated: false,
           accessToken: null,
           refreshToken: null,
           tokenExpiresAt: null,
-          isAuthenticated: false,
         });
       },
 
       fetchUser: async () => {
-        const { accessToken } = get();
+        try {
+          const response = await fetch("/api/v1/users/me", {
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+          });
 
-        if (!accessToken) {
-          return;
-        }
-
-        // Ensure token is set in API client
-        api.setAccessToken(accessToken);
-
-        const response = await usersApi.getMe();
-
-        if (response.error) {
-          // Check if this is an auth error or network error
-          const statusCode = (response.error as { status?: number }).status;
-          const isAuthError = statusCode === 401 || statusCode === 403;
-
-          if (!isAuthError) {
-            // Network error - don't logout, just log
-            console.warn("[AuthStore] fetchUser: Network error, skipping refresh:", response.error);
+          if (!response.ok) {
+            if (response.status === 401) {
+              // Session expired
+              set({ user: null, isAuthenticated: false });
+            }
             return;
           }
 
-          // Token might be expired, try to refresh
-          const { refreshToken } = get();
-          if (refreshToken) {
-            const refreshResponse = await authApi.refresh(refreshToken);
-            if (refreshResponse.data) {
-              const { access_token, refresh_token, expires_in } = refreshResponse.data;
-              const newTokenExpiresAt = calculateTokenExpiry(expires_in);
-
-              api.setAccessToken(access_token);
-              set({
-                accessToken: access_token,
-                refreshToken: refresh_token,
-                tokenExpiresAt: newTokenExpiresAt,
-              });
-              // Retry fetching user
-              const retryResponse = await usersApi.getMe();
-              if (retryResponse.data) {
-                set({ user: retryResponse.data, isAuthenticated: true });
-              }
-            } else {
-              // Refresh failed, logout
-              get().logout();
-            }
-          } else {
-            get().logout();
-          }
-          return;
-        }
-
-        if (response.data) {
-          set({ user: response.data, isAuthenticated: true });
+          const data = await response.json();
+          set({ user: data, isAuthenticated: true });
+        } catch (error) {
+          console.error("[AuthStore] fetchUser error:", error);
         }
       },
 
-      setTokens: (accessToken: string, refreshToken: string, expiresIn?: number) => {
-        api.setAccessToken(accessToken);
-        const tokenExpiresAt = calculateTokenExpiry(expiresIn);
-        set({
-          accessToken,
-          refreshToken,
-          tokenExpiresAt,
-          isAuthenticated: true,
-        });
-      },
-
-      // Initialize session - called once on app load
       initializeSession: async () => {
         console.log("[AuthStore] Initializing session...");
 
         try {
-          // Check if we have a persisted session that needs proactive refresh
-          const { tokenExpiresAt, refreshToken: storedRefreshToken, isAuthenticated } = get();
+          const supabase = getSupabase();
 
-          if (isAuthenticated && storedRefreshToken) {
-            // Check if token should be proactively refreshed
-            if (shouldRefreshProactively(tokenExpiresAt)) {
-              const timeUntilExpiry = tokenExpiresAt ? Math.round((tokenExpiresAt - Date.now()) / 1000 / 60) : 0;
-              console.log(`[AuthStore] Session init: Token expires in ${timeUntilExpiry} minutes, refreshing proactively...`);
-
-              const refreshed = await get().refreshSession();
-              if (refreshed) {
-                console.log("[AuthStore] Session init: Proactive refresh successful");
-              } else {
-                console.warn("[AuthStore] Session init: Proactive refresh failed, will use existing token");
-              }
-            }
+          // Unsubscribe from any existing listener to prevent memory leaks
+          if (authSubscription) {
+            authSubscription.unsubscribe();
+            authSubscription = null;
           }
 
-          // Get current Supabase session
-          const { data: { session }, error } = await supabase.auth.getSession();
+          // Use getUser() for secure server-side validation instead of getSession()
+          const { data: { user: supabaseUser }, error } = await supabase.auth.getUser();
 
           if (error) {
-            console.error("[AuthStore] Error getting session:", error);
-            // Don't return early - we might have a valid stored session
+            console.error("[AuthStore] Error getting user:", error);
+            set({ isLoading: false });
+            return;
           }
 
-          if (session) {
-            console.log("[AuthStore] Found existing Supabase session, syncing tokens...");
-            const { accessToken } = get();
+          if (supabaseUser) {
+            // Fetch user profile from our database
+            await get().fetchUser();
+            // Sync token from session for backward compatibility
+            await get().syncTokenFromSession();
+          } else {
+            set({ isAuthenticated: false, user: null });
+          }
 
-            // If we have a Supabase session but our store is out of sync, update it
-            if (session.access_token !== accessToken) {
-              console.log("[AuthStore] Syncing tokens from Supabase session");
-              const newTokenExpiresAt = calculateTokenExpiry(session.expires_in);
+          // Set up auth state change listener and store subscription for cleanup
+          const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            console.log("[AuthStore] Auth state changed:", event);
 
-              api.setAccessToken(session.access_token);
+            if (event === "SIGNED_OUT") {
               set({
-                accessToken: session.access_token,
-                refreshToken: session.refresh_token,
-                tokenExpiresAt: newTokenExpiresAt,
-                isAuthenticated: true,
+                user: null,
+                isAuthenticated: false,
+                accessToken: null,
+                refreshToken: null,
+                tokenExpiresAt: null,
               });
-
-              // Fetch user if we don't have it
-              if (!get().user) {
+            } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+              if (session?.user) {
                 await get().fetchUser();
+                // Sync token on refresh
+                if (session.access_token) {
+                  const expiresIn = session.expires_in || 3600;
+                  set({
+                    accessToken: session.access_token,
+                    refreshToken: session.refresh_token || null,
+                    tokenExpiresAt: Date.now() + expiresIn * 1000,
+                  });
+                }
               }
             }
-          }
+          });
 
-          // Start session monitoring
-          get().startSessionMonitor();
+          // Store subscription for later cleanup
+          authSubscription = subscription;
         } catch (error) {
           console.error("[AuthStore] Session initialization error:", error);
         }
       },
 
-      // Manually refresh the session using backend API
-      refreshSession: async () => {
-        console.log("[AuthStore] Refreshing session...");
-
-        // Prevent refresh spam
-        if (!canAttemptRefresh()) {
-          console.log("[AuthStore] Refresh attempt throttled, waiting for cooldown");
-          return false;
-        }
-
+      syncTokenFromSession: async () => {
         try {
-          const { refreshToken } = get();
+          const supabase = getSupabase();
+          const { data: { session }, error } = await supabase.auth.getSession();
 
-          if (!refreshToken) {
-            console.error("[AuthStore] No refresh token available");
-            return false;
+          if (error || !session) {
+            return;
           }
 
-          // Update last refresh attempt time
-          lastRefreshAttemptTime = Date.now();
+          const expiresIn = session.expires_in || 3600;
+          set({
+            accessToken: session.access_token,
+            refreshToken: session.refresh_token || null,
+            tokenExpiresAt: Date.now() + expiresIn * 1000,
+          });
+        } catch (error) {
+          console.error("[AuthStore] syncTokenFromSession error:", error);
+        }
+      },
 
-          // Use backend API for token refresh
-          const refreshResponse = await authApi.refresh(refreshToken);
+      // Legacy methods - kept for backward compatibility (silent, no console spam)
+      startSessionMonitor: () => {
+        // No-op: Sessions are managed via Supabase cookies
+      },
 
-          if (refreshResponse.data) {
-            const { access_token, refresh_token, expires_in } = refreshResponse.data;
-            const newTokenExpiresAt = calculateTokenExpiry(expires_in);
+      stopSessionMonitor: () => {
+        // No-op: Sessions are managed via Supabase cookies
+      },
 
-            console.log("[AuthStore] Session refreshed successfully via backend API", {
-              newExpiresAt: new Date(newTokenExpiresAt).toISOString(),
-            });
+      setTokens: (accessToken: string, refreshToken: string, expiresIn?: number) => {
+        // Update in-memory tokens for backward compatibility
+        const tokenExpiresAt = expiresIn ? Date.now() + expiresIn * 1000 : null;
+        set({ accessToken, refreshToken, tokenExpiresAt });
+      },
 
-            api.setAccessToken(access_token);
+      refreshSession: async () => {
+        // Refresh session and sync token
+        try {
+          const supabase = getSupabase();
+          const { data: { session }, error } = await supabase.auth.refreshSession();
+          if (!error && session) {
+            const expiresIn = session.expires_in || 3600;
             set({
-              accessToken: access_token,
-              refreshToken: refresh_token,
-              tokenExpiresAt: newTokenExpiresAt,
+              accessToken: session.access_token,
+              refreshToken: session.refresh_token || null,
+              tokenExpiresAt: Date.now() + expiresIn * 1000,
             });
             return true;
           }
-
-          // Check if this is an auth error (should logout) vs network error (should retry)
-          const error = refreshResponse.error;
-          if (error) {
-            const statusCode = (error as { status?: number }).status;
-            const isAuthError = statusCode === 401 || statusCode === 403;
-
-            if (isAuthError) {
-              console.error("[AuthStore] Session refresh failed with auth error, will logout:", error);
-            } else {
-              console.warn("[AuthStore] Session refresh failed with network/server error, will retry:", error);
-            }
-          }
-
           return false;
-        } catch (error) {
-          // Network errors - don't logout immediately, allow retry
-          console.error("[AuthStore] Session refresh network error (will retry):", error);
+        } catch {
           return false;
         }
       },
 
-      // Check session when tab becomes visible
       checkSessionOnVisibility: async () => {
-        const { isAuthenticated, accessToken, tokenExpiresAt } = get();
-
-        if (!isAuthenticated || !accessToken) {
-          console.log("[AuthStore] Visibility check: Not authenticated, skipping");
-          return;
-        }
-
-        console.log("[AuthStore] Tab became visible, checking session...");
-
-        // Check if token should be proactively refreshed
-        if (shouldRefreshProactively(tokenExpiresAt)) {
-          const timeUntilExpiry = tokenExpiresAt ? Math.round((tokenExpiresAt - Date.now()) / 1000 / 60) : 0;
-          console.log(`[AuthStore] Visibility check: Token expires in ${timeUntilExpiry} minutes, refreshing proactively...`);
-
-          const refreshed = await get().refreshSession();
-          if (refreshed) {
-            console.log("[AuthStore] Visibility check: Proactive refresh successful");
-            return;
-          }
-          // Continue to verify if refresh failed
-        }
-
-        try {
-          // Verify session by calling backend API
-          api.setAccessToken(accessToken);
-          const response = await usersApi.getMe();
-
-          if (response.error) {
-            // Check if this is an auth error or network error
-            const statusCode = (response.error as { status?: number }).status;
-            const isAuthError = statusCode === 401 || statusCode === 403;
-
-            if (isAuthError) {
-              console.warn("[AuthStore] Visibility check: Token invalid (auth error), attempting refresh...");
-
-              // Try to refresh the token
-              const refreshed = await get().refreshSession();
-
-              if (refreshed) {
-                console.log("[AuthStore] Visibility check: Token refreshed successfully");
-                // Fetch fresh user data
-                await get().fetchUser();
-              } else {
-                console.log("[AuthStore] Visibility check: Refresh failed, logging out");
-                get().logout();
-              }
-            } else {
-              // Network error - don't logout, just log
-              console.warn("[AuthStore] Visibility check: Network error, will retry:", response.error);
-            }
-          } else {
-            console.log("[AuthStore] Visibility check: Session is valid");
-            // Update user data if returned
-            if (response.data) {
-              set({ user: response.data });
-            }
-          }
-        } catch (error) {
-          // Network errors - don't logout
-          console.error("[AuthStore] Visibility check error (will retry):", error);
-        }
-      },
-
-      // Start periodic session monitoring
-      startSessionMonitor: () => {
-        if (typeof window === "undefined") return;
-
-        // Prevent duplicate monitor starts
-        if (isSessionMonitorRunning) {
-          console.log("[AuthStore] Session monitor already running, skipping...");
-          return;
-        }
-
-        // Clear existing interval if any (just in case)
-        if (sessionCheckInterval) {
-          clearInterval(sessionCheckInterval);
-        }
-
-        // Remove existing visibility change handler if any
-        if (visibilityChangeHandler) {
-          document.removeEventListener("visibilitychange", visibilityChangeHandler);
-        }
-
-        isSessionMonitorRunning = true;
-        console.log("[AuthStore] Starting session monitor (every 4 minutes + visibility check)");
-
-        // Set up visibility change listener for when tab becomes active
-        visibilityChangeHandler = () => {
-          if (document.visibilityState === "visible") {
-            get().checkSessionOnVisibility();
-          }
-        };
-        document.addEventListener("visibilitychange", visibilityChangeHandler);
-
-        // Set up Supabase auth state change listener
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-          async (event: AuthChangeEvent, session: Session | null) => {
-            console.log("[AuthStore] Auth state changed:", event, { hasSession: !!session });
-
-            if (event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
-              if (event === "TOKEN_REFRESHED" && session) {
-                // Session was automatically refreshed - update our store
-                console.log("[AuthStore] Token auto-refreshed by Supabase");
-                api.setAccessToken(session.access_token);
-                set({
-                  accessToken: session.access_token,
-                  refreshToken: session.refresh_token,
-                });
-              } else if (event === "SIGNED_OUT") {
-                // User signed out - clear our store
-                console.log("[AuthStore] User signed out, clearing session");
-                get().logout();
-              }
-            }
-          }
-        );
-
-        // Store subscription for cleanup
-        (window as any).__supabaseAuthSubscription = subscription;
-
-        // Periodic session check using backend API with proactive refresh
-        sessionCheckInterval = setInterval(async () => {
-          const { isAuthenticated, accessToken, tokenExpiresAt } = get();
-
-          if (!isAuthenticated || !accessToken) {
-            console.log("[AuthStore] Session check: Not authenticated, skipping");
-            return;
-          }
-
-          // Check if token should be proactively refreshed (before it expires)
-          if (shouldRefreshProactively(tokenExpiresAt)) {
-            const timeUntilExpiry = tokenExpiresAt ? Math.round((tokenExpiresAt - Date.now()) / 1000 / 60) : 0;
-            console.log(`[AuthStore] Session check: Token expires in ${timeUntilExpiry} minutes, refreshing proactively...`);
-
-            const refreshed = await get().refreshSession();
-            if (refreshed) {
-              console.log("[AuthStore] Session check: Proactive refresh successful");
-              return; // No need to verify, we just got a fresh token
-            } else {
-              console.warn("[AuthStore] Session check: Proactive refresh failed, will verify session");
-            }
-          }
-
-          console.log("[AuthStore] Session check: Verifying session validity...");
-
-          try {
-            // Verify session by calling backend API
-            api.setAccessToken(accessToken);
-            const response = await usersApi.getMe();
-
-            if (response.error) {
-              // Check if this is an auth error or network error
-              const statusCode = (response.error as { status?: number }).status;
-              const isAuthError = statusCode === 401 || statusCode === 403;
-
-              if (isAuthError) {
-                console.warn("[AuthStore] Session check: Session invalid or expired (auth error)");
-
-                // Try to refresh
-                const refreshed = await get().refreshSession();
-                if (!refreshed) {
-                  console.log("[AuthStore] Session check: Refresh failed, logging out");
-                  get().logout();
-                }
-              } else {
-                // Network error - don't logout, just log
-                console.warn("[AuthStore] Session check: Network error, will retry next interval:", response.error);
-              }
-            } else {
-              console.log("[AuthStore] Session check: Session is valid");
-              // Update user data if returned
-              if (response.data) {
-                set({ user: response.data });
-              }
-            }
-          } catch (error) {
-            // Network errors - don't logout immediately
-            console.error("[AuthStore] Session check error (will retry):", error);
-          }
-        }, SESSION_CHECK_INTERVAL);
-      },
-
-      // Stop session monitoring
-      stopSessionMonitor: () => {
-        if (!isSessionMonitorRunning) {
-          return; // Already stopped
-        }
-
-        console.log("[AuthStore] Stopping session monitor");
-        isSessionMonitorRunning = false;
-
-        if (sessionCheckInterval) {
-          clearInterval(sessionCheckInterval);
-          sessionCheckInterval = null;
-        }
-
-        // Remove visibility change listener
-        if (visibilityChangeHandler) {
-          document.removeEventListener("visibilitychange", visibilityChangeHandler);
-          visibilityChangeHandler = null;
-        }
-
-        // Unsubscribe from Supabase auth changes
-        if (typeof window !== "undefined" && (window as any).__supabaseAuthSubscription) {
-          (window as any).__supabaseAuthSubscription.unsubscribe();
-          (window as any).__supabaseAuthSubscription = null;
-        }
+        // Sync token if needed when page becomes visible
+        await get().syncTokenFromSession();
       },
     }),
     {
       name: "hydra-auth-storage",
+      // Only persist user profile, not tokens (tokens are in cookies)
       partialize: (state) => ({
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
-        tokenExpiresAt: state.tokenExpiresAt,
-        isAuthenticated: state.isAuthenticated,
         user: state.user,
+        isAuthenticated: state.isAuthenticated,
       }),
       onRehydrateStorage: () => {
-        // This function is called BEFORE hydration with the initial state
-        // It returns a callback that's called AFTER hydration
         return (hydratedState, error: unknown) => {
           console.log("[AuthStore] Rehydration complete:", {
-            hasToken: !!hydratedState?.accessToken,
             isAuthenticated: hydratedState?.isAuthenticated,
-            error: error instanceof Error ? error.message : error
+            hasUser: !!hydratedState?.user,
+            error: error instanceof Error ? error.message : error,
           });
           if (error) {
             console.error("[AuthStore] Rehydration error:", error);
           }
-          // 복원된 토큰을 API 클라이언트에 설정
-          if (hydratedState?.accessToken) {
-            api.setAccessToken(hydratedState.accessToken);
-          }
-          // Hydration 완료 표시 - use the setter from hydrated state
           if (hydratedState?.setHasHydrated) {
             hydratedState.setHasHydrated(true);
-            console.log("[AuthStore] _hasHydrated set to true via setter");
           }
         };
       },

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import type { AgentContext } from "@/lib/agents/types";
@@ -67,13 +67,13 @@ async function startQuickVideoGeneration(
 
     try {
       // Update status to processing
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "PROCESSING",
           progress: 5,
         },
-      });
+      }));
 
       // Step 1: I2V Mode - Generate image first using Gemini-optimized prompts
       let generatedImageUrl: string | undefined;
@@ -103,10 +103,10 @@ async function startQuickVideoGeneration(
           const geminiImagePrompt = imagePromptResult.data.prompt;
           console.log(`${logPrefix} Gemini image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
 
-          await prisma.videoGeneration.update({
+          await withRetry(() => prisma.videoGeneration.update({
             where: { id: generationId },
             data: { progress: 20 },
-          });
+          }));
 
           // Step 1b: Generate image via EC2 compose-engine
           try {
@@ -148,10 +148,10 @@ async function startQuickVideoGeneration(
                 generatedImageUrl = imageResult.output_url;
                 console.log(`${logPrefix} Image generated successfully! URL: ${generatedImageUrl.slice(0, 80)}...`);
 
-                await prisma.videoGeneration.update({
+                await withRetry(() => prisma.videoGeneration.update({
                   where: { id: generationId },
                   data: { progress: 35 },
-                });
+                }));
 
                 // Step 1c: Use I2V Specialist Agent to generate video prompt with animation instructions
                 const videoPromptResult = await i2vAgent.generateVideoPrompt(
@@ -171,10 +171,10 @@ async function startQuickVideoGeneration(
                   console.log(`${logPrefix} Gemini video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
                 }
 
-                await prisma.videoGeneration.update({
+                await withRetry(() => prisma.videoGeneration.update({
                   where: { id: generationId },
                   data: { progress: 40 },
-                });
+                }));
               } else {
                 console.warn(`${logPrefix} Image generation failed: ${imageResult.error}, falling back to T2V`);
               }
@@ -194,10 +194,10 @@ async function startQuickVideoGeneration(
         console.log(`${logPrefix} Using Gemini-generated video prompt`);
       }
 
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: { progress: 50 },
-      });
+      }));
 
       const videoJobId = generateAIJobId("quickcreate-vid");
       const videoS3Key = `quick-create/${generationId}/video-${videoJobId}.mp4`;
@@ -241,27 +241,27 @@ async function startQuickVideoGeneration(
         }
       } catch (submitError) {
         console.error(`${logPrefix} Video submit error:`, submitError);
-        await prisma.videoGeneration.update({
+        await withRetry(() => prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "FAILED",
             progress: 100,
             errorMessage: `EC2 submit error: ${submitError instanceof Error ? submitError.message : "Unknown error"}`,
           },
-        });
+        }));
         return;
       }
 
       if (videoSubmitResult.status === "error") {
         console.error(`${logPrefix} Video submit failed: ${videoSubmitResult.error}`);
-        await prisma.videoGeneration.update({
+        await withRetry(() => prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "FAILED",
             progress: 100,
             errorMessage: `EC2 submit failed: ${videoSubmitResult.error}`,
           },
-        });
+        }));
         return;
       }
 
@@ -279,21 +279,21 @@ async function startQuickVideoGeneration(
 
       if (videoResult.mappedStatus !== "completed" || !videoResult.output_url) {
         console.error(`${logPrefix} Video generation failed: ${videoResult.error}`);
-        await prisma.videoGeneration.update({
+        await withRetry(() => prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "FAILED",
             progress: 100,
             errorMessage: videoResult.error || "Video generation failed",
           },
-        });
+        }));
         return;
       }
 
       console.log(`${logPrefix} Video generated successfully! URL: ${videoResult.output_url.slice(0, 80)}...`);
 
       // Success - Quick Create doesn't require audio composition
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "COMPLETED",
@@ -305,19 +305,19 @@ async function startQuickVideoGeneration(
             reference_image_url: generatedImageUrl,
           },
         },
-      });
+      }));
 
       console.log(`${logPrefix} Complete!`);
     } catch (error) {
       console.error("Quick Create generation error:", error);
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "FAILED",
           progress: 100,
           errorMessage: error instanceof Error ? error.message : "Unknown error",
         },
-      });
+      }));
     }
   })();
 }
@@ -325,8 +325,7 @@ async function startQuickVideoGeneration(
 // GET - List user's quick create generations
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -343,14 +342,14 @@ export async function GET(request: NextRequest) {
       deletedAt: null,
     };
 
-    const total = await prisma.videoGeneration.count({ where });
+    const total = await withRetry(() => prisma.videoGeneration.count({ where }));
 
-    const generations = await prisma.videoGeneration.findMany({
+    const generations = await withRetry(() => prisma.videoGeneration.findMany({
       where,
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
-    });
+    }));
 
     const pages = Math.ceil(total / pageSize) || 1;
 
@@ -392,8 +391,7 @@ export async function GET(request: NextRequest) {
 // POST - Create a new Quick Create generation
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -415,7 +413,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Quick Create generation record (no campaign)
-    const generation = await prisma.videoGeneration.create({
+    const generation = await withRetry(() => prisma.videoGeneration.create({
       data: {
         campaignId: null,  // No campaign for Quick Create
         isQuickCreate: true,
@@ -429,7 +427,7 @@ export async function POST(request: NextRequest) {
         createdBy: user.id,
         vertexRequestId: uuidv4(),
       },
-    });
+    }));
 
     // Start async video generation (without audio composition)
     startQuickVideoGeneration(generation.id, {

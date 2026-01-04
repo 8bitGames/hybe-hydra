@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -9,8 +9,7 @@ interface RouteParams {
 // GET - Get a specific Quick Create generation
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -19,9 +18,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id: generationId } = await params;
 
     // Find the generation
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });

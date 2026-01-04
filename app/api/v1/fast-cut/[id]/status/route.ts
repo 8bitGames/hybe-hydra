@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserFromHeader } from '@/lib/auth';
-import { prisma } from '@/lib/db/prisma';
+import { getUserFromRequest } from '@/lib/auth';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import { getModalRenderStatus } from '@/lib/compose/client';
 import { getAIJobStatus } from '@/lib/ec2/ai-client';
 import { getPresignedUrlFromS3Url } from '@/lib/storage';
@@ -14,8 +14,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const LOG_PREFIX = '[Fast Cut Status API]';
 
   try {
-    const authHeader = request.headers.get('authorization');
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       console.warn(`${LOG_PREFIX} Auth failed - no valid user`);
@@ -29,18 +29,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     // Get generation record to find the modal call ID
     const dbLookupStart = Date.now();
-    const generation = await prisma.videoGeneration.findUnique({
-      where: { id: generationId },
-      select: {
-        id: true,
-        status: true,
-        progress: true,
-        outputUrl: true,
-        composedOutputUrl: true,
-        errorMessage: true,
-        qualityMetadata: true
-      }
-    });
+    const generation = await withRetry(() =>
+      prisma.videoGeneration.findUnique({
+        where: { id: generationId },
+        select: {
+          id: true,
+          status: true,
+          progress: true,
+          outputUrl: true,
+          composedOutputUrl: true,
+          errorMessage: true,
+          qualityMetadata: true
+        }
+      })
+    );
     const dbLookupMs = Date.now() - dbLookupStart;
 
     if (!generation) {
@@ -169,14 +171,16 @@ export async function GET(request: NextRequest, context: RouteContext) {
         // For EC2, output_url comes from callback, not from status check
         // Check if we already have the output URL in database (set by callback)
         const freshDbStart = Date.now();
-        const freshGeneration = await prisma.videoGeneration.findUnique({
-          where: { id: generationId },
-          select: {
-            status: true,
-            composedOutputUrl: true,
-            outputUrl: true
-          }
-        });
+        const freshGeneration = await withRetry(() =>
+          prisma.videoGeneration.findUnique({
+            where: { id: generationId },
+            select: {
+              status: true,
+              composedOutputUrl: true,
+              outputUrl: true
+            }
+          })
+        );
         console.log(`${LOG_PREFIX} Fresh DB lookup (${Date.now() - freshDbStart}ms):`, {
           freshStatus: freshGeneration?.status,
           hasComposedUrl: !!freshGeneration?.composedOutputUrl,
@@ -198,15 +202,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
           if (wasNotCompleted) {
             const updateStart = Date.now();
-            await prisma.videoGeneration.update({
-              where: { id: generationId },
-              data: {
-                status: 'COMPLETED',
-                progress: 100,
-                composedOutputUrl: outputUrl,
-                outputUrl: outputUrl,
-              }
-            });
+            await withRetry(() =>
+              prisma.videoGeneration.update({
+                where: { id: generationId },
+                data: {
+                  status: 'COMPLETED',
+                  progress: 100,
+                  composedOutputUrl: outputUrl,
+                  outputUrl: outputUrl,
+                }
+              })
+            );
             console.log(`${LOG_PREFIX} DB updated to COMPLETED (${Date.now() - updateStart}ms)`);
 
             // Trigger auto-schedule if this is a new completion
@@ -260,13 +266,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
         });
 
         const updateStart = Date.now();
-        await prisma.videoGeneration.update({
-          where: { id: generationId },
-          data: {
-            status: 'FAILED',
-            errorMessage: errorMsg
-          }
-        });
+        await withRetry(() =>
+          prisma.videoGeneration.update({
+            where: { id: generationId },
+            data: {
+              status: 'FAILED',
+              errorMessage: errorMsg
+            }
+          })
+        );
         console.log(`${LOG_PREFIX} DB updated to FAILED (${Date.now() - updateStart}ms)`);
 
         const totalMs = Date.now() - requestStartTime;

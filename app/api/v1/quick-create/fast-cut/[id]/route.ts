@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma';
-import { getUserFromHeader } from '@/lib/auth';
+import { prisma, withRetry } from '@/lib/db/prisma';
+import { getUserFromRequest } from '@/lib/auth';
 import { getModalRenderStatus } from '@/lib/compose/client';
 
 interface RouteParams {
@@ -10,8 +10,7 @@ interface RouteParams {
 // GET - Get Quick Compose generation status
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get('authorization');
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
@@ -20,9 +19,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id: generationId } = await params;
 
     // Find the generation
-    const generation = await prisma.videoGeneration.findUnique({
-      where: { id: generationId },
-    });
+    const generation = await withRetry(() =>
+      prisma.videoGeneration.findUnique({
+        where: { id: generationId },
+      })
+    );
 
     if (!generation) {
       return NextResponse.json({ detail: 'Generation not found' }, { status: 404 });
@@ -58,21 +59,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const modalStatus = await getModalRenderStatus(modalCallId);
 
         if (modalStatus.status === 'completed' && modalStatus.result?.output_url) {
+          // Capture to preserve TypeScript narrowing inside callback
+          const outputUrl = modalStatus.result.output_url;
           // Update database with completed status
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: {
-              status: 'COMPLETED',
-              progress: 100,
-              outputUrl: modalStatus.result.output_url,
-            },
-          });
+          await withRetry(() =>
+            prisma.videoGeneration.update({
+              where: { id: generationId },
+              data: {
+                status: 'COMPLETED',
+                progress: 100,
+                outputUrl,
+              },
+            })
+          );
 
           return NextResponse.json({
             id: generation.id,
             status: 'completed',
             progress: 100,
-            output_url: modalStatus.result.output_url,
+            output_url: outputUrl,
             script_lines: scriptResult?.lines?.length || 0,
             image_count: imageCount || 0,
             vibe: scriptResult?.vibe || 'Pop',
@@ -82,13 +87,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         if (modalStatus.status === 'failed' || modalStatus.status === 'error') {
           const errorMessage = modalStatus.result?.error || modalStatus.error || 'Render failed';
 
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: {
-              status: 'FAILED',
-              errorMessage,
-            },
-          });
+          await withRetry(() =>
+            prisma.videoGeneration.update({
+              where: { id: generationId },
+              data: {
+                status: 'FAILED',
+                errorMessage,
+              },
+            })
+          );
 
           return NextResponse.json({
             id: generation.id,
@@ -108,10 +115,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         if (quickComposeStep === 'render') {
           // Render phase: progress from 60 to 95
           progress = Math.min(95, generation.progress + 5);
-          await prisma.videoGeneration.update({
-            where: { id: generationId },
-            data: { progress },
-          });
+          await withRetry(() =>
+            prisma.videoGeneration.update({
+              where: { id: generationId },
+              data: { progress },
+            })
+          );
         }
 
         return NextResponse.json({

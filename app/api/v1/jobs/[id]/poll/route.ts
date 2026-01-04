@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -60,14 +60,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.log(`[Job Poll] Checking status for job ${jobId}`);
 
     // Find generation with this job ID
-    const generation = await prisma.videoGeneration.findFirst({
+    const generation = await withRetry(() => prisma.videoGeneration.findFirst({
       where: {
         OR: [
           { vertexRequestId: jobId },
           { id: jobId },
         ],
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Job not found" }, { status: 404 });
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         if (isFinal) {
           const dbStatus = backendData.status === "completed" ? "COMPLETED" : "FAILED";
 
-          await prisma.videoGeneration.update({
+          await withRetry(() => prisma.videoGeneration.update({
             where: { id: generation.id },
             data: {
               status: dbStatus,
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               errorMessage: backendData.error || null,
               updatedAt: new Date(),
             },
-          });
+          }));
 
           console.log(`[Job Poll] Updated generation ${generation.id} to ${dbStatus}`);
 
@@ -143,13 +143,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         // Job still processing - update progress in DB
         if (backendData.progress && backendData.progress !== generation.progress) {
-          await prisma.videoGeneration.update({
+          await withRetry(() => prisma.videoGeneration.update({
             where: { id: generation.id },
             data: {
               progress: backendData.progress,
               updatedAt: new Date(),
             },
-          });
+          }));
         }
 
         return NextResponse.json({
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
             if (isFinalFallback) {
               const dbStatus = fallbackData.status === "completed" ? "COMPLETED" : "FAILED";
-              await prisma.videoGeneration.update({
+              await withRetry(() => prisma.videoGeneration.update({
                 where: { id: generation.id },
                 data: {
                   status: dbStatus,
@@ -194,7 +194,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                   errorMessage: fallbackData.error || null,
                   updatedAt: new Date(),
                 },
-              });
+              }));
 
               return NextResponse.json({
                 job_id: jobId,

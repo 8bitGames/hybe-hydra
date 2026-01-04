@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { CampaignStatus } from "@prisma/client";
 import { cached, CacheKeys, CacheTTL, invalidateCampaignCache } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -62,10 +61,10 @@ async function fetchCampaignsList(
   pageSize: number
 ) {
   // Get total count
-  const total = await prisma.campaign.count({ where });
+  const total = await withRetry(() => prisma.campaign.count({ where }));
 
   // Get campaigns with artist info and asset/video counts
-  const campaigns = await prisma.campaign.findMany({
+  const campaigns = await withRetry(() => prisma.campaign.findMany({
     where,
     include: {
       artist: {
@@ -90,7 +89,7 @@ async function fetchCampaignsList(
     orderBy: { createdAt: "desc" },
     skip: (page - 1) * pageSize,
     take: pageSize,
-  });
+  }));
 
   const pages = Math.ceil(total / pageSize) || 1;
 
@@ -148,8 +147,7 @@ async function fetchCampaignsList(
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -166,9 +164,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check artist exists and user has access
-    const artist = await prisma.artist.findUnique({
+    const artist = await withRetry(() => prisma.artist.findUnique({
       where: { id: artist_id },
-    });
+    }));
 
     if (!artist) {
       return NextResponse.json({ detail: "Artist not found" }, { status: 404 });
@@ -179,7 +177,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create campaign
-    const campaign = await prisma.campaign.create({
+    const campaign = await withRetry(() => prisma.campaign.create({
       data: {
         name,
         artistId: artist_id,
@@ -198,7 +196,7 @@ export async function POST(request: NextRequest) {
           },
         },
       },
-    });
+    }));
 
     // Invalidate campaign list cache
     await invalidateCampaignCache(campaign.id);

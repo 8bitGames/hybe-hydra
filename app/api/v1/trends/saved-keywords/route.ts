@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromHeader } from "@/lib/auth";
-import { prisma } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { TrendPlatform } from "@prisma/client";
 
 // GET /api/v1/trends/saved-keywords - List user's saved keywords
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     snapshotStartDate.setDate(snapshotStartDate.getDate() - snapshotDays);
     snapshotStartDate.setHours(0, 0, 0, 0);
 
-    const savedKeywords = await prisma.savedKeyword.findMany({
+    const savedKeywords = await withRetry(() => prisma.savedKeyword.findMany({
       where,
       orderBy: [
         { priority: "desc" },
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
           orderBy: { date: "asc" },
         },
       } : undefined,
-    });
+    }));
 
     // Convert BigInt to number for JSON serialization
     const serialized = savedKeywords.map((kw: any) => ({
@@ -73,8 +73,8 @@ export async function GET(request: NextRequest) {
 // POST /api/v1/trends/saved-keywords - Save a new keyword
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     const normalizedKeyword = keyword.toLowerCase().trim().replace(/^#/, "");
 
     // Check if already saved
-    const existing = await prisma.savedKeyword.findUnique({
+    const existing = await withRetry(() => prisma.savedKeyword.findUnique({
       where: {
         userId_keyword_platform: {
           userId: user.id,
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
           platform: platform as TrendPlatform,
         },
       },
-    });
+    }));
 
     if (existing) {
       return NextResponse.json(
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create saved keyword with baseline metrics
-    const savedKeyword = await prisma.savedKeyword.create({
+    const savedKeyword = await withRetry(() => prisma.savedKeyword.create({
       data: {
         userId: user.id,
         keyword: normalizedKeyword,
@@ -142,14 +142,14 @@ export async function POST(request: NextRequest) {
         baselineViralCount: currentViralCount || null,
         lastAnalyzedAt: new Date(),
       },
-    });
+    }));
 
     // If we have current analysis data, create initial snapshot
     if (currentViews !== undefined) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      await prisma.keywordDailySnapshot.create({
+      await withRetry(() => prisma.keywordDailySnapshot.create({
         data: {
           savedKeywordId: savedKeyword.id,
           date: today,
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
           viralityScore: calculateViralityScore(currentViralCount, currentTotalVideos),
           growthScore: 50, // Initial score (no previous data to compare)
         },
-      });
+      }));
     }
 
     return NextResponse.json({

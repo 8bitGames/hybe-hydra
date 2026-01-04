@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/db/prisma';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import {
   fetchAccountForAnalysis,
   calculateAccountMetrics,
@@ -34,19 +34,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if analysis already exists and is recent (< 24 hours) with same language
-    const existingAnalysis = await prisma.accountAnalysis.findFirst({
-      where: {
-        uniqueId,
-        analysisLanguage: language, // Must match requested language
-        createdAt: {
-          gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+    const existingAnalysis = await withRetry(() =>
+      prisma.accountAnalysis.findFirst({
+        where: {
+          uniqueId,
+          analysisLanguage: language, // Must match requested language
+          createdAt: {
+            gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          },
+          status: 'COMPLETED',
         },
-        status: 'COMPLETED',
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+        orderBy: {
+          createdAt: 'desc',
+        },
+      })
+    );
 
     if (existingAnalysis) {
       return NextResponse.json({
@@ -57,20 +59,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Create pending analysis record
-    const analysis = await prisma.accountAnalysis.create({
-      data: {
-        tiktokUserId: '',
-        uniqueId,
-        nickname: '',
-        followers: 0,
-        following: 0,
-        totalLikes: 0,
-        totalVideos: 0,
-        videosAnalyzed: 0,
-        analysisLanguage: language,
-        status: 'PENDING',
-      },
-    });
+    const analysis = await withRetry(() =>
+      prisma.accountAnalysis.create({
+        data: {
+          tiktokUserId: '',
+          uniqueId,
+          nickname: '',
+          followers: 0,
+          following: 0,
+          totalLikes: 0,
+          totalVideos: 0,
+          videosAnalyzed: 0,
+          analysisLanguage: language,
+          status: 'PENDING',
+        },
+      })
+    );
 
     // Start async analysis (in production, this would be a background job)
     processAnalysis(analysis.id, uniqueId, videoCount, language).catch((error) => {
@@ -105,10 +109,12 @@ async function processAnalysis(
 ) {
   try {
     // Update status to processing
-    await prisma.accountAnalysis.update({
-      where: { id: analysisId },
-      data: { status: 'PROCESSING' },
-    });
+    await withRetry(() =>
+      prisma.accountAnalysis.update({
+        where: { id: analysisId },
+        data: { status: 'PROCESSING' },
+      })
+    );
 
     // Check for cached data first (avoids re-fetching on retry)
     const cachedData = getCachedData(uniqueId);
@@ -184,12 +190,14 @@ async function processAnalysis(
         error: result.error,
         videosCount: result.videos?.length || 0,
       });
-      await prisma.accountAnalysis.update({
-        where: { id: analysisId },
-        data: {
-          status: 'FAILED',
-        },
-      });
+      await withRetry(() =>
+        prisma.accountAnalysis.update({
+          where: { id: analysisId },
+          data: {
+            status: 'FAILED',
+          },
+        })
+      );
       return;
     }
     console.log(`[API] Fetched ${result.videos.length} videos for ${uniqueId}`);
@@ -320,51 +328,55 @@ async function processAnalysis(
       : null;
 
     // Update analysis with user info, metrics, and AI insights
-    await prisma.accountAnalysis.update({
-      where: { id: analysisId },
-      data: {
-        tiktokUserId: result.user.id,
-        nickname: result.user.nickname,
-        avatarUrl: result.user.avatarUrl,
-        signature: result.user.signature,
-        verified: result.user.verified,
-        followers: result.user.followers,
-        following: result.user.following,
-        totalLikes: result.user.likes,
-        totalVideos: result.user.videos,
-        videosAnalyzed: result.totalFetched,
-        basicMetrics: {
-          totalVideos: metrics.totalVideos,
-          analyzedVideos: metrics.analyzedVideos,
-          totalViews: metrics.totalViews,
-          totalLikes: metrics.totalLikes,
-          totalComments: metrics.totalComments,
-          totalShares: metrics.totalShares,
-          avgViews: metrics.avgViews,
-          avgLikes: metrics.avgLikes,
-          avgComments: metrics.avgComments,
-          avgShares: metrics.avgShares,
+    // Extract user to satisfy TypeScript (we already verified result.user is not null above)
+    const user = result.user;
+    await withRetry(() =>
+      prisma.accountAnalysis.update({
+        where: { id: analysisId },
+        data: {
+          tiktokUserId: user.id,
+          nickname: user.nickname,
+          avatarUrl: user.avatarUrl,
+          signature: user.signature,
+          verified: user.verified,
+          followers: user.followers,
+          following: user.following,
+          totalLikes: user.likes,
+          totalVideos: user.videos,
+          videosAnalyzed: result.totalFetched,
+          basicMetrics: {
+            totalVideos: metrics.totalVideos,
+            analyzedVideos: metrics.analyzedVideos,
+            totalViews: metrics.totalViews,
+            totalLikes: metrics.totalLikes,
+            totalComments: metrics.totalComments,
+            totalShares: metrics.totalShares,
+            avgViews: metrics.avgViews,
+            avgLikes: metrics.avgLikes,
+            avgComments: metrics.avgComments,
+            avgShares: metrics.avgShares,
+          },
+          engagementMetrics: {
+            avgEngagementRate: metrics.avgEngagementRate,
+            medianEngagementRate: metrics.medianEngagementRate,
+            engagementRateStdDev: metrics.engagementRateStdDev,
+            topPerformingRate: metrics.topPerformingRate,
+            bottomPerformingRate: metrics.bottomPerformingRate,
+          },
+          postingMetrics: {
+            postsPerWeek: metrics.postsPerWeek,
+            mostActiveDay: metrics.mostActiveDay,
+            mostActiveHour: metrics.mostActiveHour,
+            avgDuration: metrics.avgDuration,
+            avgHashtagCount: metrics.avgHashtagCount,
+            ownMusicPercentage: metrics.ownMusicPercentage,
+          },
+          contentMixMetrics: contentMixMetrics ?? undefined,
+          aiInsights: aiInsights ?? undefined,
+          status: 'COMPLETED',
         },
-        engagementMetrics: {
-          avgEngagementRate: metrics.avgEngagementRate,
-          medianEngagementRate: metrics.medianEngagementRate,
-          engagementRateStdDev: metrics.engagementRateStdDev,
-          topPerformingRate: metrics.topPerformingRate,
-          bottomPerformingRate: metrics.bottomPerformingRate,
-        },
-        postingMetrics: {
-          postsPerWeek: metrics.postsPerWeek,
-          mostActiveDay: metrics.mostActiveDay,
-          mostActiveHour: metrics.mostActiveHour,
-          avgDuration: metrics.avgDuration,
-          avgHashtagCount: metrics.avgHashtagCount,
-          ownMusicPercentage: metrics.ownMusicPercentage,
-        },
-        contentMixMetrics: contentMixMetrics ?? undefined,
-        aiInsights: aiInsights ?? undefined,
-        status: 'COMPLETED',
-      },
-    });
+      })
+    );
 
     // Save video classifications with AI categories
     const classificationMap = new Map(
@@ -494,9 +506,11 @@ async function processAnalysis(
 
       for (const record of validRecords) {
         try {
-          await prisma.videoClassification.create({
-            data: record,
-          });
+          await withRetry(() =>
+            prisma.videoClassification.create({
+              data: record,
+            })
+          );
           successCount++;
         } catch (insertError) {
           failCount++;
@@ -515,9 +529,11 @@ async function processAnalysis(
     console.log(`[API] Analysis completed for ${uniqueId}: ${result.totalFetched} videos, AI: ${aiResult.success ? 'success' : 'failed'}`);
   } catch (error) {
     console.error(`[API] Analysis processing failed for ${uniqueId}:`, error);
-    await prisma.accountAnalysis.update({
-      where: { id: analysisId },
-      data: { status: 'FAILED' },
-    });
+    await withRetry(() =>
+      prisma.accountAnalysis.update({
+        where: { id: analysisId },
+        data: { status: 'FAILED' },
+      })
+    );
   }
 }

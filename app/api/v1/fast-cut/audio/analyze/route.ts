@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserFromHeader } from '@/lib/auth';
-import { prisma } from '@/lib/db/prisma';
+import { getUserFromRequest } from '@/lib/auth';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import { getComposeEngineUrl } from '@/lib/compose/client';
 import { createLyricsExtractorAgent, type LyricsExtractorOutput } from '@/lib/agents/analyzers/lyrics-extractor';
@@ -116,8 +116,8 @@ async function analyzeAudio(s3Url: string, jobId: string, targetDuration: number
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
@@ -134,15 +134,17 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Get audio asset
-    const asset = await prisma.asset.findUnique({
-      where: { id: assetId },
-      select: {
-        id: true,
-        s3Url: true,
-        metadata: true,
-        filename: true
-      }
-    });
+    const asset = await withRetry(() =>
+      prisma.asset.findUnique({
+        where: { id: assetId },
+        select: {
+          id: true,
+          s3Url: true,
+          metadata: true,
+          filename: true
+        }
+      })
+    );
 
     if (!asset) {
       return NextResponse.json(
@@ -217,10 +219,12 @@ export async function POST(request: NextRequest) {
           analyzedAt: new Date().toISOString()
         };
 
-        await prisma.asset.update({
-          where: { id: assetId },
-          data: { metadata: updatedMetadata as Prisma.InputJsonValue }
-        });
+        await withRetry(() =>
+          prisma.asset.update({
+            where: { id: assetId },
+            data: { metadata: updatedMetadata as Prisma.InputJsonValue }
+          })
+        );
 
         console.log('[Fast Cut AudioAnalyze] Analysis cached to metadata');
       }
@@ -300,15 +304,17 @@ export async function POST(request: NextRequest) {
               chorusCandidates: lyricsResult.candidates
             };
 
-            await prisma.asset.update({
-              where: { id: assetId },
-              data: {
-                metadata: {
-                  ...metadata,
-                  lyrics: lyricsCache
-                } as unknown as Prisma.InputJsonValue
-              }
-            });
+            await withRetry(() =>
+              prisma.asset.update({
+                where: { id: assetId },
+                data: {
+                  metadata: {
+                    ...metadata,
+                    lyrics: lyricsCache
+                  } as unknown as Prisma.InputJsonValue
+                }
+              })
+            );
 
             console.log('[Fast Cut AudioAnalyze] Lyrics analysis cached to metadata');
           }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 import { searchTikTok } from "@/lib/tiktok-mcp";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { getKeywordInsightsAgent } from "@/lib/agents/analyzers/keyword-insights";
 import type { AgentContext } from "@/lib/agents/types";
 import { coOccurrenceAnalyzer } from "@/lib/expansion/co-occurrence";
@@ -699,7 +699,7 @@ async function saveAnalysisHistoryToDb(analysis: KeywordAnalysis): Promise<void>
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    await prisma.keywordAnalysisHistory.upsert({
+    await withRetry(() => prisma.keywordAnalysisHistory.upsert({
       where: {
         platform_keyword_date: {
           platform: "TIKTOK",
@@ -748,7 +748,7 @@ async function saveAnalysisHistoryToDb(analysis: KeywordAnalysis): Promise<void>
         topHashtags: analysis.hashtagInsights.topHashtags.slice(0, 10) as any,
         uniqueCreators: analysis.creatorInsights.uniqueCreators,
       },
-    });
+    }));
 
     console.log(`[KEYWORD-ANALYSIS] Saved history snapshot for: ${analysis.keyword} on ${today.toISOString().split('T')[0]}`);
   } catch (error) {
@@ -778,7 +778,7 @@ async function saveAnalysisToDb(analysis: KeywordAnalysis): Promise<void> {
   const sanitizedAllVideos = sanitizeForJson(analysis.videos);
   const sanitizedAiInsights = sanitizeForJson(analysis.aiInsights);
 
-  await prisma.keywordAnalysis.upsert({
+  await withRetry(() => prisma.keywordAnalysis.upsert({
     where: {
       platform_keyword: {
         platform: "TIKTOK",
@@ -854,7 +854,7 @@ async function saveAnalysisToDb(analysis: KeywordAnalysis): Promise<void> {
       aiInsights: sanitizedAiInsights as any,
       expiresAt,
     },
-  });
+  }));
 
   // Also save daily snapshot to history table
   await saveAnalysisHistoryToDb(analysis);
@@ -915,8 +915,8 @@ async function processExpansionData(
 // GET /api/v1/trends/keyword-analysis?keywords=countrymusic,kpop,dance&refresh=true
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -963,14 +963,14 @@ export async function GET(request: NextRequest) {
         try {
           // Check for cached analysis (if not forcing refresh)
           if (!forceRefresh) {
-            const cached = await prisma.keywordAnalysis.findUnique({
+            const cached = await withRetry(() => prisma.keywordAnalysis.findUnique({
               where: {
                 platform_keyword: {
                   platform: "TIKTOK",
                   keyword,
                 },
               },
-            });
+            }));
 
             // Return cached if still valid
             if (cached && cached.analyzedAt > cacheThreshold) {
@@ -985,14 +985,14 @@ export async function GET(request: NextRequest) {
 
           if (!result.success || result.videos.length === 0) {
             // Check if we have stale cache to return
-            const staleCache = await prisma.keywordAnalysis.findUnique({
+            const staleCache = await withRetry(() => prisma.keywordAnalysis.findUnique({
               where: {
                 platform_keyword: {
                   platform: "TIKTOK",
                   keyword,
                 },
               },
-            });
+            }));
 
             if (staleCache) {
               console.log(`[KEYWORD-ANALYSIS] Returning stale cache for: ${keyword}`);
@@ -1056,14 +1056,14 @@ export async function GET(request: NextRequest) {
 
           // Try to return stale cache on error
           try {
-            const staleCache = await prisma.keywordAnalysis.findUnique({
+            const staleCache = await withRetry(() => prisma.keywordAnalysis.findUnique({
               where: {
                 platform_keyword: {
                   platform: "TIKTOK",
                   keyword,
                 },
               },
-            });
+            }));
 
             if (staleCache) {
               console.log(`[KEYWORD-ANALYSIS] Returning stale cache after error for: ${keyword}`);

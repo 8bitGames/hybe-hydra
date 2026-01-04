@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromHeader } from "@/lib/auth";
-import { prisma } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 // Heatmap data structure for frontend visualization
 interface HeatmapCell {
@@ -55,8 +55,8 @@ interface HeatmapData {
 // GET /api/v1/trends/heatmap - Get heatmap data for visualization
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
     startDate.setHours(0, 0, 0, 0);
 
     // Fetch user's saved keywords with snapshots
-    const savedKeywords = await prisma.savedKeyword.findMany({
+    const savedKeywords = await withRetry(() => prisma.savedKeyword.findMany({
       where: { userId: user.id },
       orderBy: [
         { priority: "desc" },
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
           orderBy: { date: "asc" },
         },
       },
-    });
+    }));
 
     if (savedKeywords.length === 0) {
       return NextResponse.json({

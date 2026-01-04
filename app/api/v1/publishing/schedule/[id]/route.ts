@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 import { PublishStatus } from "@prisma/client";
 
 interface RouteParams {
@@ -11,8 +11,8 @@ interface RouteParams {
 // GET /api/v1/publishing/schedule/[id] - Get scheduled post details
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const post = await prisma.scheduledPost.findUnique({
+    const post = await withRetry(() => prisma.scheduledPost.findUnique({
       where: { id },
       include: {
         socialAccount: {
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!post) {
       return NextResponse.json({ detail: "Scheduled post not found" }, { status: 404 });
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Get generation details
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: post.generationId },
       select: {
         id: true,
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     return NextResponse.json({
       id: post.id,
@@ -125,8 +125,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // PATCH /api/v1/publishing/schedule/[id] - Update scheduled post
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -138,14 +138,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const post = await prisma.scheduledPost.findUnique({
+    const post = await withRetry(() => prisma.scheduledPost.findUnique({
       where: { id },
       include: {
         socialAccount: {
           select: { labelId: true },
         },
       },
-    });
+    }));
 
     if (!post) {
       return NextResponse.json({ detail: "Scheduled post not found" }, { status: 404 });
@@ -239,7 +239,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const updatedPost = await prisma.scheduledPost.update({
+    const updatedPost = await withRetry(() => prisma.scheduledPost.update({
       where: { id },
       data: updateData,
       include: {
@@ -252,7 +252,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     return NextResponse.json({
       id: updatedPost.id,
@@ -285,8 +285,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/v1/publishing/schedule/[id] - Delete scheduled post
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -298,14 +298,14 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const post = await prisma.scheduledPost.findUnique({
+    const post = await withRetry(() => prisma.scheduledPost.findUnique({
       where: { id },
       include: {
         socialAccount: {
           select: { labelId: true },
         },
       },
-    });
+    }));
 
     if (!post) {
       return NextResponse.json({ detail: "Scheduled post not found" }, { status: 404 });
@@ -332,9 +332,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    await prisma.scheduledPost.delete({
+    await withRetry(() => prisma.scheduledPost.delete({
       where: { id },
-    });
+    }));
 
     return NextResponse.json({
       message: "Scheduled post deleted successfully",

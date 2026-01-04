@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { TrendPlatform } from "@prisma/client";
 
 interface TrendSuggestion {
@@ -75,8 +75,8 @@ function calculateRelevanceScore(trend: {
 // GET /api/v1/trends/suggestions - Get prompt suggestions based on trends
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -106,22 +106,22 @@ export async function GET(request: NextRequest) {
       whereClause.platform = platform;
     }
 
-    const trends = await prisma.trendSnapshot.findMany({
+    const trends = await withRetry(() => prisma.trendSnapshot.findMany({
       where: whereClause,
       orderBy: [
         { rank: "asc" },
         { collectedAt: "desc" },
       ],
       take: limit * 2, // Fetch more to filter duplicates
-    });
+    }));
 
     // Get artist info for personalized suggestions
     let artistContext: string | null = null;
     if (artistId) {
-      const artist = await prisma.artist.findUnique({
+      const artist = await withRetry(() => prisma.artist.findUnique({
         where: { id: artistId },
         select: { name: true, groupName: true, brandGuidelines: true },
-      });
+      }));
       if (artist) {
         artistContext = `${artist.groupName || artist.name}`;
       }

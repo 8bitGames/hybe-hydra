@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import {
@@ -150,13 +150,13 @@ function startVariationVideoGeneration(
   (async () => {
     try {
       // Update status to processing
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "PROCESSING",
           progress: 5,
         },
-      });
+      }));
 
       console.log(`[Variation ${generationId}] Starting via EC2 AI endpoints...`);
 
@@ -189,10 +189,10 @@ function startVariationVideoGeneration(
         const geminiImagePrompt = imagePromptResult.data.prompt;
         console.log(`[Variation ${generationId}] Image prompt: ${geminiImagePrompt.slice(0, 150)}...`);
 
-        await prisma.videoGeneration.update({
+        await withRetry(() => prisma.videoGeneration.update({
           where: { id: generationId },
           data: { progress: 15 },
-        });
+        }));
 
         // Step 2: Generate image via EC2 Imagen endpoint
         try {
@@ -218,10 +218,10 @@ function startVariationVideoGeneration(
           if (imageSubmitResult.status === 'queued' || imageSubmitResult.status === 'processing') {
             console.log(`[Variation ${generationId}] Image job submitted, waiting for completion...`);
 
-            await prisma.videoGeneration.update({
+            await withRetry(() => prisma.videoGeneration.update({
               where: { id: generationId },
               data: { progress: 20 },
-            });
+            }));
 
             // Wait for image generation to complete
             const imageResult = await waitForAIJob(imageJobId, {
@@ -233,10 +233,10 @@ function startVariationVideoGeneration(
               generatedImageUrl = imageResult.output_url;
               console.log(`[Variation ${generationId}] Image generated: ${generatedImageUrl}`);
 
-              await prisma.videoGeneration.update({
+              await withRetry(() => prisma.videoGeneration.update({
                 where: { id: generationId },
                 data: { progress: 35 },
-              });
+              }));
 
               // Step 3: Use I2V Specialist Agent to generate video prompt with animation instructions
               const videoPromptResult = await i2vAgent.generateVideoPrompt(
@@ -256,10 +256,10 @@ function startVariationVideoGeneration(
                 console.log(`[Variation ${generationId}] Video prompt: ${geminiVideoPrompt.slice(0, 150)}...`);
               }
 
-              await prisma.videoGeneration.update({
+              await withRetry(() => prisma.videoGeneration.update({
                 where: { id: generationId },
                 data: { progress: 40 },
-              });
+              }));
             } else {
               console.warn(`[Variation ${generationId}] Image generation failed: ${imageResult.error}, falling back to T2V`);
             }
@@ -306,10 +306,10 @@ function startVariationVideoGeneration(
         }
       }
 
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: { progress: 50 },
-      });
+      }));
 
       console.log(`[Variation ${generationId}] Submitting video generation to EC2...`);
 
@@ -355,10 +355,10 @@ function startVariationVideoGeneration(
       if (videoSubmitResult.status === 'queued' || videoSubmitResult.status === 'processing') {
         console.log(`[Variation ${generationId}] Video job submitted, waiting for completion...`);
 
-        await prisma.videoGeneration.update({
+        await withRetry(() => prisma.videoGeneration.update({
           where: { id: generationId },
           data: { progress: 60 },
-        });
+        }));
 
         // Wait for video generation to complete (VEO can take up to 5+ minutes)
         const videoResult = await waitForAIJob(videoJobId, {
@@ -367,16 +367,16 @@ function startVariationVideoGeneration(
         });
 
         if (videoResult.status === 'completed' && videoResult.output_url) {
-          const existingGen = await prisma.videoGeneration.findUnique({
+          const existingGen = await withRetry(() => prisma.videoGeneration.findUnique({
             where: { id: generationId },
-          });
+          }));
           const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
 
           // If audio overlay was included, the output already has audio composed
           const finalOutputUrl = videoResult.output_url;
           const composedOutputUrl = audioOverlay ? videoResult.output_url : null;
 
-          await prisma.videoGeneration.update({
+          await withRetry(() => prisma.videoGeneration.update({
             where: { id: generationId },
             data: {
               status: "COMPLETED",
@@ -396,7 +396,7 @@ function startVariationVideoGeneration(
                 } : null,
               },
             },
-          });
+          }));
 
           console.log(`[Variation ${generationId}] Video generation complete: ${finalOutputUrl}`);
 
@@ -414,35 +414,35 @@ function startVariationVideoGeneration(
             }
           }
         } else {
-          await prisma.videoGeneration.update({
+          await withRetry(() => prisma.videoGeneration.update({
             where: { id: generationId },
             data: {
               status: "FAILED",
               progress: 100,
               errorMessage: videoResult.error || "Video generation failed",
             },
-          });
+          }));
         }
       } else {
-        await prisma.videoGeneration.update({
+        await withRetry(() => prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "FAILED",
             progress: 100,
             errorMessage: videoSubmitResult.error || "Video job submission failed",
           },
-        });
+        }));
       }
     } catch (error) {
       console.error("Variation video generation error:", error);
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "FAILED",
           progress: 100,
           errorMessage: error instanceof Error ? error.message : "Unknown error",
         },
-      });
+      }));
     }
   })();
 }
@@ -450,8 +450,8 @@ function startVariationVideoGeneration(
 // POST /api/v1/generations/[id]/variations - Create variations from a seed generation
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -460,7 +460,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: seedGenerationId } = await params;
 
     // Fetch the seed generation
-    const seedGeneration = await prisma.videoGeneration.findUnique({
+    const seedGeneration = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: seedGenerationId },
       include: {
         campaign: {
@@ -470,7 +470,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         },
         audioAsset: true,
       },
-    });
+    }));
 
     if (!seedGeneration) {
       return NextResponse.json({ detail: "Seed generation not found" }, { status: 404 });
@@ -527,13 +527,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     } else {
       // LEGACY path: Fetch from DB by category (for backward compatibility)
       // But still NO Cartesian product - just pick one preset per category
-      const legacyPresets = await prisma.stylePreset.findMany({
+      const legacyPresets = await withRetry(() => prisma.stylePreset.findMany({
         where: {
           category: { in: style_categories },
           isActive: true,
         },
         orderBy: { sortOrder: "asc" },
-      });
+      }));
 
       if (legacyPresets.length === 0) {
         return NextResponse.json(
@@ -585,7 +585,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }];
 
         // Create the generation
-        const generation = await prisma.videoGeneration.create({
+        const generation = await withRetry(() => prisma.videoGeneration.create({
           data: {
             campaignId: seedGeneration.campaignId,
             prompt: finalPrompt,
@@ -623,7 +623,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               } : null,
             },
           },
-        });
+        }));
 
         return {
           generation,
@@ -683,8 +683,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 // GET /api/v1/generations/[id]/variations?batch_id=xxx - Get variation batch status
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -699,7 +699,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Fetch seed generation for access check
-    const seedGeneration = await prisma.videoGeneration.findUnique({
+    const seedGeneration = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: seedGenerationId },
       include: {
         campaign: {
@@ -708,7 +708,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!seedGeneration) {
       return NextResponse.json({ detail: "Seed generation not found" }, { status: 404 });
@@ -727,7 +727,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Find all variations with this batch ID (exclude soft-deleted)
-    const generations = await prisma.videoGeneration.findMany({
+    const generations = await withRetry(() => prisma.videoGeneration.findMany({
       where: {
         deletedAt: null,
         qualityMetadata: {
@@ -741,7 +741,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
       },
       orderBy: { createdAt: "asc" },
-    });
+    }));
 
     if (generations.length === 0) {
       return NextResponse.json({ detail: "Variation batch not found" }, { status: 404 });

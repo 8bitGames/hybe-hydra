@@ -1,8 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-// 30 days in seconds for cookie expiry
-const COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
+// 7 days in seconds for cookie expiry (user requested persistent sessions)
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60;
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -62,21 +62,20 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
-  // NOTE: Disabled middleware redirects - client-side auth-store handles auth
-  // The app uses custom JWT auth in localStorage, not Supabase auth cookies
-  // Middleware Supabase session and client auth-store can get out of sync
-  // causing infinite redirect loops. Let client handle all auth redirects.
+  // Auth redirects (now using unified cookie-based auth)
+  if (user && isAuthRoute) {
+    // Logged in user on auth page -> redirect to dashboard
+    const url = request.nextUrl.clone();
+    url.pathname = '/trend-dashboard';
+    return NextResponse.redirect(url);
+  }
 
-  // if (user && isAuthRoute) {
-  //   const url = request.nextUrl.clone();
-  //   url.pathname = '/trend-dashboard';
-  //   return NextResponse.redirect(url);
-  // }
-  // if (!user && !isAuthRoute) {
-  //   const url = request.nextUrl.clone();
-  //   url.pathname = '/login';
-  //   return NextResponse.redirect(url);
-  // }
+  if (!user && !isAuthRoute) {
+    // Not logged in on protected page -> redirect to login
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    return NextResponse.redirect(url);
+  }
 
   return supabaseResponse;
 }

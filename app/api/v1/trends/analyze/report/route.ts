@@ -4,8 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { TrendPlatform, Prisma } from "@prisma/client";
 import { searchTikTok, closeBrowser } from "@/lib/tiktok-trends";
 import { analyzeTextTrends, TextTrendAnalysisResult } from "@/lib/services/text-trend-analyzer";
@@ -17,8 +17,8 @@ export const maxDuration = 300; // Allow longer execution (5 minutes)
 // POST /api/v1/trends/analyze/report - Generate comprehensive trend report
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     );
 
     // Save to database (permanent storage - each analysis creates a new record)
-    const savedReport = await prisma.trendReport.create({
+    const savedReport = await withRetry(() => prisma.trendReport.create({
       data: {
         platform: platform as TrendPlatform,
         searchQuery: searchQuery.toLowerCase(),
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
         bestPostingTimes: report.bestPostingTimes as unknown as Prisma.InputJsonValue,
         competitorInsights: report.competitorInsights as unknown as Prisma.InputJsonValue,
       },
-    });
+    }));
 
     console.log(`[TRENDS-REPORT] Report generated and saved`);
 
@@ -163,8 +163,8 @@ export async function POST(request: NextRequest) {
 // GET /api/v1/trends/analyze/report - Get trend reports with history
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -179,9 +179,9 @@ export async function GET(request: NextRequest) {
 
     // Get specific report by ID
     if (reportId) {
-      const report = await prisma.trendReport.findUnique({
+      const report = await withRetry(() => prisma.trendReport.findUnique({
         where: { id: reportId },
-      });
+      }));
 
       if (!report) {
         return NextResponse.json({
@@ -218,11 +218,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Get reports (latest first)
-    const reports = await prisma.trendReport.findMany({
+    const reports = await withRetry(() => prisma.trendReport.findMany({
       where: whereCondition,
       orderBy: { createdAt: "desc" },
       take: limit,
-    });
+    }));
 
     if (reports.length === 0) {
       return NextResponse.json({

@@ -4,8 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { TrendPlatform, Prisma } from "@prisma/client";
 import { searchTikTok, closeBrowser } from "@/lib/tiktok-trends";
 import { analyzeTextTrends, TextTrendAnalysisResult } from "@/lib/services/text-trend-analyzer";
@@ -15,8 +15,8 @@ export const maxDuration = 120; // Allow longer execution for analysis
 // POST /api/v1/trends/analyze/text - Analyze text trends for a search query
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -46,14 +46,14 @@ export async function POST(request: NextRequest) {
 
     // Check for cached analysis (valid for 24 hours)
     if (!forceRefresh) {
-      const cached = await prisma.textTrendAnalysis.findUnique({
+      const cached = await withRetry(() => prisma.textTrendAnalysis.findUnique({
         where: {
           platform_searchQuery: {
             platform: platform as TrendPlatform,
             searchQuery: searchQuery.toLowerCase(),
           },
         },
-      });
+      }));
 
       if (cached && cached.expiresAt > new Date()) {
         console.log(`[TRENDS-ANALYZE-TEXT] Returning cached analysis`);
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
     expiresAt.setHours(expiresAt.getHours() + 24);
 
     // Save to database
-    const savedAnalysis = await prisma.textTrendAnalysis.upsert({
+    const savedAnalysis = await withRetry(() => prisma.textTrendAnalysis.upsert({
       where: {
         platform_searchQuery: {
           platform: platform as TrendPlatform,
@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
         } as unknown as Prisma.InputJsonValue,
         expiresAt,
       },
-    });
+    }));
 
     console.log(`[TRENDS-ANALYZE-TEXT] Analysis complete and saved`);
 
@@ -194,8 +194,8 @@ export async function POST(request: NextRequest) {
 // GET /api/v1/trends/analyze/text - Get cached text analysis
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -212,14 +212,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const analysis = await prisma.textTrendAnalysis.findUnique({
+    const analysis = await withRetry(() => prisma.textTrendAnalysis.findUnique({
       where: {
         platform_searchQuery: {
           platform,
           searchQuery: searchQuery.toLowerCase(),
         },
       },
-    });
+    }));
 
     if (!analysis) {
       return NextResponse.json({

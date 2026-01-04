@@ -10,7 +10,7 @@
  * - EXPLORED: 탐색 결과로 확인한 키워드
  */
 
-import { prisma } from '@/lib/db/prisma'
+import { prisma, withRetry } from '@/lib/db/prisma'
 import { UserKeywordAction } from '@prisma/client'
 import type {
   UserKeywordHistory,
@@ -49,13 +49,15 @@ function toPrismaAction(action: UserHistoryAction): UserKeywordAction {
  */
 export async function loadUserHistory(userId: string): Promise<UserKeywordHistory> {
   try {
-    const records = await prisma.userKeywordHistory.findMany({
-      where: { userId },
-      select: {
-        keyword: true,
-        action: true,
-      }
-    })
+    const records = await withRetry(() =>
+      prisma.userKeywordHistory.findMany({
+        where: { userId },
+        select: {
+          keyword: true,
+          action: true,
+        }
+      })
+    )
 
     const history: UserKeywordHistory = {
       userId,
@@ -127,23 +129,25 @@ export async function recordKeywordHistory(
   const prismaAction = toPrismaAction(action)
 
   try {
-    await prisma.userKeywordHistory.upsert({
-      where: {
-        userId_keyword_action: {
+    await withRetry(() =>
+      prisma.userKeywordHistory.upsert({
+        where: {
+          userId_keyword_action: {
+            userId,
+            keyword: normalizedKeyword,
+            action: prismaAction,
+          }
+        },
+        create: {
           userId,
           keyword: normalizedKeyword,
           action: prismaAction,
+        },
+        update: {
+          count: { increment: 1 },
         }
-      },
-      create: {
-        userId,
-        keyword: normalizedKeyword,
-        action: prismaAction,
-      },
-      update: {
-        count: { increment: 1 },
-      }
-    })
+      })
+    )
   } catch (error) {
     // 테이블이 없을 수 있음 - 무시
     console.warn('[USER-HISTORY] Failed to record history:', error)
@@ -162,14 +166,16 @@ export async function recordKeywordsHistory(
   const prismaAction = toPrismaAction(action)
 
   try {
-    await prisma.userKeywordHistory.createMany({
-      data: normalizedKeywords.map(keyword => ({
-        userId,
-        keyword,
-        action: prismaAction,
-      })),
-      skipDuplicates: true,
-    })
+    await withRetry(() =>
+      prisma.userKeywordHistory.createMany({
+        data: normalizedKeywords.map(keyword => ({
+          userId,
+          keyword,
+          action: prismaAction,
+        })),
+        skipDuplicates: true,
+      })
+    )
   } catch (error) {
     console.warn('[USER-HISTORY] Failed to record batch history:', error)
   }
@@ -203,12 +209,14 @@ export async function isKeywordKnown(
   const normalizedKeyword = normalizeKeyword(keyword)
 
   try {
-    const record = await prisma.userKeywordHistory.findFirst({
-      where: {
-        userId,
-        keyword: normalizedKeyword,
-      }
-    })
+    const record = await withRetry(() =>
+      prisma.userKeywordHistory.findFirst({
+        where: {
+          userId,
+          keyword: normalizedKeyword,
+        }
+      })
+    )
 
     return !!record
   } catch {
@@ -224,15 +232,17 @@ export async function getRecentSearches(
   limit: number = 20
 ): Promise<string[]> {
   try {
-    const records = await prisma.userKeywordHistory.findMany({
-      where: {
-        userId,
-        action: UserKeywordAction.SEARCHED,
-      },
-      orderBy: { lastSeen: 'desc' },
-      take: limit,
-      select: { keyword: true }
-    })
+    const records = await withRetry(() =>
+      prisma.userKeywordHistory.findMany({
+        where: {
+          userId,
+          action: UserKeywordAction.SEARCHED,
+        },
+        orderBy: { lastSeen: 'desc' },
+        take: limit,
+        select: { keyword: true }
+      })
+    )
 
     return records.map(r => r.keyword)
   } catch {
@@ -251,10 +261,10 @@ export async function getUserHistoryStats(userId: string): Promise<{
 }> {
   try {
     const [total, searched, tracked, clicked] = await Promise.all([
-      prisma.userKeywordHistory.count({ where: { userId } }),
-      prisma.userKeywordHistory.count({ where: { userId, action: UserKeywordAction.SEARCHED } }),
-      prisma.userKeywordHistory.count({ where: { userId, action: UserKeywordAction.TRACKED } }),
-      prisma.userKeywordHistory.count({ where: { userId, action: UserKeywordAction.CLICKED } }),
+      withRetry(() => prisma.userKeywordHistory.count({ where: { userId } })),
+      withRetry(() => prisma.userKeywordHistory.count({ where: { userId, action: UserKeywordAction.SEARCHED } })),
+      withRetry(() => prisma.userKeywordHistory.count({ where: { userId, action: UserKeywordAction.TRACKED } })),
+      withRetry(() => prisma.userKeywordHistory.count({ where: { userId, action: UserKeywordAction.CLICKED } })),
     ])
 
     return {
@@ -285,14 +295,16 @@ export async function cleanupOldHistory(userId: string): Promise<number> {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
   try {
-    const result = await prisma.userKeywordHistory.deleteMany({
-      where: {
-        userId,
-        lastSeen: { lt: thirtyDaysAgo },
-        // tracked는 삭제하지 않음
-        action: { not: UserKeywordAction.TRACKED }
-      }
-    })
+    const result = await withRetry(() =>
+      prisma.userKeywordHistory.deleteMany({
+        where: {
+          userId,
+          lastSeen: { lt: thirtyDaysAgo },
+          // tracked는 삭제하지 않음
+          action: { not: UserKeywordAction.TRACKED }
+        }
+      })
+    )
 
     return result.count
   } catch {

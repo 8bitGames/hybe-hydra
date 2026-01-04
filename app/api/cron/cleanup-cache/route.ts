@@ -80,8 +80,8 @@ export async function POST(request: NextRequest) {
     if (forceAll) {
       console.log('[Cache] Force clearing ALL search cache...');
 
-      const { prisma } = await import('@/lib/db/prisma');
-      const result = await prisma.imageSearchCache.deleteMany({});
+      const { prisma, withRetry } = await import('@/lib/db/prisma');
+      const result = await withRetry(() => prisma.imageSearchCache.deleteMany({}));
 
       return NextResponse.json({
         success: true,

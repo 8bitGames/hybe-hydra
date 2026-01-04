@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import {
   publishVideoToTikTokInbox,
   refreshAccessToken,
@@ -37,19 +37,19 @@ async function executePublish(
   videoUrl: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const account = await prisma.socialAccount.findUnique({
+    const account = await withRetry(() => prisma.socialAccount.findUnique({
       where: { id: socialAccountId },
-    });
+    }));
 
     if (!account || !account.accessToken) {
-      await prisma.scheduledPost.update({
+      await withRetry(() => prisma.scheduledPost.update({
         where: { id: postId },
         data: {
           status: "FAILED",
           errorMessage: "Social account not found or not connected",
           retryCount: { increment: 1 },
         },
-      });
+      }));
       return { success: false, error: "Social account not found" };
     }
 
@@ -61,14 +61,14 @@ async function executePublish(
       const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
 
       if (!clientKey || !clientSecret || !account.refreshToken) {
-        await prisma.scheduledPost.update({
+        await withRetry(() => prisma.scheduledPost.update({
           where: { id: postId },
           data: {
             status: "FAILED",
             errorMessage: "Token expired and refresh credentials not available",
             retryCount: { increment: 1 },
           },
-        });
+        }));
         return { success: false, error: "Token expired" };
       }
 
@@ -79,19 +79,19 @@ async function executePublish(
       );
 
       if (!refreshResult.success) {
-        await prisma.scheduledPost.update({
+        await withRetry(() => prisma.scheduledPost.update({
           where: { id: postId },
           data: {
             status: "FAILED",
             errorMessage: `Token refresh failed: ${refreshResult.error}`,
             retryCount: { increment: 1 },
           },
-        });
+        }));
         return { success: false, error: `Token refresh failed: ${refreshResult.error}` };
       }
 
       // Update stored tokens
-      await prisma.socialAccount.update({
+      await withRetry(() => prisma.socialAccount.update({
         where: { id: socialAccountId },
         data: {
           accessToken: refreshResult.accessToken,
@@ -100,7 +100,7 @@ async function executePublish(
             ? new Date(Date.now() + refreshResult.expiresIn * 1000)
             : null,
         },
-      });
+      }));
 
       accessToken = refreshResult.accessToken!;
     }
@@ -116,7 +116,7 @@ async function executePublish(
     );
 
     if (result.success) {
-      await prisma.scheduledPost.update({
+      await withRetry(() => prisma.scheduledPost.update({
         where: { id: postId },
         data: {
           status: "PUBLISHED",
@@ -125,29 +125,29 @@ async function executePublish(
           publishedUrl: result.postUrl,
           errorMessage: null,
         },
-      });
+      }));
       return { success: true };
     } else {
-      await prisma.scheduledPost.update({
+      await withRetry(() => prisma.scheduledPost.update({
         where: { id: postId },
         data: {
           status: "FAILED",
           errorMessage: result.error || "Unknown publish error",
           retryCount: { increment: 1 },
         },
-      });
+      }));
       return { success: false, error: result.error };
     }
   } catch (error) {
     console.error(`[CRON-PUBLISH] Error publishing post ${postId}:`, error);
-    await prisma.scheduledPost.update({
+    await withRetry(() => prisma.scheduledPost.update({
       where: { id: postId },
       data: {
         status: "FAILED",
         errorMessage: error instanceof Error ? error.message : "Unknown error",
         retryCount: { increment: 1 },
       },
-    });
+    }));
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
@@ -164,7 +164,7 @@ export async function GET(request: NextRequest) {
     const now = new Date();
 
     // Find scheduled posts that are due
-    const duePosts = await prisma.scheduledPost.findMany({
+    const duePosts = await withRetry(() => prisma.scheduledPost.findMany({
       where: {
         status: "SCHEDULED",
         scheduledAt: {
@@ -197,7 +197,7 @@ export async function GET(request: NextRequest) {
       orderBy: {
         scheduledAt: "asc",
       },
-    });
+    }));
 
     if (duePosts.length === 0) {
       console.log("[CRON-PUBLISH] No posts due for publishing");
@@ -225,22 +225,22 @@ export async function GET(request: NextRequest) {
 
       if (!videoUrl) {
         console.log(`[CRON-PUBLISH] Skipping post ${post.id}: No video URL available`);
-        await prisma.scheduledPost.update({
+        await withRetry(() => prisma.scheduledPost.update({
           where: { id: post.id },
           data: {
             status: "FAILED",
             errorMessage: "No video URL available",
           },
-        });
+        }));
         results.push({ postId: post.id, success: false, error: "No video URL" });
         continue;
       }
 
       // Mark as publishing
-      await prisma.scheduledPost.update({
+      await withRetry(() => prisma.scheduledPost.update({
         where: { id: post.id },
         data: { status: "PUBLISHING" },
-      });
+      }));
 
       // Execute publish (Inbox Upload - sends to user's TikTok inbox)
       const result = await executePublish(

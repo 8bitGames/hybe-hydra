@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader, hasLabelAccess } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest, hasLabelAccess } from "@/lib/auth";
 import { cached, CacheKeys, CacheTTL, invalidatePattern } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json(
@@ -27,7 +26,7 @@ export async function GET(request: NextRequest) {
         let artists;
         if (isAdmin) {
           // Admin can see all artists
-          artists = await prisma.artist.findMany({
+          artists = await withRetry(() => prisma.artist.findMany({
             where: { deletedAt: null },
             include: {
               label: {
@@ -38,10 +37,10 @@ export async function GET(request: NextRequest) {
               },
             },
             orderBy: { groupName: "asc" },
-          });
+          }));
         } else {
           // Non-admin only sees artists from their labels
-          artists = await prisma.artist.findMany({
+          artists = await withRetry(() => prisma.artist.findMany({
             where: {
               labelId: { in: user.labelIds },
               deletedAt: null,
@@ -55,7 +54,7 @@ export async function GET(request: NextRequest) {
               },
             },
             orderBy: { groupName: "asc" },
-          });
+          }));
         }
 
         // Transform to API response format
@@ -88,8 +87,7 @@ export async function GET(request: NextRequest) {
 // POST /api/v1/artists - Create a new artist
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json(
@@ -125,9 +123,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify label exists
-    const label = await prisma.label.findUnique({
+    const label = await withRetry(() => prisma.label.findUnique({
       where: { id: label_id },
-    });
+    }));
 
     if (!label) {
       return NextResponse.json(
@@ -145,7 +143,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the artist
-    const artist = await prisma.artist.create({
+    const artist = await withRetry(() => prisma.artist.create({
       data: {
         name: name.trim(),
         stageName: stage_name?.trim() || null,
@@ -161,7 +159,7 @@ export async function POST(request: NextRequest) {
           },
         },
       },
-    });
+    }));
 
     // Invalidate all artists list caches
     await invalidatePattern("artists:list:*");

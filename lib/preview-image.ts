@@ -14,7 +14,7 @@ import { convertAspectRatioForGeminiImage, generateTwoStepComposition } from "@/
 import { createI2VSpecialistAgent } from "@/lib/agents/transformers/i2v-specialist";
 import type { AgentContext } from "@/lib/agents/types";
 import { uploadToS3, downloadFromS3AsBase64, getPresignedUrl } from "@/lib/storage";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import {
   submitImageGeneration,
   getAIJobStatus,
@@ -204,27 +204,29 @@ async function savePreviewImageToDatabase(
   params: SavePreviewImageParams
 ): Promise<string | null> {
   try {
-    const record = await prisma.generatedPreviewImage.create({
-      data: {
-        previewId: params.previewId,
-        imageUrl: params.imageUrl,
-        s3Key: params.s3Key,
-        videoPrompt: params.input.video_prompt,
-        imageDescription: params.input.image_description,
-        geminiImagePrompt: params.geminiImagePrompt,
-        aspectRatio: params.input.aspect_ratio || "9:16",
-        style: params.input.style,
-        negativePrompt: params.input.negative_prompt,
-        compositionMode: params.input.composition_mode || "direct",
-        compositePrompt: params.compositePrompt,
-        sceneImageUrl: params.sceneImageUrl,
-        sceneImageS3Key: params.sceneImageS3Key,
-        productImageUrl: params.input.product_image_url,
-        handPose: params.input.hand_pose,
-        userId: params.s3Config.userId,
-        campaignId: params.s3Config.type === "campaign" ? params.s3Config.id : (params.s3Config.campaignId || null),
-      },
-    });
+    const record = await withRetry(() =>
+      prisma.generatedPreviewImage.create({
+        data: {
+          previewId: params.previewId,
+          imageUrl: params.imageUrl,
+          s3Key: params.s3Key,
+          videoPrompt: params.input.video_prompt,
+          imageDescription: params.input.image_description,
+          geminiImagePrompt: params.geminiImagePrompt,
+          aspectRatio: params.input.aspect_ratio || "9:16",
+          style: params.input.style,
+          negativePrompt: params.input.negative_prompt,
+          compositionMode: params.input.composition_mode || "direct",
+          compositePrompt: params.compositePrompt,
+          sceneImageUrl: params.sceneImageUrl,
+          sceneImageS3Key: params.sceneImageS3Key,
+          productImageUrl: params.input.product_image_url,
+          handPose: params.input.hand_pose,
+          userId: params.s3Config.userId,
+          campaignId: params.s3Config.type === "campaign" ? params.s3Config.id : (params.s3Config.campaignId || null),
+        },
+      })
+    );
     console.log(`[Preview Image] Saved to database with ID: ${record.id}`);
     return record.id;
   } catch (dbError) {

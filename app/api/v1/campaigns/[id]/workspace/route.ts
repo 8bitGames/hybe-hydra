@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -9,8 +9,8 @@ interface RouteParams {
 // GET /api/v1/campaigns/[id]/workspace - Get comprehensive workspace data for a campaign
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id: campaignId } = await params;
 
     // Check campaign access
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: {
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           select: { assets: true, videoGenerations: true },
         },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Get all generations with full context (exclude soft-deleted)
-    const generations = await prisma.videoGeneration.findMany({
+    const generations = await withRetry(() => prisma.videoGeneration.findMany({
       where: { campaignId, deletedAt: null },
       include: {
         referenceImage: {
@@ -58,10 +58,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
       },
       orderBy: { createdAt: "desc" },
-    });
+    }));
 
     // Get all scheduled posts
-    const scheduledPosts = await prisma.scheduledPost.findMany({
+    const scheduledPosts = await withRetry(() => prisma.scheduledPost.findMany({
       where: { campaignId },
       include: {
         socialAccount: {
@@ -69,22 +69,22 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
       },
       orderBy: { createdAt: "desc" },
-    });
+    }));
 
     // Get all assets
-    const assets = await prisma.asset.findMany({
+    const assets = await withRetry(() => prisma.asset.findMany({
       where: { campaignId },
       orderBy: { createdAt: "desc" },
-    });
+    }));
 
     // Get all generated preview images for this campaign only
     // Images are now properly linked to campaigns when generated from /create page
-    const previewImages = await prisma.generatedPreviewImage.findMany({
+    const previewImages = await withRetry(() => prisma.generatedPreviewImage.findMany({
       where: {
         campaignId,  // Only images specifically linked to this campaign
       },
       orderBy: { createdAt: "desc" },
-    });
+    }));
 
     // Extract unique prompts (group by original_input or prompt)
     const promptMap = new Map<string, {

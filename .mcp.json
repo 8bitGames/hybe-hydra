@@ -26,15 +26,10 @@
       ]
     },
     "supabase": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@supabase/mcp-server-supabase@latest"
-      ],
-      "env": {
-        "SUPABASE_ACCESS_TOKEN": "sbp_2d6c72e0ee03342a00c47bc7d3b17a08bc7d946e"
-      }
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp",
+      "description": "Supabase PostgreSQL database operations - OAuth authentication",
+      "enabled": true
     }
   }
 }

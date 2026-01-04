@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { TrendPlatform, Prisma } from "@prisma/client";
 import { batchCacheImagesToS3 } from "@/lib/storage";
 
@@ -311,10 +311,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    const created = await prisma.trendSnapshot.createMany({
+    const created = await withRetry(() => prisma.trendSnapshot.createMany({
       data: trendData,
       skipDuplicates: true,
-    });
+    }));
 
     console.log("[CRON-TRENDS] Collection complete:", {
       collected: collectedTrends.length,

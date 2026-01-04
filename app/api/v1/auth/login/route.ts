@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,18 +49,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user profile from our users table (for role, labelIds, etc.)
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        labelIds: true,
-        isActive: true,
-      },
-    });
+    // Get user profile from our users table (with retry for transient failures)
+    const user = await withRetry(() =>
+      prisma.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          labelIds: true,
+          isActive: true,
+        },
+      })
+    );
 
     // Check if user exists in our table and is active
     if (!user) {
@@ -96,8 +98,8 @@ export async function POST(request: NextRequest) {
     const finalResponse = NextResponse.json(responseData);
 
     // Copy cookies from the response object that Supabase set
-    // Set long expiry for persistent login (30 days)
-    const cookieMaxAge = 30 * 24 * 60 * 60; // 30 days in seconds
+    // Set long expiry for persistent login (7 days)
+    const cookieMaxAge = 7 * 24 * 60 * 60; // 7 days in seconds
 
     response.cookies.getAll().forEach((cookie) => {
       finalResponse.cookies.set(cookie.name, cookie.value, {

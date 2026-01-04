@@ -4,8 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { TrendPlatform, Prisma } from "@prisma/client";
 import { searchTikTok, closeBrowser } from "@/lib/tiktok-trends";
 import { analyzeVideoTrends, VideoTrendAnalysisResult } from "@/lib/services/video-trend-analyzer";
@@ -15,8 +15,8 @@ export const maxDuration = 300; // Allow longer execution for video analysis (5 
 // POST /api/v1/trends/analyze/video - Analyze video trends for a search query
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -49,14 +49,14 @@ export async function POST(request: NextRequest) {
 
     // Check for cached analysis (valid for 48 hours due to expensive operation)
     if (!forceRefresh) {
-      const cached = await prisma.videoTrendAnalysis.findUnique({
+      const cached = await withRetry(() => prisma.videoTrendAnalysis.findUnique({
         where: {
           platform_searchQuery: {
             platform: platform as TrendPlatform,
             searchQuery: searchQuery.toLowerCase(),
           },
         },
-      });
+      }));
 
       if (cached && cached.expiresAt > new Date()) {
         console.log(`[TRENDS-ANALYZE-VIDEO] Returning cached analysis`);
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
     expiresAt.setHours(expiresAt.getHours() + 48);
 
     // Save to database
-    const savedAnalysis = await prisma.videoTrendAnalysis.upsert({
+    const savedAnalysis = await withRetry(() => prisma.videoTrendAnalysis.upsert({
       where: {
         platform_searchQuery: {
           platform: platform as TrendPlatform,
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
         videosAnalyzed: analysis.videosAnalyzed,
         expiresAt,
       },
-    });
+    }));
 
     console.log(`[TRENDS-ANALYZE-VIDEO] Analysis complete and saved (${analysis.videosAnalyzed} videos analyzed)`);
 
@@ -207,8 +207,8 @@ export async function POST(request: NextRequest) {
 // GET /api/v1/trends/analyze/video - Get cached video analysis
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -225,14 +225,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const analysis = await prisma.videoTrendAnalysis.findUnique({
+    const analysis = await withRetry(() => prisma.videoTrendAnalysis.findUnique({
       where: {
         platform_searchQuery: {
           platform,
           searchQuery: searchQuery.toLowerCase(),
         },
       },
-    });
+    }));
 
     if (!analysis) {
       return NextResponse.json({

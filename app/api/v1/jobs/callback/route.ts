@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { createGeoAeoOptimizerAgent } from "@/lib/agents/publishers";
 import type { AgentContext } from "@/lib/agents/types";
 
@@ -115,10 +115,10 @@ async function handlePublishCallback(body: PublishCallbackPayload): Promise<Next
     }
 
     // Update the scheduled post
-    await prisma.scheduledPost.update({
+    await withRetry(() => prisma.scheduledPost.update({
       where: { id: post_id },
       data: updateData,
-    });
+    }));
 
     console.log(`[Publish Callback] Updated post ${post_id}: ${platform} → ${prismaStatus}`);
 
@@ -189,15 +189,15 @@ export async function POST(request: NextRequest) {
     // For regular jobs, job_id IS the generation ID
     const generationId = metadata?.generation_id || job_id;
 
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: updateData,
-    });
+    }));
 
     console.log(`[Job Callback] Updated generation ${generationId}: ${status} → ${prismaStatus} (progress: ${finalProgress}%)`);
 
     // Check if this job has auto-publish settings
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
       select: {
         qualityMetadata: true,
@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
         campaignId: true,
         createdBy: true,
       },
-    });
+    }));
 
     if (generation?.qualityMetadata && status === "completed") {
       const metadata = generation.qualityMetadata as Record<string, unknown>;
@@ -263,7 +263,7 @@ export async function POST(request: NextRequest) {
             console.log(`[Job Callback] GEO/AEO content generated. Score: ${scores.overallScore}`);
 
             // Update metadata with generated content
-            await prisma.videoGeneration.update({
+            await withRetry(() => prisma.videoGeneration.update({
               where: { id: job_id },
               data: {
                 qualityMetadata: {
@@ -276,7 +276,7 @@ export async function POST(request: NextRequest) {
                   },
                 },
               },
-            });
+            }));
           } catch (geoAeoError) {
             console.error(`[Job Callback] GEO/AEO generation failed for job ${job_id}:`, geoAeoError);
             // Continue with manual caption/hashtags if GEO/AEO fails
@@ -292,11 +292,11 @@ export async function POST(request: NextRequest) {
         // Only schedule if we have required fields
         if (generation.campaignId && generation.createdBy) {
           try {
-            await prisma.scheduledPost.create({
+            await withRetry(() => prisma.scheduledPost.create({
               data: {
                 generationId: job_id,
                 socialAccountId: autoPublish.socialAccountId,
-                campaignId: generation.campaignId,
+                campaignId: generation.campaignId!,
                 createdBy: generation.createdBy,
                 platform: "TIKTOK",
                 status: "SCHEDULED",
@@ -305,7 +305,7 @@ export async function POST(request: NextRequest) {
                 scheduledAt: scheduledTime,
                 timezone: "Asia/Seoul",
               },
-            });
+            }));
 
             console.log(`[Job Callback] Scheduled post for job ${job_id} at ${scheduledTime.toISOString()}`);
           } catch (scheduleError) {

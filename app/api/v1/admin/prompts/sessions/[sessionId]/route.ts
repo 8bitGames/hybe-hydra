@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import { getCurrentUser } from '@/lib/auth';
 
 interface RouteParams {
@@ -44,9 +44,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { sessionId } = await params;
 
-    const session = await prisma.promptRefineSession.findUnique({
-      where: { id: sessionId },
-    });
+    const session = await withRetry(() =>
+      prisma.promptRefineSession.findUnique({
+        where: { id: sessionId },
+      })
+    );
 
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
@@ -88,9 +90,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { sessionId } = await params;
     const body: UpdateSessionRequest = await request.json();
 
-    const existingSession = await prisma.promptRefineSession.findUnique({
-      where: { id: sessionId },
-    });
+    const existingSession = await withRetry(() =>
+      prisma.promptRefineSession.findUnique({
+        where: { id: sessionId },
+      })
+    );
 
     if (!existingSession) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
@@ -124,10 +128,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       updateData.tags = body.tags;
     }
 
-    const session = await prisma.promptRefineSession.update({
-      where: { id: sessionId },
-      data: updateData,
-    });
+    const session = await withRetry(() =>
+      prisma.promptRefineSession.update({
+        where: { id: sessionId },
+        data: updateData,
+      })
+    );
 
     return NextResponse.json({
       id: session.id,
@@ -158,17 +164,21 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const { sessionId } = await params;
 
-    const existingSession = await prisma.promptRefineSession.findUnique({
-      where: { id: sessionId },
-    });
+    const existingSession = await withRetry(() =>
+      prisma.promptRefineSession.findUnique({
+        where: { id: sessionId },
+      })
+    );
 
     if (!existingSession) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
-    await prisma.promptRefineSession.delete({
-      where: { id: sessionId },
-    });
+    await withRetry(() =>
+      prisma.promptRefineSession.delete({
+        where: { id: sessionId },
+      })
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {

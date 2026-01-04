@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromHeader } from "@/lib/auth";
-import { prisma } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
 import {
   createLyricsExtractorAgent,
@@ -22,8 +22,8 @@ import type { LyricsData } from "@/lib/subtitle-styles";
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -40,14 +40,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the asset with campaign for access check
-    const asset = await prisma.asset.findUnique({
+    const asset = await withRetry(() => prisma.asset.findUnique({
       where: { id: assetId },
       include: {
         campaign: {
           select: { artistId: true },
         },
       },
-    });
+    }));
 
     if (!asset) {
       return NextResponse.json({ detail: "Asset not found" }, { status: 404 });
@@ -57,10 +57,10 @@ export async function POST(request: NextRequest) {
     if (user.role !== "ADMIN") {
       // For non-admin, check if user has access to this campaign's artist
       const artist = asset.campaign?.artistId
-        ? await prisma.artist.findUnique({
+        ? await withRetry(() => prisma.artist.findUnique({
             where: { id: asset.campaign.artistId },
             select: { labelId: true },
-          })
+          }))
         : null;
 
       if (!artist || !user.labelIds.includes(artist.labelId)) {
@@ -158,12 +158,12 @@ export async function POST(request: NextRequest) {
       lyrics: lyricsData,
     })) as Prisma.InputJsonValue;
 
-    await prisma.asset.update({
+    await withRetry(() => prisma.asset.update({
       where: { id: assetId },
       data: {
         metadata: updatedMetadata,
       },
-    });
+    }));
 
     return NextResponse.json({
       assetId,

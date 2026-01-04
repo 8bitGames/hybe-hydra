@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserFromHeader } from '@/lib/auth';
-import { prisma } from '@/lib/db/prisma';
+import { getUserFromRequest } from '@/lib/auth';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import { v4 as uuidv4 } from 'uuid';
 import { searchImagesMultiQuery, isGoogleSearchConfigured, ImageSearchResult } from '@/lib/google-search';
 import { uploadToS3 } from '@/lib/storage';
@@ -378,8 +378,7 @@ async function submitSilentRender(params: {
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
@@ -398,22 +397,24 @@ export async function POST(request: NextRequest) {
     const generationId = uuidv4();
 
     // Create initial database record
-    await prisma.videoGeneration.create({
-      data: {
-        id: generationId,
-        prompt: prompt.trim(),
-        aspectRatio: aspect_ratio,
-        durationSeconds: 15,
-        status: 'PROCESSING',
-        progress: 5,
-        createdBy: user.id,
-        isQuickCreate: true,
-        qualityMetadata: {
-          quickComposeStep: 'script',
-          isQuickCompose: true,
+    await withRetry(() =>
+      prisma.videoGeneration.create({
+        data: {
+          id: generationId,
+          prompt: prompt.trim(),
+          aspectRatio: aspect_ratio,
+          durationSeconds: 15,
+          status: 'PROCESSING',
+          progress: 5,
+          createdBy: user.id,
+          isQuickCreate: true,
+          qualityMetadata: {
+            quickComposeStep: 'script',
+            isQuickCompose: true,
+          },
         },
-      },
-    });
+      })
+    );
 
     // Step 1: Generate script (async)
     console.log('[Quick Compose] Step 1: Generating script...');
@@ -423,13 +424,15 @@ export async function POST(request: NextRequest) {
       scriptResult = await generateQuickScript(prompt.trim());
     } catch (error) {
       console.error('[Quick Compose] Script generation failed:', error);
-      await prisma.videoGeneration.update({
-        where: { id: generationId },
-        data: {
-          status: 'FAILED',
-          errorMessage: 'Script generation failed',
-        },
-      });
+      await withRetry(() =>
+        prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: 'FAILED',
+            errorMessage: 'Script generation failed',
+          },
+        })
+      );
       return NextResponse.json({
         id: generationId,
         status: 'failed',
@@ -438,17 +441,19 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    await prisma.videoGeneration.update({
-      where: { id: generationId },
-      data: {
-        progress: 25,
-        qualityMetadata: {
-          quickComposeStep: 'images',
-          isQuickCompose: true,
-          script: JSON.parse(JSON.stringify(scriptResult)),
+    await withRetry(() =>
+      prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: {
+          progress: 25,
+          qualityMetadata: {
+            quickComposeStep: 'images',
+            isQuickCompose: true,
+            script: JSON.parse(JSON.stringify(scriptResult)),
+          },
         },
-      },
-    });
+      })
+    );
 
     // Step 2: Search and proxy images
     console.log('[Quick Compose] Step 2: Searching images...');
@@ -462,13 +467,15 @@ export async function POST(request: NextRequest) {
       }
     } catch (error) {
       console.error('[Quick Compose] Image search failed:', error);
-      await prisma.videoGeneration.update({
-        where: { id: generationId },
-        data: {
-          status: 'FAILED',
-          errorMessage: 'Image search failed',
-        },
-      });
+      await withRetry(() =>
+        prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: 'FAILED',
+            errorMessage: 'Image search failed',
+          },
+        })
+      );
       return NextResponse.json({
         id: generationId,
         status: 'failed',
@@ -477,18 +484,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    await prisma.videoGeneration.update({
-      where: { id: generationId },
-      data: {
-        progress: 50,
-        qualityMetadata: {
-          quickComposeStep: 'render',
-          isQuickCompose: true,
-          script: JSON.parse(JSON.stringify(scriptResult)),
-          imageCount: images.length,
+    await withRetry(() =>
+      prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: {
+          progress: 50,
+          qualityMetadata: {
+            quickComposeStep: 'render',
+            isQuickCompose: true,
+            script: JSON.parse(JSON.stringify(scriptResult)),
+            imageCount: images.length,
+          },
         },
-      },
-    });
+      })
+    );
 
     // Step 3: Submit render
     console.log('[Quick Compose] Step 3: Submitting render...');
@@ -506,13 +515,15 @@ export async function POST(request: NextRequest) {
       });
     } catch (error) {
       console.error('[Quick Compose] Render submit failed:', error);
-      await prisma.videoGeneration.update({
-        where: { id: generationId },
-        data: {
-          status: 'FAILED',
-          errorMessage: 'Render submission failed',
-        },
-      });
+      await withRetry(() =>
+        prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: {
+            status: 'FAILED',
+            errorMessage: 'Render submission failed',
+          },
+        })
+      );
       return NextResponse.json({
         id: generationId,
         status: 'failed',
@@ -522,19 +533,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Update with Modal call ID for polling
-    await prisma.videoGeneration.update({
-      where: { id: generationId },
-      data: {
-        progress: 60,
-        qualityMetadata: {
-          quickComposeStep: 'render',
-          isQuickCompose: true,
-          script: JSON.parse(JSON.stringify(scriptResult)),
-          imageCount: images.length,
-          modalCallId: modalResponse.call_id,
+    await withRetry(() =>
+      prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: {
+          progress: 60,
+          qualityMetadata: {
+            quickComposeStep: 'render',
+            isQuickCompose: true,
+            script: JSON.parse(JSON.stringify(scriptResult)),
+            imageCount: images.length,
+            modalCallId: modalResponse.call_id,
+          },
         },
-      },
-    });
+      })
+    );
 
     console.log('[Quick Compose] Successfully started:', {
       generationId,

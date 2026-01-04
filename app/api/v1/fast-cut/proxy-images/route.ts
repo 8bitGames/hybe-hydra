@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserFromHeader } from '@/lib/auth';
+import { getUserFromRequest } from '@/lib/auth';
 import { uploadToS3 } from '@/lib/storage';
 import crypto from 'crypto';
 import {
@@ -58,8 +58,8 @@ function parseBase64DataUrl(dataUrl: string): { buffer: Buffer; mimeType: string
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });

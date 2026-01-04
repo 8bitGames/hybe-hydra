@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 const STUCK_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
@@ -10,8 +10,8 @@ const STUCK_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     const oneHourAgo = new Date(Date.now() - STUCK_THRESHOLD_MS);
 
     // Find stuck PROCESSING generations (older than 1 hour) - exclude soft-deleted
-    const stuckProcessing = await prisma.videoGeneration.findMany({
+    const stuckProcessing = await withRetry(() => prisma.videoGeneration.findMany({
       where: {
         status: "PROCESSING",
         updatedAt: { lt: oneHourAgo },
@@ -50,10 +50,10 @@ export async function GET(request: NextRequest) {
         errorMessage: true,
       },
       orderBy: { updatedAt: "asc" },
-    });
+    }));
 
     // Find orphaned generations (no output URL and status is COMPLETED) - exclude soft-deleted
-    const orphanedCompleted = await prisma.videoGeneration.findMany({
+    const orphanedCompleted = await withRetry(() => prisma.videoGeneration.findMany({
       where: {
         status: "COMPLETED",
         outputUrl: null,
@@ -77,11 +77,11 @@ export async function GET(request: NextRequest) {
         updatedAt: true,
       },
       orderBy: { updatedAt: "asc" },
-    });
+    }));
 
     // Find failed generations that can be cleaned up - exclude soft-deleted
     const failedGenerations = includeAll
-      ? await prisma.videoGeneration.findMany({
+      ? await withRetry(() => prisma.videoGeneration.findMany({
           where: {
             status: "FAILED",
             deletedAt: null,
@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
           },
           orderBy: { updatedAt: "desc" },
           take: 100,
-        })
+        }))
       : [];
 
     return NextResponse.json({
@@ -159,8 +159,8 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -205,21 +205,21 @@ export async function POST(request: NextRequest) {
         ...rbacFilter,
       };
 
-      const updateResult = await prisma.videoGeneration.updateMany({
+      const updateResult = await withRetry(() => prisma.videoGeneration.updateMany({
         where: whereClause,
         data: {
           status: "FAILED",
           errorMessage: "Automatically marked as failed: Processing timeout exceeded 1 hour",
           progress: 0,
         },
-      });
+      }));
 
       results.marked_as_failed = updateResult.count;
     }
 
     // 2. Delete orphaned COMPLETED (no output URL)
     if (delete_orphaned) {
-      const orphanedIds = await prisma.videoGeneration.findMany({
+      const orphanedIds = await withRetry(() => prisma.videoGeneration.findMany({
         where: {
           status: "COMPLETED",
           outputUrl: null,
@@ -229,11 +229,11 @@ export async function POST(request: NextRequest) {
           ...rbacFilter,
         },
         select: { id: true },
-      });
+      }));
 
       for (const gen of orphanedIds) {
         try {
-          await prisma.videoGeneration.delete({ where: { id: gen.id } });
+          await withRetry(() => prisma.videoGeneration.delete({ where: { id: gen.id } }));
           results.deleted_orphaned++;
         } catch (err) {
           results.errors.push(`Failed to delete orphaned ${gen.id}: ${err}`);
@@ -243,7 +243,7 @@ export async function POST(request: NextRequest) {
 
     // 3. Delete FAILED generations
     if (delete_failed) {
-      const failedIds = await prisma.videoGeneration.findMany({
+      const failedIds = await withRetry(() => prisma.videoGeneration.findMany({
         where: {
           status: "FAILED",
           ...(campaign_id && { campaignId: campaign_id }),
@@ -251,11 +251,11 @@ export async function POST(request: NextRequest) {
           ...rbacFilter,
         },
         select: { id: true },
-      });
+      }));
 
       for (const gen of failedIds) {
         try {
-          await prisma.videoGeneration.delete({ where: { id: gen.id } });
+          await withRetry(() => prisma.videoGeneration.delete({ where: { id: gen.id } }));
           results.deleted_failed++;
         } catch (err) {
           results.errors.push(`Failed to delete failed ${gen.id}: ${err}`);

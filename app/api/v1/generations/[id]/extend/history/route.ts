@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -17,8 +17,8 @@ interface RouteParams {
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     // Verify the generation exists and user has access
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id },
       include: {
         campaign: {
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Get extensions FROM this video (this video as source)
-    const extensionsFromThis = await prisma.videoExtensionHistory.findMany({
+    const extensionsFromThis = await withRetry(() => prisma.videoExtensionHistory.findMany({
       where: { sourceGenerationId: id },
       include: {
         extendedGeneration: {
@@ -70,10 +70,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
       },
       orderBy: { extensionNumber: "asc" },
-    });
+    }));
 
     // Get the extension record where this video is the RESULT (extended from another)
-    const extendedFrom = await prisma.videoExtensionHistory.findFirst({
+    const extendedFrom = await withRetry(() => prisma.videoExtensionHistory.findFirst({
       where: { extendedGenerationId: id },
       include: {
         sourceGeneration: {
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     // Build full chain - find root and traverse to all leaves
     const fullChain = await buildExtensionChain(id);
@@ -160,10 +160,10 @@ async function buildExtensionChain(generationId: string) {
 
   // Traverse up to find root
   while (true) {
-    const parentRecord = await prisma.videoExtensionHistory.findFirst({
+    const parentRecord = await withRetry(() => prisma.videoExtensionHistory.findFirst({
       where: { extendedGenerationId: currentId },
       select: { sourceGenerationId: true },
-    });
+    }));
 
     if (!parentRecord) {
       rootId = currentId;
@@ -173,7 +173,7 @@ async function buildExtensionChain(generationId: string) {
   }
 
   // Get root video info
-  const rootVideo = await prisma.videoGeneration.findUnique({
+  const rootVideo = await withRetry(() => prisma.videoGeneration.findUnique({
     where: { id: rootId },
     select: {
       id: true,
@@ -184,7 +184,7 @@ async function buildExtensionChain(generationId: string) {
       gcsUri: true,
       createdAt: true,
     },
-  });
+  }));
 
   if (!rootVideo) {
     return null;
@@ -216,7 +216,7 @@ async function buildExtensionChain(generationId: string) {
   // Traverse down to find all extensions in order (max 20 iterations)
   let currentSourceId: string = rootId;
   for (let i = 0; i < 20; i++) {
-    const extensionRecord = await prisma.videoExtensionHistory.findFirst({
+    const extensionRecord = await withRetry(() => prisma.videoExtensionHistory.findFirst({
       where: { sourceGenerationId: currentSourceId },
       include: {
         extendedGeneration: {
@@ -232,7 +232,7 @@ async function buildExtensionChain(generationId: string) {
         },
       },
       orderBy: { createdAt: "asc" },
-    });
+    }));
 
     if (!extensionRecord) {
       break;

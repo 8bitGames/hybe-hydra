@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import type { Job, JobType, JobStatus } from "@/lib/stores/job-store";
 
 /**
@@ -11,15 +11,14 @@ import type { Job, JobType, JobStatus } from "@/lib/stores/job-store";
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
     }
 
     // Get active video generations (PENDING or PROCESSING) - exclude soft-deleted
-    const activeGenerations = await prisma.videoGeneration.findMany({
+    const activeGenerations = await withRetry(() => prisma.videoGeneration.findMany({
       where: {
         createdBy: user.id,
         status: { in: ["PENDING", "PROCESSING"] },
@@ -39,10 +38,10 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { createdAt: "desc" },
       take: 20,
-    });
+    }));
 
     // Get recent completed/failed generations - exclude soft-deleted
-    const recentGenerations = await prisma.videoGeneration.findMany({
+    const recentGenerations = await withRetry(() => prisma.videoGeneration.findMany({
       where: {
         createdBy: user.id,
         status: { in: ["COMPLETED", "FAILED"] },
@@ -69,7 +68,7 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { updatedAt: "desc" },
       take: 10,
-    });
+    }));
 
     // Transform to Job format
     const active: Job[] = activeGenerations.map((gen) => ({

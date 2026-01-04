@@ -232,6 +232,23 @@ export async function invalidateUserDashboard(userId: string): Promise<void> {
 }
 
 /**
+ * Invalidate all cache for a specific user (on logout)
+ * 특정 사용자의 모든 캐시 무효화 (로그아웃 시)
+ */
+export async function invalidateUserCache(userId: string): Promise<void> {
+  if (!redis) return;
+
+  try {
+    // Delete user profile cache
+    await deleteCache(CacheKeys.userProfile(userId));
+    // Delete user dashboard stats
+    await deleteCache(CacheKeys.dashboardStats(userId));
+  } catch (error) {
+    console.error(`[Cache] Failed to invalidate user ${userId}:`, error);
+  }
+}
+
+/**
  * Invalidate generation-related caches
  * 생성 관련 캐시 무효화
  */

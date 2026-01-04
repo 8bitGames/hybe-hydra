@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 import { GoogleGenAI } from "@google/genai";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY! });
 
@@ -20,8 +20,8 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY! });
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     // If generationId is provided, look up video prompt and campaign info
     if (generationId && (!videoPrompt || !campaignName)) {
       try {
-        const generation = await prisma.videoGeneration.findUnique({
+        const generation = await withRetry(() => prisma.videoGeneration.findUnique({
           where: { id: generationId },
           include: {
             campaign: {
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
               },
             },
           },
-        });
+        }));
 
         if (generation) {
           // Get video prompt directly from generation (VideoGeneration has prompt field)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -9,8 +9,8 @@ interface RouteParams {
 // GET /api/v1/presets/[id] - Get a single preset
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -18,9 +18,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const preset = await prisma.stylePreset.findUnique({
+    const preset = await withRetry(() => prisma.stylePreset.findUnique({
       where: { id },
-    });
+    }));
 
     if (!preset) {
       return NextResponse.json({ detail: "Preset not found" }, { status: 404 });
@@ -50,8 +50,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // PATCH /api/v1/presets/[id] - Update a preset (admin only)
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -63,9 +63,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const preset = await prisma.stylePreset.findUnique({
+    const preset = await withRetry(() => prisma.stylePreset.findUnique({
       where: { id },
-    });
+    }));
 
     if (!preset) {
       return NextResponse.json({ detail: "Preset not found" }, { status: 404 });
@@ -74,7 +74,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const { name, name_ko, category, description, parameters, is_active, sort_order } = body;
 
-    const updatedPreset = await prisma.stylePreset.update({
+    const updatedPreset = await withRetry(() => prisma.stylePreset.update({
       where: { id },
       data: {
         ...(name !== undefined && { name }),
@@ -85,7 +85,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         ...(is_active !== undefined && { isActive: is_active }),
         ...(sort_order !== undefined && { sortOrder: sort_order }),
       },
-    });
+    }));
 
     return NextResponse.json({
       id: updatedPreset.id,
@@ -111,8 +111,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/v1/presets/[id] - Delete a preset (admin only)
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -124,17 +124,17 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const preset = await prisma.stylePreset.findUnique({
+    const preset = await withRetry(() => prisma.stylePreset.findUnique({
       where: { id },
-    });
+    }));
 
     if (!preset) {
       return NextResponse.json({ detail: "Preset not found" }, { status: 404 });
     }
 
-    await prisma.stylePreset.delete({
+    await withRetry(() => prisma.stylePreset.delete({
       where: { id },
-    });
+    }));
 
     return NextResponse.json({ message: "Preset deleted successfully" });
   } catch (error) {

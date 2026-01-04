@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 
 interface RouteParams {
@@ -17,8 +17,8 @@ interface StylePresetParams {
 // POST /api/v1/campaigns/[id]/generations/batch - Create multiple generations with style presets
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -27,12 +27,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: campaignId } = await params;
 
     // Check campaign access
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: { select: { labelId: true } },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -66,9 +66,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Validate audio asset
-    const audioAsset = await prisma.asset.findUnique({
+    const audioAsset = await withRetry(() => prisma.asset.findUnique({
       where: { id: audio_asset_id },
-    });
+    }));
 
     if (!audioAsset || audioAsset.type !== "AUDIO") {
       return NextResponse.json(
@@ -94,12 +94,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Fetch all requested style presets
-    const presets = await prisma.stylePreset.findMany({
+    const presets = await withRetry(() => prisma.stylePreset.findMany({
       where: {
         id: { in: style_preset_ids },
         isActive: true,
       },
-    });
+    }));
 
     if (presets.length !== style_preset_ids.length) {
       const foundIds = presets.map((p) => p.id);
@@ -112,9 +112,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Validate reference image if provided
     if (reference_image_id) {
-      const refImage = await prisma.asset.findUnique({
+      const refImage = await withRetry(() => prisma.asset.findUnique({
         where: { id: reference_image_id },
-      });
+      }));
 
       if (!refImage || refImage.campaignId !== campaignId) {
         return NextResponse.json(
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // Use preset's aspect ratio if available, otherwise use request's value
       const finalAspectRatio = presetParams?.aspectRatio || aspect_ratio;
 
-      const generation = await prisma.videoGeneration.create({
+      const generation = await withRetry(() => prisma.videoGeneration.create({
         data: {
           campaignId,
           prompt: finalPrompt,
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             styleParameters: presetParams,
           },
         },
-      });
+      }));
 
       return {
         generation,
@@ -215,8 +215,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 // GET /api/v1/campaigns/[id]/generations/batch?batch_id=xxx - Get all generations in a batch
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -231,12 +231,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check campaign access
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: { select: { labelId: true } },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -247,7 +247,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Find all generations with this batch ID (exclude soft-deleted)
-    const generations = await prisma.videoGeneration.findMany({
+    const generations = await withRetry(() => prisma.videoGeneration.findMany({
       where: {
         campaignId,
         deletedAt: null,
@@ -265,7 +265,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
       },
       orderBy: { createdAt: "asc" },
-    });
+    }));
 
     if (generations.length === 0) {
       return NextResponse.json({ detail: "Batch not found" }, { status: 404 });

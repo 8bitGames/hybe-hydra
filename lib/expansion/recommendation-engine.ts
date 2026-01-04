@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db/prisma'
+import { prisma, withRetry } from '@/lib/db/prisma'
 import type { Prisma } from '@prisma/client'
 import { coOccurrenceAnalyzer } from './co-occurrence'
 import { accountDiscoveryService } from './account-discovery'
@@ -186,17 +186,19 @@ export class ExpansionRecommendationEngine {
   ): Promise<void> {
     for (const rec of recommendations) {
       try {
-        await prisma.expansionRecommendation.create({
-          data: {
-            type: rec.type,
-            sourceKeyword: rec.sourceKeyword,
-            recommendedItem: rec.item,
-            score: rec.score,
-            reason: rec.reason,
-            metadata: rec.metadata,
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-          }
-        })
+        await withRetry(() =>
+          prisma.expansionRecommendation.create({
+            data: {
+              type: rec.type,
+              sourceKeyword: rec.sourceKeyword,
+              recommendedItem: rec.item,
+              score: rec.score,
+              reason: rec.reason,
+              metadata: rec.metadata,
+              expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+            }
+          })
+        )
       } catch (error) {
         console.warn(`Failed to save recommendation for ${rec.item}:`, error)
       }
@@ -222,11 +224,13 @@ export class ExpansionRecommendationEngine {
       where.type = type
     }
 
-    const stored = await prisma.expansionRecommendation.findMany({
-      where,
-      orderBy: { score: 'desc' },
-      take: limit
-    })
+    const stored = await withRetry(() =>
+      prisma.expansionRecommendation.findMany({
+        where,
+        orderBy: { score: 'desc' },
+        take: limit
+      })
+    )
 
     return stored.map(r => ({
       id: r.id,
@@ -246,21 +250,25 @@ export class ExpansionRecommendationEngine {
     id: string,
     status: 'accepted' | 'dismissed'
   ): Promise<void> {
-    await prisma.expansionRecommendation.update({
-      where: { id },
-      data: { status }
-    })
+    await withRetry(() =>
+      prisma.expansionRecommendation.update({
+        where: { id },
+        data: { status }
+      })
+    )
   }
 
   /**
    * Clean up expired recommendations
    */
   async cleanupExpired(): Promise<number> {
-    const result = await prisma.expansionRecommendation.deleteMany({
-      where: {
-        expiresAt: { lt: new Date() }
-      }
-    })
+    const result = await withRetry(() =>
+      prisma.expansionRecommendation.deleteMany({
+        where: {
+          expiresAt: { lt: new Date() }
+        }
+      })
+    )
     return result.count
   }
 

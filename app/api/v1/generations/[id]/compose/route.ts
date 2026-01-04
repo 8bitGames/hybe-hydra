@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { composeVideoWithAudio, checkFFmpeg } from "@/lib/ffmpeg";
 import { uploadToS3, generateS3Key, getPresignedUrlFromS3Url } from "@/lib/storage";
 import fs from "fs/promises";
@@ -15,8 +15,8 @@ interface RouteParams {
 // POST /api/v1/generations/[id]/compose - Compose video with audio
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Get the generation
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
       include: {
         campaign: {
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
@@ -98,9 +98,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Get the audio asset
-    const audioAsset = await prisma.asset.findUnique({
+    const audioAsset = await withRetry(() => prisma.asset.findUnique({
       where: { id: audio_asset_id },
-    });
+    }));
 
     if (!audioAsset) {
       return NextResponse.json({ detail: "Audio asset not found" }, { status: 404 });
@@ -114,13 +114,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Update generation status
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         status: "PROCESSING",
         progress: 10,
       },
-    });
+    }));
 
     // Generate S3 key for Modal mode
     const s3Folder = generation.campaignId || `quick-create/${user.id}`;
@@ -154,14 +154,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Check for success - Modal returns outputUrl, local returns outputPath
     if (!result.success || (!result.outputUrl && !result.outputPath)) {
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "FAILED",
           progress: 100,
           errorMessage: result.error || "Composition failed",
         },
-      });
+      }));
 
       return NextResponse.json(
         { detail: result.error || "Composition failed" },
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const existingMetadata = (generation.qualityMetadata as Record<string, unknown>) || {};
 
     // Update generation with composed video
-    const updatedGeneration = await prisma.videoGeneration.update({
+    const updatedGeneration = await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         status: "COMPLETED",
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     return NextResponse.json({
       id: updatedGeneration.id,
@@ -247,8 +247,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 // GET /api/v1/generations/[id]/compose - Get composition status/info
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -256,7 +256,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id: generationId } = await params;
 
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
       include: {
         campaign: {
@@ -265,7 +265,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });

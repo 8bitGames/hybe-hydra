@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import {
   getInstagramAuthorizationUrl,
   exchangeInstagramCodeForToken,
@@ -14,8 +14,7 @@ export async function GET(request: NextRequest) {
   try {
     console.log("[Instagram OAuth GET] Starting OAuth flow...");
 
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -54,10 +53,11 @@ export async function GET(request: NextRequest) {
     console.log("[Instagram OAuth GET] Generated state:", state.substring(0, 20) + "...");
 
     // Clean up expired states (non-blocking)
-    prisma.oAuthState
-      .deleteMany({
+    withRetry(() =>
+      prisma.oAuthState.deleteMany({
         where: { expiresAt: { lt: new Date() } },
       })
+    )
       .then((deleted) => {
         console.log("[Instagram OAuth GET] Deleted expired states:", deleted.count);
       })
@@ -70,10 +70,12 @@ export async function GET(request: NextRequest) {
 
     try {
       // Use raw SQL for more reliable write with Supabase pooler
-      const createResult = await prisma.$executeRaw`
-        INSERT INTO oauth_states (id, state, user_id, label_id, redirect_url, platform, expires_at, created_at)
-        VALUES (gen_random_uuid(), ${state}, ${user.id}, ${labelId}, ${redirectUrl}, 'INSTAGRAM', ${expiresAt}, NOW())
-      `;
+      const createResult = await withRetry(() =>
+        prisma.$executeRaw`
+          INSERT INTO oauth_states (id, state, user_id, label_id, redirect_url, platform, expires_at, created_at)
+          VALUES (gen_random_uuid(), ${state}, ${user.id}, ${labelId}, ${redirectUrl}, 'INSTAGRAM', ${expiresAt}, NOW())
+        `
+      );
       console.log("[Instagram OAuth GET] Raw SQL insert result:", createResult);
 
       if (createResult !== 1) {
@@ -85,9 +87,11 @@ export async function GET(request: NextRequest) {
       }
 
       // Verify state was actually saved
-      const verifyResult = await prisma.$queryRaw<Array<{ state: string }>>`
-        SELECT state FROM oauth_states WHERE state = ${state} LIMIT 1
-      `;
+      const verifyResult = await withRetry(() =>
+        prisma.$queryRaw<Array<{ state: string }>>`
+          SELECT state FROM oauth_states WHERE state = ${state} LIMIT 1
+        `
+      );
 
       if (!verifyResult || verifyResult.length === 0) {
         console.error("[Instagram OAuth GET] CRITICAL: State not found after insert!");
@@ -134,20 +138,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Retrieve and validate state from database
-    const stateResults = await prisma.$queryRaw<
-      Array<{
-        id: string;
-        state: string;
-        user_id: string;
-        label_id: string;
-        redirect_url: string;
-        platform: string;
-        expires_at: Date;
-      }>
-    >`
-      SELECT id, state, user_id, label_id, redirect_url, platform, expires_at
-      FROM oauth_states WHERE state = ${state} AND platform = 'INSTAGRAM' LIMIT 1
-    `;
+    const stateResults = await withRetry(() =>
+      prisma.$queryRaw<
+        Array<{
+          id: string;
+          state: string;
+          user_id: string;
+          label_id: string;
+          redirect_url: string;
+          platform: string;
+          expires_at: Date;
+        }>
+      >`
+        SELECT id, state, user_id, label_id, redirect_url, platform, expires_at
+        FROM oauth_states WHERE state = ${state} AND platform = 'INSTAGRAM' LIMIT 1
+      `
+    );
 
     const stateData = stateResults[0] || null;
     console.log("[Instagram OAuth POST] Found state data:", !!stateData);
@@ -162,7 +168,7 @@ export async function POST(request: NextRequest) {
 
     // Check if state is expired
     if (new Date(stateData.expires_at) < new Date()) {
-      await prisma.$executeRaw`DELETE FROM oauth_states WHERE state = ${state}`;
+      await withRetry(() => prisma.$executeRaw`DELETE FROM oauth_states WHERE state = ${state}`);
       return NextResponse.json(
         { detail: "OAuth state expired. Please restart OAuth flow." },
         { status: 400 }
@@ -170,7 +176,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Delete used state (one-time use)
-    await prisma.$executeRaw`DELETE FROM oauth_states WHERE state = ${state}`;
+    await withRetry(() => prisma.$executeRaw`DELETE FROM oauth_states WHERE state = ${state}`);
 
     const stateDataCamel = {
       userId: stateData.user_id,
@@ -256,12 +262,14 @@ export async function POST(request: NextRequest) {
     });
 
     // Check if account already exists
-    const existingAccount = await prisma.socialAccount.findFirst({
-      where: {
-        platform: "INSTAGRAM",
-        accountId: instagramUser.id,
-      },
-    });
+    const existingAccount = await withRetry(() =>
+      prisma.socialAccount.findFirst({
+        where: {
+          platform: "INSTAGRAM",
+          accountId: instagramUser.id,
+        },
+      })
+    );
 
     let socialAccount;
 
@@ -269,35 +277,39 @@ export async function POST(request: NextRequest) {
 
     if (existingAccount) {
       // Update existing account
-      socialAccount = await prisma.socialAccount.update({
-        where: { id: existingAccount.id },
-        data: {
-          accountName: instagramUser.username,
-          accessToken: tokenResult.accessToken,
-          tokenExpiresAt: tokenResult.expiresIn
-            ? new Date(Date.now() + tokenResult.expiresIn * 1000)
-            : null,
-          profileUrl: `https://instagram.com/${instagramUser.username}`,
-          isActive: true,
-        },
-      });
+      socialAccount = await withRetry(() =>
+        prisma.socialAccount.update({
+          where: { id: existingAccount.id },
+          data: {
+            accountName: instagramUser.username,
+            accessToken: tokenResult.accessToken,
+            tokenExpiresAt: tokenResult.expiresIn
+              ? new Date(Date.now() + tokenResult.expiresIn * 1000)
+              : null,
+            profileUrl: `https://instagram.com/${instagramUser.username}`,
+            isActive: true,
+          },
+        })
+      );
     } else {
       // Create new account
-      socialAccount = await prisma.socialAccount.create({
-        data: {
-          platform: "INSTAGRAM",
-          accountId: instagramUser.id,
-          accountName: instagramUser.username,
-          accessToken: tokenResult.accessToken,
-          tokenExpiresAt: tokenResult.expiresIn
-            ? new Date(Date.now() + tokenResult.expiresIn * 1000)
-            : null,
-          profileUrl: `https://instagram.com/${instagramUser.username}`,
-          labelId: stateDataCamel.labelId,
-          createdBy: stateDataCamel.userId,
-          isActive: true,
-        },
-      });
+      socialAccount = await withRetry(() =>
+        prisma.socialAccount.create({
+          data: {
+            platform: "INSTAGRAM",
+            accountId: instagramUser.id,
+            accountName: instagramUser.username,
+            accessToken: tokenResult.accessToken,
+            tokenExpiresAt: tokenResult.expiresIn
+              ? new Date(Date.now() + tokenResult.expiresIn * 1000)
+              : null,
+            profileUrl: `https://instagram.com/${instagramUser.username}`,
+            labelId: stateDataCamel.labelId,
+            createdBy: stateDataCamel.userId,
+            isActive: true,
+          },
+        })
+      );
     }
 
     return NextResponse.json({

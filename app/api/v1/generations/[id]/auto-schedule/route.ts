@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: generationId } = await params;
 
     // Fetch the generation
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
       select: {
         id: true,
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         qualityMetadata: true,
         campaign: true,
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
@@ -64,9 +64,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Verify the social account exists and is active
-    const socialAccount = await prisma.socialAccount.findUnique({
+    const socialAccount = await withRetry(() => prisma.socialAccount.findUnique({
       where: { id: autoPublish.socialAccountId },
-    });
+    }));
 
     if (!socialAccount) {
       return NextResponse.json(
@@ -83,12 +83,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check if already scheduled
-    const existingScheduledPost = await prisma.scheduledPost.findFirst({
+    const existingScheduledPost = await withRetry(() => prisma.scheduledPost.findFirst({
       where: {
         generationId: generationId,
         socialAccountId: autoPublish.socialAccountId,
       },
-    });
+    }));
 
     if (existingScheduledPost) {
       return NextResponse.json({
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Create scheduled post
-    const scheduledPost = await prisma.scheduledPost.create({
+    const scheduledPost = await withRetry(() => prisma.scheduledPost.create({
       data: {
         campaignId: campaignId,
         generationId: generationId,
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         },
         createdBy: generation.createdBy,
       },
-    });
+    }));
 
     // Update generation metadata to mark as scheduled
     const updatedMetadata = {
@@ -153,12 +153,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     };
 
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         qualityMetadata: updatedMetadata,
       },
-    });
+    }));
 
     return NextResponse.json(
       {

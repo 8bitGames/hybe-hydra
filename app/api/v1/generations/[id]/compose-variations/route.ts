@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { Prisma } from "@prisma/client";
 import { submitAutoCompose, AutoComposeRequest, getComposeRenderStatus } from "@/lib/compose/client";
@@ -247,8 +247,8 @@ function generateSettingsCombinations(
 // POST /api/v1/generations/[id]/compose-variations - Create compose variations
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -257,7 +257,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: seedGenerationId } = await params;
 
     // Fetch the seed generation (must be a compose video)
-    const seedGeneration = await prisma.videoGeneration.findUnique({
+    const seedGeneration = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: seedGenerationId },
       include: {
         campaign: {
@@ -267,7 +267,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         },
         audioAsset: true,
       },
-    });
+    }));
 
     if (!seedGeneration) {
       return NextResponse.json({ detail: "Seed generation not found" }, { status: 404 });
@@ -450,7 +450,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           : `${settings.vibe} - ${settings.effectPreset} / ${settings.colorGrade}`;
 
         // Create the generation placeholder
-        const generation = await prisma.videoGeneration.create({
+        const generation = await withRetry(() => prisma.videoGeneration.create({
           data: {
             id: `compose-var-${uuidv4()}`,
             campaignId: seedGeneration.campaignId,
@@ -490,7 +490,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               } : null,
             } as Prisma.InputJsonValue,
           },
-        });
+        }));
 
         return {
           generation,
@@ -581,7 +581,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       await Promise.all(
         submitResults.map(async (result) => {
           if (result.success && result.call_id) {
-            await prisma.videoGeneration.update({
+            await withRetry(() => prisma.videoGeneration.update({
               where: { id: result.job_id },
               data: {
                 status: "PROCESSING",
@@ -601,17 +601,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                   },
                 } as Prisma.InputJsonValue,
               },
-            });
+            }));
           } else {
             // Mark failed submissions
-            await prisma.videoGeneration.update({
+            await withRetry(() => prisma.videoGeneration.update({
               where: { id: result.job_id },
               data: {
                 status: "FAILED",
                 progress: 100,
                 errorMessage: result.error instanceof Error ? result.error.message : "Failed to submit auto-compose job",
               },
-            });
+            }));
           }
         })
       );
@@ -670,8 +670,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 // GET /api/v1/generations/[id]/compose-variations?batch_id=xxx - Get compose variation batch status
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -682,7 +682,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const batchId = searchParams.get("batch_id");
 
     // Fetch seed generation for access check
-    const seedGeneration = await prisma.videoGeneration.findUnique({
+    const seedGeneration = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: seedGenerationId },
       include: {
         campaign: {
@@ -691,7 +691,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!seedGeneration) {
       return NextResponse.json({ detail: "Seed generation not found" }, { status: 404 });
@@ -711,7 +711,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Find compose variations - by batch_id if provided, otherwise by seedGenerationId
     // This allows recovery of variations when session state is lost
-    const generations = await prisma.videoGeneration.findMany({
+    const generations = await withRetry(() => prisma.videoGeneration.findMany({
       where: {
         deletedAt: null,
         ...(batchId
@@ -734,7 +734,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
       },
       orderBy: { createdAt: "desc" }, // Most recent first when querying by seedGenerationId
-    });
+    }));
 
     if (generations.length === 0) {
       return NextResponse.json({
@@ -776,7 +776,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
               if (outputUrl) {
                 // Update to COMPLETED with output URL
                 console.log(`[Compose Variations] Job ${gen.id} COMPLETED with URL: ${outputUrl.substring(0, 80)}...`);
-                await prisma.videoGeneration.update({
+                await withRetry(() => prisma.videoGeneration.update({
                   where: { id: gen.id },
                   data: {
                     status: "COMPLETED",
@@ -784,7 +784,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                     composedOutputUrl: outputUrl,
                     outputUrl: outputUrl,
                   },
-                });
+                }));
                 return {
                   ...gen,
                   status: "COMPLETED" as const,
@@ -795,36 +795,36 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
               } else {
                 // EC2 says completed but no output_url - this is an error state
                 console.error(`[Compose Variations] Job ${gen.id} marked completed but no output_url!`);
-                await prisma.videoGeneration.update({
+                await withRetry(() => prisma.videoGeneration.update({
                   where: { id: gen.id },
                   data: {
                     status: "FAILED",
                     progress: 100,
                     errorMessage: "Render completed but no output URL returned",
                   },
-                });
+                }));
                 return { ...gen, status: "FAILED" as const, progress: 100, errorMessage: "Render completed but no output URL returned" };
               }
             } else if (serverStatus.status === "failed") {
               const errorMsg = serverStatus.error || serverStatus.result?.error || "Render failed";
               console.log(`[Compose Variations] Job ${gen.id} FAILED: ${errorMsg}`);
-              await prisma.videoGeneration.update({
+              await withRetry(() => prisma.videoGeneration.update({
                 where: { id: gen.id },
                 data: {
                   status: "FAILED",
                   progress: 100,
                   errorMessage: errorMsg,
                 },
-              });
+              }));
               return { ...gen, status: "FAILED" as const, progress: 100, errorMessage: errorMsg };
             } else if (serverStatus.status === "processing") {
               // Still processing - update progress to show activity
               const newProgress = Math.max(gen.progress, 30);
               if (newProgress !== gen.progress) {
-                await prisma.videoGeneration.update({
+                await withRetry(() => prisma.videoGeneration.update({
                   where: { id: gen.id },
                   data: { progress: newProgress, status: "PROCESSING" },
-                });
+                }));
                 return { ...gen, progress: newProgress, status: "PROCESSING" as const };
               }
             }

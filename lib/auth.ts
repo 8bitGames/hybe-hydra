@@ -1,8 +1,10 @@
 import { compare, hash } from "bcryptjs";
 import { createClient } from "./supabase/server";
 import { createClient as createBareClient } from "@supabase/supabase-js";
-import { prisma } from "./db/prisma";
+import { createServerClient } from "@supabase/ssr";
+import { prisma, withRetry } from "./db/prisma";
 import type { UserRole } from "@prisma/client";
+import type { NextRequest } from "next/server";
 
 export interface AuthUser {
   id: string;
@@ -41,18 +43,20 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
       return null;
     }
 
-    // Get user profile from our table
-    const user = await prisma.user.findUnique({
-      where: { email: supabaseUser.email },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        labelIds: true,
-        isActive: true,
-      },
-    });
+    // Get user profile from our table (with retry for reliability)
+    const user = await withRetry(() =>
+      prisma.user.findUnique({
+        where: { email: supabaseUser.email },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          labelIds: true,
+          isActive: true,
+        },
+      })
+    );
 
     if (!user || !user.isActive) {
       return null;
@@ -62,6 +66,63 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Get user from API request (cookies or Authorization header)
+ * This is the preferred method for API routes using unified cookie-based auth
+ *
+ * Priority:
+ * 1. Supabase session from cookies
+ * 2. Bearer token in Authorization header (fallback)
+ */
+export async function getUserFromRequest(request: NextRequest): Promise<AuthUser | null> {
+  // First try cookies (primary method)
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll() {
+            // Read-only for this use case
+          },
+        },
+      }
+    );
+
+    const { data: { user: supabaseUser }, error } = await supabase.auth.getUser();
+
+    if (!error && supabaseUser?.email) {
+      // Get user profile from our table (with retry)
+      const user = await withRetry(() =>
+        prisma.user.findUnique({
+          where: { email: supabaseUser.email },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            labelIds: true,
+            isActive: true,
+          },
+        })
+      );
+
+      if (user?.isActive) {
+        return user;
+      }
+    }
+  } catch (e) {
+    console.error("[Auth] Cookie auth error:", e);
+  }
+
+  // Fallback to Authorization header (backward compatibility)
+  const authHeader = request.headers.get("authorization");
+  return getUserFromHeader(authHeader);
 }
 
 // Get user from Authorization header (for API routes)
@@ -81,18 +142,20 @@ export async function getUserFromHeader(authHeader: string | null): Promise<Auth
       return null;
     }
 
-    // Get user profile from our table (for role, labelIds)
-    const user = await prisma.user.findUnique({
-      where: { email: supabaseUser.email },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        labelIds: true,
-        isActive: true,
-      },
-    });
+    // Get user profile from our table (with retry for reliability)
+    const user = await withRetry(() =>
+      prisma.user.findUnique({
+        where: { email: supabaseUser.email },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          labelIds: true,
+          isActive: true,
+        },
+      })
+    );
 
     if (!user || !user.isActive) {
       return null;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserFromHeader } from '@/lib/auth';
-import { prisma } from '@/lib/db/prisma';
+import { getUserFromRequest } from '@/lib/auth';
+import { prisma, withRetry } from '@/lib/db/prisma';
 
 interface MusicMatchRequest {
   campaignId: string;
@@ -37,8 +37,8 @@ interface AudioMatchResult {
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
@@ -48,20 +48,22 @@ export async function POST(request: NextRequest) {
     const { campaignId, vibe, bpmRange, minDuration = 15 } = body;
 
     // Query audio assets from the campaign's Asset Locker
-    const audioAssets = await prisma.asset.findMany({
-      where: {
-        campaignId,
-        type: 'AUDIO'
-      },
-      select: {
-        id: true,
-        filename: true,
-        originalFilename: true,
-        s3Url: true,
-        metadata: true,
-        fileSize: true
-      }
-    });
+    const audioAssets = await withRetry(() =>
+      prisma.asset.findMany({
+        where: {
+          campaignId,
+          type: 'AUDIO'
+        },
+        select: {
+          id: true,
+          filename: true,
+          originalFilename: true,
+          s3Url: true,
+          metadata: true,
+          fileSize: true
+        }
+      })
+    );
 
     // Estimate BPM based on vibe when not available
     const estimateBpmFromVibe = (targetVibe: string): number => {

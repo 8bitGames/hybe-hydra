@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 // PATCH /api/v1/publishing/analytics/[id] - Manual analytics update
 export async function PATCH(
@@ -8,8 +8,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -27,12 +27,12 @@ export async function PATCH(
     } = body;
 
     // Get the post
-    const post = await prisma.scheduledPost.findUnique({
+    const post = await withRetry(() => prisma.scheduledPost.findUnique({
       where: { id: postId },
       include: {
         socialAccount: true,
       },
-    });
+    }));
 
     if (!post) {
       return NextResponse.json({ detail: "Post not found" }, { status: 404 });
@@ -66,7 +66,7 @@ export async function PATCH(
     }
 
     // Update post
-    const updatedPost = await prisma.scheduledPost.update({
+    const updatedPost = await withRetry(() => prisma.scheduledPost.update({
       where: { id: postId },
       data: updateData,
       include: {
@@ -79,7 +79,7 @@ export async function PATCH(
           },
         },
       },
-    });
+    }));
 
     return NextResponse.json({
       id: updatedPost.id,
@@ -129,8 +129,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -138,7 +138,7 @@ export async function GET(
 
     const { id: postId } = await params;
 
-    const post = await prisma.scheduledPost.findUnique({
+    const post = await withRetry(() => prisma.scheduledPost.findUnique({
       where: { id: postId },
       include: {
         socialAccount: {
@@ -151,7 +151,7 @@ export async function GET(
           },
         },
       },
-    });
+    }));
 
     if (!post) {
       return NextResponse.json({ detail: "Post not found" }, { status: 404 });

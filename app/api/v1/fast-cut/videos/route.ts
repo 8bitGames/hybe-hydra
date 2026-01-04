@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserFromHeader } from '@/lib/auth';
-import { prisma } from '@/lib/db/prisma';
+import { getUserFromRequest } from '@/lib/auth';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import { getPresignedUrlFromS3Url } from '@/lib/storage';
 
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
@@ -42,9 +42,9 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    const total = await prisma.videoGeneration.count({ where });
+    const total = await withRetry(() => prisma.videoGeneration.count({ where }));
 
-    const generations = await prisma.videoGeneration.findMany({
+    const generations = await withRetry(() => prisma.videoGeneration.findMany({
       where,
       include: {
         campaign: {
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
-    });
+    }));
 
     const pages = Math.ceil(total / pageSize) || 1;
 

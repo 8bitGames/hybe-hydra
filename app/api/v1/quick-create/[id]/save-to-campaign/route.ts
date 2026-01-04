@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -9,8 +9,7 @@ interface RouteParams {
 // POST - Save Quick Create generation to a campaign
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -19,9 +18,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: generationId } = await params;
 
     // Find the Quick Create generation
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
@@ -48,12 +47,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check campaign exists and user has access
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaign_id },
       include: {
         artist: { select: { labelId: true } },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -64,13 +63,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Update generation to belong to campaign
-    const updatedGeneration = await prisma.videoGeneration.update({
+    const updatedGeneration = await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         campaignId: campaign_id,
         isQuickCreate: false, // No longer a Quick Create
       },
-    });
+    }));
 
     return NextResponse.json({
       id: updatedGeneration.id,

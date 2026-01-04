@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { getComposeEngineUrl } from "@/lib/compose/client";
 import { v4 as uuidv4 } from "uuid";
 
@@ -20,8 +20,8 @@ const getCallbackUrl = (postId: string) => {
 // POST /api/v1/publishing/schedule/[id]/publish - Manually trigger publish
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     // Get the scheduled post with full account details
-    const post = await prisma.scheduledPost.findUnique({
+    const post = await withRetry(() => prisma.scheduledPost.findUnique({
       where: { id },
       include: {
         socialAccount: {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!post) {
       return NextResponse.json({ detail: "Scheduled post not found" }, { status: 404 });
@@ -85,10 +85,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Get video URL from generation
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: post.generationId },
       select: { outputUrl: true, status: true },
-    });
+    }));
 
     if (!generation || generation.status !== "COMPLETED" || !generation.outputUrl) {
       return NextResponse.json(
@@ -107,10 +107,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Mark as publishing
-    await prisma.scheduledPost.update({
+    await withRetry(() => prisma.scheduledPost.update({
       where: { id },
       data: { status: "PUBLISHING" },
-    });
+    }));
 
     // Prepare platform-specific request
     const platformSettings = post.platformSettings as Record<string, unknown> | null;
@@ -226,10 +226,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       console.error(`[Publish] EC2 backend error: ${response.status} - ${errorText}`);
 
       // Revert status on failure
-      await prisma.scheduledPost.update({
+      await withRetry(() => prisma.scheduledPost.update({
         where: { id },
         data: { status: "SCHEDULED" },
-      });
+      }));
 
       return NextResponse.json(
         { detail: `Publishing service error: ${errorText}` },
@@ -241,7 +241,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.log(`[Publish] EC2 backend response:`, result);
 
     // Update post with job ID
-    await prisma.scheduledPost.update({
+    await withRetry(() => prisma.scheduledPost.update({
       where: { id },
       data: {
         platformSettings: {
@@ -249,7 +249,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           publish_job_id: jobId,
         },
       },
-    });
+    }));
 
     return NextResponse.json({
       id: post.id,

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 // GET /api/v1/merchandise/suggestions - Get suggested merchandise for a campaign/artist
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
     // If campaign_id is provided, get artist from campaign
     if (campaignId && !artistId) {
-      const campaign = await prisma.campaign.findUnique({
+      const campaign = await withRetry(() => prisma.campaign.findUnique({
         where: { id: campaignId },
         select: {
           artistId: true,
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
             select: { labelId: true },
           },
         },
-      });
+      }));
 
       if (!campaign) {
         return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 
     // 1. Artist's merchandise
     if (targetArtistId) {
-      const artistMerchandise = await prisma.merchandiseItem.findMany({
+      const artistMerchandise = await withRetry(() => prisma.merchandiseItem.findMany({
         where: {
           artistId: targetArtistId,
           isActive: true,
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
             select: { generationMerchandise: true },
           },
         },
-      });
+      }));
 
       if (artistMerchandise.length > 0) {
         suggestions.push({
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Recently used merchandise (from user's generations)
-    const recentlyUsed = await prisma.generationMerchandise.findMany({
+    const recentlyUsed = await withRetry(() => prisma.generationMerchandise.findMany({
       where: {
         generation: {
           createdBy: user.id,
@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-    });
+    }));
 
     if (recentlyUsed.length > 0) {
       suggestions.push({
@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Most popular merchandise (by usage count)
-    const popular = await prisma.merchandiseItem.findMany({
+    const popular = await withRetry(() => prisma.merchandiseItem.findMany({
       where: {
         isActive: true,
         ...(user.role !== "ADMIN" ? {
@@ -177,7 +177,7 @@ export async function GET(request: NextRequest) {
           select: { generationMerchandise: true },
         },
       },
-    });
+    }));
 
     const popularFiltered = popular.filter((item) => item._count.generationMerchandise > 0);
     if (popularFiltered.length > 0) {
@@ -205,7 +205,7 @@ export async function GET(request: NextRequest) {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const newReleases = await prisma.merchandiseItem.findMany({
+    const newReleases = await withRetry(() => prisma.merchandiseItem.findMany({
       where: {
         isActive: true,
         releaseDate: {
@@ -229,7 +229,7 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-    });
+    }));
 
     if (newReleases.length > 0) {
       suggestions.push({

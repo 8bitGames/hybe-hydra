@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { analyzeTikTokVideo, isValidTikTokUrl, TikTokAnalysisResult } from "@/lib/tiktok-analyzer";
 import { cacheImageToS3 } from "@/lib/storage";
 import { getFastCutSceneAnalyzerAgent, type FastCutSceneAnalyzerOutput } from "@/lib/agents/fast-cut";
@@ -99,26 +99,26 @@ export async function POST(request: NextRequest) {
     // Check cache first (unless skipCache is true)
     if (!skipCache) {
       try {
-        const cached = await prisma.tikTokVideoAnalysisCache.findFirst({
+        const cached = await withRetry(() => prisma.tikTokVideoAnalysisCache.findFirst({
           where: {
             videoUrlHash: urlHash,
             expiresAt: {
               gt: new Date(),
             },
           },
-        });
+        }));
 
         if (cached) {
           console.log("[API] Cache hit for video:", url);
 
           // Update hit count and last used timestamp
-          await prisma.tikTokVideoAnalysisCache.update({
+          await withRetry(() => prisma.tikTokVideoAnalysisCache.update({
             where: { id: cached.id },
             data: {
               hitCount: { increment: 1 },
               lastUsedAt: new Date(),
             },
-          });
+          }));
 
           // Build metadata from cached data
           const cachedMetadata = {
@@ -262,7 +262,7 @@ export async function POST(request: NextRequest) {
         expiresAt.setDate(expiresAt.getDate() + CACHE_TTL_DAYS);
 
         // Save to database
-        await prisma.tikTokVideoAnalysisCache.upsert({
+        await withRetry(() => prisma.tikTokVideoAnalysisCache.upsert({
           where: { videoUrl: normalizedUrl },
           create: {
             videoUrl: normalizedUrl,
@@ -319,7 +319,7 @@ export async function POST(request: NextRequest) {
             hitCount: 0,
             lastUsedAt: new Date(),
           },
-        });
+        }));
 
         console.log("[API] Successfully cached video analysis:", normalizedUrl);
       } catch (cacheError) {

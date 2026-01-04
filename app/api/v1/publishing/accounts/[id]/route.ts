@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { invalidatePattern } from "@/lib/cache";
 
 interface RouteParams {
@@ -10,8 +10,8 @@ interface RouteParams {
 // GET /api/v1/publishing/accounts/[id] - Get a specific social account
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const account = await prisma.socialAccount.findUnique({
+    const account = await withRetry(() => prisma.socialAccount.findUnique({
       where: { id },
       select: {
         id: true,
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!account) {
       return NextResponse.json({ detail: "Account not found" }, { status: 404 });
@@ -77,8 +77,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/v1/publishing/accounts/[id] - Disconnect a social account
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -92,7 +92,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     // Find the account
-    const account = await prisma.socialAccount.findUnique({
+    const account = await withRetry(() => prisma.socialAccount.findUnique({
       where: { id },
       include: {
         _count: {
@@ -105,7 +105,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!account) {
       return NextResponse.json({ detail: "Account not found" }, { status: 404 });
@@ -117,17 +117,17 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     // Soft delete by setting isActive to false and clearing tokens
-    await prisma.socialAccount.update({
+    await withRetry(() => prisma.socialAccount.update({
       where: { id },
       data: {
         isActive: false,
         accessToken: null,
         refreshToken: null,
       },
-    });
+    }));
 
     // Cancel any pending scheduled posts for this account
-    await prisma.scheduledPost.updateMany({
+    await withRetry(() => prisma.scheduledPost.updateMany({
       where: {
         socialAccountId: id,
         status: { in: ["DRAFT", "SCHEDULED"] },
@@ -135,7 +135,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       data: {
         status: "CANCELLED",
       },
-    });
+    }));
 
     // Invalidate publishing accounts cache
     await invalidatePattern("publishing:accounts:*");

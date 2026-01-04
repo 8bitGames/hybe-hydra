@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserFromHeader } from '@/lib/auth';
+import { getUserFromRequest } from '@/lib/auth';
 import { createFastCutScriptGeneratorAgent } from '@/lib/agents/fast-cut';
 import { createImageKeywordGeneratorAgent } from '@/lib/agents/fast-cut/image-keyword-generator';
 import { generateTikTokSEO, TikTokSEO } from '@/lib/tiktok-seo';
@@ -134,8 +134,8 @@ function generateFallbackKeywordsFromPrompt(prompt: string, vibe: string): strin
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });

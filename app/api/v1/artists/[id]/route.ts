@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader, hasLabelAccess } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest, hasLabelAccess } from "@/lib/auth";
 import { invalidatePattern } from "@/lib/cache";
 
 // PATCH /api/v1/artists/[id] - Update an artist
@@ -10,8 +10,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json(
@@ -29,9 +28,9 @@ export async function PATCH(
     }
 
     // Find the artist (exclude soft-deleted)
-    const existingArtist = await prisma.artist.findFirst({
+    const existingArtist = await withRetry(() => prisma.artist.findFirst({
       where: { id, deletedAt: null },
-    });
+    }));
 
     if (!existingArtist) {
       return NextResponse.json(
@@ -60,7 +59,7 @@ export async function PATCH(
     }
 
     // Update the artist
-    const artist = await prisma.artist.update({
+    const artist = await withRetry(() => prisma.artist.update({
       where: { id },
       data: {
         ...(name !== undefined && { name: name.trim() }),
@@ -76,7 +75,7 @@ export async function PATCH(
           },
         },
       },
-    });
+    }));
 
     // Invalidate all artists list caches
     await invalidatePattern("artists:list:*");
@@ -110,8 +109,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json(
@@ -129,7 +127,7 @@ export async function DELETE(
     }
 
     // Find the artist (exclude soft-deleted)
-    const existingArtist = await prisma.artist.findFirst({
+    const existingArtist = await withRetry(() => prisma.artist.findFirst({
       where: { id, deletedAt: null },
       include: {
         campaigns: {
@@ -137,7 +135,7 @@ export async function DELETE(
           select: { id: true },
         },
       },
-    });
+    }));
 
     if (!existingArtist) {
       return NextResponse.json(
@@ -163,10 +161,10 @@ export async function DELETE(
     }
 
     // Soft delete the artist
-    await prisma.artist.update({
+    await withRetry(() => prisma.artist.update({
       where: { id },
       data: { deletedAt: new Date() },
-    });
+    }));
 
     // Invalidate all artists list caches
     await invalidatePattern("artists:list:*");

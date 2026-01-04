@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
-import { getUserFromHeader } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 
 const COMPOSE_ENGINE_URL = process.env.COMPOSE_ENGINE_URL || "http://15.164.236.53:8000";
@@ -53,8 +53,8 @@ interface VideoEditRequestBody {
 // POST /api/v1/generations/[id]/edit - Edit video with audio and/or subtitles
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: generationId } = await params;
 
     // Get the original generation
-    const originalGeneration = await prisma.videoGeneration.findUnique({
+    const originalGeneration = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
       include: {
         campaign: {
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!originalGeneration) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
@@ -113,9 +113,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     let audioUrl: string | undefined;
     let audioAsset = null;
     if (audio?.asset_id) {
-      audioAsset = await prisma.asset.findUnique({
+      audioAsset = await withRetry(() => prisma.asset.findUnique({
         where: { id: audio.asset_id },
-      });
+      }));
 
       if (!audioAsset) {
         return NextResponse.json({ detail: "Audio asset not found" }, { status: 404 });
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Create new generation (copy from original)
     const newJobId = uuidv4();
-    const newGeneration = await prisma.videoGeneration.create({
+    const newGeneration = await withRetry(() => prisma.videoGeneration.create({
       data: {
         campaignId: originalGeneration.campaignId,
         projectId: originalGeneration.projectId,
@@ -179,7 +179,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     // Build callback URL (consistent with ai-client.ts fallback)
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://hydra.ai.kr";
@@ -215,7 +215,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     };
 
     // Store job ID in generation metadata for callback matching
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: newGeneration.id },
       data: {
         vertexRequestId: newJobId, // Reuse this field for job tracking
@@ -224,7 +224,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           videoEditJobId: newJobId,
         },
       },
-    });
+    }));
 
     // Send request to compose engine
     console.log(`[VideoEdit] Sending edit request to compose engine for generation ${newGeneration.id}`);
@@ -242,13 +242,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       console.error(`[VideoEdit] Compose engine error: ${errorText}`);
 
       // Update generation status to failed
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: newGeneration.id },
         data: {
           status: "FAILED",
           errorMessage: `Failed to submit edit job: ${response.status} ${response.statusText}`,
         },
-      });
+      }));
 
       return NextResponse.json(
         { detail: `Failed to submit edit job: ${errorText}` },
@@ -260,12 +260,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.log(`[VideoEdit] Edit job submitted successfully: ${result.job_id}`);
 
     // Update progress
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: newGeneration.id },
       data: {
         progress: 10,
       },
-    });
+    }));
 
     return NextResponse.json({
       id: newGeneration.id,
@@ -289,8 +289,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 // GET /api/v1/generations/[id]/edit - Get edit status/info
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -298,7 +298,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id: generationId } = await params;
 
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
       include: {
         campaign: {
@@ -308,7 +308,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
         audioAsset: true,
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });

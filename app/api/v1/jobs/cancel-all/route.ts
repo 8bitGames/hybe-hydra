@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 /**
  * POST /api/v1/jobs/cancel-all
@@ -8,22 +8,21 @@ import { getUserFromHeader } from "@/lib/auth";
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
     }
 
     // Find all active generations for this user
-    const activeGenerations = await prisma.videoGeneration.findMany({
+    const activeGenerations = await withRetry(() => prisma.videoGeneration.findMany({
       where: {
         createdBy: user.id,
         status: { in: ["PENDING", "PROCESSING"] },
         deletedAt: null,
       },
       select: { id: true },
-    });
+    }));
 
     if (activeGenerations.length === 0) {
       return NextResponse.json({
@@ -33,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Cancel all active generations
-    const result = await prisma.videoGeneration.updateMany({
+    const result = await withRetry(() => prisma.videoGeneration.updateMany({
       where: {
         id: { in: activeGenerations.map((g) => g.id) },
         status: { in: ["PENDING", "PROCESSING"] },
@@ -42,7 +41,7 @@ export async function POST(request: NextRequest) {
         status: "CANCELLED",
         errorMessage: "Cancelled by user (batch cancel)",
       },
-    });
+    }));
 
     return NextResponse.json({
       cancelled: result.count,

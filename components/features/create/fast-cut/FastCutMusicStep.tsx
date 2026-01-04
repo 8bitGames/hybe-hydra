@@ -181,11 +181,10 @@ export function FastCutMusicStep({
         tokenPreview: accessToken?.slice(0, 20) + '...',
       });
 
+      // Use cookie-based authentication
       const response = await fetch(`/api/v1/campaigns/${campaignId}/assets`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
+        credentials: 'include',
         body: formData,
       });
 

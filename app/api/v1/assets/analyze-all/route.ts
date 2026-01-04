@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { getComposeEngineUrl } from "@/lib/compose/client";
 
 interface AudioAnalysisResult {
@@ -44,8 +44,8 @@ async function analyzeAudioFile(s3Url: string, jobId: string): Promise<AudioAnal
  */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10");
 
     // Find audio assets without BPM metadata
-    const audioAssets = await prisma.asset.findMany({
+    const audioAssets = await withRetry(() => prisma.asset.findMany({
       where: {
         type: "AUDIO",
         OR: [
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         metadata: true
       },
       take: limit
-    });
+    }));
 
     console.log(`[Analyze All] Found ${audioAssets.length} audio assets to analyze`);
 
@@ -107,10 +107,10 @@ export async function POST(request: NextRequest) {
             analyzedAt: new Date().toISOString()
           };
 
-          await prisma.asset.update({
+          await withRetry(() => prisma.asset.update({
             where: { id: asset.id },
             data: { metadata: updatedMetadata }
-          });
+          }));
 
           results.analyzed++;
           results.details.push({

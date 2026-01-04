@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { VideoGenerationStatus } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
 // EC2 AI client for video/image generation via Vertex AI
@@ -57,13 +57,13 @@ async function submitToEC2(
 ): Promise<{ success: boolean; ec2JobId?: string; error?: string }> {
   try {
     // Update status to processing
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         status: "PROCESSING",
         progress: 5,
       },
-    });
+    }));
 
     // Get S3 output settings
     const s3Bucket = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || "hydra-assets-hybe";
@@ -163,26 +163,26 @@ async function submitToEC2(
 
     if (submitResult.status === "error") {
       console.error(`[Generation ${generationId}] EC2 submit failed:`, submitResult.error);
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "FAILED",
           progress: 100,
           errorMessage: submitResult.error || "Failed to submit to EC2",
         },
-      });
+      }));
       return { success: false, error: submitResult.error };
     }
 
     // Fetch existing metadata to preserve use_audio_lyrics flag
-    const existingGen = await prisma.videoGeneration.findUnique({
+    const existingGen = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
       select: { qualityMetadata: true },
-    });
+    }));
     const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
 
     // Update with EC2 job ID for tracking, preserving existing metadata
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         progress: 10,
@@ -196,7 +196,7 @@ async function submitToEC2(
           output_key: outputSettings.s3_key,
         },
       },
-    });
+    }));
 
     console.log(`[Generation ${generationId}] ✓ EC2 job submitted: ${submitResult.ec2_job_id || submitResult.job_id}`);
     console.log(`[Generation ${generationId}] Status updates will come via /api/v1/ai/callback`);
@@ -204,22 +204,21 @@ async function submitToEC2(
     return { success: true, ec2JobId: submitResult.ec2_job_id || submitResult.job_id };
   } catch (error) {
     console.error(`[Generation ${generationId}] Error submitting to EC2:`, error);
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         status: "FAILED",
         progress: 100,
         errorMessage: error instanceof Error ? error.message : "Unknown error",
       },
-    });
+    }));
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -233,12 +232,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const generationType = searchParams.get("generation_type") as "AI" | "COMPOSE" | null;
 
     // Check campaign access
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: { select: { labelId: true } },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -264,9 +263,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const total = await prisma.videoGeneration.count({ where });
+    const total = await withRetry(() => prisma.videoGeneration.count({ where }));
 
-    const generations = await prisma.videoGeneration.findMany({
+    const generations = await withRetry(() => prisma.videoGeneration.findMany({
       where,
       include: {
         referenceImage: {
@@ -282,7 +281,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
-    });
+    }));
 
     const pages = Math.ceil(total / pageSize) || 1;
 
@@ -375,8 +374,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -385,12 +383,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: campaignId } = await params;
 
     // Check campaign access
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: { select: { labelId: true } },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -441,7 +439,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Include metadata to extract lyrics for subtitle generation
     let audioAsset = null;
     if (audio_asset_id) {
-      audioAsset = await prisma.asset.findUnique({
+      audioAsset = await withRetry(() => prisma.asset.findUnique({
         where: { id: audio_asset_id },
         select: {
           id: true,
@@ -451,7 +449,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           s3Url: true,
           metadata: true,  // Include metadata for lyrics extraction
         },
-      });
+      }));
 
       if (!audioAsset) {
         return NextResponse.json(
@@ -470,9 +468,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Validate reference image if provided
     if (reference_image_id) {
-      const refImage = await prisma.asset.findUnique({
+      const refImage = await withRetry(() => prisma.asset.findUnique({
         where: { id: reference_image_id },
-      });
+      }));
 
       if (!refImage || refImage.campaignId !== campaignId) {
         return NextResponse.json(
@@ -483,7 +481,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Create generation record
-    const generation = await prisma.videoGeneration.create({
+    const generation = await withRetry(() => prisma.videoGeneration.create({
       data: {
         campaignId,
         prompt,
@@ -520,7 +518,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           select: { id: true, filename: true, s3Url: true, originalFilename: true },
         },
       },
-    });
+    }));
 
     // MANDATORY I2V MODE: Always generate image first, then video
     // Determine the reference image source
@@ -528,7 +526,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (reference_image_id) {
       // Get URL from campaign asset and generate fresh presigned URL
-      const refAsset = await prisma.asset.findUnique({ where: { id: reference_image_id } });
+      const refAsset = await withRetry(() => prisma.asset.findUnique({ where: { id: reference_image_id } }));
       if (refAsset?.s3Url) {
         try {
           // Generate presigned URL with 48 hour expiration for EC2 queue wait time

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma';
+import { prisma, withRetry } from '@/lib/db/prisma';
 
 /**
  * GET /api/deep-analysis/compare/list
@@ -13,27 +13,29 @@ export async function GET(request: NextRequest) {
 
   try {
     const [reports, total] = await Promise.all([
-      prisma.comparisonReport.findMany({
-        take: limit,
-        skip: offset,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          accounts: {
-            include: {
-              analysis: {
-                select: {
-                  uniqueId: true,
-                  nickname: true,
-                  avatarUrl: true,
-                  verified: true,
-                  followers: true,
+      withRetry(() =>
+        prisma.comparisonReport.findMany({
+          take: limit,
+          skip: offset,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            accounts: {
+              include: {
+                analysis: {
+                  select: {
+                    uniqueId: true,
+                    nickname: true,
+                    avatarUrl: true,
+                    verified: true,
+                    followers: true,
+                  },
                 },
               },
             },
           },
-        },
-      }),
-      prisma.comparisonReport.count(),
+        })
+      ),
+      withRetry(() => prisma.comparisonReport.count()),
     ]);
 
     return NextResponse.json({
@@ -89,9 +91,11 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    await prisma.comparisonReport.delete({
-      where: { id: reportId },
-    });
+    await withRetry(() =>
+      prisma.comparisonReport.delete({
+        where: { id: reportId },
+      })
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import { createClient } from '@supabase/supabase-js';
 
 /**
@@ -164,10 +164,10 @@ export async function POST(request: NextRequest) {
     // Find the generation
     console.log(`${LOG_PREFIX} Looking up generation: ${job_id}`);
     const dbLookupStart = Date.now();
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: job_id },
       select: { id: true, status: true, qualityMetadata: true, createdAt: true }
-    });
+    }));
     const dbLookupMs = Date.now() - dbLookupStart;
 
     if (!generation) {
@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
     // Update the database
     const dbUpdateStart = Date.now();
     if (status === 'completed' && output_url) {
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: job_id },
         data: {
           status: 'COMPLETED',
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
           composedOutputUrl: output_url,
           outputUrl: output_url,
         }
-      });
+      }));
       const dbUpdateMs = Date.now() - dbUpdateStart;
 
       console.log(`${LOG_PREFIX} ✅ DB UPDATED to COMPLETED (${dbUpdateMs}ms):`, {
@@ -237,14 +237,14 @@ export async function POST(request: NextRequest) {
       await updateSessionOnRenderComplete(job_id, true);
 
     } else if (status === 'failed') {
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: job_id },
         data: {
           status: 'FAILED',
           progress: 0,
           errorMessage: error || 'Render failed',
         }
-      });
+      }));
       const dbUpdateMs = Date.now() - dbUpdateStart;
 
       console.error(`${LOG_PREFIX} ❌ DB UPDATED to FAILED (${dbUpdateMs}ms):`, {

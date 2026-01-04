@@ -1,4 +1,12 @@
-// Use relative URL for same-origin API routes (Next.js API Routes)
+/**
+ * Simplified API Client using cookie-based authentication
+ *
+ * This client:
+ * - Uses `credentials: 'include'` for cookie-based auth (Supabase SSR)
+ * - No localStorage token management
+ * - On 401, dispatches logout event (Supabase handles token refresh via cookies)
+ */
+
 const API_BASE_URL = "";
 
 interface ApiResponse<T> {
@@ -7,120 +15,31 @@ interface ApiResponse<T> {
     code: string;
     message: string;
     details?: Record<string, unknown>;
+    status?: number;
   };
 }
 
 class ApiClient {
   private baseUrl: string;
-  private accessToken: string | null = null;
-  private isRefreshing = false;
-  private refreshPromise: Promise<boolean> | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
   }
 
-  // Always get fresh token from localStorage (handles SSR -> client transition)
-  private getTokenFromStorage(): string | null {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("access_token");
-    }
-    return null;
+  /**
+   * @deprecated Use cookie-based auth. This method is kept for backward compatibility.
+   */
+  setAccessToken(_token: string | null) {
+    // No-op: cookies are used for auth now
+    console.warn("[API] setAccessToken is deprecated. Using cookie-based auth.");
   }
 
-  private getRefreshTokenFromStorage(): string | null {
-    if (typeof window !== "undefined") {
-      try {
-        const authData = localStorage.getItem("hydra-auth-storage");
-        if (authData) {
-          const parsed = JSON.parse(authData);
-          return parsed.state?.refreshToken || null;
-        }
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  setAccessToken(token: string | null) {
-    this.accessToken = token;
-    if (typeof window !== "undefined") {
-      if (token) {
-        localStorage.setItem("access_token", token);
-      } else {
-        localStorage.removeItem("access_token");
-      }
-    }
-  }
-
+  /**
+   * @deprecated Use cookie-based auth. This method is kept for backward compatibility.
+   */
   getAccessToken(): string | null {
-    // Check localStorage on every call to handle SSR -> client transition
-    return this.accessToken || this.getTokenFromStorage();
-  }
-
-  // Refresh token and update storage
-  private async refreshAccessToken(): Promise<boolean> {
-    // Prevent multiple simultaneous refresh attempts
-    if (this.isRefreshing && this.refreshPromise) {
-      return this.refreshPromise;
-    }
-
-    this.isRefreshing = true;
-    this.refreshPromise = (async () => {
-      try {
-        const refreshToken = this.getRefreshTokenFromStorage();
-        if (!refreshToken) {
-          console.warn("[API] No refresh token available");
-          return false;
-        }
-
-        const response = await fetch(`${this.baseUrl}/api/v1/auth/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-
-        if (!response.ok) {
-          console.warn("[API] Token refresh failed:", response.status);
-          return false;
-        }
-
-        const data = await response.json();
-        if (data.access_token) {
-          this.setAccessToken(data.access_token);
-
-          // Update zustand store in localStorage
-          if (typeof window !== "undefined") {
-            try {
-              const authData = localStorage.getItem("hydra-auth-storage");
-              if (authData) {
-                const parsed = JSON.parse(authData);
-                parsed.state.accessToken = data.access_token;
-                if (data.refresh_token) {
-                  parsed.state.refreshToken = data.refresh_token;
-                }
-                localStorage.setItem("hydra-auth-storage", JSON.stringify(parsed));
-              }
-            } catch (e) {
-              console.warn("[API] Failed to update auth storage:", e);
-            }
-          }
-
-          console.log("[API] Token refreshed successfully");
-          return true;
-        }
-        return false;
-      } catch (error) {
-        console.error("[API] Token refresh error:", error);
-        return false;
-      } finally {
-        this.isRefreshing = false;
-        this.refreshPromise = null;
-      }
-    })();
-
-    return this.refreshPromise;
+    // Return null - cookies are used for auth now
+    return null;
   }
 
   private async request<T>(
@@ -135,32 +54,29 @@ class ApiClient {
       ...options.headers,
     };
 
-    // Get token fresh from storage or memory
-    const token = this.getAccessToken();
-    if (token) {
-      (headers as Record<string, string>)["Authorization"] =
-        `Bearer ${token}`;
-    }
-
     try {
       const response = await fetch(url, {
         ...options,
         headers,
+        credentials: "include", // Always include cookies for auth
       });
 
-      // Handle 401 Unauthorized - try to refresh token and retry
+      // Handle 401 Unauthorized
       if (response.status === 401 && !isRetry && !endpoint.includes("/auth/")) {
-        console.log("[API] 401 received, attempting token refresh...");
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed) {
-          // Retry the original request with new token
-          return this.request<T>(endpoint, options, true);
-        } else {
-          // Refresh failed - trigger logout by dispatching event
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("auth:logout"));
-          }
+        console.log("[API] 401 received, session may have expired");
+
+        // Dispatch logout event - let the app handle the redirect
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("auth:logout"));
         }
+
+        return {
+          error: {
+            code: "401",
+            message: "Session expired. Please log in again.",
+            status: 401,
+          },
+        };
       }
 
       // Handle 204 No Content (e.g., successful DELETE)
@@ -176,6 +92,7 @@ class ApiClient {
             code: response.status.toString(),
             message: data.detail || "An error occurred",
             details: data,
+            status: response.status,
           },
         };
       }
@@ -197,21 +114,23 @@ class ApiClient {
   }
 
   // POST request
-  async post<T>(
-    endpoint: string,
-    body?: object
-  ): Promise<ApiResponse<T>> {
+  async post<T>(endpoint: string, body?: object): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
+  // PUT request
+  async put<T>(endpoint: string, body?: object): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, {
+      method: "PUT",
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+
   // PATCH request
-  async patch<T>(
-    endpoint: string,
-    body?: object
-  ): Promise<ApiResponse<T>> {
+  async patch<T>(endpoint: string, body?: object): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: "PATCH",
       body: body ? JSON.stringify(body) : undefined,
@@ -250,10 +169,12 @@ export const authApi = {
     }>("/api/v1/auth/login", data),
 
   refresh: (refreshToken: string) =>
-    api.post<{ access_token: string; refresh_token: string; token_type: string; expires_in?: number }>(
-      "/api/v1/auth/refresh",
-      { refresh_token: refreshToken }
-    ),
+    api.post<{
+      access_token: string;
+      refresh_token: string;
+      token_type: string;
+      expires_in?: number;
+    }>("/api/v1/auth/refresh", { refresh_token: refreshToken }),
 
   logout: () => api.post("/api/v1/auth/logout"),
 };

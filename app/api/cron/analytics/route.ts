@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { refreshAccessToken } from "@/lib/tiktok";
 
 const TIKTOK_API_BASE = "https://open.tiktokapis.com";
@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
     // Only sync posts published in the last 30 days
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const publishedPosts = await prisma.scheduledPost.findMany({
+    const publishedPosts = await withRetry(() => prisma.scheduledPost.findMany({
       where: {
         status: "PUBLISHED",
         platform: "TIKTOK",
@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
       orderBy: {
         analyticsLastSyncedAt: { sort: "asc", nulls: "first" },
       },
-    });
+    }));
 
     if (publishedPosts.length === 0) {
       console.log("[CRON-ANALYTICS] No posts need analytics sync");
@@ -196,7 +196,7 @@ export async function GET(request: NextRequest) {
           );
 
           if (refreshResult.success && refreshResult.accessToken) {
-            await prisma.socialAccount.update({
+            await withRetry(() => prisma.socialAccount.update({
               where: { id: accountId },
               data: {
                 accessToken: refreshResult.accessToken,
@@ -205,7 +205,7 @@ export async function GET(request: NextRequest) {
                   ? new Date(Date.now() + refreshResult.expiresIn * 1000)
                   : null,
               },
-            });
+            }));
             accessToken = refreshResult.accessToken;
           } else {
             console.log(`[CRON-ANALYTICS] Token refresh failed for account ${accountId}`);
@@ -249,7 +249,7 @@ export async function GET(request: NextRequest) {
             ? (totalEngagements / analytics.view_count) * 100
             : 0;
 
-          await prisma.scheduledPost.update({
+          await withRetry(() => prisma.scheduledPost.update({
             where: { id: post.id },
             data: {
               viewCount: analytics.view_count,
@@ -259,7 +259,7 @@ export async function GET(request: NextRequest) {
               engagementRate,
               analyticsLastSyncedAt: now,
             },
-          });
+          }));
 
           results.push({ postId: post.id, success: true });
           totalSynced++;

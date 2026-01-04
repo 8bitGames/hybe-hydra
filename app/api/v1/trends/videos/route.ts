@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { TrendPlatform } from "@prisma/client";
 
 interface VideoData {
@@ -15,8 +15,8 @@ interface VideoData {
 // POST /api/v1/trends/videos - Save trend videos to database
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 
     for (const data of videoData) {
       try {
-        await prisma.trendVideo.upsert({
+        await withRetry(() => prisma.trendVideo.upsert({
           where: {
             platform_videoId: {
               platform: data.platform,
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
             videoUrl: data.videoUrl,
           },
           create: data,
-        });
+        }));
         savedCount++;
       } catch (err) {
         console.error(`[TRENDS-VIDEOS] Failed to save video ${data.videoId}:`, err);
@@ -132,8 +132,8 @@ export async function POST(request: NextRequest) {
 // GET /api/v1/trends/videos - Get saved trend videos
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });

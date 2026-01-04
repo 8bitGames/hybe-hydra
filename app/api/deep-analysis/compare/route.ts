@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import {
   createDeepAnalysisOrchestrator,
   type AccountData,
@@ -31,15 +31,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch all analyses
-    const analyses = await prisma.accountAnalysis.findMany({
-      where: {
-        id: { in: analysisIds },
-        status: 'COMPLETED',
-      },
-      include: {
-        videoClassifications: true,
-      },
-    });
+    const analyses = await withRetry(() =>
+      prisma.accountAnalysis.findMany({
+        where: {
+          id: { in: analysisIds },
+          status: 'COMPLETED',
+        },
+        include: {
+          videoClassifications: true,
+        },
+      })
+    );
 
     if (analyses.length < 2) {
       return NextResponse.json(
@@ -144,32 +146,36 @@ export async function POST(request: NextRequest) {
 
     // Save comparison report to database
     // Use JSON.parse(JSON.stringify(...)) to strip Zod's index signatures from .passthrough()
-    const report = await prisma.comparisonReport.create({
-      data: {
-        title: `Comparison: ${accounts.map(a => '@' + a.user.uniqueId).join(' vs ')}`,
-        language,
-        accountCount: accounts.length,
-        overallSummary: result.comparison.overallSummary,
-        rankings: JSON.parse(JSON.stringify(result.comparison.rankings)),
-        significantDifferences: JSON.parse(JSON.stringify(result.comparison.significantDifferences)),
-        radarChartData: JSON.parse(JSON.stringify(result.comparison.radarChartData)),
-        strategicInsights: JSON.parse(JSON.stringify(result.comparison.strategicInsights)),
-        accountRecommendations: JSON.parse(JSON.stringify(result.comparison.accountSpecificRecommendations)),
-        competitivePositioning: JSON.parse(JSON.stringify(result.comparison.competitivePositioning)),
-        accounts: {
-          create: analysisIds.map((analysisId: string) => ({
-            analysisId,
-          })),
-        },
-      },
-      include: {
-        accounts: {
-          include: {
-            analysis: true,
+    // Capture comparison to preserve TypeScript narrowing inside callback
+    const comparison = result.comparison;
+    const report = await withRetry(() =>
+      prisma.comparisonReport.create({
+        data: {
+          title: `Comparison: ${accounts.map(a => '@' + a.user.uniqueId).join(' vs ')}`,
+          language,
+          accountCount: accounts.length,
+          overallSummary: comparison.overallSummary,
+          rankings: JSON.parse(JSON.stringify(comparison.rankings)),
+          significantDifferences: JSON.parse(JSON.stringify(comparison.significantDifferences)),
+          radarChartData: JSON.parse(JSON.stringify(comparison.radarChartData)),
+          strategicInsights: JSON.parse(JSON.stringify(comparison.strategicInsights)),
+          accountRecommendations: JSON.parse(JSON.stringify(comparison.accountSpecificRecommendations)),
+          competitivePositioning: JSON.parse(JSON.stringify(comparison.competitivePositioning)),
+          accounts: {
+            create: analysisIds.map((analysisId: string) => ({
+              analysisId,
+            })),
           },
         },
-      },
-    });
+        include: {
+          accounts: {
+            include: {
+              analysis: true,
+            },
+          },
+        },
+      })
+    );
 
     console.log(`[API] Comparison completed: ${report.id}`);
 
@@ -208,20 +214,22 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const report = await prisma.comparisonReport.findUnique({
-      where: { id: reportId },
-      include: {
-        accounts: {
-          include: {
-            analysis: {
-              include: {
-                videoClassifications: true,
+    const report = await withRetry(() =>
+      prisma.comparisonReport.findUnique({
+        where: { id: reportId },
+        include: {
+          accounts: {
+            include: {
+              analysis: {
+                include: {
+                  videoClassifications: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      })
+    );
 
     if (!report) {
       return NextResponse.json(

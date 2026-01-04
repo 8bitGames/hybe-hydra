@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { PublishPlatform } from "@prisma/client";
 
 // GET /api/v1/publishing/analytics/campaign/[id] - Get campaign analytics summary
@@ -9,8 +9,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -19,7 +19,7 @@ export async function GET(
     const { id: campaignId } = await params;
 
     // Get campaign with published posts
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       select: {
         id: true,
@@ -30,7 +30,7 @@ export async function GET(
           },
         },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -42,7 +42,7 @@ export async function GET(
     }
 
     // Get all published posts for this campaign
-    const posts = await prisma.scheduledPost.findMany({
+    const posts = await withRetry(() => prisma.scheduledPost.findMany({
       where: {
         campaignId,
         status: "PUBLISHED",
@@ -58,7 +58,7 @@ export async function GET(
         },
       },
       orderBy: { viewCount: "desc" },
-    });
+    }));
 
     // Calculate totals
     const totals = posts.reduce(
@@ -111,9 +111,9 @@ export async function GET(
     });
 
     // Get total posts count (including non-published)
-    const totalPosts = await prisma.scheduledPost.count({
+    const totalPosts = await withRetry(() => prisma.scheduledPost.count({
       where: { campaignId },
-    });
+    }));
 
     // Top 5 posts
     const topPosts = posts.slice(0, 5).map((p) => ({

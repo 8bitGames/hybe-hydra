@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { cached, CacheKeys, CacheTTL } from "@/lib/cache";
 
 // GET /api/v1/labels - List all labels
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -18,7 +17,7 @@ export async function GET(request: NextRequest) {
       CacheKeys.labelsList(),
       CacheTTL.STATIC, // 1 hour cache
       async () => {
-        const labels = await prisma.label.findMany({
+        const labels = await withRetry(() => prisma.label.findMany({
           orderBy: { name: "asc" },
           select: {
             id: true,
@@ -26,7 +25,7 @@ export async function GET(request: NextRequest) {
             code: true,
             createdAt: true,
           },
-        });
+        }));
 
         return {
           labels: labels.map((label) => ({

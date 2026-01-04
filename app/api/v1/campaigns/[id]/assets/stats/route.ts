@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -8,8 +8,8 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -18,12 +18,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id: campaignId } = await params;
 
     // Check campaign access
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: { select: { labelId: true } },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -34,11 +34,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Count assets by type
-    const counts = await prisma.asset.groupBy({
+    const counts = await withRetry(() => prisma.asset.groupBy({
       by: ["type"],
       where: { campaignId },
       _count: true,
-    });
+    }));
 
     const stats = {
       image: 0,

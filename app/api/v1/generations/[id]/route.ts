@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { VideoGenerationStatus } from "@prisma/client";
 
 interface RouteParams {
@@ -66,7 +66,7 @@ async function syncStatusFromComposeEngine(
   if (engineStatus.status === "completed" && engineStatus.output_url) {
     console.log(`[Fallback] Syncing completed status for ${generationId} from Compose Engine`);
 
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         status: "COMPLETED",
@@ -75,13 +75,13 @@ async function syncStatusFromComposeEngine(
         gcsUri: engineStatus.metadata?.gcs_uri || null,
         updatedAt: new Date(),
       },
-    });
+    }));
 
     return { synced: true, status: "completed", outputUrl: engineStatus.output_url };
   } else if (engineStatus.status === "failed") {
     console.log(`[Fallback] Syncing failed status for ${generationId} from Compose Engine`);
 
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         status: "FAILED",
@@ -89,20 +89,20 @@ async function syncStatusFromComposeEngine(
         errorMessage: engineStatus.error || "Job failed",
         updatedAt: new Date(),
       },
-    });
+    }));
 
     return { synced: true, status: "failed" };
   }
 
   // Still processing - update progress if available
   if (engineStatus.progress > 0) {
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         progress: engineStatus.progress,
         updatedAt: new Date(),
       },
-    });
+    }));
   }
 
   return { synced: false };
@@ -110,8 +110,7 @@ async function syncStatusFromComposeEngine(
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -119,7 +118,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id },
       include: {
         campaign: {
@@ -137,7 +136,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           select: { id: true, filename: true, s3Url: true, originalFilename: true },
         },
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
@@ -252,8 +251,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -261,7 +259,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const existingGeneration = await prisma.videoGeneration.findUnique({
+    const existingGeneration = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id },
       include: {
         campaign: {
@@ -270,7 +268,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!existingGeneration) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
@@ -301,7 +299,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       is_favorite,
     } = body;
 
-    const generation = await prisma.videoGeneration.update({
+    const generation = await withRetry(() => prisma.videoGeneration.update({
       where: { id },
       data: {
         ...(status && { status: status.toUpperCase() as VideoGenerationStatus }),
@@ -322,7 +320,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           select: { id: true, filename: true, s3Url: true },
         },
       },
-    });
+    }));
 
     return NextResponse.json({
       id: generation.id,
@@ -368,8 +366,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -381,7 +378,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const url = new URL(request.url);
     const force = url.searchParams.get("force") === "true";
 
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id },
       include: {
         campaign: {
@@ -390,7 +387,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!generation) {
       // If not found and force=true, return success (idempotent delete)
@@ -438,10 +435,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     // Soft delete - set deletedAt timestamp instead of actual deletion
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id },
       data: { deletedAt: new Date() }
-    });
+    }));
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {

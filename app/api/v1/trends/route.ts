@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { TrendPlatform, Prisma } from "@prisma/client";
 import { cached, CacheKeys, CacheTTL } from "@/lib/cache";
 
 // GET /api/v1/trends - Get trending content from social platforms
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -62,14 +62,14 @@ async function fetchTrendsData(
   }
 
   // Get latest trends, ordered by rank
-  const trends = await prisma.trendSnapshot.findMany({
+  const trends = await withRetry(() => prisma.trendSnapshot.findMany({
     where: whereClause,
     orderBy: [
       { collectedAt: "desc" },
       { rank: "asc" },
     ],
     take: limit,
-  });
+  }));
 
   // Group by platform for easier consumption
   const groupedByPlatform = trends.reduce((acc, trend) => {
@@ -92,7 +92,7 @@ async function fetchTrendsData(
   }, {} as Record<string, unknown[]>);
 
   // Get platform statistics
-  const platformStats = await prisma.trendSnapshot.groupBy({
+  const platformStats = await withRetry(() => prisma.trendSnapshot.groupBy({
     by: ["platform"],
     where: {
       region,
@@ -103,7 +103,7 @@ async function fetchTrendsData(
     _count: {
       id: true,
     },
-  });
+  }));
 
   // Return data object (will be cached)
   return {
@@ -133,8 +133,8 @@ async function fetchTrendsData(
 // POST /api/v1/trends - Create new trend snapshots (admin only)
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -182,10 +182,10 @@ export async function POST(request: NextRequest) {
     }));
 
     // Create trends in batch
-    const created = await prisma.trendSnapshot.createMany({
+    const created = await withRetry(() => prisma.trendSnapshot.createMany({
       data: trendData,
       skipDuplicates: true,
-    });
+    }));
 
     return NextResponse.json({
       message: "Trends created successfully",

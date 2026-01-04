@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromHeader } from "@/lib/auth";
-import { prisma } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
 import type { LyricsData, LyricsSegment } from "@/lib/subtitle-styles";
 
@@ -18,14 +18,14 @@ async function checkAssetAccess(
   asset: Awaited<ReturnType<typeof prisma.asset.findUnique>> | null;
   hasAccess: boolean;
 }> {
-  const asset = await prisma.asset.findUnique({
+  const asset = await withRetry(() => prisma.asset.findUnique({
     where: { id: assetId },
     include: {
       campaign: {
         select: { artistId: true },
       },
     },
-  });
+  }));
 
   if (!asset) {
     return { asset: null, hasAccess: false };
@@ -38,10 +38,10 @@ async function checkAssetAccess(
 
   // Check via campaign's artist
   const artist = asset.campaign?.artistId
-    ? await prisma.artist.findUnique({
+    ? await withRetry(() => prisma.artist.findUnique({
         where: { id: asset.campaign.artistId },
         select: { labelId: true },
-      })
+      }))
     : null;
 
   const hasAccess = artist ? user.labelIds.includes(artist.labelId) : false;
@@ -54,8 +54,8 @@ async function checkAssetAccess(
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -111,8 +111,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -179,12 +179,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       lyrics: updatedLyrics,
     })) as Prisma.InputJsonValue;
 
-    await prisma.asset.update({
+    await withRetry(() => prisma.asset.update({
       where: { id: assetId },
       data: {
         metadata: updatedMetadata,
       },
-    });
+    }));
 
     return NextResponse.json({
       assetId,
@@ -206,8 +206,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
  */
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -216,9 +216,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const { assetId } = await params;
 
     // Get the asset
-    const asset = await prisma.asset.findUnique({
+    const asset = await withRetry(() => prisma.asset.findUnique({
       where: { id: assetId },
-    });
+    }));
 
     if (!asset) {
       return NextResponse.json({ detail: "Asset not found" }, { status: 404 });
@@ -239,12 +239,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         ? (JSON.parse(JSON.stringify(restMetadata)) as Prisma.InputJsonValue)
         : Prisma.JsonNull;
 
-      await prisma.asset.update({
+      await withRetry(() => prisma.asset.update({
         where: { id: assetId },
         data: {
           metadata: cleanedMetadata,
         },
-      });
+      }));
     }
 
     return NextResponse.json({

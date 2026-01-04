@@ -619,13 +619,12 @@ export function SessionDashboard() {
     setIsDeleting(true);
     try {
       // Cancel all active jobs if requested
-      if (cancelJobs && accessToken) {
+      if (cancelJobs) {
         try {
+          // Use cookie-based authentication
           const response = await fetch("/api/v1/jobs/cancel-all", {
             method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
+            credentials: "include",
           });
           if (response.ok) {
             // Clear jobs from store immediately

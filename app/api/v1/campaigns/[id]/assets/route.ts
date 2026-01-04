@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { validateFile, generateS3Key, uploadToS3, AssetType as StorageAssetType } from "@/lib/storage";
 import { AssetType, MerchandiseType, Prisma } from "@prisma/client";
 import { getComposeEngineUrl } from "@/lib/compose/client";
@@ -79,8 +79,8 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -93,12 +93,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const type = searchParams.get("type") as AssetType | null;
 
     // Check campaign access
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: { select: { labelId: true } },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -114,14 +114,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       where.type = type.toUpperCase() as AssetType;
     }
 
-    const total = await prisma.asset.count({ where });
+    const total = await withRetry(() => prisma.asset.count({ where }));
 
-    const assets = await prisma.asset.findMany({
+    const assets = await withRetry(() => prisma.asset.findMany({
       where,
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
-    });
+    }));
 
     const pages = Math.ceil(total / pageSize) || 1;
 
@@ -157,8 +157,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -167,12 +167,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: campaignId } = await params;
 
     // Check campaign access
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: { select: { labelId: true } },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -271,7 +271,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Create asset record
-    const asset = await prisma.asset.create({
+    const asset = await withRetry(() => prisma.asset.create({
       data: {
         campaignId,
         type: validation.type as AssetType,
@@ -285,7 +285,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         createdBy: user.id,
         metadata: Object.keys(metadata).length > 0 ? metadata as Prisma.InputJsonValue : undefined,
       },
-    });
+    }));
 
     return NextResponse.json(
       {

@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db/prisma'
+import { prisma, withRetry } from '@/lib/db/prisma'
 import type { HashtagRelation, HashtagNetwork, VideoForAnalysis } from './types'
 
 export class CoOccurrenceAnalyzer {
@@ -28,22 +28,24 @@ export class CoOccurrenceAnalyzer {
           const [h1, h2] = [hashtags[i], hashtags[j]].sort()
 
           try {
-            await prisma.hashtagCoOccurrence.upsert({
-              where: { hashtag1_hashtag2: { hashtag1: h1, hashtag2: h2 } },
-              create: {
-                hashtag1: h1,
-                hashtag2: h2,
-                coOccurrenceCount: 1,
-                avgEngagement: engagement,
-                sourceKeywords: [sourceKeyword]
-              },
-              update: {
-                coOccurrenceCount: { increment: 1 },
-                avgEngagement: engagement, // Simple update (could use weighted average)
-                sourceKeywords: { push: sourceKeyword },
-                lastSeen: new Date()
-              }
-            })
+            await withRetry(() =>
+              prisma.hashtagCoOccurrence.upsert({
+                where: { hashtag1_hashtag2: { hashtag1: h1, hashtag2: h2 } },
+                create: {
+                  hashtag1: h1,
+                  hashtag2: h2,
+                  coOccurrenceCount: 1,
+                  avgEngagement: engagement,
+                  sourceKeywords: [sourceKeyword]
+                },
+                update: {
+                  coOccurrenceCount: { increment: 1 },
+                  avgEngagement: engagement, // Simple update (could use weighted average)
+                  sourceKeywords: { push: sourceKeyword },
+                  lastSeen: new Date()
+                }
+              })
+            )
             pairsCreated++
           } catch (error) {
             // Skip duplicates or other errors silently
@@ -70,16 +72,18 @@ export class CoOccurrenceAnalyzer {
     )
 
     // Find co-occurrences where this hashtag appears
-    const coOccurrences = await prisma.hashtagCoOccurrence.findMany({
-      where: {
-        OR: [
-          { hashtag1: normalizedHashtag },
-          { hashtag2: normalizedHashtag }
-        ]
-      },
-      orderBy: { coOccurrenceCount: 'desc' },
-      take: limit * 2 // Get more to filter
-    })
+    const coOccurrences = await withRetry(() =>
+      prisma.hashtagCoOccurrence.findMany({
+        where: {
+          OR: [
+            { hashtag1: normalizedHashtag },
+            { hashtag2: normalizedHashtag }
+          ]
+        },
+        orderBy: { coOccurrenceCount: 'desc' },
+        take: limit * 2 // Get more to filter
+      })
+    )
 
     // Extract related hashtags (the other one in the pair)
     const relatedMap = new Map<string, {
@@ -237,17 +241,19 @@ export class CoOccurrenceAnalyzer {
     totalPairs: number
     topPairs: Array<{ hashtag1: string; hashtag2: string; count: number }>
   }> {
-    const totalPairs = await prisma.hashtagCoOccurrence.count()
+    const totalPairs = await withRetry(() => prisma.hashtagCoOccurrence.count())
 
-    const topPairs = await prisma.hashtagCoOccurrence.findMany({
-      orderBy: { coOccurrenceCount: 'desc' },
-      take: 10,
-      select: {
-        hashtag1: true,
-        hashtag2: true,
-        coOccurrenceCount: true
-      }
-    })
+    const topPairs = await withRetry(() =>
+      prisma.hashtagCoOccurrence.findMany({
+        orderBy: { coOccurrenceCount: 'desc' },
+        take: 10,
+        select: {
+          hashtag1: true,
+          hashtag2: true,
+          coOccurrenceCount: true
+        }
+      })
+    )
 
     return {
       totalPairs,

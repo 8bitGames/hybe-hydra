@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { transformPrompt, PromptTransformInput } from "@/lib/prompt-alchemist";
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     let artistProfile = undefined;
 
     if (campaign_id) {
-      const campaign = await prisma.campaign.findUnique({
+      const campaign = await withRetry(() => prisma.campaign.findUnique({
         where: { id: campaign_id },
         include: {
           artist: {
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
             },
           },
         },
-      });
+      }));
 
       if (!campaign) {
         return NextResponse.json(

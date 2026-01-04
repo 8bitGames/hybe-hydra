@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserFromHeader } from '@/lib/auth';
-import { prisma } from '@/lib/db/prisma';
+import { getUserFromRequest } from '@/lib/auth';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import { submitRenderToModal, ModalRenderRequest, isLocalMode } from '@/lib/compose/client';
 import { getStyleSetById, styleSetToRenderSettings } from '@/lib/fast-cut/style-sets';
@@ -105,10 +105,10 @@ export async function POST(request: NextRequest) {
   console.log(`${LOG_PREFIX} ========================================`);
 
   try {
-    const authHeader = request.headers.get('authorization');
-    console.log(`${LOG_PREFIX} Auth header present: ${!!authHeader}`);
+    
+    console.log(`${LOG_PREFIX} Auth header present: ${!!request.headers.get("authorization")}`);
 
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       console.warn(`${LOG_PREFIX} Authentication failed - no valid user`);
@@ -240,10 +240,10 @@ export async function POST(request: NextRequest) {
     let audioAsset: { s3Url: string | null; metadata: unknown } | null = null;
     if (audioAssetIdClean) {
       console.log(`${LOG_PREFIX} Looking up audio asset: ${audioAssetIdClean}`);
-      audioAsset = await prisma.asset.findUnique({
+      audioAsset = await withRetry(() => prisma.asset.findUnique({
         where: { id: audioAssetIdClean },
         select: { s3Url: true, metadata: true }
-      });
+      }));
 
       if (!audioAsset) {
         console.error(`${LOG_PREFIX} Audio asset not found: ${audioAssetIdClean}`);
@@ -293,10 +293,10 @@ export async function POST(request: NextRequest) {
 
         try {
           // Get fresh audio asset data with s3Key
-          const audioAssetFull = await prisma.asset.findUnique({
+          const audioAssetFull = await withRetry(() => prisma.asset.findUnique({
             where: { id: audioAssetIdClean },
             select: { id: true, s3Key: true, s3Url: true, metadata: true }
-          });
+          }));
 
           if (audioAssetFull?.s3Key) {
             // Generate fresh presigned URL
@@ -336,10 +336,10 @@ export async function POST(request: NextRequest) {
                 lyrics: extractedLyrics,
               })) as Prisma.InputJsonValue;
 
-              await prisma.asset.update({
+              await withRetry(() => prisma.asset.update({
                 where: { id: audioAssetIdClean },
                 data: { metadata: updatedMetadata },
-              });
+              }));
 
               // Update local variables for immediate use
               metadata = updatedMetadata as Record<string, unknown>;
@@ -457,7 +457,7 @@ export async function POST(request: NextRequest) {
     // Create or update VideoGeneration record with all fast cut metadata
     console.log(`${LOG_PREFIX} Upserting VideoGeneration record...`);
     const dbUpsertStartTime = Date.now();
-    await prisma.videoGeneration.upsert({
+    await withRetry(() => prisma.videoGeneration.upsert({
       where: { id: generationId },
       create: {
         id: generationId,
@@ -500,7 +500,7 @@ export async function POST(request: NextRequest) {
           imageUrls: images.map(img => cleanS3Url(img.url)), // Clean URLs for IAM auth
         },
       }
-    });
+    }));
     console.log(`${LOG_PREFIX} Database upsert completed in ${Date.now() - dbUpsertStartTime}ms`);
 
     // Use generationId as job_id for consistent tracking
@@ -600,7 +600,7 @@ export async function POST(request: NextRequest) {
     // Store modal call_id and image URLs in database for status polling and retry
     console.log(`${LOG_PREFIX} Updating database with call_id...`);
     const dbUpdateStartTime = Date.now();
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         qualityMetadata: {
@@ -611,7 +611,7 @@ export async function POST(request: NextRequest) {
           createdAt: new Date().toISOString(), // For progress estimation
         },
       }
-    });
+    }));
     console.log(`${LOG_PREFIX} Database update completed in ${Date.now() - dbUpdateStartTime}ms`);
 
     const totalRequestTime = Date.now() - requestStartTime;

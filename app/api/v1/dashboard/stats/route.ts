@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { cached, CacheKeys, CacheTTL } from "@/lib/cache";
 
 // GET /api/v1/dashboard/stats - Get global dashboard statistics across all campaigns
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -42,7 +41,7 @@ async function fetchDashboardStats(
       };
 
   // Get all campaigns with counts
-  const campaigns = await prisma.campaign.findMany({
+  const campaigns = await withRetry(() => prisma.campaign.findMany({
       where: campaignWhereClause,
       include: {
         artist: {
@@ -61,12 +60,12 @@ async function fetchDashboardStats(
         },
       },
       orderBy: { updatedAt: "desc" },
-    });
+    }));
 
     const campaignIds = campaigns.map(c => c.id);
 
     // Get all video generations for these campaigns
-    const generations = await prisma.videoGeneration.findMany({
+    const generations = await withRetry(() => prisma.videoGeneration.findMany({
       where: { campaignId: { in: campaignIds } },
       select: {
         id: true,
@@ -81,10 +80,10 @@ async function fetchDashboardStats(
         updatedAt: true,
       },
       orderBy: { createdAt: "desc" },
-    });
+    }));
 
     // Get all scheduled posts for these campaigns
-    const scheduledPosts = await prisma.scheduledPost.findMany({
+    const scheduledPosts = await withRetry(() => prisma.scheduledPost.findMany({
       where: { campaignId: { in: campaignIds } },
       include: {
         socialAccount: {
@@ -95,7 +94,7 @@ async function fetchDashboardStats(
         },
       },
       orderBy: { createdAt: "desc" },
-    });
+    }));
 
     // Calculate generation statistics
     const generationStats = {

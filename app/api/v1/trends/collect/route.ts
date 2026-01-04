@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { TrendPlatform, Prisma } from "@prisma/client";
 import {
   searchTikTok,
@@ -12,8 +12,8 @@ import {
 // POST /api/v1/trends/collect - Trigger trend collection (admin only)
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -130,10 +130,10 @@ export async function POST(request: NextRequest) {
       thumbnailUrl: null,
     }));
 
-    const created = await prisma.trendSnapshot.createMany({
+    const created = await withRetry(() => prisma.trendSnapshot.createMany({
       data: trendData,
       skipDuplicates: true,
-    });
+    }));
 
     console.log(`[TRENDS-COLLECT] Saved ${created.count} trends to database`);
 
@@ -165,8 +165,8 @@ export async function POST(request: NextRequest) {
 // GET /api/v1/trends/collect - Get details for a specific hashtag or search keyword
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });

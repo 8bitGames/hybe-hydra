@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 export async function GET() {
   try {
     // Test database connection
-    await prisma.$queryRaw`SELECT 1`;
+    await withRetry(() => prisma.$queryRaw`SELECT 1`);
 
     return NextResponse.json({
       status: "ok",

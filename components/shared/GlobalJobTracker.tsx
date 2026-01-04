@@ -40,7 +40,7 @@ interface GlobalJobTrackerProps {
 export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
   const { language } = useI18n();
   const { jobTrackerExpanded, toggleJobTracker } = useUIStore();
-  const { accessToken, isAuthenticated } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const jobs = useJobStore((state) => state.jobs);
   const recentJobs = useJobStore((state) => state.recentJobs);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -63,8 +63,8 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
 
   // Poll for job updates only when authenticated
   useEffect(() => {
-    // Strict authentication check
-    if (!isAuthenticated || !accessToken || accessToken.trim() === "") {
+    // Check authentication - cookies handle the actual auth
+    if (!isAuthenticated) {
       return;
     }
 
@@ -79,10 +79,9 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
       }
 
       try {
+        // Use cookie-based authentication (credentials: 'include')
         const response = await fetch("/api/v1/jobs", {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+          credentials: "include",
         });
 
         if (response.status === 401 || response.status === 403) {
@@ -122,22 +121,21 @@ export function GlobalJobTracker({ className }: GlobalJobTrackerProps) {
       isPollingActive = false;
       clearInterval(interval);
     };
-  }, [isAuthenticated, accessToken]);
+  }, [isAuthenticated]);
 
   const hasActiveJobs = activeJobs.length > 0;
   const totalActive = counts.processing + counts.queued;
 
   // Cancel all active jobs
   const handleCancelAll = async () => {
-    if (!accessToken || isCancelling) return;
+    if (isCancelling) return;
 
     setIsCancelling(true);
     try {
+      // Use cookie-based authentication
       const response = await fetch("/api/v1/jobs/cancel-all", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+        credentials: "include",
       });
       if (response.ok) {
         // Clear jobs from store immediately

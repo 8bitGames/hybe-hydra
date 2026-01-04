@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserFromHeader } from '@/lib/auth';
-import { prisma } from '@/lib/db/prisma';
+import { getUserFromRequest } from '@/lib/auth';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import { submitRenderToModal, ModalRenderRequest } from '@/lib/compose/client';
 
@@ -45,8 +45,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authHeader = request.headers.get('authorization');
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
@@ -55,14 +55,16 @@ export async function POST(
     const { id: generationId } = await params;
 
     // Get the original generation
-    const generation = await prisma.videoGeneration.findUnique({
-      where: { id: generationId },
-      include: {
-        audioAsset: {
-          select: { s3Url: true }
+    const generation = await withRetry(() =>
+      prisma.videoGeneration.findUnique({
+        where: { id: generationId },
+        include: {
+          audioAsset: {
+            select: { s3Url: true }
+          }
         }
-      }
-    });
+      })
+    );
 
     if (!generation) {
       return NextResponse.json(
@@ -136,14 +138,16 @@ export async function POST(
     const audioStartTime = generation.audioStartTime ?? composeData.audioStartTime ?? 0;
 
     // Reset status to PROCESSING
-    await prisma.videoGeneration.update({
-      where: { id: generationId },
-      data: {
-        status: 'PROCESSING',
-        progress: 0,
-        errorMessage: null,
-      }
-    });
+    await withRetry(() =>
+      prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: {
+          status: 'PROCESSING',
+          progress: 0,
+          errorMessage: null,
+        }
+      })
+    );
 
     // Prepare render request for Modal
     const outputKey = `compose/renders/${generationId}/output.mp4`;
@@ -198,12 +202,14 @@ export async function POST(
       ...(qualityMetadata || {}),
       modalCallId: modalResponse.call_id,
     };
-    await prisma.videoGeneration.update({
-      where: { id: generationId },
-      data: {
-        qualityMetadata: updatedQualityMetadata as unknown as Prisma.InputJsonValue,
-      }
-    });
+    await withRetry(() =>
+      prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: {
+          qualityMetadata: updatedQualityMetadata as unknown as Prisma.InputJsonValue,
+        }
+      })
+    );
 
     return NextResponse.json({
       jobId: generationId,

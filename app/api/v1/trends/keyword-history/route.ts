@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromHeader } from "@/lib/auth";
-import { prisma } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 // GET /api/v1/trends/keyword-history - Get past keyword analysis history
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get("offset") || "0");
 
     // Get keyword analysis history, sorted by most recent
-    const analyses = await prisma.keywordAnalysis.findMany({
+    const analyses = await withRetry(() => prisma.keywordAnalysis.findMany({
       where: {
         platform: "TIKTOK",
       },
@@ -39,14 +39,14 @@ export async function GET(request: NextRequest) {
         // Include AI summary if available
         aiInsights: true,
       },
-    });
+    }));
 
     // Get total count
-    const total = await prisma.keywordAnalysis.count({
+    const total = await withRetry(() => prisma.keywordAnalysis.count({
       where: {
         platform: "TIKTOK",
       },
-    });
+    }));
 
     // Format the response
     const formattedAnalyses = analyses.map((a) => ({
@@ -88,8 +88,8 @@ export async function GET(request: NextRequest) {
 // DELETE /api/v1/trends/keyword-history/:id - Delete a keyword analysis
 export async function DELETE(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -102,9 +102,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ detail: "id parameter is required" }, { status: 400 });
     }
 
-    await prisma.keywordAnalysis.delete({
+    await withRetry(() => prisma.keywordAnalysis.delete({
       where: { id },
-    });
+    }));
 
     return NextResponse.json({
       success: true,

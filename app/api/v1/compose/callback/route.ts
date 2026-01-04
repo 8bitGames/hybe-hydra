@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 /**
  * POST /api/v1/compose/callback
@@ -26,9 +26,9 @@ export async function POST(request: NextRequest) {
     console.log(`[Compose Callback] Received callback for job ${job_id}: status=${status}, output_url=${output_url ? 'yes' : 'no'}`);
 
     // Find the generation by ID
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: job_id },
-    });
+    }));
 
     if (!generation) {
       console.warn(`[Compose Callback] Generation not found: ${job_id}`);
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 
     // Update based on status
     if (status === "completed" && output_url) {
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: job_id },
         data: {
           status: "COMPLETED",
@@ -45,17 +45,17 @@ export async function POST(request: NextRequest) {
           composedOutputUrl: output_url,
           outputUrl: output_url,
         },
-      });
+      }));
       console.log(`[Compose Callback] Job ${job_id} marked as COMPLETED with output: ${output_url}`);
     } else if (status === "failed") {
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: job_id },
         data: {
           status: "FAILED",
           progress: 100,
           errorMessage: error || "Auto-compose job failed",
         },
-      });
+      }));
       console.log(`[Compose Callback] Job ${job_id} marked as FAILED: ${error}`);
     } else if (status === "processing" || status === "queued") {
       // Update progress for processing jobs
@@ -65,10 +65,10 @@ export async function POST(request: NextRequest) {
       if (typeof progress === "number") {
         updateData.progress = progress;
       }
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: job_id },
         data: updateData,
-      });
+      }));
       console.log(`[Compose Callback] Job ${job_id} progress updated: ${progress}%`);
     }
 

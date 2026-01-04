@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma';
+import { prisma, withRetry } from '@/lib/db/prisma';
 
 /**
  * GET /api/deep-analysis/[id]
@@ -13,15 +13,17 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const analysis = await prisma.accountAnalysis.findUnique({
-      where: { id },
-      include: {
-        videoClassifications: {
-          orderBy: { playCount: 'desc' },
-          take: 100,
+    const analysis = await withRetry(() =>
+      prisma.accountAnalysis.findUnique({
+        where: { id },
+        include: {
+          videoClassifications: {
+            orderBy: { playCount: 'desc' },
+            take: 100,
+          },
         },
-      },
-    });
+      })
+    );
 
     if (!analysis) {
       return NextResponse.json(
@@ -69,9 +71,11 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    await prisma.accountAnalysis.delete({
-      where: { id },
-    });
+    await withRetry(() =>
+      prisma.accountAnalysis.delete({
+        where: { id },
+      })
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {

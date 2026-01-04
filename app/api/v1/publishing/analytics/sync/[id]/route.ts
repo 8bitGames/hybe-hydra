@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 
 // POST /api/v1/publishing/analytics/sync/[id] - Sync analytics for a single post
 export async function POST(
@@ -8,8 +8,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -18,12 +18,12 @@ export async function POST(
     const { id: postId } = await params;
 
     // Get the post
-    const post = await prisma.scheduledPost.findUnique({
+    const post = await withRetry(() => prisma.scheduledPost.findUnique({
       where: { id: postId },
       include: {
         socialAccount: true,
       },
-    });
+    }));
 
     if (!post) {
       return NextResponse.json({ detail: "Post not found" }, { status: 404 });

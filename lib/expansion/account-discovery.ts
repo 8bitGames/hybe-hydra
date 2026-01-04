@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db/prisma'
+import { prisma, withRetry } from '@/lib/db/prisma'
 import type { Prisma } from '@prisma/client'
 import type { DiscoveredCreator, VideoForAnalysis } from './types'
 
@@ -80,29 +80,31 @@ export class AccountDiscoveryService {
 
       // Upsert to database
       try {
-        await prisma.discoveredAccount.upsert({
-          where: {
-            platform_accountId: { platform: 'tiktok', accountId: authorId }
-          },
-          create: {
-            platform: 'tiktok',
-            accountId: authorId,
-            username: data.authorName || authorId,
-            avgEngagement,
-            relevanceScore,
-            topHashtags,
-            contentOverlap: overlap,
-            discoveredFrom: [sourceKeyword]
-          },
-          update: {
-            avgEngagement,
-            relevanceScore,
-            topHashtags,
-            contentOverlap: overlap,
-            discoveredFrom: { push: sourceKeyword },
-            lastUpdated: new Date()
-          }
-        })
+        await withRetry(() =>
+          prisma.discoveredAccount.upsert({
+            where: {
+              platform_accountId: { platform: 'tiktok', accountId: authorId }
+            },
+            create: {
+              platform: 'tiktok',
+              accountId: authorId,
+              username: data.authorName || authorId,
+              avgEngagement,
+              relevanceScore,
+              topHashtags,
+              contentOverlap: overlap,
+              discoveredFrom: [sourceKeyword]
+            },
+            update: {
+              avgEngagement,
+              relevanceScore,
+              topHashtags,
+              contentOverlap: overlap,
+              discoveredFrom: { push: sourceKeyword },
+              lastUpdated: new Date()
+            }
+          })
+        )
       } catch (error) {
         console.warn(`Failed to upsert discovered account ${authorId}:`, error)
       }
@@ -139,11 +141,13 @@ export class AccountDiscoveryService {
       where.discoveredFrom = { has: sourceKeyword.toLowerCase().replace(/^#/, '') }
     }
 
-    const accounts = await prisma.discoveredAccount.findMany({
-      where,
-      orderBy: { relevanceScore: 'desc' },
-      take: limit
-    })
+    const accounts = await withRetry(() =>
+      prisma.discoveredAccount.findMany({
+        where,
+        orderBy: { relevanceScore: 'desc' },
+        take: limit
+      })
+    )
 
     return accounts.map(a => ({
       accountId: a.accountId,
@@ -167,16 +171,18 @@ export class AccountDiscoveryService {
   ): Promise<DiscoveredCreator[]> {
     const normalizedKeywords = keywords.map(k => k.toLowerCase().replace(/^#/, ''))
 
-    const accounts = await prisma.discoveredAccount.findMany({
-      where: {
-        relevanceScore: { gte: minRelevance },
-        OR: normalizedKeywords.map(kw => ({
-          discoveredFrom: { has: kw }
-        }))
-      },
-      orderBy: { relevanceScore: 'desc' },
-      take: limit
-    })
+    const accounts = await withRetry(() =>
+      prisma.discoveredAccount.findMany({
+        where: {
+          relevanceScore: { gte: minRelevance },
+          OR: normalizedKeywords.map(kw => ({
+            discoveredFrom: { has: kw }
+          }))
+        },
+        orderBy: { relevanceScore: 'desc' },
+        take: limit
+      })
+    )
 
     // Boost accounts discovered from multiple keywords
     const boostedAccounts = accounts.map(a => {
@@ -210,22 +216,26 @@ export class AccountDiscoveryService {
     limit = 10
   ): Promise<DiscoveredCreator[]> {
     // Get the source account
-    const sourceAccount = await prisma.discoveredAccount.findFirst({
-      where: { accountId }
-    })
+    const sourceAccount = await withRetry(() =>
+      prisma.discoveredAccount.findFirst({
+        where: { accountId }
+      })
+    )
 
     if (!sourceAccount || sourceAccount.topHashtags.length === 0) {
       return []
     }
 
     // Find accounts with overlapping hashtags
-    const accounts = await prisma.discoveredAccount.findMany({
-      where: {
-        accountId: { not: accountId },
-        topHashtags: { hasSome: sourceAccount.topHashtags }
-      },
-      take: limit * 2
-    })
+    const accounts = await withRetry(() =>
+      prisma.discoveredAccount.findMany({
+        where: {
+          accountId: { not: accountId },
+          topHashtags: { hasSome: sourceAccount.topHashtags }
+        },
+        take: limit * 2
+      })
+    )
 
     // Calculate similarity score based on hashtag overlap
     const sourceHashtagSet = new Set(sourceAccount.topHashtags)
@@ -290,20 +300,24 @@ export class AccountDiscoveryService {
     avgRelevanceScore: number
     topAccounts: Array<{ username: string; relevanceScore: number }>
   }> {
-    const totalAccounts = await prisma.discoveredAccount.count()
+    const totalAccounts = await withRetry(() => prisma.discoveredAccount.count())
 
-    const avgResult = await prisma.discoveredAccount.aggregate({
-      _avg: { relevanceScore: true }
-    })
+    const avgResult = await withRetry(() =>
+      prisma.discoveredAccount.aggregate({
+        _avg: { relevanceScore: true }
+      })
+    )
 
-    const topAccounts = await prisma.discoveredAccount.findMany({
-      orderBy: { relevanceScore: 'desc' },
-      take: 10,
-      select: {
-        username: true,
-        relevanceScore: true
-      }
-    })
+    const topAccounts = await withRetry(() =>
+      prisma.discoveredAccount.findMany({
+        orderBy: { relevanceScore: 'desc' },
+        take: 10,
+        select: {
+          username: true,
+          relevanceScore: true
+        }
+      })
+    )
 
     return {
       totalAccounts,

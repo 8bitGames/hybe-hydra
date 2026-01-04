@@ -482,11 +482,10 @@ function AssetUploadSection({
       const formData = new FormData();
       formData.append('file', file);
 
+      // Use cookie-based authentication
       const response = await fetch(`/api/v1/campaigns/${campaignId}/assets`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
+        credentials: 'include',
         body: formData,
       });
 

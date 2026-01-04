@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { cached, CacheKeys, CacheTTL, invalidatePattern } from "@/lib/cache";
 
 // GET /api/v1/presets - List all style presets
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -32,10 +31,10 @@ export async function GET(request: NextRequest) {
           where.category = category;
         }
 
-        const presets = await prisma.stylePreset.findMany({
+        const presets = await withRetry(() => prisma.stylePreset.findMany({
           where,
           orderBy: { sortOrder: "asc" },
-        });
+        }));
 
         return {
           presets: presets.map((preset) => ({
@@ -68,8 +67,7 @@ export async function GET(request: NextRequest) {
 // POST /api/v1/presets - Create a new style preset (admin only)
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -89,7 +87,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const preset = await prisma.stylePreset.create({
+    const preset = await withRetry(() => prisma.stylePreset.create({
       data: {
         name,
         nameKo: name_ko,
@@ -99,7 +97,7 @@ export async function POST(request: NextRequest) {
         isActive: is_active ?? true,
         sortOrder: sort_order ?? 0,
       },
-    });
+    }));
 
     // Invalidate presets cache
     await invalidatePattern("presets:styles:*");

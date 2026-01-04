@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { TrendPlatform } from "@prisma/client";
 
 // GET /api/v1/trends/trending - Get top trending videos sorted by play count
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -33,21 +33,21 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch top trending videos sorted by play count
-    const videos = await prisma.trendVideo.findMany({
+    const videos = await withRetry(() => prisma.trendVideo.findMany({
       where,
       orderBy: { playCount: "desc" },
       take: limit,
-    });
+    }));
 
     // Get unique hashtags/queries that we have videos for
-    const uniqueQueries = await prisma.trendVideo.groupBy({
+    const uniqueQueries = await withRetry(() => prisma.trendVideo.groupBy({
       by: ["searchQuery"],
       where: { platform },
       _count: { id: true },
       _sum: { playCount: true },
       orderBy: { _sum: { playCount: "desc" } },
       take: 10,
-    });
+    }));
 
     // Convert BigInt to number for JSON serialization
     const serializedVideos = videos.map((v) => ({

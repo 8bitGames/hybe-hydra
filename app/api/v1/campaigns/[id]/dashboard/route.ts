@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { cached, CacheKeys, CacheTTL } from "@/lib/cache";
 
 // GET /api/v1/campaigns/[id]/dashboard - Get comprehensive campaign dashboard data
@@ -9,8 +9,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -19,13 +19,13 @@ export async function GET(
     const { id: campaignId } = await params;
 
     // First check RBAC access (quick query, not cached)
-    const campaignAccess = await prisma.campaign.findUnique({
+    const campaignAccess = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       select: {
         id: true,
         artist: { select: { labelId: true } },
       },
-    });
+    }));
 
     if (!campaignAccess) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -41,7 +41,7 @@ export async function GET(
       CacheTTL.CAMPAIGN_DASH, // 2.5 minutes
       async () => {
         // Get campaign with all related data
-        const campaign = await prisma.campaign.findUnique({
+        const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: {
@@ -107,14 +107,14 @@ export async function GET(
           orderBy: { createdAt: "desc" },
         },
       },
-    });
+    }));
 
     if (!campaign) {
       return null; // Will be handled outside cached block
     }
 
     // Get scheduled posts for this campaign
-    const scheduledPosts = await prisma.scheduledPost.findMany({
+    const scheduledPosts = await withRetry(() => prisma.scheduledPost.findMany({
       where: { campaignId },
       include: {
         socialAccount: {
@@ -127,7 +127,7 @@ export async function GET(
         },
       },
       orderBy: { createdAt: "desc" },
-    });
+    }));
 
     // Calculate statistics
     const assetStats = {

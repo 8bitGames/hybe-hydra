@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { v4 as uuidv4 } from "uuid";
 import { MerchandiseContext } from "@prisma/client";
 import {
@@ -119,13 +119,13 @@ function startMerchandiseVideoGeneration(
     const logPrefix = `[Merchandise Gen ${generationId}]`;
 
     try {
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "PROCESSING",
           progress: 10,
         },
-      });
+      }));
 
       // Determine which prompt to use based on whether we have a reference image
       const useI2VMode = !!params.primaryMerchandiseUrl;
@@ -136,10 +136,10 @@ function startMerchandiseVideoGeneration(
         console.log(`${logPrefix} Reference image: ${params.primaryMerchandiseUrl}`);
       }
 
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: { progress: 30 },
-      });
+      }));
 
       // Generate video via EC2 compose-engine
       const videoJobId = generateAIJobId("merch-vid");
@@ -185,36 +185,36 @@ function startMerchandiseVideoGeneration(
         }
       } catch (submitError) {
         console.error(`${logPrefix} Video submit error:`, submitError);
-        await prisma.videoGeneration.update({
+        await withRetry(() => prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "FAILED",
             progress: 100,
             errorMessage: `EC2 submit error: ${submitError instanceof Error ? submitError.message : "Unknown error"}`,
           },
-        });
+        }));
         return;
       }
 
       if (videoSubmitResult.status === "error") {
         console.error(`${logPrefix} Video submit failed: ${videoSubmitResult.error}`);
-        await prisma.videoGeneration.update({
+        await withRetry(() => prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "FAILED",
             progress: 100,
             errorMessage: `EC2 submit failed: ${videoSubmitResult.error}`,
           },
-        });
+        }));
         return;
       }
 
       console.log(`${logPrefix} Video job queued: ${videoSubmitResult.ec2_job_id || videoSubmitResult.job_id}`);
 
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: { progress: 50 },
-      });
+      }));
 
       // Poll for video completion
       const videoResult = await waitForAIJob(
@@ -228,25 +228,25 @@ function startMerchandiseVideoGeneration(
 
       if (videoResult.mappedStatus !== "completed" || !videoResult.output_url) {
         console.error(`${logPrefix} Video generation failed: ${videoResult.error}`);
-        await prisma.videoGeneration.update({
+        await withRetry(() => prisma.videoGeneration.update({
           where: { id: generationId },
           data: {
             status: "FAILED",
             progress: 100,
             errorMessage: videoResult.error || "Video generation failed",
           },
-        });
+        }));
         return;
       }
 
       console.log(`${logPrefix} Video generated successfully! URL: ${videoResult.output_url.slice(0, 80)}...`);
 
-      const existingGen = await prisma.videoGeneration.findUnique({
+      const existingGen = await withRetry(() => prisma.videoGeneration.findUnique({
         where: { id: generationId },
-      });
+      }));
       const existingMetadata = (existingGen?.qualityMetadata as Record<string, unknown>) || {};
 
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "COMPLETED",
@@ -260,19 +260,19 @@ function startMerchandiseVideoGeneration(
             merchandiseReferenced: true,
           },
         },
-      });
+      }));
 
       console.log(`${logPrefix} Complete!`);
     } catch (error) {
       console.error("Merchandise video generation error:", error);
-      await prisma.videoGeneration.update({
+      await withRetry(() => prisma.videoGeneration.update({
         where: { id: generationId },
         data: {
           status: "FAILED",
           progress: 100,
           errorMessage: error instanceof Error ? error.message : "Unknown error",
         },
-      });
+      }));
     }
   })();
 }
@@ -280,8 +280,8 @@ function startMerchandiseVideoGeneration(
 // POST /api/v1/campaigns/[id]/generations/with-merchandise
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -290,12 +290,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: campaignId } = await params;
 
     // Check campaign access
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         artist: { select: { labelId: true, name: true, stageName: true } },
       },
-    });
+    }));
 
     if (!campaign) {
       return NextResponse.json({ detail: "Campaign not found" }, { status: 404 });
@@ -329,9 +329,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Validate audio asset
-    const audioAsset = await prisma.asset.findUnique({
+    const audioAsset = await withRetry(() => prisma.asset.findUnique({
       where: { id: audio_asset_id },
-    });
+    }));
 
     if (!audioAsset || audioAsset.type !== "AUDIO") {
       return NextResponse.json(
@@ -349,12 +349,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Validate merchandise references
     const merchandiseIds = merchandise_references.map((ref: MerchandiseReference) => ref.merchandise_id);
-    const merchandiseItems = await prisma.merchandiseItem.findMany({
+    const merchandiseItems = await withRetry(() => prisma.merchandiseItem.findMany({
       where: {
         id: { in: merchandiseIds },
         isActive: true,
       },
-    });
+    }));
 
     if (merchandiseItems.length !== merchandiseIds.length) {
       const foundIds = merchandiseItems.map((m) => m.id);
@@ -379,12 +379,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Fetch style presets if provided
     let presets: { id: string; name: string; nameKo: string | null; category: string; parameters: unknown }[] = [];
     if (style_preset_ids && Array.isArray(style_preset_ids) && style_preset_ids.length > 0) {
-      presets = await prisma.stylePreset.findMany({
+      presets = await withRetry(() => prisma.stylePreset.findMany({
         where: {
           id: { in: style_preset_ids },
           isActive: true,
         },
-      });
+      }));
 
       if (presets.length !== style_preset_ids.length) {
         const foundIds = presets.map((p) => p.id);
@@ -481,7 +481,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       const finalAspectRatio = presetParams?.aspectRatio || aspect_ratio;
 
-      const generation = await prisma.videoGeneration.create({
+      const generation = await withRetry(() => prisma.videoGeneration.create({
         data: {
           campaignId,
           prompt: finalPrompt,
@@ -507,11 +507,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             i2vPrompt: finalI2VPrompt || undefined,
           },
         },
-      });
+      }));
 
       // Create merchandise reference records
       for (const ref of merchandise_references as MerchandiseReference[]) {
-        await prisma.generationMerchandise.create({
+        await withRetry(() => prisma.generationMerchandise.create({
           data: {
             generationId: generation.id,
             merchandiseId: ref.merchandise_id,
@@ -522,7 +522,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               (ref.context?.toUpperCase() || "HOLDING") as MerchandiseContext
             ),
           },
-        });
+        }));
       }
 
       return { generation, preset, finalI2VPrompt };

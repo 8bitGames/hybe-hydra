@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,18 +47,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user profile from our table
-    const user = await prisma.user.findUnique({
-      where: { email: authData.user?.email || "" },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        labelIds: true,
-        isActive: true,
-      },
-    });
+    // Get user profile from our table (with retry for transient failures)
+    const user = await withRetry(() =>
+      prisma.user.findUnique({
+        where: { email: authData.user?.email || "" },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          labelIds: true,
+          isActive: true,
+        },
+      })
+    );
 
     if (!user || !user.isActive) {
       return NextResponse.json(
@@ -85,6 +87,9 @@ export async function POST(request: NextRequest) {
     // Create new response with the data but preserve cookies
     const finalResponse = NextResponse.json(responseData);
 
+    // Set long expiry for persistent login (7 days)
+    const cookieMaxAge = 7 * 24 * 60 * 60; // 7 days in seconds
+
     // Copy cookies from the response object that Supabase set
     response.cookies.getAll().forEach((cookie) => {
       finalResponse.cookies.set(cookie.name, cookie.value, {
@@ -93,6 +98,7 @@ export async function POST(request: NextRequest) {
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         path: "/",
+        maxAge: cookieMaxAge,
       });
     });
 

@@ -6,7 +6,7 @@
  * - 히트맵 등 트렌드 분석 시각화를 위한 데이터 제공
  */
 
-import { prisma } from '@/lib/db/prisma'
+import { prisma, withRetry } from '@/lib/db/prisma'
 import { ExplorationStrategy as PrismaExplorationStrategy } from '@prisma/client'
 import type {
   ExplorationResult,
@@ -76,26 +76,28 @@ export async function saveExplorationSession(options: SaveSessionOptions): Promi
   expiresAt.setDate(expiresAt.getDate() + expiresInDays)
 
   try {
-    const session = await prisma.explorationSession.create({
-      data: {
-        id: result.explorationId,
-        userId,
-        seedKeyword: result.seedKeyword,
-        depth: result.depth,
-        strategy: toPrismaStrategy(result.strategy),
-        totalDiscoveries: result.discoveries.length,
-        totalSearches: result.stats.totalSearches,
-        totalVideosAnalyzed: result.stats.totalVideosAnalyzed,
-        durationMs: result.stats.durationMs,
-        discoveries: result.discoveries as any,
-        network: result.network as any,
-        stats: {
-          ...result.stats,
-          insights: insights || undefined,
-        } as any,
-        expiresAt,
-      },
-    })
+    const session = await withRetry(() =>
+      prisma.explorationSession.create({
+        data: {
+          id: result.explorationId,
+          userId,
+          seedKeyword: result.seedKeyword,
+          depth: result.depth,
+          strategy: toPrismaStrategy(result.strategy),
+          totalDiscoveries: result.discoveries.length,
+          totalSearches: result.stats.totalSearches,
+          totalVideosAnalyzed: result.stats.totalVideosAnalyzed,
+          durationMs: result.stats.durationMs,
+          discoveries: result.discoveries as any,
+          network: result.network as any,
+          stats: {
+            ...result.stats,
+            insights: insights || undefined,
+          } as any,
+          expiresAt,
+        },
+      })
+    )
 
     console.log(`[SESSION-STORAGE] Saved session: ${session.id}`)
     return session.id
@@ -114,9 +116,11 @@ export async function saveExplorationSession(options: SaveSessionOptions): Promi
  */
 export async function getExplorationSession(sessionId: string): Promise<ExplorationResult | null> {
   try {
-    const session = await prisma.explorationSession.findUnique({
-      where: { id: sessionId },
-    })
+    const session = await withRetry(() =>
+      prisma.explorationSession.findUnique({
+        where: { id: sessionId },
+      })
+    )
 
     if (!session) return null
 
@@ -172,21 +176,23 @@ export async function getUserExplorationHistory(
     }
 
     const [sessions, total] = await Promise.all([
-      prisma.explorationSession.findMany({
-        where,
-        select: {
-          id: true,
-          seedKeyword: true,
-          depth: true,
-          strategy: true,
-          totalDiscoveries: true,
-          createdAt: true,
-        },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset,
-      }),
-      prisma.explorationSession.count({ where }),
+      withRetry(() =>
+        prisma.explorationSession.findMany({
+          where,
+          select: {
+            id: true,
+            seedKeyword: true,
+            depth: true,
+            strategy: true,
+            totalDiscoveries: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+        })
+      ),
+      withRetry(() => prisma.explorationSession.count({ where })),
     ])
 
     return {
@@ -248,17 +254,19 @@ export async function getKeywordHeatmapData(
 
   try {
     // 기간 내 모든 세션 조회
-    const sessions = await prisma.explorationSession.findMany({
-      where: {
-        userId,
-        createdAt: { gte: startDate },
-      },
-      select: {
-        discoveries: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'asc' },
-    })
+    const sessions = await withRetry(() =>
+      prisma.explorationSession.findMany({
+        where: {
+          userId,
+          createdAt: { gte: startDate },
+        },
+        select: {
+          discoveries: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      })
+    )
 
     // 키워드별 데이터 집계
     const keywordMap = new Map<string, {
@@ -373,18 +381,20 @@ export async function getSeedKeywordStats(
   startDate.setDate(startDate.getDate() - days)
 
   try {
-    const stats = await prisma.explorationSession.groupBy({
-      by: ['seedKeyword'],
-      where: {
-        userId,
-        createdAt: { gte: startDate },
-      },
-      _count: { id: true },
-      _sum: { totalDiscoveries: true },
-      _max: { createdAt: true },
-      orderBy: { _count: { id: 'desc' } },
-      take: limit,
-    })
+    const stats = await withRetry(() =>
+      prisma.explorationSession.groupBy({
+        by: ['seedKeyword'],
+        where: {
+          userId,
+          createdAt: { gte: startDate },
+        },
+        _count: { id: true },
+        _sum: { totalDiscoveries: true },
+        _max: { createdAt: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: limit,
+      })
+    )
 
     return stats.map(s => ({
       seedKeyword: s.seedKeyword,
@@ -408,11 +418,13 @@ export async function getSeedKeywordStats(
  */
 export async function cleanupExpiredSessions(): Promise<number> {
   try {
-    const result = await prisma.explorationSession.deleteMany({
-      where: {
-        expiresAt: { lt: new Date() },
-      },
-    })
+    const result = await withRetry(() =>
+      prisma.explorationSession.deleteMany({
+        where: {
+          expiresAt: { lt: new Date() },
+        },
+      })
+    )
 
     console.log(`[SESSION-STORAGE] Cleaned up ${result.count} expired sessions`)
     return result.count
@@ -427,9 +439,11 @@ export async function cleanupExpiredSessions(): Promise<number> {
  */
 export async function deleteUserSessions(userId: string): Promise<number> {
   try {
-    const result = await prisma.explorationSession.deleteMany({
-      where: { userId },
-    })
+    const result = await withRetry(() =>
+      prisma.explorationSession.deleteMany({
+        where: { userId },
+      })
+    )
 
     return result.count
   } catch (error) {

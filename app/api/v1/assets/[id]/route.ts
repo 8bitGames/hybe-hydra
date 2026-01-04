@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { deleteFromS3 } from "@/lib/storage";
 import { getComposeEngineUrl } from "@/lib/compose/client";
 
@@ -49,8 +49,8 @@ async function analyzeAudioFile(s3Url: string): Promise<AudioAnalysisResult | nu
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const asset = await prisma.asset.findUnique({
+    const asset = await withRetry(() => prisma.asset.findUnique({
       where: { id },
       include: {
         campaign: {
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!asset) {
       return NextResponse.json({ detail: "Asset not found" }, { status: 404 });
@@ -104,8 +104,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const asset = await prisma.asset.findUnique({
+    const asset = await withRetry(() => prisma.asset.findUnique({
       where: { id },
       include: {
         campaign: {
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!asset) {
       return NextResponse.json({ detail: "Asset not found" }, { status: 404 });
@@ -164,10 +164,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       analyzedAt: new Date().toISOString()
     };
 
-    const updatedAsset = await prisma.asset.update({
+    const updatedAsset = await withRetry(() => prisma.asset.update({
       where: { id },
       data: { metadata: updatedMetadata },
-    });
+    }));
 
     console.log('[Asset Analyze] Updated metadata:', {
       id: asset.id,
@@ -189,8 +189,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -198,7 +198,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const asset = await prisma.asset.findUnique({
+    const asset = await withRetry(() => prisma.asset.findUnique({
       where: { id },
       include: {
         campaign: {
@@ -207,7 +207,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!asset) {
       return NextResponse.json({ detail: "Asset not found" }, { status: 404 });
@@ -229,7 +229,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     // Delete from database
-    await prisma.asset.delete({ where: { id } });
+    await withRetry(() => prisma.asset.delete({ where: { id } }));
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { validateFile, generateS3Key, uploadToS3 } from "@/lib/storage";
 import { MerchandiseType } from "@prisma/client";
 import { cached, CacheKeys, CacheTTL, createCacheHash, invalidatePattern } from "@/lib/cache";
@@ -8,8 +8,8 @@ import { cached, CacheKeys, CacheTTL, createCacheHash, invalidatePattern } from 
 // GET /api/v1/merchandise - List merchandise items
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -70,9 +70,9 @@ export async function GET(request: NextRequest) {
           };
         }
 
-        const total = await prisma.merchandiseItem.count({ where });
+        const total = await withRetry(() => prisma.merchandiseItem.count({ where }));
 
-        const items = await prisma.merchandiseItem.findMany({
+        const items = await withRetry(() => prisma.merchandiseItem.findMany({
           where,
           orderBy: [{ createdAt: "desc" }],
           skip: (page - 1) * pageSize,
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
               },
             },
           },
-        });
+        }));
 
         const pages = Math.ceil(total / pageSize) || 1;
 
@@ -133,8 +133,8 @@ export async function GET(request: NextRequest) {
 // POST /api/v1/merchandise - Create merchandise item
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -179,10 +179,10 @@ export async function POST(request: NextRequest) {
 
     // Check artist access if artistId provided
     if (artistId) {
-      const artist = await prisma.artist.findUnique({
+      const artist = await withRetry(() => prisma.artist.findUnique({
         where: { id: artistId },
         select: { labelId: true },
-      });
+      }));
 
       if (!artist) {
         return NextResponse.json({ detail: "Artist not found" }, { status: 404 });
@@ -218,7 +218,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create merchandise item
-    const merchandise = await prisma.merchandiseItem.create({
+    const merchandise = await withRetry(() => prisma.merchandiseItem.create({
       data: {
         name,
         nameKo,
@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
           },
         },
       },
-    });
+    }));
 
     // Invalidate merchandise list cache
     await invalidatePattern("merchandise:list:*");

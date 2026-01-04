@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromHeader } from "@/lib/auth";
-import { prisma } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
 import { searchTikTok } from "@/lib/tiktok-mcp";
 import { isExcludedHashtag } from "@/lib/hashtag-filter";
 
@@ -33,8 +33,8 @@ function calculateGrowthScore(currentValue: number, previousValue: number | null
 // POST /api/v1/trends/saved-keywords/sync - Sync all saved keywords and create today's snapshot
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       where.id = { in: keywordIds };
     }
 
-    const savedKeywords = await prisma.savedKeyword.findMany({
+    const savedKeywords = await withRetry(() => prisma.savedKeyword.findMany({
       where,
       include: {
         snapshots: {
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
           take: 1, // Get last snapshot for growth calculation
         },
       },
-    });
+    }));
 
     if (savedKeywords.length === 0) {
       return NextResponse.json({
@@ -76,14 +76,14 @@ export async function POST(request: NextRequest) {
     for (const savedKw of savedKeywords) {
       try {
         // Check if already synced today
-        const existingSnapshot = await prisma.keywordDailySnapshot.findUnique({
+        const existingSnapshot = await withRetry(() => prisma.keywordDailySnapshot.findUnique({
           where: {
             savedKeywordId_date: {
               savedKeywordId: savedKw.id,
               date: today,
             },
           },
-        });
+        }));
 
         if (existingSnapshot) {
           results.push({ keyword: savedKw.keyword, success: true, error: "Already synced today" });
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
           .slice(0, 10);
 
         // Create snapshot
-        await prisma.keywordDailySnapshot.create({
+        await withRetry(() => prisma.keywordDailySnapshot.create({
           data: {
             savedKeywordId: savedKw.id,
             date: today,
@@ -192,13 +192,13 @@ export async function POST(request: NextRequest) {
             growthScore,
             topHashtags,
           },
-        });
+        }));
 
         // Update lastAnalyzedAt
-        await prisma.savedKeyword.update({
+        await withRetry(() => prisma.savedKeyword.update({
           where: { id: savedKw.id },
           data: { lastAnalyzedAt: new Date() },
-        });
+        }));
 
         results.push({ keyword: savedKw.keyword, success: true });
       } catch (err) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -43,14 +43,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.log(`[AI Job Poll] Checking status for job ${jobId}`);
 
     // Find generation with this job ID (vertexRequestId)
-    const generation = await prisma.videoGeneration.findFirst({
+    const generation = await withRetry(() => prisma.videoGeneration.findFirst({
       where: {
         OR: [
           { vertexRequestId: jobId },
           { id: jobId },
         ],
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Job not found" }, { status: 404 });
@@ -71,10 +71,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             const recoveryData: ComposeEngineStatusResponse = await recoveryResponse.json();
             if (recoveryData.metadata?.gcs_uri) {
               console.log(`[AI Job Poll] Recovered gcsUri: ${recoveryData.metadata.gcs_uri.slice(0, 60)}...`);
-              await prisma.videoGeneration.update({
+              await withRetry(() => prisma.videoGeneration.update({
                 where: { id: generation.id },
-                data: { gcsUri: recoveryData.metadata.gcs_uri },
-              });
+                data: { gcsUri: recoveryData.metadata?.gcs_uri },
+              }));
               return NextResponse.json({
                 job_id: jobId,
                 generation_id: generation.id,
@@ -157,10 +157,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           }
 
           // Update the database
-          await prisma.videoGeneration.update({
+          await withRetry(() => prisma.videoGeneration.update({
             where: { id: generation.id },
             data: updateData,
-          });
+          }));
 
           console.log(`[AI Job Poll] Updated generation ${generation.id} to ${dbStatus}`);
 
@@ -177,13 +177,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         // Job still processing - update progress in DB
         if (backendData.progress && backendData.progress !== generation.progress) {
-          await prisma.videoGeneration.update({
+          await withRetry(() => prisma.videoGeneration.update({
             where: { id: generation.id },
             data: {
               progress: backendData.progress,
               updatedAt: new Date(),
             },
-          });
+          }));
         }
 
         return NextResponse.json({

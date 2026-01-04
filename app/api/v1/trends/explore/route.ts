@@ -25,7 +25,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getUserFromHeader } from '@/lib/auth'
+import { getUserFromRequest } from '@/lib/auth'
 import {
   exploreTrends,
   toVisualizationFormat,
@@ -85,8 +85,7 @@ function validateRequest(body: any): { valid: boolean; error?: string; request?:
 export async function POST(request: NextRequest) {
   try {
     // 인증 확인
-    const authHeader = request.headers.get('authorization')
-    const user = await getUserFromHeader(authHeader)
+    const user = await getUserFromRequest(request)
 
     if (!user) {
       return NextResponse.json(
@@ -177,8 +176,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     // 인증 확인
-    const authHeader = request.headers.get('authorization')
-    const user = await getUserFromHeader(authHeader)
+    const user = await getUserFromRequest(request)
 
     if (!user) {
       return NextResponse.json(

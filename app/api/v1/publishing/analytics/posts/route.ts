@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { PublishPlatform, Prisma } from "@prisma/client";
 
 // GET /api/v1/publishing/analytics/posts - Get published posts with analytics
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -58,10 +58,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total count
-    const total = await prisma.scheduledPost.count({ where });
+    const total = await withRetry(() => prisma.scheduledPost.count({ where }));
 
     // Get posts
-    const posts = await prisma.scheduledPost.findMany({
+    const posts = await withRetry(() => prisma.scheduledPost.findMany({
       where,
       include: {
         socialAccount: {
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
       orderBy,
       skip: (page - 1) * pageSize,
       take: pageSize,
-    });
+    }));
 
     const pages = Math.ceil(total / pageSize) || 1;
 

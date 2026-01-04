@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { PublishPlatform } from "@prisma/client";
 import { CacheTTL, invalidatePattern } from "@/lib/cache";
 import { refreshAccessToken } from "@/lib/tiktok";
@@ -37,7 +37,7 @@ async function refreshTikTokToken(
     const newExpiresAt = new Date(Date.now() + result.expiresIn * 1000);
 
     // Update database with new tokens
-    await prisma.socialAccount.update({
+    await withRetry(() => prisma.socialAccount.update({
       where: { id: accountId },
       data: {
         accessToken: result.accessToken,
@@ -45,7 +45,7 @@ async function refreshTikTokToken(
         tokenExpiresAt: newExpiresAt,
         updatedAt: new Date(),
       },
-    });
+    }));
 
     // Invalidate cache since we updated tokens
     await invalidatePattern("publishing:accounts:*");
@@ -80,14 +80,14 @@ async function refreshYouTubeToken(
     const newExpiresAt = new Date(Date.now() + result.expiresIn * 1000);
 
     // Update database with new tokens (YouTube doesn't return a new refresh token)
-    await prisma.socialAccount.update({
+    await withRetry(() => prisma.socialAccount.update({
       where: { id: accountId },
       data: {
         accessToken: result.accessToken,
         tokenExpiresAt: newExpiresAt,
         updatedAt: new Date(),
       },
-    });
+    }));
 
     // Invalidate cache since we updated tokens
     await invalidatePattern("publishing:accounts:*");
@@ -103,8 +103,8 @@ async function refreshYouTubeToken(
 // GET /api/v1/publishing/accounts - List connected social accounts
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -132,7 +132,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch accounts with refresh token for potential auto-refresh
-    const accounts = await prisma.socialAccount.findMany({
+    const accounts = await withRetry(() => prisma.socialAccount.findMany({
       where: whereClause,
       orderBy: [
         { platform: "asc" },
@@ -157,7 +157,7 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-    });
+    }));
 
     // Process accounts and auto-refresh tokens if needed (TikTok and YouTube)
     const processedAccounts = await Promise.all(
@@ -224,8 +224,8 @@ export async function GET(request: NextRequest) {
 // POST /api/v1/publishing/accounts - Connect a new social account
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -272,14 +272,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Check for existing account
-    const existing = await prisma.socialAccount.findUnique({
+    const existing = await withRetry(() => prisma.socialAccount.findUnique({
       where: {
         platform_accountId: {
           platform,
           accountId: account_id,
         },
       },
-    });
+    }));
 
     if (existing) {
       return NextResponse.json(
@@ -289,7 +289,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the social account
-    const account = await prisma.socialAccount.create({
+    const account = await withRetry(() => prisma.socialAccount.create({
       data: {
         platform,
         accountName: account_name,
@@ -302,7 +302,7 @@ export async function POST(request: NextRequest) {
         followerCount: follower_count,
         createdBy: user.id,
       },
-    });
+    }));
 
     // Invalidate publishing accounts cache
     await invalidatePattern("publishing:accounts:*");

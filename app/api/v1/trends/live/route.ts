@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { TrendPlatform } from "@prisma/client";
 import { getTrendingVideos } from "@/lib/tiktok-mcp";
 
@@ -10,8 +10,8 @@ const TRENDING_SEARCH_QUERY = "trending"; // Identifier for cached trending vide
 // GET /api/v1/trends/live - Get live trending videos with 24h cache
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -27,14 +27,14 @@ export async function GET(request: NextRequest) {
     const cacheThreshold = new Date(Date.now() - CACHE_DURATION_HOURS * 60 * 60 * 1000);
 
     // Get latest collection time for trending
-    const latestCollection = await prisma.trendVideo.findFirst({
+    const latestCollection = await withRetry(() => prisma.trendVideo.findFirst({
       where: {
         platform: "TIKTOK",
         searchQuery: TRENDING_SEARCH_QUERY,
       },
       orderBy: { collectedAt: "desc" },
       select: { collectedAt: true },
-    });
+    }));
 
     const needsRefresh = forceRefresh ||
       !latestCollection ||
@@ -50,12 +50,12 @@ export async function GET(request: NextRequest) {
 
         if (result.success && result.data.length > 0) {
           // Delete old trending videos (cleanup)
-          await prisma.trendVideo.deleteMany({
+          await withRetry(() => prisma.trendVideo.deleteMany({
             where: {
               platform: "TIKTOK",
               searchQuery: TRENDING_SEARCH_QUERY,
             },
-          });
+          }));
 
           // Insert fresh videos (no thumbnails - removed preview feature)
           const videoData = result.data.map((video) => ({
@@ -75,10 +75,10 @@ export async function GET(request: NextRequest) {
             thumbnailUrl: null,
           }));
 
-          await prisma.trendVideo.createMany({
+          await withRetry(() => prisma.trendVideo.createMany({
             data: videoData,
             skipDuplicates: true,
-          });
+          }));
 
           console.log(`[TRENDS-LIVE] Saved ${videoData.length} trending videos`);
         }
@@ -89,22 +89,22 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch all trending videos from database
-    const videos = await prisma.trendVideo.findMany({
+    const videos = await withRetry(() => prisma.trendVideo.findMany({
       where: {
         platform: "TIKTOK",
         searchQuery: TRENDING_SEARCH_QUERY,
       },
       orderBy: { playCount: "desc" },
       take: limit,
-    });
+    }));
 
     // Get cache info
     const latestVideo = videos.length > 0 ? videos[0] : null;
     const collectedAt = latestVideo
-      ? await prisma.trendVideo.findFirst({
+      ? await withRetry(() => prisma.trendVideo.findFirst({
           where: { id: latestVideo.id },
           select: { collectedAt: true },
-        })
+        }))
       : null;
 
     const cacheAge = collectedAt

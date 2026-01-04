@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { CampaignStatus } from "@prisma/client";
 import { invalidateCampaignCache } from "@/lib/cache";
 
@@ -10,8 +10,7 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -19,7 +18,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id },
       include: {
         artist: {
@@ -33,7 +32,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           select: { assets: true },
         },
       },
-    });
+    }));
 
     // Check if campaign exists and is not soft deleted
     if (!campaign || campaign.deletedAt) {
@@ -70,8 +69,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -80,14 +78,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     // Check campaign exists and user has access
-    const existingCampaign = await prisma.campaign.findUnique({
+    const existingCampaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id },
       include: {
         artist: {
           select: { labelId: true },
         },
       },
-    });
+    }));
 
     // Check if campaign exists and is not soft deleted
     if (!existingCampaign || existingCampaign.deletedAt) {
@@ -101,7 +99,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const { name, description, status, target_countries } = body;
 
-    const campaign = await prisma.campaign.update({
+    const campaign = await withRetry(() => prisma.campaign.update({
       where: { id },
       data: {
         ...(name && { name }),
@@ -117,7 +115,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     // Invalidate cache
     await invalidateCampaignCache(id);
@@ -146,8 +144,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -156,14 +153,14 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     // Check campaign exists and user has access
-    const existingCampaign = await prisma.campaign.findUnique({
+    const existingCampaign = await withRetry(() => prisma.campaign.findUnique({
       where: { id },
       include: {
         artist: {
           select: { labelId: true },
         },
       },
-    });
+    }));
 
     // Check if campaign exists and is not already soft deleted
     if (!existingCampaign || existingCampaign.deletedAt) {
@@ -175,10 +172,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     // Soft delete: set deletedAt instead of actual delete
-    await prisma.campaign.update({
+    await withRetry(() => prisma.campaign.update({
       where: { id },
       data: { deletedAt: new Date() },
-    });
+    }));
 
     // Invalidate cache
     await invalidateCampaignCache(id);

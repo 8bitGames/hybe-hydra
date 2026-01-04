@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { VideoGenerationType, VideoGenerationStatus } from "@prisma/client";
 
 /**
@@ -9,8 +9,7 @@ import { VideoGenerationType, VideoGenerationStatus } from "@prisma/client";
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -60,14 +59,14 @@ export async function GET(request: NextRequest) {
 
     // For non-admin users, filter by accessible campaigns or their own creations
     if (user.role !== "ADMIN") {
-      const accessibleCampaigns = await prisma.campaign.findMany({
+      const accessibleCampaigns = await withRetry(() => prisma.campaign.findMany({
         where: {
           artist: {
             labelId: { in: user.labelIds },
           },
         },
         select: { id: true },
-      });
+      }));
 
       const accessibleCampaignIds = accessibleCampaigns.map((c) => c.id);
 
@@ -92,7 +91,7 @@ export async function GET(request: NextRequest) {
       prisma.videoGeneration.count({ where: { ...where, generationType: "COMPOSE" } }),
     ]);
 
-    const generations = await prisma.videoGeneration.findMany({
+    const generations = await withRetry(() => prisma.videoGeneration.findMany({
       where,
       include: {
         campaign: {
@@ -112,7 +111,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
-    });
+    }));
 
     const pages = Math.ceil(total / pageSize) || 1;
 

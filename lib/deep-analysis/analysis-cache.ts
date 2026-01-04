@@ -5,7 +5,7 @@
  * Saves TikTok crawl data and AI results so they can be reused on retries.
  */
 
-import { prisma } from '@/lib/db/prisma';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import type { AccountData } from '@/lib/agents/deep-analysis';
 import type { VideoClassifierOutput } from '@/lib/agents/deep-analysis/video-classifier';
 import type { AccountMetricsOutput } from '@/lib/agents/deep-analysis/account-metrics';
@@ -106,14 +106,16 @@ export async function cacheAccountData(
 
     // Save to database (using the analysis record's JSON fields)
     // We'll store a flag indicating raw data is available
-    await prisma.accountAnalysis.update({
-      where: { id: analysisId },
-      data: {
-        // Store raw crawl data in a cache field
-        // Note: We could add a dedicated cache table, but for now we'll use
-        // a simple approach of storing in the analysis record
-      },
-    });
+    await withRetry(() =>
+      prisma.accountAnalysis.update({
+        where: { id: analysisId },
+        data: {
+          // Store raw crawl data in a cache field
+          // Note: We could add a dedicated cache table, but for now we'll use
+          // a simple approach of storing in the analysis record
+        },
+      })
+    );
 
     console.log(`[AnalysisCache] Cached account data for ${uniqueId}`);
   } catch (error) {

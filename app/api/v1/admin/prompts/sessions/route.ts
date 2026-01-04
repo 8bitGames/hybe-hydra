@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import { getCurrentUser } from '@/lib/auth';
 
 interface ChatMessage {
@@ -56,25 +56,27 @@ export async function GET(request: NextRequest) {
 
     // Query sessions
     const [sessions, total] = await Promise.all([
-      prisma.promptRefineSession.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset,
-        select: {
-          id: true,
-          agentId: true,
-          title: true,
-          messageCount: true,
-          improvementsCount: true,
-          isFavorite: true,
-          tags: true,
-          lastMessageAt: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-      prisma.promptRefineSession.count({ where }),
+      withRetry(() =>
+        prisma.promptRefineSession.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+          select: {
+            id: true,
+            agentId: true,
+            title: true,
+            messageCount: true,
+            improvementsCount: true,
+            isFavorite: true,
+            tags: true,
+            lastMessageAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+      ),
+      withRetry(() => prisma.promptRefineSession.count({ where })),
     ]);
 
     return NextResponse.json({
@@ -128,18 +130,20 @@ export async function POST(request: NextRequest) {
         ? messages[0].content.substring(0, 50) + '...'
         : `${initialPrompt.name} - ${new Date().toLocaleDateString('ko-KR')}`);
 
-    const session = await prisma.promptRefineSession.create({
-      data: {
-        agentId,
-        title: autoTitle,
-        messages: messages as unknown as never,
-        initialPrompt: initialPrompt as unknown as never,
-        messageCount: messages.length,
-        lastMessageAt: messages.length > 0 ? new Date() : null,
-        tags,
-        createdBy: user.id,
-      },
-    });
+    const session = await withRetry(() =>
+      prisma.promptRefineSession.create({
+        data: {
+          agentId,
+          title: autoTitle,
+          messages: messages as unknown as never,
+          initialPrompt: initialPrompt as unknown as never,
+          messageCount: messages.length,
+          lastMessageAt: messages.length > 0 ? new Date() : null,
+          tags,
+          createdBy: user.id,
+        },
+      })
+    );
 
     return NextResponse.json({
       id: session.id,

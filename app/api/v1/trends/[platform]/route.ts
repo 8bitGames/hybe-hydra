@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { TrendPlatform } from "@prisma/client";
 
 interface RouteParams {
@@ -10,8 +10,8 @@ interface RouteParams {
 // GET /api/v1/trends/[platform] - Get trends for a specific platform
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     timeThreshold.setHours(timeThreshold.getHours() - hoursAgo);
 
     // Get latest trends for the platform
-    const trends = await prisma.trendSnapshot.findMany({
+    const trends = await withRetry(() => prisma.trendSnapshot.findMany({
       where: {
         platform,
         region,
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         { rank: "asc" },
       ],
       take: limit,
-    });
+    }));
 
     // Calculate some statistics
     const totalViewCount = trends.reduce((sum, t) => {

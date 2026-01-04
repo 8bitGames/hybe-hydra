@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromHeader } from "@/lib/auth";
-import { prisma } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -10,8 +10,8 @@ interface RouteContext {
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     startDate.setDate(startDate.getDate() - snapshotDays);
     startDate.setHours(0, 0, 0, 0);
 
-    const savedKeyword = await prisma.savedKeyword.findFirst({
+    const savedKeyword = await withRetry(() => prisma.savedKeyword.findFirst({
       where: {
         id,
         userId: user.id,
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           orderBy: { date: "asc" },
         },
       },
-    });
+    }));
 
     if (!savedKeyword) {
       return NextResponse.json({ detail: "Saved keyword not found" }, { status: 404 });
@@ -72,17 +72,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
     }
 
     // Verify ownership
-    const existing = await prisma.savedKeyword.findFirst({
+    const existing = await withRetry(() => prisma.savedKeyword.findFirst({
       where: { id, userId: user.id },
-    });
+    }));
 
     if (!existing) {
       return NextResponse.json({ detail: "Saved keyword not found" }, { status: 404 });
@@ -98,7 +98,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       alertThreshold,
     } = body;
 
-    const updated = await prisma.savedKeyword.update({
+    const updated = await withRetry(() => prisma.savedKeyword.update({
       where: { id },
       data: {
         ...(displayName !== undefined && { displayName }),
@@ -108,7 +108,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         ...(alertEnabled !== undefined && { alertEnabled }),
         ...(alertThreshold !== undefined && { alertThreshold }),
       },
-    });
+    }));
 
     return NextResponse.json({
       success: true,
@@ -130,26 +130,26 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
     }
 
     // Verify ownership
-    const existing = await prisma.savedKeyword.findFirst({
+    const existing = await withRetry(() => prisma.savedKeyword.findFirst({
       where: { id, userId: user.id },
-    });
+    }));
 
     if (!existing) {
       return NextResponse.json({ detail: "Saved keyword not found" }, { status: 404 });
     }
 
     // Delete (cascades to snapshots)
-    await prisma.savedKeyword.delete({
+    await withRetry(() => prisma.savedKeyword.delete({
       where: { id },
-    });
+    }));
 
     return NextResponse.json({
       success: true,

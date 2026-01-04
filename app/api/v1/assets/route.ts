@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import { AssetType } from "@prisma/client";
 
 /**
@@ -9,8 +9,7 @@ import { AssetType } from "@prisma/client";
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -46,21 +45,21 @@ export async function GET(request: NextRequest) {
 
     // For non-admin users, only show assets from campaigns they have access to
     if (user.role !== "ADMIN") {
-      const accessibleCampaigns = await prisma.campaign.findMany({
+      const accessibleCampaigns = await withRetry(() => prisma.campaign.findMany({
         where: {
           artist: {
             labelId: { in: user.labelIds },
           },
         },
         select: { id: true },
-      });
+      }));
 
       where.campaignId = { in: accessibleCampaigns.map((c) => c.id) };
     }
 
-    const total = await prisma.asset.count({ where });
+    const total = await withRetry(() => prisma.asset.count({ where }));
 
-    const assets = await prisma.asset.findMany({
+    const assets = await withRetry(() => prisma.asset.findMany({
       where,
       include: {
         campaign: {
@@ -73,7 +72,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
-    });
+    }));
 
     const pages = Math.ceil(total / pageSize) || 1;
 
@@ -98,10 +97,10 @@ export async function GET(request: NextRequest) {
     // Calculate stats
     const stats = {
       total,
-      images: await prisma.asset.count({ where: { ...where, type: "IMAGE" } }),
-      audio: await prisma.asset.count({ where: { ...where, type: "AUDIO" } }),
-      videos: await prisma.asset.count({ where: { ...where, type: "VIDEO" } }),
-      goods: await prisma.asset.count({ where: { ...where, type: "GOODS" } }),
+      images: await withRetry(() => prisma.asset.count({ where: { ...where, type: "IMAGE" } })),
+      audio: await withRetry(() => prisma.asset.count({ where: { ...where, type: "AUDIO" } })),
+      videos: await withRetry(() => prisma.asset.count({ where: { ...where, type: "VIDEO" } })),
+      goods: await withRetry(() => prisma.asset.count({ where: { ...where, type: "GOODS" } })),
     };
 
     return NextResponse.json({

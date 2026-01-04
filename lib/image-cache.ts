@@ -5,7 +5,7 @@
  */
 
 import crypto from 'crypto';
-import { prisma } from '@/lib/db/prisma';
+import { prisma, withRetry } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 
 // =====================================================
@@ -76,13 +76,15 @@ export async function getKeywordCacheResults(
     }
 
     // Find all cached keywords that haven't expired
-    const cachedEntries = await prisma.imageSearchCache.findMany({
-      where: {
-        keyword: { in: normalizedKeywords },
-        language,
-        expiresAt: { gt: new Date() },
-      },
-    });
+    const cachedEntries = await withRetry(() =>
+      prisma.imageSearchCache.findMany({
+        where: {
+          keyword: { in: normalizedKeywords },
+          language,
+          expiresAt: { gt: new Date() },
+        },
+      })
+    );
 
     // Build result sets
     const cachedKeywords = new Set(cachedEntries.map(e => e.keyword));
@@ -100,12 +102,12 @@ export async function getKeywordCacheResults(
         });
 
         // Increment hit count (fire and forget)
-        prisma.imageSearchCache
-          .update({
+        withRetry(() =>
+          prisma.imageSearchCache.update({
             where: { id: entry.id },
             data: { hitCount: { increment: 1 } },
           })
-          .catch(() => {});
+        ).catch(() => {});
       } else {
         uncached.push(keyword);
       }
@@ -134,28 +136,30 @@ export async function setKeywordCacheResult(
     const normalizedKeyword = normalizeKeyword(keyword);
     const expiresAt = new Date(Date.now() + CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
 
-    await prisma.imageSearchCache.upsert({
-      where: {
-        keyword_language: {
+    await withRetry(() =>
+      prisma.imageSearchCache.upsert({
+        where: {
+          keyword_language: {
+            keyword: normalizedKeyword,
+            language,
+          },
+        },
+        create: {
           keyword: normalizedKeyword,
           language,
+          results: candidates as unknown as Prisma.InputJsonValue,
+          resultCount: candidates.length,
+          expiresAt,
         },
-      },
-      create: {
-        keyword: normalizedKeyword,
-        language,
-        results: candidates as unknown as Prisma.InputJsonValue,
-        resultCount: candidates.length,
-        expiresAt,
-      },
-      update: {
-        results: candidates as unknown as Prisma.InputJsonValue,
-        resultCount: candidates.length,
-        searchedAt: new Date(),
-        expiresAt,
-        hitCount: 0, // Reset on refresh
-      },
-    });
+        update: {
+          results: candidates as unknown as Prisma.InputJsonValue,
+          resultCount: candidates.length,
+          searchedAt: new Date(),
+          expiresAt,
+          hitCount: 0, // Reset on refresh
+        },
+      })
+    );
 
     console.log(`[Image Cache] Stored ${candidates.length} results for keyword: "${normalizedKeyword}" (expires in ${CACHE_TTL_DAYS} days)`);
   } catch (error) {
@@ -173,12 +177,14 @@ export async function clearKeywordCache(
   try {
     const normalizedKeywords = keywords.map(normalizeKeyword).filter(k => k.length > 0);
 
-    const result = await prisma.imageSearchCache.deleteMany({
-      where: {
-        keyword: { in: normalizedKeywords },
-        language,
-      },
-    });
+    const result = await withRetry(() =>
+      prisma.imageSearchCache.deleteMany({
+        where: {
+          keyword: { in: normalizedKeywords },
+          language,
+        },
+      })
+    );
 
     console.log(`[Image Cache] Cleared cache for ${result.count} keywords`);
     return result.count;
@@ -295,20 +301,22 @@ export async function getCachedImageByUrl(
   try {
     const urlHash = generateImageUrlHash(sourceUrl);
 
-    const cached = await prisma.cachedImage.findFirst({
-      where: { sourceUrlHash: urlHash },
-    });
+    const cached = await withRetry(() =>
+      prisma.cachedImage.findFirst({
+        where: { sourceUrlHash: urlHash },
+      })
+    );
 
     if (cached) {
-      prisma.cachedImage
-        .update({
+      withRetry(() =>
+        prisma.cachedImage.update({
           where: { id: cached.id },
           data: {
             hitCount: { increment: 1 },
             lastUsedAt: new Date(),
           },
         })
-        .catch(() => {});
+      ).catch(() => {});
 
       return cached as CachedImageResult;
     }
@@ -327,20 +335,22 @@ export async function getCachedImageByContentHash(
   contentHash: string
 ): Promise<CachedImageResult | null> {
   try {
-    const cached = await prisma.cachedImage.findFirst({
-      where: { contentHash },
-    });
+    const cached = await withRetry(() =>
+      prisma.cachedImage.findFirst({
+        where: { contentHash },
+      })
+    );
 
     if (cached) {
-      prisma.cachedImage
-        .update({
+      withRetry(() =>
+        prisma.cachedImage.update({
           where: { id: cached.id },
           data: {
             hitCount: { increment: 1 },
             lastUsedAt: new Date(),
           },
         })
-        .catch(() => {});
+      ).catch(() => {});
 
       return cached as CachedImageResult;
     }
@@ -372,12 +382,14 @@ export async function setCachedImage(data: {
   try {
     const sourceUrlHash = generateImageUrlHash(data.sourceUrl);
 
-    const cached = await prisma.cachedImage.create({
-      data: {
-        ...data,
-        sourceUrlHash,
-      },
-    });
+    const cached = await withRetry(() =>
+      prisma.cachedImage.create({
+        data: {
+          ...data,
+          sourceUrlHash,
+        },
+      })
+    );
 
     console.log(`[Image Cache] Stored new image: ${data.sourceUrl.slice(0, 50)}... → ${data.s3Key}`);
     return cached as CachedImageResult;
@@ -405,18 +417,20 @@ export async function getOrCheckImageCache(
       const byHash = await getCachedImageByContentHash(contentHash);
       if (byHash) {
         try {
-          await prisma.cachedImage.create({
-            data: {
-              sourceUrl,
-              sourceUrlHash: generateImageUrlHash(sourceUrl),
-              contentHash,
-              s3Url: byHash.s3Url,
-              s3Key: byHash.s3Key,
-              width: byHash.width,
-              height: byHash.height,
-              mimeType: byHash.mimeType,
-            },
-          });
+          await withRetry(() =>
+            prisma.cachedImage.create({
+              data: {
+                sourceUrl,
+                sourceUrlHash: generateImageUrlHash(sourceUrl),
+                contentHash,
+                s3Url: byHash.s3Url,
+                s3Key: byHash.s3Key,
+                width: byHash.width,
+                height: byHash.height,
+                mimeType: byHash.mimeType,
+              },
+            })
+          );
         } catch {
           // Ignore duplicate key errors
         }
@@ -439,9 +453,11 @@ export async function getOrCheckImageCache(
  * Delete expired search cache entries
  */
 export async function cleanupExpiredSearchCache(): Promise<number> {
-  const result = await prisma.imageSearchCache.deleteMany({
-    where: { expiresAt: { lt: new Date() } },
-  });
+  const result = await withRetry(() =>
+    prisma.imageSearchCache.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    })
+  );
 
   console.log(`[Image Cache] Cleaned up ${result.count} expired search caches`);
   return result.count;
@@ -456,23 +472,27 @@ export async function cleanupUnusedImages(
 ): Promise<{ count: number; s3Keys: string[] }> {
   const cutoffDate = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
 
-  const unused = await prisma.cachedImage.findMany({
-    where: {
-      lastUsedAt: { lt: cutoffDate },
-      hitCount: { lt: minHitCount },
-    },
-    select: { id: true, s3Key: true },
-  });
+  const unused = await withRetry(() =>
+    prisma.cachedImage.findMany({
+      where: {
+        lastUsedAt: { lt: cutoffDate },
+        hitCount: { lt: minHitCount },
+      },
+      select: { id: true, s3Key: true },
+    })
+  );
 
   if (unused.length === 0) {
     return { count: 0, s3Keys: [] };
   }
 
-  await prisma.cachedImage.deleteMany({
-    where: {
-      id: { in: unused.map((u) => u.id) },
-    },
-  });
+  await withRetry(() =>
+    prisma.cachedImage.deleteMany({
+      where: {
+        id: { in: unused.map((u) => u.id) },
+      },
+    })
+  );
 
   const s3Keys = unused.map((u) => u.s3Key);
   console.log(`[Image Cache] Marked ${unused.length} unused images for cleanup`);
@@ -506,12 +526,12 @@ export async function getCacheStats(): Promise<CacheStats> {
 
   const [searchTotal, searchActive, searchHits, imageTotal, imageHits, imageSize] =
     await Promise.all([
-      prisma.imageSearchCache.count(),
-      prisma.imageSearchCache.count({ where: { expiresAt: { gt: now } } }),
-      prisma.imageSearchCache.aggregate({ _sum: { hitCount: true } }),
-      prisma.cachedImage.count(),
-      prisma.cachedImage.aggregate({ _sum: { hitCount: true } }),
-      prisma.cachedImage.aggregate({ _sum: { fileSize: true } }),
+      withRetry(() => prisma.imageSearchCache.count()),
+      withRetry(() => prisma.imageSearchCache.count({ where: { expiresAt: { gt: now } } })),
+      withRetry(() => prisma.imageSearchCache.aggregate({ _sum: { hitCount: true } })),
+      withRetry(() => prisma.cachedImage.count()),
+      withRetry(() => prisma.cachedImage.aggregate({ _sum: { hitCount: true } })),
+      withRetry(() => prisma.cachedImage.aggregate({ _sum: { fileSize: true } })),
     ]);
 
   return {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
-import { getUserFromHeader } from "@/lib/auth";
+import { prisma, withRetry } from "@/lib/db/prisma";
+import { getUserFromRequest } from "@/lib/auth";
 import {
   calculateScore,
   ScoringInput,
@@ -15,8 +15,8 @@ interface RouteParams {
 // POST /api/v1/generations/[id]/score - Calculate and store AI score for a generation
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: generationId } = await params;
 
     // Get the generation with related data
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
       include: {
         campaign: {
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       recommendations: scoringResult.recommendations,
     }));
 
-    await prisma.videoGeneration.update({
+    await withRetry(() => prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         qualityScore: scoringResult.totalScore,
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           scoring: scoringData,
         },
       },
-    });
+    }));
 
     return NextResponse.json({
       generation_id: generationId,
@@ -169,8 +169,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 // GET /api/v1/generations/[id]/score - Get stored score for a generation
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const user = await getUserFromHeader(authHeader);
+    
+    const user = await getUserFromRequest(request);
 
     if (!user) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -178,7 +178,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id: generationId } = await params;
 
-    const generation = await prisma.videoGeneration.findUnique({
+    const generation = await withRetry(() => prisma.videoGeneration.findUnique({
       where: { id: generationId },
       select: {
         id: true,
@@ -193,7 +193,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-    });
+    }));
 
     if (!generation) {
       return NextResponse.json({ detail: "Generation not found" }, { status: 404 });
