@@ -83,7 +83,10 @@ export const pipelineApi = {
       const variationType = metadata?.variationType as string | undefined;
 
       // Handle both AI variations and compose variations
-      if (batchId && (variationType === "variation" || variationType === "compose_variation")) {
+      // "ai_video_variation" - AI video variations (from /api/v1/generations/[id]/variations)
+      // "variation" - legacy AI variations
+      // "compose_variation" - Fast Cut compose variations
+      if (batchId && (variationType === "variation" || variationType === "ai_video_variation" || variationType === "compose_variation")) {
         // Determine pipeline type from variationType
         const pipelineType: PipelineType = variationType === "compose_variation" ? "fast-cut" : "ai";
 
