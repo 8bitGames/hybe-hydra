@@ -29,16 +29,38 @@ async function getGcsAuthHeaders(): Promise<Record<string, string> | null> {
   }
 }
 
+// Strip expired GCS signature params from URL to use fresh auth instead
+function stripGcsSignatureParams(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    // Remove all X-Goog-* params (signature, algorithm, credential, date, expires, etc.)
+    const paramsToRemove: string[] = [];
+    urlObj.searchParams.forEach((_, key) => {
+      if (key.startsWith('X-Goog-')) {
+        paramsToRemove.push(key);
+      }
+    });
+    paramsToRemove.forEach(key => urlObj.searchParams.delete(key));
+    return urlObj.toString();
+  } catch {
+    return url;
+  }
+}
+
 // Handle GCS URL proxy with range request support and authentication
 async function handleGcsProxy(url: string, rangeHeader: string | null): Promise<NextResponse> {
   // Get GCP auth headers for authenticated access to GCS
   const authHeaders = await getGcsAuthHeaders();
   const baseHeaders: Record<string, string> = authHeaders || {};
 
-  console.log('[GCS Proxy] Fetching URL:', url.substring(0, 80), 'with auth:', !!authHeaders);
+  // Strip expired signature params - we'll use fresh auth headers instead
+  const cleanUrl = stripGcsSignatureParams(url);
+  const hadSignatureParams = cleanUrl !== url;
+
+  console.log('[GCS Proxy] Fetching URL:', cleanUrl.substring(0, 80), 'with auth:', !!authHeaders, 'stripped signature:', hadSignatureParams);
 
   // First, get the content length with a HEAD request
-  const headResponse = await fetch(url, {
+  const headResponse = await fetch(cleanUrl, {
     method: 'HEAD',
     headers: baseHeaders,
   });
@@ -62,7 +84,7 @@ async function handleGcsProxy(url: string, rangeHeader: string | null): Promise<
       const end = match[2] ? parseInt(match[2], 10) : contentLength - 1;
 
       // Fetch partial content from GCS with auth
-      const rangeResponse = await fetch(url, {
+      const rangeResponse = await fetch(cleanUrl, {
         headers: {
           ...baseHeaders,
           'Range': `bytes=${start}-${end}`
@@ -87,7 +109,7 @@ async function handleGcsProxy(url: string, rangeHeader: string | null): Promise<
   }
 
   // Full content response with auth
-  const response = await fetch(url, { headers: baseHeaders });
+  const response = await fetch(cleanUrl, { headers: baseHeaders });
 
   if (!response.ok) {
     console.error('[GCS Proxy] Full content request failed:', response.status, response.statusText);
