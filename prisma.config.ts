@@ -11,7 +11,8 @@ export default defineConfig({
     seed: "npx tsx prisma/seed.ts",
   },
   datasource: {
-    // Transaction mode for runtime queries (via PgBouncer)
-    url: env("DATABASE_URL"),
+    // Direct connection for migrations (bypasses PgBouncer)
+    // Runtime uses adapter-pg with DATABASE_URL in lib/db/prisma.ts
+    url: env("DIRECT_URL"),
   },
 });
