@@ -220,16 +220,19 @@ export const useAuthStore = create<AuthState>()(
 
           if (!response.ok) {
             if (response.status === 401) {
-              // Session expired
-              set({ user: null, isAuthenticated: false });
+              // Session expired - clear auth state
+              set({ user: null, isAuthenticated: false, isLoading: false });
             }
             return;
           }
 
           const data = await response.json();
-          set({ user: data, isAuthenticated: true });
+          set({ user: data, isAuthenticated: true, isLoading: false });
         } catch (error) {
           console.error("[AuthStore] fetchUser error:", error);
+          // Network error - don't clear auth state, just log
+          // The user might still have a valid session
+          set({ isLoading: false });
         }
       },
 
@@ -258,12 +261,16 @@ export const useAuthStore = create<AuthState>()(
           }
 
           if (supabaseUser) {
+            // User found in Supabase cookies - set authenticated immediately
+            // This ensures isAuthenticated is true even before fetchUser completes
+            set({ isAuthenticated: true, isLoading: true });
             // Fetch user profile from our database
             await get().fetchUser();
             // Sync token from session for backward compatibility
             await get().syncTokenFromSession();
+            set({ isLoading: false });
           } else {
-            set({ isAuthenticated: false, user: null });
+            set({ isAuthenticated: false, user: null, isLoading: false });
           }
 
           // Set up auth state change listener and store subscription for cleanup

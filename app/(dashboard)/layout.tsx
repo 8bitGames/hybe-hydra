@@ -156,9 +156,12 @@ export default function DashboardLayout({
   const sessionInitializedRef = useRef(false);
 
   // Initialize session monitoring on mount (only once)
+  // NOTE: We initialize session regardless of isAuthenticated from localStorage
+  // because the middleware already validated the session via cookies.
+  // initializeSession will sync the user data from Supabase cookies.
   useEffect(() => {
-    if (_hasHydrated && isAuthenticated && !sessionInitializedRef.current) {
-      console.log("[DashboardLayout] Initializing session monitor...");
+    if (_hasHydrated && !sessionInitializedRef.current) {
+      console.log("[DashboardLayout] Initializing session...");
       sessionInitializedRef.current = true;
       initializeSession();
     }
@@ -171,7 +174,7 @@ export default function DashboardLayout({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [_hasHydrated, isAuthenticated]); // Remove function deps to prevent re-runs
+  }, [_hasHydrated]); // Remove isAuthenticated - middleware already validated
 
   // Track if user fetch has been attempted
   const userFetchAttemptedRef = useRef(false);
@@ -190,24 +193,22 @@ export default function DashboardLayout({
       return;
     }
 
-    const checkAuth = async () => {
-      console.log("[DashboardLayout] Checking auth...", { isAuthenticated, hasUser: !!user });
-      if (!isAuthenticated) {
-        console.log("[DashboardLayout] Not authenticated, redirecting to login...");
-        // Use window.location for more reliable redirect when component unmounts
-        window.location.href = "/login";
-        return;
-      }
-      // Only fetch user once per session
+    // NOTE: We do NOT redirect to /login here anymore.
+    // The middleware handles auth redirects server-side.
+    // If we reached this point, the middleware already validated the session via cookies.
+    // Redirecting here causes infinite loops when localStorage isAuthenticated is stale.
+
+    const syncUserData = async () => {
+      // Only fetch user once per session if not already loaded
       if (!user && !userFetchAttemptedRef.current) {
-        console.log("[DashboardLayout] No user, fetching...");
+        console.log("[DashboardLayout] No user in store, fetching...");
         userFetchAttemptedRef.current = true;
         await fetchUser();
       }
     };
-    checkAuth();
+    syncUserData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [_hasHydrated, isAuthenticated, user]); // Remove function deps
+  }, [_hasHydrated, user]); // Remove isAuthenticated - rely on middleware
 
   const handleLogout = () => {
     logout();
@@ -224,14 +225,11 @@ export default function DashboardLayout({
     );
   }
 
-  // If not authenticated, useEffect will handle redirect
-  // Return null to allow navigation to happen
-  if (!isAuthenticated) {
-    console.log("[DashboardLayout] Not authenticated, allowing redirect...");
-    return null;
-  }
+  // NOTE: We removed the isAuthenticated check here.
+  // The middleware handles auth - if we reached this point, the user passed middleware auth.
+  // LocalStorage isAuthenticated may be stale, so we should NOT rely on it for redirects.
 
-  // If authenticated but loading or no user yet, show loading
+  // Show loading while fetching user data
   if (isLoading || !user) {
     console.log("[DashboardLayout] Loading user data...");
     return (
