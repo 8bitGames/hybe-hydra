@@ -203,8 +203,8 @@ class ImageGenerationSettings(BaseModel):
         description="Negative prompt to avoid certain content"
     )
     aspect_ratio: ImageAspectRatio = Field(
-        default=ImageAspectRatio.SQUARE,
-        description="Image aspect ratio"
+        default=ImageAspectRatio.PORTRAIT_9_16,
+        description="Image aspect ratio (default: 9:16 for TikTok/Reels)"
     )
     number_of_images: int = Field(
         default=1,

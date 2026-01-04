@@ -181,29 +181,24 @@ export default function StartPage() {
   useEffect(() => {
     async function loadRecentProjects() {
       try {
-        const token = getAccessToken();
-        if (!token) {
-          setIsLoadingProjects(false);
-          return;
-        }
-
         const response = await fetch("/api/v1/campaigns?limit=5&sort=updatedAt", {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
         });
 
         if (response.ok) {
           const data = await response.json();
-          const projects: RecentProject[] = (data.campaigns || []).map((c: {
+          // API returns 'items' key with snake_case fields
+          const projects: RecentProject[] = (data.items || []).map((c: {
             id: string;
             name: string;
             status: string;
-            updatedAt: string;
+            updated_at: string;
           }) => ({
             id: c.id,
             name: c.name,
             type: "idea" as const,
-            status: c.status === "COMPLETED" ? "completed" : "in_progress",
-            updatedAt: c.updatedAt,
+            status: c.status === "completed" ? "completed" : "in_progress",
+            updatedAt: c.updated_at,
           }));
           setRecentProjects(projects);
         }
@@ -226,14 +221,8 @@ export default function StartPage() {
 
       setIsLoadingCampaigns(true);
       try {
-        const token = getAccessToken();
-        if (!token) {
-          setIsLoadingCampaigns(false);
-          return;
-        }
-
         const response = await fetch("/api/v1/campaigns?limit=50&sort=updatedAt", {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
         });
 
         if (response.ok) {

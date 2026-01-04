@@ -101,7 +101,7 @@ class GeminiImageConfig:
     - Multi-turn image editing
     """
     prompt: str
-    aspect_ratio: GeminiImageAspectRatio = GeminiImageAspectRatio.SQUARE_1_1
+    aspect_ratio: GeminiImageAspectRatio = GeminiImageAspectRatio.PORTRAIT_9_16  # Default for TikTok/Reels
     number_of_images: int = 1
     include_reasoning: bool = False  # Include model's reasoning in response
 
@@ -616,10 +616,17 @@ class VertexAIClient:
 
             logger.info(f"Calling Gemini 3 Pro Image model: {self.GEMINI_IMAGE_MODEL}")
             logger.info(f"Prompt: {config.prompt[:100]}...")
+            logger.info(f"Aspect ratio: {config.aspect_ratio.value}")
 
-            # Build generation config
+            # Build generation config with aspect ratio
+            # Import ImageConfig for aspect ratio support
+            from google.genai.types import ImageConfig
+
             gen_config = GenerateContentConfig(
                 response_modalities=[Modality.TEXT, Modality.IMAGE],
+                image_config=ImageConfig(
+                    aspect_ratio=config.aspect_ratio.value,
+                ),
             )
 
             # Generate content
