@@ -226,3 +226,88 @@ No additional changes required - existing implementation is optimized.
 - [ ] Test dashboard loading speed
 - [ ] Test campaign page loading speed
 - [ ] Test generation list pagination (offset + cursor modes)
+
+---
+
+# Performance Optimization Phase 2
+
+## Overview
+Additional Supabase-specific optimizations implemented via database migration.
+
+**Date**: 2026-01-04
+**Migration**: `performance_optimizations_phase2`
+
+---
+
+## Optimizations Applied
+
+### 1. Partial Indexes (7 new indexes)
+| Index | Table | Condition | Use Case |
+|-------|-------|-----------|----------|
+| `idx_gen_processing` | video_generations | status = 'PROCESSING' | Active job monitoring |
+| `idx_gen_completed_with_output` | video_generations | status = 'COMPLETED' + output exists | Gallery queries |
+| `idx_posts_published` | scheduled_posts | status = 'PUBLISHED' | Analytics queries |
+| `idx_posts_scheduled` | scheduled_posts | status = 'SCHEDULED' | Upcoming posts |
+| `idx_gen_active_by_campaign` | video_generations | deleted_at IS NULL | Most common pattern |
+| `idx_gen_campaign_status_created` | video_generations | Composite + deleted_at IS NULL | Dashboard sorting |
+| `idx_posts_platform_status` | scheduled_posts | platform + status + campaign | Platform analytics |
+
+### 2. RLS Policy Optimization
+- Updated `projects` table policies with `(SELECT auth.uid())` wrapper
+- Enables Postgres query optimizer to cache auth.uid() per statement
+- Expected improvement: 90%+ for RLS-heavy queries
+
+### 3. RPC Functions Created
+| Function | Purpose | Call Pattern |
+|----------|---------|--------------|
+| `get_campaign_stats(campaign_id TEXT)` | Single campaign stats | `supabase.rpc('get_campaign_stats', { p_campaign_id })` |
+| `get_dashboard_stats(user_id TEXT, label_ids TEXT[])` | Global dashboard | `supabase.rpc('get_dashboard_stats', { p_user_id, p_label_ids })` |
+| `refresh_dashboard_stats()` | Refresh materialized view | Called by cron/service |
+
+### 4. Materialized View
+- `dashboard_stats_mv` - Pre-computed campaign overview with all stats
+- Indexed on: `campaign_id`, `label_id`, `campaign_status`
+- Refresh: Call `refresh_dashboard_stats()` periodically (e.g., every 5 min)
+
+### 5. Connection Pooling
+- Prisma configured with `directUrl` for migrations
+- Runtime uses Supavisor transaction mode (port 6543)
+- `?pgbouncer=true` parameter enabled
+
+---
+
+## Usage Examples
+
+### Using RPC Functions (Optional - Can Replace Current API Logic)
+
+```typescript
+// Instead of multiple Prisma queries:
+const { data } = await supabase.rpc('get_campaign_stats', {
+  p_campaign_id: campaignId
+});
+
+// Returns:
+// {
+//   generation_stats: { total, by_status, avg_quality, high_quality_count },
+//   post_stats: { total, by_status },
+//   sns_performance: { total_views, total_likes, ... },
+//   asset_stats: { total, by_type, total_size }
+// }
+```
+
+### Using Materialized View
+
+```typescript
+// Fast dashboard query from pre-computed view
+const { data } = await supabase
+  .from('dashboard_stats_mv')
+  .select('*')
+  .in('label_id', userLabelIds);
+```
+
+### Refreshing Materialized View (Cron Job)
+
+```typescript
+// Call every 5 minutes from Edge Function or cron
+await supabase.rpc('refresh_dashboard_stats');
+```
