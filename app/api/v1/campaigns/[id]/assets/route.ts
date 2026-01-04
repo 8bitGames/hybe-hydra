@@ -114,14 +114,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       where.type = type.toUpperCase() as AssetType;
     }
 
-    const total = await withRetry(() => prisma.asset.count({ where }));
-
-    const assets = await withRetry(() => prisma.asset.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }));
+    // Parallelize count and findMany queries
+    const [total, assets] = await Promise.all([
+      withRetry(() => prisma.asset.count({ where })),
+      withRetry(() => prisma.asset.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      })),
+    ]);
 
     const pages = Math.ceil(total / pageSize) || 1;
 

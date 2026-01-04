@@ -16,37 +16,33 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);
     const offset = parseInt(searchParams.get("offset") || "0");
 
-    // Get keyword analysis history, sorted by most recent
-    const analyses = await withRetry(() => prisma.keywordAnalysis.findMany({
-      where: {
-        platform: "TIKTOK",
-      },
-      orderBy: {
-        analyzedAt: "desc",
-      },
-      take: limit,
-      skip: offset,
-      select: {
-        id: true,
-        keyword: true,
-        platform: true,
-        totalVideos: true,
-        avgViews: true,
-        avgEngagementRate: true,
-        recommendedHashtags: true,
-        analyzedAt: true,
-        expiresAt: true,
-        // Include AI summary if available
-        aiInsights: true,
-      },
-    }));
+    const where = { platform: "TIKTOK" as const };
 
-    // Get total count
-    const total = await withRetry(() => prisma.keywordAnalysis.count({
-      where: {
-        platform: "TIKTOK",
-      },
-    }));
+    // Parallelize findMany and count queries
+    const [analyses, total] = await Promise.all([
+      withRetry(() => prisma.keywordAnalysis.findMany({
+        where,
+        orderBy: {
+          analyzedAt: "desc",
+        },
+        take: limit,
+        skip: offset,
+        select: {
+          id: true,
+          keyword: true,
+          platform: true,
+          totalVideos: true,
+          avgViews: true,
+          avgEngagementRate: true,
+          recommendedHashtags: true,
+          analyzedAt: true,
+          expiresAt: true,
+          // Include AI summary if available
+          aiInsights: true,
+        },
+      })),
+      withRetry(() => prisma.keywordAnalysis.count({ where })),
+    ]);
 
     // Format the response
     const formattedAnalyses = analyses.map((a) => ({

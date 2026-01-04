@@ -42,43 +42,45 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    const total = await withRetry(() => prisma.videoGeneration.count({ where }));
-
-    const generations = await withRetry(() => prisma.videoGeneration.findMany({
-      where,
-      include: {
-        campaign: {
-          select: {
-            id: true,
-            name: true,
-            artist: {
-              select: {
-                id: true,
-                name: true,
-                stageName: true,
+    // Parallelize count and findMany queries
+    const [total, generations] = await Promise.all([
+      withRetry(() => prisma.videoGeneration.count({ where })),
+      withRetry(() => prisma.videoGeneration.findMany({
+        where,
+        include: {
+          campaign: {
+            select: {
+              id: true,
+              name: true,
+              artist: {
+                select: {
+                  id: true,
+                  name: true,
+                  stageName: true,
+                }
               }
+            }
+          },
+          audioAsset: {
+            select: {
+              id: true,
+              filename: true,
+              originalFilename: true,
+              s3Url: true,
+            }
+          },
+          creator: {
+            select: {
+              id: true,
+              name: true,
             }
           }
         },
-        audioAsset: {
-          select: {
-            id: true,
-            filename: true,
-            originalFilename: true,
-            s3Url: true,
-          }
-        },
-        creator: {
-          select: {
-            id: true,
-            name: true,
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }));
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      })),
+    ]);
 
     const pages = Math.ceil(total / pageSize) || 1;
 

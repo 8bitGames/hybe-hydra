@@ -60,54 +60,91 @@ async function fetchCampaignsList(
   page: number,
   pageSize: number
 ) {
-  // Get total count
-  const total = await withRetry(() => prisma.campaign.count({ where }));
-
-  // Get campaigns with artist info and asset/video counts
-  const campaigns = await withRetry(() => prisma.campaign.findMany({
-    where,
-    include: {
-      artist: {
-        select: {
-          name: true,
-          stageName: true,
+  // Parallelize count and findMany queries
+  const [total, campaigns] = await Promise.all([
+    withRetry(() => prisma.campaign.count({ where })),
+    withRetry(() => prisma.campaign.findMany({
+      where,
+      include: {
+        artist: {
+          select: {
+            name: true,
+            stageName: true,
+          },
         },
-      },
-      _count: {
-        select: {
-          assets: true,
-          videoGenerations: true,
+        _count: {
+          select: {
+            assets: true,
+            videoGenerations: true,
+          },
         },
+        // Removed: videoGenerations select - replaced with groupBy below
       },
-      videoGenerations: {
-        select: {
-          status: true,
-          qualityScore: true,
-        },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  }));
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    })),
+  ]);
 
   const pages = Math.ceil(total / pageSize) || 1;
 
+  // Early return if no campaigns
+  if (campaigns.length === 0) {
+    return { items: [], total, page, page_size: pageSize, pages };
+  }
+
+  const campaignIds = campaigns.map(c => c.id);
+
+  // Fetch video stats using database aggregation instead of loading all records
+  const [
+    videoStatusCounts,
+    videoScoreStats,
+  ] = await Promise.all([
+    // Group by campaignId and status to get counts
+    withRetry(() => prisma.videoGeneration.groupBy({
+      by: ["campaignId", "status"],
+      where: { campaignId: { in: campaignIds } },
+      _count: true,
+    })),
+    // Get score stats per campaign
+    withRetry(() => prisma.videoGeneration.groupBy({
+      by: ["campaignId"],
+      where: {
+        campaignId: { in: campaignIds },
+        qualityScore: { not: null },
+      },
+      _count: true,
+      _avg: { qualityScore: true },
+    })),
+  ]);
+
+  // Build lookup maps for efficient access
+  type StatusCountMap = Map<string, { completed: number; processing: number; failed: number }>;
+  const statusCountMap: StatusCountMap = new Map();
+
+  for (const item of videoStatusCounts) {
+    if (!item.campaignId) continue;
+    const existing = statusCountMap.get(item.campaignId) || { completed: 0, processing: 0, failed: 0 };
+    if (item.status === "COMPLETED") existing.completed = item._count;
+    else if (item.status === "PROCESSING" || item.status === "PENDING") existing.processing += item._count;
+    else if (item.status === "FAILED") existing.failed = item._count;
+    statusCountMap.set(item.campaignId, existing);
+  }
+
+  type ScoreMap = Map<string, { scored: number; avgScore: number | null }>;
+  const scoreMap: ScoreMap = new Map();
+
+  for (const item of videoScoreStats) {
+    if (!item.campaignId) continue;
+    scoreMap.set(item.campaignId, {
+      scored: item._count,
+      avgScore: item._avg.qualityScore,
+    });
+  }
+
   const items = campaigns.map((c) => {
-    // Calculate video generation stats
-    const videoStats = {
-      total: c._count.videoGenerations,
-      completed: c.videoGenerations.filter(v => v.status === "COMPLETED").length,
-      processing: c.videoGenerations.filter(v => v.status === "PROCESSING" || v.status === "PENDING").length,
-      failed: c.videoGenerations.filter(v => v.status === "FAILED").length,
-      scored: c.videoGenerations.filter(v => v.qualityScore !== null).length,
-      avgScore: c.videoGenerations.filter(v => v.qualityScore !== null).length > 0
-        ? c.videoGenerations
-            .filter(v => v.qualityScore !== null)
-            .reduce((sum, v) => sum + (v.qualityScore || 0), 0) /
-          c.videoGenerations.filter(v => v.qualityScore !== null).length
-        : null,
-    };
+    const statusCounts = statusCountMap.get(c.id) || { completed: 0, processing: 0, failed: 0 };
+    const scoreStats = scoreMap.get(c.id) || { scored: 0, avgScore: null };
 
     return {
       id: c.id,
@@ -126,12 +163,12 @@ async function fetchCampaignsList(
       artist_name: c.artist.name,
       artist_stage_name: c.artist.stageName,
       asset_count: c._count.assets,
-      video_count: videoStats.total,
-      video_completed: videoStats.completed,
-      video_processing: videoStats.processing,
-      video_failed: videoStats.failed,
-      video_scored: videoStats.scored,
-      video_avg_score: videoStats.avgScore ? Math.round(videoStats.avgScore * 10) / 10 : null,
+      video_count: c._count.videoGenerations,
+      video_completed: statusCounts.completed,
+      video_processing: statusCounts.processing,
+      video_failed: statusCounts.failed,
+      video_scored: scoreStats.scored,
+      video_avg_score: scoreStats.avgScore ? Math.round(scoreStats.avgScore * 10) / 10 : null,
     };
   });
 

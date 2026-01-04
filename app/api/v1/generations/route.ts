@@ -84,11 +84,11 @@ export async function GET(request: NextRequest) {
       where.AND = andConditions;
     }
 
-    // Get counts
+    // Get counts with retry wrapper
     const [total, totalAi, totalCompose] = await Promise.all([
-      prisma.videoGeneration.count({ where }),
-      prisma.videoGeneration.count({ where: { ...where, generationType: "AI" } }),
-      prisma.videoGeneration.count({ where: { ...where, generationType: "COMPOSE" } }),
+      withRetry(() => prisma.videoGeneration.count({ where })),
+      withRetry(() => prisma.videoGeneration.count({ where: { ...where, generationType: "AI" } })),
+      withRetry(() => prisma.videoGeneration.count({ where: { ...where, generationType: "COMPOSE" } })),
     ]);
 
     const generations = await withRetry(() => prisma.videoGeneration.findMany({

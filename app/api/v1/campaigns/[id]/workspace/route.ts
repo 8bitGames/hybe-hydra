@@ -39,52 +39,51 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ detail: "Access denied" }, { status: 403 });
     }
 
-    // Get all generations with full context (exclude soft-deleted)
-    const generations = await withRetry(() => prisma.videoGeneration.findMany({
-      where: { campaignId, deletedAt: null },
-      include: {
-        referenceImage: {
-          select: { id: true, filename: true, s3Url: true, thumbnailUrl: true },
-        },
-        outputAsset: {
-          select: { id: true, filename: true, s3Url: true, thumbnailUrl: true },
-        },
-        merchandiseReferences: {
-          include: {
-            merchandise: {
-              select: { id: true, name: true, nameKo: true, type: true, thumbnailUrl: true },
+    // Parallelize all data fetching queries for better performance
+    const [generations, scheduledPosts, assets, previewImages] = await Promise.all([
+      // Get all generations with full context (exclude soft-deleted)
+      withRetry(() => prisma.videoGeneration.findMany({
+        where: { campaignId, deletedAt: null },
+        include: {
+          referenceImage: {
+            select: { id: true, filename: true, s3Url: true, thumbnailUrl: true },
+          },
+          outputAsset: {
+            select: { id: true, filename: true, s3Url: true, thumbnailUrl: true },
+          },
+          merchandiseReferences: {
+            include: {
+              merchandise: {
+                select: { id: true, name: true, nameKo: true, type: true, thumbnailUrl: true },
+              },
             },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
-    }));
-
-    // Get all scheduled posts
-    const scheduledPosts = await withRetry(() => prisma.scheduledPost.findMany({
-      where: { campaignId },
-      include: {
-        socialAccount: {
-          select: { id: true, accountName: true, platform: true },
+        orderBy: { createdAt: "desc" },
+      })),
+      // Get all scheduled posts
+      withRetry(() => prisma.scheduledPost.findMany({
+        where: { campaignId },
+        include: {
+          socialAccount: {
+            select: { id: true, accountName: true, platform: true },
+          },
         },
-      },
-      orderBy: { createdAt: "desc" },
-    }));
-
-    // Get all assets
-    const assets = await withRetry(() => prisma.asset.findMany({
-      where: { campaignId },
-      orderBy: { createdAt: "desc" },
-    }));
-
-    // Get all generated preview images for this campaign only
-    // Images are now properly linked to campaigns when generated from /create page
-    const previewImages = await withRetry(() => prisma.generatedPreviewImage.findMany({
-      where: {
-        campaignId,  // Only images specifically linked to this campaign
-      },
-      orderBy: { createdAt: "desc" },
-    }));
+        orderBy: { createdAt: "desc" },
+      })),
+      // Get all assets
+      withRetry(() => prisma.asset.findMany({
+        where: { campaignId },
+        orderBy: { createdAt: "desc" },
+      })),
+      // Get all generated preview images for this campaign only
+      withRetry(() => prisma.generatedPreviewImage.findMany({
+        where: {
+          campaignId,  // Only images specifically linked to this campaign
+        },
+        orderBy: { createdAt: "desc" },
+      })),
+    ]);
 
     // Extract unique prompts (group by original_input or prompt)
     const promptMap = new Map<string, {

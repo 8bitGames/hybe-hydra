@@ -17,58 +17,60 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
     }
 
-    // Get active video generations (PENDING or PROCESSING) - exclude soft-deleted
-    const activeGenerations = await withRetry(() => prisma.videoGeneration.findMany({
-      where: {
-        createdBy: user.id,
-        status: { in: ["PENDING", "PROCESSING"] },
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        prompt: true,
-        status: true,
-        progress: true,
-        createdAt: true,
-        campaignId: true,
-        isQuickCreate: true,
-        campaign: {
-          select: { name: true },
+    // Parallelize active and recent generations queries
+    const [activeGenerations, recentGenerations] = await Promise.all([
+      // Get active video generations (PENDING or PROCESSING) - exclude soft-deleted
+      withRetry(() => prisma.videoGeneration.findMany({
+        where: {
+          createdBy: user.id,
+          status: { in: ["PENDING", "PROCESSING"] },
+          deletedAt: null,
         },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    }));
-
-    // Get recent completed/failed generations - exclude soft-deleted
-    const recentGenerations = await withRetry(() => prisma.videoGeneration.findMany({
-      where: {
-        createdBy: user.id,
-        status: { in: ["COMPLETED", "FAILED"] },
-        deletedAt: null,
-        updatedAt: {
-          gte: new Date(Date.now() - 60 * 60 * 1000), // Last hour
+        select: {
+          id: true,
+          prompt: true,
+          status: true,
+          progress: true,
+          createdAt: true,
+          campaignId: true,
+          isQuickCreate: true,
+          campaign: {
+            select: { name: true },
+          },
         },
-      },
-      select: {
-        id: true,
-        prompt: true,
-        status: true,
-        progress: true,
-        outputUrl: true,
-        composedOutputUrl: true,
-        qualityScore: true,
-        errorMessage: true,
-        createdAt: true,
-        updatedAt: true,
-        campaignId: true,
-        campaign: {
-          select: { name: true },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      })),
+      // Get recent completed/failed generations - exclude soft-deleted
+      withRetry(() => prisma.videoGeneration.findMany({
+        where: {
+          createdBy: user.id,
+          status: { in: ["COMPLETED", "FAILED"] },
+          deletedAt: null,
+          updatedAt: {
+            gte: new Date(Date.now() - 60 * 60 * 1000), // Last hour
+          },
         },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 10,
-    }));
+        select: {
+          id: true,
+          prompt: true,
+          status: true,
+          progress: true,
+          outputUrl: true,
+          composedOutputUrl: true,
+          qualityScore: true,
+          errorMessage: true,
+          createdAt: true,
+          updatedAt: true,
+          campaignId: true,
+          campaign: {
+            select: { name: true },
+          },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 10,
+      })),
+    ]);
 
     // Transform to Job format
     const active: Job[] = activeGenerations.map((gen) => ({

@@ -57,22 +57,30 @@ export async function GET(request: NextRequest) {
       where.campaignId = { in: accessibleCampaigns.map((c) => c.id) };
     }
 
-    const total = await withRetry(() => prisma.asset.count({ where }));
-
-    const assets = await withRetry(() => prisma.asset.findMany({
-      where,
-      include: {
-        campaign: {
-          select: {
-            id: true,
-            name: true,
+    // Parallelize count, findMany, and stats groupBy
+    const [total, assets, typeCounts] = await Promise.all([
+      withRetry(() => prisma.asset.count({ where })),
+      withRetry(() => prisma.asset.findMany({
+        where,
+        include: {
+          campaign: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }));
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      })),
+      // Single groupBy instead of 4 separate count queries
+      withRetry(() => prisma.asset.groupBy({
+        by: ["type"],
+        where,
+        _count: true,
+      })),
+    ]);
 
     const pages = Math.ceil(total / pageSize) || 1;
 
@@ -94,13 +102,16 @@ export async function GET(request: NextRequest) {
       created_at: asset.createdAt.toISOString(),
     }));
 
-    // Calculate stats
+    // Build stats from groupBy result (1 query instead of 4)
+    const getTypeCount = (type: string) =>
+      typeCounts.find(t => t.type === type)?._count || 0;
+
     const stats = {
       total,
-      images: await withRetry(() => prisma.asset.count({ where: { ...where, type: "IMAGE" } })),
-      audio: await withRetry(() => prisma.asset.count({ where: { ...where, type: "AUDIO" } })),
-      videos: await withRetry(() => prisma.asset.count({ where: { ...where, type: "VIDEO" } })),
-      goods: await withRetry(() => prisma.asset.count({ where: { ...where, type: "GOODS" } })),
+      images: getTypeCount("IMAGE"),
+      audio: getTypeCount("AUDIO"),
+      videos: getTypeCount("VIDEO"),
+      goods: getTypeCount("GOODS"),
     };
 
     return NextResponse.json({

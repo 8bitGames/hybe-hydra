@@ -57,26 +57,26 @@ export async function GET(request: NextRequest) {
         orderBy = { publishedAt: "desc" };
     }
 
-    // Get total count
-    const total = await withRetry(() => prisma.scheduledPost.count({ where }));
-
-    // Get posts
-    const posts = await withRetry(() => prisma.scheduledPost.findMany({
-      where,
-      include: {
-        socialAccount: {
-          select: {
-            id: true,
-            platform: true,
-            accountName: true,
-            profileUrl: true,
+    // Parallelize count and findMany queries
+    const [total, posts] = await Promise.all([
+      withRetry(() => prisma.scheduledPost.count({ where })),
+      withRetry(() => prisma.scheduledPost.findMany({
+        where,
+        include: {
+          socialAccount: {
+            select: {
+              id: true,
+              platform: true,
+              accountName: true,
+              profileUrl: true,
+            },
           },
         },
-      },
-      orderBy,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }));
+        orderBy,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      })),
+    ]);
 
     const pages = Math.ceil(total / pageSize) || 1;
 

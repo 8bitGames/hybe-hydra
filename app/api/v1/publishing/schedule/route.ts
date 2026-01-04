@@ -63,50 +63,62 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    // Get total count
-    const total = await withRetry(() => prisma.scheduledPost.count({ where: whereClause }));
-
-    // Get scheduled posts
-    const posts = await withRetry(() => prisma.scheduledPost.findMany({
-      where: whereClause,
-      orderBy: [
-        { scheduledAt: "asc" },
-        { createdAt: "desc" },
-      ],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: {
-        socialAccount: {
-          select: {
-            id: true,
-            platform: true,
-            accountName: true,
-            profileUrl: true,
+    // Parallelize count and findMany queries
+    const [total, posts] = await Promise.all([
+      withRetry(() => prisma.scheduledPost.count({ where: whereClause })),
+      withRetry(() => prisma.scheduledPost.findMany({
+        where: whereClause,
+        orderBy: [
+          { scheduledAt: "asc" },
+          { createdAt: "desc" },
+        ],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          socialAccount: {
+            select: {
+              id: true,
+              platform: true,
+              accountName: true,
+              profileUrl: true,
+            },
+          },
+          campaign: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-        campaign: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-    }));
+      })),
+    ]);
 
     // Get generation details for each post (exclude soft-deleted)
-    const generationIds = [...new Set(posts.map((p) => p.generationId))];
-    const generations = await withRetry(() => prisma.videoGeneration.findMany({
-      where: { id: { in: generationIds }, deletedAt: null },
-      select: {
-        id: true,
-        prompt: true,
-        outputUrl: true,
-        aspectRatio: true,
-        durationSeconds: true,
-        qualityScore: true,
-      },
-    }));
-    const generationMap = new Map(generations.map((g) => [g.id, g]));
+    // Only query if we have posts
+    let generationMap = new Map<string, {
+      id: string;
+      prompt: string | null;
+      outputUrl: string | null;
+      aspectRatio: string;
+      durationSeconds: number;
+      qualityScore: number | null;
+    }>();
+
+    if (posts.length > 0) {
+      const generationIds = [...new Set(posts.map((p) => p.generationId))];
+      const generations = await withRetry(() => prisma.videoGeneration.findMany({
+        where: { id: { in: generationIds }, deletedAt: null },
+        select: {
+          id: true,
+          prompt: true,
+          outputUrl: true,
+          aspectRatio: true,
+          durationSeconds: true,
+          qualityScore: true,
+        },
+      }));
+      generationMap = new Map(generations.map((g) => [g.id, g]));
+    }
 
     // Transform response
     const items = posts.map((post) => {

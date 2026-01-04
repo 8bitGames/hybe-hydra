@@ -342,14 +342,16 @@ export async function GET(request: NextRequest) {
       deletedAt: null,
     };
 
-    const total = await withRetry(() => prisma.videoGeneration.count({ where }));
-
-    const generations = await withRetry(() => prisma.videoGeneration.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }));
+    // Parallelize count and findMany queries
+    const [total, generations] = await Promise.all([
+      withRetry(() => prisma.videoGeneration.count({ where })),
+      withRetry(() => prisma.videoGeneration.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      })),
+    ]);
 
     const pages = Math.ceil(total / pageSize) || 1;
 

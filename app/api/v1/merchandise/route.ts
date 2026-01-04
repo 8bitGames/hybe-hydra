@@ -70,24 +70,26 @@ export async function GET(request: NextRequest) {
           };
         }
 
-        const total = await withRetry(() => prisma.merchandiseItem.count({ where }));
-
-        const items = await withRetry(() => prisma.merchandiseItem.findMany({
-          where,
-          orderBy: [{ createdAt: "desc" }],
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-          include: {
-            artist: {
-              select: {
-                id: true,
-                name: true,
-                stageName: true,
-                groupName: true,
+        // Parallelize count and findMany queries
+        const [total, items] = await Promise.all([
+          withRetry(() => prisma.merchandiseItem.count({ where })),
+          withRetry(() => prisma.merchandiseItem.findMany({
+            where,
+            orderBy: [{ createdAt: "desc" }],
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+            include: {
+              artist: {
+                select: {
+                  id: true,
+                  name: true,
+                  stageName: true,
+                  groupName: true,
+                },
               },
             },
-          },
-        }));
+          })),
+        ]);
 
         const pages = Math.ceil(total / pageSize) || 1;
 
