@@ -214,6 +214,16 @@ export async function getPresignedUrlFromS3Url(
   s3Url: string,
   expiresIn = 604800 // 7 days (maximum allowed for presigned URLs)
 ): Promise<string> {
+  // Check if it's a GCS URL - use proxy endpoint for authenticated access
+  const isGcsUrl = s3Url.includes('storage.googleapis.com/') || s3Url.includes('storage.cloud.google.com/');
+  if (isGcsUrl) {
+    // GCS URLs require authentication - route through proxy endpoint
+    // The proxy endpoint handles GCS authentication and streaming
+    const proxyUrl = `/api/v1/assets/proxy?url=${encodeURIComponent(s3Url)}`;
+    console.log('[getPresignedUrlFromS3Url] GCS URL detected, using proxy:', s3Url.substring(0, 60));
+    return proxyUrl;
+  }
+
   // Parse S3 URL - supports both formats:
   // 1. https://BUCKET.s3.REGION.amazonaws.com/KEY (with region)
   // 2. https://BUCKET.s3.amazonaws.com/KEY (without region)

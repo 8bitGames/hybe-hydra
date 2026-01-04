@@ -47,6 +47,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
   // Store actions
   const initSession = useProcessingSessionStore((state) => state.initSession);
+  const initSessionForVariation = useProcessingSessionStore((state) => state.initSessionForVariation);
   const setState = useProcessingSessionStore((state) => state.setState);
   const updateOriginalVideo = useProcessingSessionStore((state) => state.updateOriginalVideo);
   const setOriginalVideoCompleted = useProcessingSessionStore((state) => state.setOriginalVideoCompleted);
@@ -84,11 +85,38 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
 
   // Initialize session from URL params or existing session
   useEffect(() => {
+    const mode = searchParams.get("mode");
     const sessionId = searchParams.get("sessionId");
     const campaignId = searchParams.get("campaignId");
     const campaignName = searchParams.get("campaignName");
 
-    // If we have URL params, initialize a new session
+    // Variation mode: Initialize with existing completed video
+    if (mode === "variation") {
+      const generationId = searchParams.get("generationId");
+      const outputUrl = searchParams.get("outputUrl");
+      const contentType = searchParams.get("contentType") as "ai_video" | "fast-cut" | null;
+      const thumbnailUrl = searchParams.get("thumbnailUrl");
+      const duration = searchParams.get("duration");
+
+      if (generationId && outputUrl && campaignId && contentType) {
+        // Only initialize if we don't have this video in session already
+        if (session?.originalVideo?.id !== generationId) {
+          initSessionForVariation({
+            generationId,
+            outputUrl: decodeURIComponent(outputUrl),
+            thumbnailUrl: thumbnailUrl ? decodeURIComponent(thumbnailUrl) : undefined,
+            campaignId,
+            campaignName: campaignName || "Campaign",
+            contentType,
+            duration: duration ? parseFloat(duration) : undefined,
+          });
+        }
+      }
+      setIsInitializing(false);
+      return;
+    }
+
+    // Normal mode: If we have URL params, initialize a new session
     if (sessionId && campaignId) {
       // Check if we already have this session
       if (session?.id !== sessionId) {
@@ -106,7 +134,7 @@ export function ProcessingFlowPage({ className }: ProcessingFlowPageProps) {
     }
 
     setIsInitializing(false);
-  }, [searchParams, session?.id, initSession]);
+  }, [searchParams, session?.id, session?.originalVideo?.id, initSession, initSessionForVariation]);
 
   // Recovery effect: Check for existing compose variations on page refresh
   // This runs when we have an originalVideo but lost the variationBatchId from session

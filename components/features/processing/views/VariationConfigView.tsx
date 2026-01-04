@@ -431,12 +431,15 @@ export function VariationConfigView({
                     onValueChange={(v) => setImageSelectionMode(v as "auto" | "manual")}
                     className="flex flex-col sm:flex-row gap-4"
                   >
-                    <div className={cn(
-                      "flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all flex-1",
-                      imageSelectionMode === "auto"
-                        ? "border-neutral-900 bg-neutral-50"
-                        : "border-neutral-200 hover:border-neutral-300"
-                    )}>
+                    <div
+                      className={cn(
+                        "flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all flex-1",
+                        imageSelectionMode === "auto"
+                          ? "border-neutral-900 bg-neutral-50"
+                          : "border-neutral-200 hover:border-neutral-300"
+                      )}
+                      onClick={() => setImageSelectionMode("auto")}
+                    >
                       <RadioGroupItem value="auto" id="mode-auto" className="mt-1" />
                       <div className="flex-1">
                         <Label htmlFor="mode-auto" className="font-medium cursor-pointer">
@@ -451,12 +454,15 @@ export function VariationConfigView({
                       <Zap className="w-5 h-5 text-neutral-400 mt-0.5" />
                     </div>
 
-                    <div className={cn(
-                      "flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all flex-1",
-                      imageSelectionMode === "manual"
-                        ? "border-neutral-900 bg-neutral-50"
-                        : "border-neutral-200 hover:border-neutral-300"
-                    )}>
+                    <div
+                      className={cn(
+                        "flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all flex-1",
+                        imageSelectionMode === "manual"
+                          ? "border-neutral-900 bg-neutral-50"
+                          : "border-neutral-200 hover:border-neutral-300"
+                      )}
+                      onClick={() => setImageSelectionMode("manual")}
+                    >
                       <RadioGroupItem value="manual" id="mode-manual" className="mt-1" />
                       <div className="flex-1">
                         <Label htmlFor="mode-manual" className="font-medium cursor-pointer">

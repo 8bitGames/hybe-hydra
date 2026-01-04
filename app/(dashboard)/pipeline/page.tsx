@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { type Campaign } from "@/lib/campaigns-api";
-import { useCampaigns, usePipelines, useSeedCandidates, useFastCutCandidates, useInvalidateQueries } from "@/lib/queries";
+import { useCampaigns, usePipelines, useInvalidateQueries } from "@/lib/queries";
 import { pipelineApi, PipelineItem, cleanupApi, CleanupResponse } from "@/lib/pipeline-api";
 import { presetsApi, StylePreset, variationsApi, VariationConfigRequest, videoApi, VideoGeneration, composeVariationsApi } from "@/lib/video-api";
 import { socialAccountsApi, SocialAccount } from "@/lib/publishing-api";
@@ -97,14 +97,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import Link from "next/link";
 
 type StatusFilter = "all" | "pending" | "processing" | "completed" | "partial_failure";
-type VideoType = "ai" | "fast-cut";
 type ViewMode = "grid" | "table";
 type PipelineTypeFilter = "all" | "ai" | "fast-cut";
-
-interface SeedCandidate extends VideoGeneration {
-  campaign_name?: string;
-  video_type?: VideoType;
-}
 
 export default function GlobalPipelinePage() {
   const router = useRouter();
@@ -143,39 +137,17 @@ export default function GlobalPipelinePage() {
     setHasProcessing(processing);
   }, [pipelines]);
 
-  // Use TanStack Query for seed candidates (AI videos)
-  const {
-    data: seedCandidates = [],
-    isLoading: loadingSeeds,
-    refetch: refetchSeeds,
-  } = useSeedCandidates(campaigns);
-
-  // Use TanStack Query for fast-cut candidates
-  const {
-    data: composeCandidates = [],
-    isLoading: loadingCompose,
-    refetch: refetchCompose,
-  } = useFastCutCandidates(campaigns);
-
   const loading = campaignsLoading || pipelinesLoading;
   const [refreshing, setRefreshing] = useState(false);
 
   // View mode
   const [pipelineViewMode, setPipelineViewMode] = useState<ViewMode>("table");
-  const [videoViewMode, setVideoViewMode] = useState<ViewMode>("grid");
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [campaignFilter, setCampaignFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [pipelineTypeFilter, setPipelineTypeFilter] = useState<PipelineTypeFilter>("all");
-  const [seedCampaignFilter, setSeedCampaignFilter] = useState<string>("all");
-  const [seedSearchQuery, setSeedSearchQuery] = useState("");
-  const [composeCampaignFilter, setComposeCampaignFilter] = useState<string>("all");
-  const [composeSearchQuery, setComposeSearchQuery] = useState("");
-
-  // Auto-pipeline state for compose videos
-  const [creatingAutoPipeline, setCreatingAutoPipeline] = useState(false);
   const [deletingPipeline, setDeletingPipeline] = useState<string | null>(null);
 
   // Variation modal state
@@ -232,58 +204,11 @@ export default function GlobalPipelinePage() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (activeTab === "pipelines") {
-        await refetchPipelines();
-      } else if (activeTab === "create") {
-        await refetchSeeds();
-      } else if (activeTab === "fast-cut") {
-        await refetchCompose();
-      }
+      await refetchPipelines();
     } finally {
       setRefreshing(false);
     }
-  }, [activeTab, refetchPipelines, refetchSeeds, refetchCompose]);
-
-  const handleAutoCreateVariations = async (video: { id: string }) => {
-    setCreatingAutoPipeline(true);
-    try {
-      const isComposeVideo = video.id.startsWith("compose-");
-
-      if (isComposeVideo) {
-        await composeVariationsApi.create(video.id, {
-          variation_count: 4,
-          tag_count: 2,
-        });
-      } else {
-        const autoConfig: VariationConfigRequest = {
-          style_categories: ["mood", "motion"],
-          enable_prompt_variation: false,
-          prompt_variation_types: [],
-          max_variations: 4,
-        };
-        await variationsApi.create(video.id, autoConfig);
-      }
-
-      setActiveTab("pipelines");
-      await invalidatePipelines();
-    } catch (error) {
-      console.error("Failed to create auto variations:", error);
-    } finally {
-      setCreatingAutoPipeline(false);
-    }
-  };
-
-  const handleSelectSeed = (video: { id: string; prompt: string; duration_seconds: number; aspect_ratio: string; audio_asset?: { original_filename: string } | null }) => {
-    const isComposeVideo = video.id.startsWith("compose-");
-    setSelectedSeedGeneration(video as VideoGeneration);
-    setSelectedGenerationType(isComposeVideo ? "fast-cut" : "ai");
-
-    if (isComposeVideo) {
-      setComposeVariationModalOpen(true);
-    } else {
-      setAIVariationModalOpen(true);
-    }
-  };
+  }, [refetchPipelines]);
 
   const handleCreateMoreVariations = (pipeline: PipelineItem) => {
     setSelectedSeedGeneration(pipeline.seed_generation);
@@ -574,34 +499,6 @@ export default function GlobalPipelinePage() {
   const aiPipelines = filteredPipelines.filter((p) => p.type === "ai");
   const fastCutPipelines = filteredPipelines.filter((p) => p.type === "fast-cut");
 
-  // Filter seed candidates
-  const filteredSeedCandidates = seedCandidates.filter((video) => {
-    if (seedCampaignFilter !== "all" && video.campaign_id !== seedCampaignFilter) {
-      return false;
-    }
-    if (seedSearchQuery) {
-      const query = seedSearchQuery.toLowerCase();
-      const matchesPrompt = video.prompt.toLowerCase().includes(query);
-      const matchesCampaign = video.campaign_name?.toLowerCase().includes(query);
-      return matchesPrompt || matchesCampaign;
-    }
-    return true;
-  });
-
-  // Filter compose candidates
-  const filteredComposeCandidates = composeCandidates.filter((video) => {
-    if (composeCampaignFilter !== "all" && video.campaign_id !== composeCampaignFilter) {
-      return false;
-    }
-    if (composeSearchQuery) {
-      const query = composeSearchQuery.toLowerCase();
-      const matchesPrompt = video.prompt.toLowerCase().includes(query);
-      const matchesCampaign = video.campaign_name?.toLowerCase().includes(query);
-      return matchesPrompt || matchesCampaign;
-    }
-    return true;
-  });
-
   // Stats
   const stats = useMemo(() => ({
     total: pipelines.length,
@@ -853,20 +750,6 @@ export default function GlobalPipelinePage() {
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="create" className="gap-2 px-4">
-                <Video className="w-4 h-4" />
-                {isKorean ? "AI 영상" : "AI Videos"}
-                <Badge variant="outline" className="ml-1 h-5 px-1.5">
-                  {seedCandidates.length}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="fast-cut" className="gap-2 px-4">
-                <Film className="w-4 h-4" />
-                {isKorean ? "패스트 컷 영상" : "Fast Cut Video"}
-                <Badge variant="outline" className="ml-1 h-5 px-1.5">
-                  {composeCandidates.length}
-                </Badge>
-              </TabsTrigger>
             </TabsList>
 
             {/* View Mode Toggle - Only for pipelines tab */}
@@ -978,17 +861,13 @@ export default function GlobalPipelinePage() {
                   </h3>
                   <p className="text-muted-foreground text-sm mb-6 max-w-md mx-auto">
                     {isKorean
-                      ? "AI 영상 또는 패스트 컷 영상 탭에서 영상을 선택하여 변형을 생성하세요"
-                      : "Select a video from the AI Video or Fast Cut Video tab to create variations"}
+                      ? "영상 라이브러리에서 영상을 선택하고 메뉴에서 '베리에이션'을 클릭하여 변형을 생성하세요"
+                      : "Select a video from the Videos library and click 'Variation' from the menu to create variations"}
                   </p>
                   <div className="flex items-center justify-center gap-3">
-                    <Button onClick={() => setActiveTab("create")} variant="outline">
+                    <Button onClick={() => router.push("/videos")}>
                       <Video className="w-4 h-4 mr-2" />
-                      {isKorean ? "AI 영상 보기" : "View AI Videos"}
-                    </Button>
-                    <Button onClick={() => setActiveTab("fast-cut")}>
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      {isKorean ? "패스트 컷 영상 보기" : "View Fast Cut Videos"}
+                      {isKorean ? "영상 라이브러리로 이동" : "Go to Videos Library"}
                     </Button>
                   </div>
                 </CardContent>
@@ -1073,353 +952,6 @@ export default function GlobalPipelinePage() {
                     />
                   )
                 )}
-              </div>
-            )}
-          </TabsContent>
-
-          {/* AI Videos Tab */}
-          <TabsContent value="create" className="space-y-4 mt-4">
-            {/* Info Banner */}
-            <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
-              <CardContent className="py-4">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                    <Video className="w-6 h-6 text-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold">
-                      {isKorean ? "AI 영상에서 변형 만들기" : "Create Variations from AI Videos"}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {isKorean
-                        ? "완료된 AI 영상을 선택하여 스타일 변형을 생성합니다. 각 변형은 원본의 프롬프트를 기반으로 다양한 스타일로 재생성됩니다."
-                        : "Select a completed AI video to generate style variations. Each variation is regenerated with different styles based on the original prompt."}
-                    </p>
-                  </div>
-                  <Button onClick={() => router.push("/create/generate")} className="shrink-0">
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    {isKorean ? "새 영상 생성" : "Generate New"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Filters */}
-            <Card className="border-dashed">
-              <CardContent className="py-3">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="relative flex-1 min-w-[200px] max-w-sm">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder={isKorean ? "프롬프트 검색..." : "Search prompts..."}
-                      value={seedSearchQuery}
-                      onChange={(e) => setSeedSearchQuery(e.target.value)}
-                      className="pl-9 h-9"
-                    />
-                  </div>
-                  <Select value={seedCampaignFilter} onValueChange={setSeedCampaignFilter}>
-                    <SelectTrigger className="w-[180px] h-9">
-                      <SelectValue placeholder={isKorean ? "캠페인" : "Campaign"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{isKorean ? "모든 캠페인" : "All Campaigns"}</SelectItem>
-                      {campaigns.map((campaign) => (
-                        <SelectItem key={campaign.id} value={campaign.id}>
-                          {campaign.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="flex-1" />
-                  <p className="text-sm text-muted-foreground">
-                    {filteredSeedCandidates.length} {isKorean ? "개 영상" : "videos"}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Videos Grid - PC Optimized with more columns */}
-            {loadingSeeds ? (
-              <div className="flex items-center justify-center h-48">
-                <Spinner className="w-8 h-8" />
-              </div>
-            ) : filteredSeedCandidates.length === 0 ? (
-              <Card>
-                <CardContent className="py-16 text-center">
-                  <Video className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-2">
-                    {isKorean ? "완료된 AI 영상이 없습니다" : "No Completed AI Videos"}
-                  </h3>
-                  <p className="text-muted-foreground text-sm mb-6">
-                    {isKorean
-                      ? "먼저 AI 영상을 생성해주세요"
-                      : "Generate AI videos first to create variations"}
-                  </p>
-                  <Button onClick={() => router.push("/create/generate")}>
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    {isKorean ? "영상 생성하기" : "Generate Videos"}
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {filteredSeedCandidates.map((video) => (
-                  <Card
-                    key={video.id}
-                    className="overflow-hidden hover:shadow-lg transition-all cursor-pointer group hover:ring-2 hover:ring-primary/50"
-                    onClick={() => handleSelectSeed(video)}
-                  >
-                    <CardContent className="p-0">
-                      {/* Video Thumbnail */}
-                      <div className="relative aspect-[9/16] bg-muted">
-                        {video.output_url || video.composed_output_url ? (
-                          <LazyVideo
-                            src={video.output_url || video.composed_output_url || ""}
-                            className="w-full h-full object-cover"
-                            autoPlay={false}
-                            muted
-                            loop
-                            playsInline
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Video className="w-8 h-8 text-muted-foreground" />
-                          </div>
-                        )}
-                        {/* Hover Overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all flex flex-col items-center justify-end p-4">
-                          <Button size="sm" className="gap-2">
-                            <Sparkles className="w-4 h-4" />
-                            {isKorean ? "변형 생성" : "Create Variations"}
-                          </Button>
-                        </div>
-                        {/* Status Badge */}
-                        <div className="absolute top-2 right-2">
-                          <Badge className="bg-green-500/90 backdrop-blur-sm">
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                            {isKorean ? "완료" : "Done"}
-                          </Badge>
-                        </div>
-                        {/* Duration Badge */}
-                        <div className="absolute bottom-2 right-2 opacity-100 group-hover:opacity-0 transition-opacity">
-                          <Badge variant="secondary" className="bg-black/60 text-white border-0">
-                            <Clock className="w-3 h-3 mr-1" />
-                            {video.duration_seconds}s
-                          </Badge>
-                        </div>
-                      </div>
-
-                      {/* Info */}
-                      <div className="p-3 space-y-1.5">
-                        {video.campaign_name && (
-                          <p className="text-xs text-primary font-medium truncate">
-                            {video.campaign_name}
-                          </p>
-                        )}
-                        <p className="text-sm line-clamp-2 leading-snug">
-                          {video.prompt}
-                        </p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
-                          {video.audio_asset && (
-                            <span className="flex items-center gap-1">
-                              <Music className="w-3 h-3" />
-                            </span>
-                          )}
-                          <span>
-                            {new Date(video.created_at).toLocaleDateString(
-                              isKorean ? "ko-KR" : "en-US",
-                              { month: "short", day: "numeric" }
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          {/* Compose Videos Tab */}
-          <TabsContent value="fast-cut" className="space-y-4 mt-4">
-            {/* Info Banner */}
-            <Card className="bg-muted/50 border">
-              <CardContent className="py-4">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center shrink-0">
-                    <Wand2 className="w-6 h-6 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold flex items-center gap-2">
-                      {isKorean ? "패스트 컷 영상 자동 변형" : "Fast Cut Video Auto-Variations"}
-                      <Badge variant="secondary" className="text-xs">
-                        <Zap className="w-3 h-3 mr-1" />
-                        Auto
-                      </Badge>
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {isKorean
-                        ? "패스트 컷 영상으로 만든 슬라이드쇼입니다. 자동 변형은 새로운 이미지를 검색하여 다른 시각적 스타일의 영상을 생성합니다."
-                        : "Slideshows created as Fast Cut videos. Auto-variation searches for new images and generates videos with different visual styles."}
-                    </p>
-                  </div>
-                  <Button onClick={() => router.push("/compose")} variant="outline" className="shrink-0">
-                    <Film className="w-4 h-4 mr-2" />
-                    {isKorean ? "패스트 컷 영상 만들기" : "Create Fast Cut Video"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Filters */}
-            <Card className="border-dashed">
-              <CardContent className="py-3">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="relative flex-1 min-w-[200px] max-w-sm">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder={isKorean ? "프롬프트 검색..." : "Search prompts..."}
-                      value={composeSearchQuery}
-                      onChange={(e) => setComposeSearchQuery(e.target.value)}
-                      className="pl-9 h-9"
-                    />
-                  </div>
-                  <Select value={composeCampaignFilter} onValueChange={setComposeCampaignFilter}>
-                    <SelectTrigger className="w-[180px] h-9">
-                      <SelectValue placeholder={isKorean ? "캠페인" : "Campaign"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{isKorean ? "모든 캠페인" : "All Campaigns"}</SelectItem>
-                      {campaigns.map((campaign) => (
-                        <SelectItem key={campaign.id} value={campaign.id}>
-                          {campaign.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="flex-1" />
-                  <p className="text-sm text-muted-foreground">
-                    {filteredComposeCandidates.length} {isKorean ? "개 영상" : "videos"}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Compose Videos Grid */}
-            {loadingCompose ? (
-              <div className="flex items-center justify-center h-48">
-                <Spinner className="w-8 h-8" />
-              </div>
-            ) : filteredComposeCandidates.length === 0 ? (
-              <Card>
-                <CardContent className="py-16 text-center">
-                  <Film className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-2">
-                    {isKorean ? "패스트 컷 영상이 없습니다" : "No Fast Cut Videos"}
-                  </h3>
-                  <p className="text-muted-foreground text-sm mb-6">
-                    {isKorean
-                      ? "컴포즈 페이지에서 슬라이드쇼 영상을 먼저 생성해주세요"
-                      : "Create slideshow videos on the Compose page first"}
-                  </p>
-                  <Button onClick={() => router.push("/compose")}>
-                    <Wand2 className="w-4 h-4 mr-2" />
-                    {isKorean ? "패스트 컷 영상 만들기" : "Create Fast Cut Video"}
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {filteredComposeCandidates.map((video) => (
-                  <Card
-                    key={video.id}
-                    className="overflow-hidden hover:shadow-lg transition-all group"
-                  >
-                    <CardContent className="p-0">
-                      {/* Video Thumbnail */}
-                      <div className="relative aspect-[9/16] bg-muted">
-                        {video.composed_output_url || video.output_url ? (
-                          <LazyVideo
-                            src={video.composed_output_url || video.output_url || ""}
-                            className="w-full h-full object-cover"
-                            autoPlay={false}
-                            muted
-                            loop
-                            playsInline
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Film className="w-8 h-8 text-muted-foreground" />
-                          </div>
-                        )}
-                        {/* Type Badge */}
-                        <div className="absolute top-2 left-2">
-                          <Badge variant="secondary" className="backdrop-blur-sm">
-                            <Wand2 className="w-3 h-3 mr-1" />
-                            {isKorean ? "패스트 컷 영상" : "Fast Cut Video"}
-                          </Badge>
-                        </div>
-                        {/* Duration Badge */}
-                        <div className="absolute bottom-2 right-2">
-                          <Badge variant="secondary" className="bg-black/60 text-white border-0">
-                            <Clock className="w-3 h-3 mr-1" />
-                            {video.duration_seconds}s
-                          </Badge>
-                        </div>
-                      </div>
-
-                      {/* Info */}
-                      <div className="p-3 space-y-2">
-                        {video.campaign_name && (
-                          <p className="text-xs text-muted-foreground font-medium truncate">
-                            {video.campaign_name}
-                          </p>
-                        )}
-                        <p className="text-sm line-clamp-2 leading-snug">
-                          {video.prompt}
-                        </p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          {video.audio_asset && (
-                            <span className="flex items-center gap-1">
-                              <Music className="w-3 h-3" />
-                            </span>
-                          )}
-                          <span>
-                            {new Date(video.created_at).toLocaleDateString(
-                              isKorean ? "ko-KR" : "en-US",
-                              { month: "short", day: "numeric" }
-                            )}
-                          </span>
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex items-center gap-2 pt-1">
-                          <Button
-                            size="sm"
-                            className="flex-1 h-8"
-                            onClick={() => handleAutoCreateVariations(video)}
-                            disabled={creatingAutoPipeline}
-                          >
-                            {creatingAutoPipeline ? (
-                              <Spinner className="w-3 h-3 mr-1" />
-                            ) : (
-                              <Zap className="w-3 h-3 mr-1" />
-                            )}
-                            {isKorean ? "자동" : "Auto"}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8 px-2"
-                            onClick={() => handleSelectSeed(video)}
-                          >
-                            <Sparkles className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
               </div>
             )}
           </TabsContent>

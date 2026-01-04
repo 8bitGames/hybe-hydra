@@ -230,6 +230,16 @@ interface ProcessingSessionStoreState {
     contentType?: ContentType;
     databaseSessionId?: string; // UUID from useSessionStore (creation_sessions table)
   }) => void;
+  // Initialize session for variation mode (existing completed video)
+  initSessionForVariation: (data: {
+    generationId: string;
+    outputUrl: string;
+    thumbnailUrl?: string;
+    campaignId: string;
+    campaignName: string;
+    contentType: ContentType;
+    duration?: number;
+  }) => void;
   clearSession: () => void;
 
   // Actions - State transitions
@@ -321,6 +331,43 @@ export const useProcessingSessionStore = create<ProcessingSessionStoreState>()(
                 progress: 0,
               },
               content: data.content,
+              variationConfig: {
+                selectedStyles: [],
+                isGenerating: false,
+                imageSelectionMode: "auto",
+                selectedImageUrls: [],
+              },
+              variations: [],
+            },
+            hasActiveSession: true,
+          });
+        },
+
+        // Initialize session for variation mode with an existing completed video
+        // Starts directly in READY state, skipping GENERATING
+        initSessionForVariation: (data) => {
+          const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+          set({
+            session: {
+              id: sessionId,
+              state: "READY", // Start directly in READY state
+              createdAt: new Date().toISOString(),
+              contentType: data.contentType,
+              campaignId: data.campaignId,
+              campaignName: data.campaignName,
+              originalVideo: {
+                id: data.generationId,
+                status: "completed",
+                progress: 100,
+                outputUrl: data.outputUrl,
+                thumbnailUrl: data.thumbnailUrl,
+                duration: data.duration,
+              },
+              content: {
+                script: "",
+                images: [],
+              },
               variationConfig: {
                 selectedStyles: [],
                 isGenerating: false,

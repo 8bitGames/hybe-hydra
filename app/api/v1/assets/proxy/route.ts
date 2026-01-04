@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "stream";
+import { getAuthHeaders } from "@/lib/models/gcp-auth";
 
 // Initialize S3 client
 function getS3Client(): S3Client {
@@ -18,12 +19,32 @@ function isGcsUrl(url: string): boolean {
   return url.includes('storage.googleapis.com/') || url.includes('storage.cloud.google.com/');
 }
 
-// Handle GCS URL proxy with range request support
+// Get GCS auth headers if available (for private bucket access)
+async function getGcsAuthHeaders(): Promise<Record<string, string> | null> {
+  try {
+    return await getAuthHeaders();
+  } catch (error) {
+    console.log('[GCS Proxy] GCP auth not available, using unsigned request:', error);
+    return null;
+  }
+}
+
+// Handle GCS URL proxy with range request support and authentication
 async function handleGcsProxy(url: string, rangeHeader: string | null): Promise<NextResponse> {
+  // Get GCP auth headers for authenticated access to GCS
+  const authHeaders = await getGcsAuthHeaders();
+  const baseHeaders: Record<string, string> = authHeaders || {};
+
+  console.log('[GCS Proxy] Fetching URL:', url.substring(0, 80), 'with auth:', !!authHeaders);
+
   // First, get the content length with a HEAD request
-  const headResponse = await fetch(url, { method: 'HEAD' });
+  const headResponse = await fetch(url, {
+    method: 'HEAD',
+    headers: baseHeaders,
+  });
 
   if (!headResponse.ok) {
+    console.error('[GCS Proxy] HEAD request failed:', headResponse.status, headResponse.statusText);
     return NextResponse.json(
       { error: `GCS request failed: ${headResponse.status}` },
       { status: headResponse.status }
@@ -40,9 +61,12 @@ async function handleGcsProxy(url: string, rangeHeader: string | null): Promise<
       const start = parseInt(match[1], 10);
       const end = match[2] ? parseInt(match[2], 10) : contentLength - 1;
 
-      // Fetch partial content from GCS
+      // Fetch partial content from GCS with auth
       const rangeResponse = await fetch(url, {
-        headers: { 'Range': `bytes=${start}-${end}` }
+        headers: {
+          ...baseHeaders,
+          'Range': `bytes=${start}-${end}`
+        }
       });
 
       if (rangeResponse.ok || rangeResponse.status === 206) {
@@ -62,10 +86,11 @@ async function handleGcsProxy(url: string, rangeHeader: string | null): Promise<
     }
   }
 
-  // Full content response
-  const response = await fetch(url);
+  // Full content response with auth
+  const response = await fetch(url, { headers: baseHeaders });
 
   if (!response.ok) {
+    console.error('[GCS Proxy] Full content request failed:', response.status, response.statusText);
     return NextResponse.json(
       { error: `GCS request failed: ${response.status}` },
       { status: response.status }

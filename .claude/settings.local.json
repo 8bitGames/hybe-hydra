@@ -420,7 +420,10 @@
       "Skill(seq:*)",
       "Bash(git diff:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Strip presigned URL params from S3 URLs for compose variations\n\nRoot cause: Original image URLs stored in qualityMetadata included\npresigned URL params \\(?X-Amz-...\\) that expire. EC2 then included these\nparams in the S3 key, causing 404 errors when downloading.\n\nChanges:\n- render/route.ts: Store clean S3 URLs without query params\n- compose-variations/route.ts: Clean URLs when retrieving from DB\n  \\(backward compatibility for existing generations\\)\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Use trendKeywords for Fast-Cut compose variations image search\n\n- Add trendKeywords parameter check as first priority\n- Check fastCutData.searchKeywords as second priority  \n- Fixes issue where generic prompt words \\(sunset, sunrise\\) were used\n- Add console.log for debugging search tags and DB keywords\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Use trendKeywords for Fast-Cut compose variations image search\n\n- Add trendKeywords parameter check as first priority\n- Check fastCutData.searchKeywords as second priority  \n- Fixes issue where generic prompt words \\(sunset, sunrise\\) were used\n- Add console.log for debugging search tags and DB keywords\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(netstat:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n";
 import { useFastCutVideos, useAllAIVideos } from "@/lib/queries";
@@ -25,7 +25,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   PlayCircle,
   Search,
-  ExternalLink,
   MoreVertical,
   Trash2,
   Download,
@@ -45,6 +44,7 @@ import {
   GitMerge,
   Link2,
   Music,
+  ArrowLeft,
 } from "lucide-react";
 import {
   Select,
@@ -62,10 +62,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { VideoGeneration as FullVideoGeneration } from "@/lib/video-api";
+import { VideoGeneration as FullVideoGeneration, variationsApi } from "@/lib/video-api";
+import { fastCutApi } from "@/lib/fast-cut-api";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { VideoEditModal } from "@/components/features/video-edit-modal";
 import { VideoExtendPanel } from "@/components/features/processing/VideoExtendPanel";
+import { useToast } from "@/components/ui/toast";
+import { VariationConfigView, AIVariationConfigView } from "@/components/features/processing/views";
+import {
+  useProcessingSessionStore,
+  selectSession,
+  selectOriginalVideo,
+  selectIsGeneratingVariations,
+  selectVariations,
+  selectSelectedStyles,
+  ContentType,
+} from "@/lib/stores/processing-session-store";
+import { CompareApproveView } from "@/components/features/processing/views";
 
 // Lazy Video Component - only loads when in viewport
 function LazyVideo({
@@ -235,6 +248,7 @@ type EditedFilter = "all" | "edited" | "original";
 export default function AllVideosPage() {
   const router = useRouter();
   const { language } = useI18n();
+  const toast = useToast();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [videoType, setVideoType] = useState<VideoType>("all");
@@ -263,6 +277,30 @@ export default function AllVideosPage() {
 
   // Extend state
   const [extendVideo, setExtendVideo] = useState<UnifiedVideo | null>(null);
+
+  // Variation inline view state
+  const [showVariationView, setShowVariationView] = useState(false);
+  const [variationVideo, setVariationVideo] = useState<UnifiedVideo | null>(null);
+  const [variationBatchId, setVariationBatchId] = useState<string | null>(null);
+  const variationPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const variationBatchIdRef = useRef<string | null>(null);
+
+  // Store connections for variation
+  const session = useProcessingSessionStore(selectSession);
+  const originalVideo = useProcessingSessionStore(selectOriginalVideo);
+  const isGeneratingVariations = useProcessingSessionStore(selectIsGeneratingVariations);
+  const variations = useProcessingSessionStore(selectVariations);
+  const selectedStyles = useProcessingSessionStore(selectSelectedStyles);
+  const {
+    initSessionForVariation,
+    goToVariationConfig,
+    goToCompareAndApprove,
+    startVariationGeneration,
+    updateVariation,
+    setVariationCompleted,
+    setVariationFailed,
+    clearSession,
+  } = useProcessingSessionStore();
 
   // Track if there are PROCESSING videos for auto-refresh
   const [hasProcessingVideos, setHasProcessingVideos] = useState(false);
@@ -312,7 +350,6 @@ export default function AllVideosPage() {
     page: language === "ko" ? "페이지" : "Page",
     of: language === "ko" ? "/" : "of",
     viewDetails: language === "ko" ? "상세보기" : "View Details",
-    viewInCampaign: language === "ko" ? "캠페인에서 보기" : "View in Campaign",
     download: language === "ko" ? "다운로드" : "Download",
     delete: language === "ko" ? "삭제" : "Delete",
     deleteConfirm: language === "ko" ? "정말 이 영상을 삭제하시겠습니까?" : "Are you sure you want to delete this video?",
@@ -336,6 +373,9 @@ export default function AllVideosPage() {
     editedFilterOriginal: language === "ko" ? "원본만" : "Originals",
     viewOriginal: language === "ko" ? "원본 영상 보기" : "View Original",
     originalVideo: language === "ko" ? "원본 영상" : "Original Video",
+    variation: language === "ko" ? "배리에이션" : "Variation",
+    variationStarted: language === "ko" ? "배리에이션 생성이 시작되었습니다" : "Variation generation started",
+    variationFailed: language === "ko" ? "배리에이션 생성에 실패했습니다" : "Failed to create variation",
   };
 
   // Reset page when tab or page size changes
@@ -488,6 +528,260 @@ export default function AllVideosPage() {
       setDeleting(false);
     }
   };
+
+  // Variation handler - shows inline VariationConfigView
+  const handleOpenVariation = useCallback((video: UnifiedVideo) => {
+    const videoUrl = video.composed_output_url || video.output_url;
+    if (!videoUrl) {
+      toast.error(language === "ko" ? "영상 URL이 없습니다" : "Video URL not found");
+      return;
+    }
+
+    const contentType: ContentType = video.generation_type === "AI" ? "ai_video" : "fast-cut";
+
+    // Initialize the store with the video for variation
+    initSessionForVariation({
+      generationId: video.id,
+      outputUrl: videoUrl,
+      campaignId: video.campaign_id,
+      campaignName: video.campaign_name || "Campaign",
+      contentType,
+      duration: video.duration_seconds,
+    });
+
+    // Transition to variation config state
+    goToVariationConfig();
+
+    // Set local state to show the view
+    setVariationVideo(video);
+    setShowVariationView(true);
+    setPanelOpen(false); // Close the detail panel if open
+  }, [language, toast, initSessionForVariation, goToVariationConfig]);
+
+  // Handle starting variation generation
+  const handleStartVariationGeneration = useCallback(async () => {
+    if (!variationVideo || !originalVideo) return;
+
+    const seedGenerationId = originalVideo.id;
+    const contentType = session?.contentType;
+    const isAIVideo = contentType === "ai_video";
+
+    // Get selected styles directly from store state (avoid stale closure)
+    const storeState = useProcessingSessionStore.getState();
+    const currentSelectedStyles = storeState.session?.variationConfig.selectedStyles || [];
+
+    if (currentSelectedStyles.length === 0) {
+      toast.error(language === "ko" ? "스타일을 선택해주세요" : "Please select at least one style");
+      return;
+    }
+
+    try {
+      if (isAIVideo) {
+        // AI Video variation - use variationsApi
+        console.log("[Videos] Starting AI Video variations:", {
+          seedGenerationId,
+          styleCount: currentSelectedStyles.length,
+        });
+
+        // Create store variations first
+        startVariationGeneration();
+
+        // Call API
+        const response = await variationsApi.create(seedGenerationId, {
+          preset_ids: currentSelectedStyles,
+          max_variations: currentSelectedStyles.length || 4,
+        });
+
+        console.log("[Videos] AI variation API response:", response);
+
+        // Update store variations with API generationIds
+        if (response.data?.variations) {
+          const storeVariations = useProcessingSessionStore.getState().session?.variations || [];
+          response.data.variations.forEach((apiVar, idx) => {
+            const storeVar = storeVariations[idx];
+            if (storeVar) {
+              updateVariation(storeVar.id, {
+                generationId: apiVar.id,
+                status: "generating",
+              });
+            }
+          });
+        }
+
+        // Set batch ID for polling
+        if (response.data?.batch_id) {
+          variationBatchIdRef.current = response.data.batch_id;
+          setVariationBatchId(response.data.batch_id);
+        }
+
+      } else {
+        // Compose (Fast-Cut) variation - use fastCutApi
+        console.log("[Videos] Starting Compose variations:", {
+          seedGenerationId,
+          styleCount: currentSelectedStyles.length,
+        });
+
+        // Create store variations first
+        startVariationGeneration();
+
+        // Call API
+        const response = await fastCutApi.startComposeVariations(
+          seedGenerationId.startsWith("compose-") ? seedGenerationId : `compose-${seedGenerationId}`,
+          { variationCount: currentSelectedStyles.length || 8 }
+        );
+
+        console.log("[Videos] Compose variation API response:", response);
+
+        // Map API response to store variations
+        if (response.variations) {
+          const storeVariations = useProcessingSessionStore.getState().session?.variations || [];
+          response.variations.forEach((apiVar, idx) => {
+            const storeVar = storeVariations[idx];
+            if (storeVar) {
+              updateVariation(storeVar.id, {
+                generationId: apiVar.id,
+                status: "generating",
+              });
+            }
+          });
+        }
+
+        // Set batch ID for polling
+        if (response.batch_id) {
+          variationBatchIdRef.current = response.batch_id;
+          setVariationBatchId(response.batch_id);
+        }
+      }
+
+      toast.success(t.variationStarted);
+    } catch (error) {
+      console.error("[Videos] Variation generation failed:", error);
+      toast.error(t.variationFailed);
+    }
+  }, [variationVideo, originalVideo, session, language, toast, t, startVariationGeneration, updateVariation]);
+
+  // Polling for variation status
+  useEffect(() => {
+    if (!variationBatchId || !showVariationView) {
+      return;
+    }
+
+    const contentType = session?.contentType;
+    const isAIVideo = contentType === "ai_video";
+
+    const pollStatus = async () => {
+      try {
+        const currentBatchId = variationBatchIdRef.current;
+        if (!currentBatchId) return;
+
+        // Get fresh state from store
+        const storeState = useProcessingSessionStore.getState();
+        const storeVariations = storeState.session?.variations || [];
+
+        if (isAIVideo) {
+          // AI Video polling - need both generationId and batchId
+          const seedGenerationId = storeState.session?.originalVideo?.id;
+          if (!seedGenerationId) return;
+
+          const response = await variationsApi.getStatus(seedGenerationId, currentBatchId);
+          console.log("[Videos] AI variation poll response:", response);
+
+          if (response.data?.variations) {
+            response.data.variations.forEach((apiVar: { id: string; status: string; output_url?: string }) => {
+              const storeVar = storeVariations.find(v => v.generationId === apiVar.id);
+              if (storeVar) {
+                if (apiVar.status === "completed" && apiVar.output_url) {
+                  setVariationCompleted(apiVar.id, apiVar.output_url);
+                } else if (apiVar.status === "failed") {
+                  setVariationFailed(apiVar.id);
+                } else if (apiVar.status === "processing" || apiVar.status === "generating") {
+                  updateVariation(apiVar.id, { status: "generating" });
+                }
+              }
+            });
+          }
+
+          // Check if batch is complete
+          if (response.data?.batch_status === "completed" || response.data?.batch_status === "partial_failure") {
+            console.log("[Videos] AI variation batch complete");
+            if (variationPollingRef.current) {
+              clearInterval(variationPollingRef.current);
+              variationPollingRef.current = null;
+            }
+            setVariationBatchId(null);
+            variationBatchIdRef.current = null;
+          }
+        } else {
+          // Compose polling
+          const response = await fastCutApi.getComposeVariationsStatus(currentBatchId);
+          console.log("[Videos] Compose variation poll response:", response);
+
+          if (response.variations) {
+            response.variations.forEach((apiVar) => {
+              const storeVar = storeVariations.find(v => v.generationId === apiVar.id);
+              if (storeVar) {
+                if (apiVar.status === "COMPLETED" && apiVar.output_url) {
+                  setVariationCompleted(apiVar.id, apiVar.output_url);
+                } else if (apiVar.status === "FAILED") {
+                  setVariationFailed(apiVar.id);
+                } else if (apiVar.status === "PROCESSING" || apiVar.status === "PENDING") {
+                  updateVariation(apiVar.id, { status: "generating" });
+                }
+              }
+            });
+          }
+
+          // Check if batch is complete
+          if (response.batch_status === "completed" || response.batch_status === "partial_failure") {
+            console.log("[Videos] Compose variation batch complete");
+            if (variationPollingRef.current) {
+              clearInterval(variationPollingRef.current);
+              variationPollingRef.current = null;
+            }
+            setVariationBatchId(null);
+            variationBatchIdRef.current = null;
+          }
+        }
+      } catch (error) {
+        console.error("[Videos] Variation poll error:", error);
+      }
+    };
+
+    // Start polling every 3 seconds
+    variationPollingRef.current = setInterval(pollStatus, 3000);
+
+    // Initial poll
+    pollStatus();
+
+    return () => {
+      if (variationPollingRef.current) {
+        clearInterval(variationPollingRef.current);
+        variationPollingRef.current = null;
+      }
+    };
+  }, [variationBatchId, showVariationView, session?.contentType, updateVariation, setVariationCompleted, setVariationFailed]);
+
+  // Handle closing variation view
+  const handleCloseVariationView = useCallback(() => {
+    // Stop polling
+    if (variationPollingRef.current) {
+      clearInterval(variationPollingRef.current);
+      variationPollingRef.current = null;
+    }
+    setVariationBatchId(null);
+    variationBatchIdRef.current = null;
+
+    // Clear store
+    clearSession();
+
+    // Clear local state
+    setShowVariationView(false);
+    setVariationVideo(null);
+
+    // Refresh the video list to show any new variations
+    refetchCompose();
+    refetchAI();
+  }, [clearSession, refetchCompose, refetchAI]);
 
   // Open video in side panel (index is relative to current page)
   const openVideo = (video: UnifiedVideo, indexInPage: number) => {
@@ -747,9 +1041,9 @@ export default function AllVideosPage() {
                               {t.extendVideo}
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/campaigns/${video.campaign_id}/curation`); }}>
-                            <ExternalLink className="h-4 w-4 mr-2" />
-                            {t.viewInCampaign}
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenVariation(video); }}>
+                            <Sparkles className="h-4 w-4 mr-2" />
+                            {t.variation}
                           </DropdownMenuItem>
                           {getVideoUrl(video) && (
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDownload(getVideoUrl(video)!, `video-${video.id}.mp4`); }}>
@@ -1093,6 +1387,82 @@ export default function AllVideosPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Variation Popup Modal */}
+      {showVariationView && variationVideo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={handleCloseVariationView}
+          />
+
+          {/* Modal Content */}
+          <div className="relative z-10 w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden rounded-xl bg-background border border-border shadow-2xl">
+            {/* Close button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-3 right-3 z-20 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              onClick={handleCloseVariationView}
+            >
+              <X className="h-5 w-5" />
+            </Button>
+
+            {/* Header */}
+            <div className="flex items-center gap-4 px-6 py-4 border-b">
+              <div>
+                <h1 className="text-xl font-semibold">
+                  {language === "ko" ? "배리에이션 생성" : "Create Variations"}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {variationVideo.campaign_name} • {variationVideo.generation_type === "AI" ? "AI Video" : "Fast Cut"}
+                </p>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="max-h-[calc(90vh-73px)] overflow-auto p-6">
+              {session?.state === "COMPARE_AND_APPROVE" ? (
+                <CompareApproveView
+                  onBack={() => {
+                    goToVariationConfig();
+                  }}
+                  onPublish={() => {
+                    handleCloseVariationView();
+                    toast.success(
+                      language === "ko"
+                        ? "배리에이션이 완료되었습니다"
+                        : "Variations completed"
+                    );
+                  }}
+                />
+              ) : variationVideo.generation_type === "AI" ? (
+                <AIVariationConfigView
+                  video={{
+                    id: variationVideo.id,
+                    prompt: variationVideo.prompt,
+                    campaign_name: variationVideo.campaign_name,
+                    artist_name: variationVideo.artist_name,
+                    duration_seconds: variationVideo.duration_seconds,
+                    aspect_ratio: variationVideo.aspect_ratio,
+                    output_url: variationVideo.output_url,
+                  }}
+                  onBack={handleCloseVariationView}
+                  onStartGeneration={handleStartVariationGeneration}
+                  onCancel={handleCloseVariationView}
+                />
+              ) : (
+                <VariationConfigView
+                  onBack={handleCloseVariationView}
+                  onStartGeneration={handleStartVariationGeneration}
+                  onCancel={handleCloseVariationView}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
