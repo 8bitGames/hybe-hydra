@@ -249,8 +249,11 @@ export const useAuthStore = create<AuthState>()(
           const { data: { user: supabaseUser }, error } = await supabase.auth.getUser();
 
           if (error) {
-            console.error("[AuthStore] Error getting user:", error);
-            set({ isLoading: false });
+            // AuthSessionMissingError is expected when not logged in - don't log as error
+            if (error.name !== 'AuthSessionMissingError') {
+              console.error("[AuthStore] Error getting user:", error);
+            }
+            set({ isLoading: false, isAuthenticated: false, user: null });
             return;
           }
 

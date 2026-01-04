@@ -152,7 +152,7 @@ export const metadata: Metadata = {
     // 구글 검색 최적화
     "google-site-verification": "", // 구글 서치 콘솔 인증 코드
     // 모바일 앱 배너 (향후 앱 출시 시)
-    "apple-mobile-web-app-capable": "yes",
+    "mobile-web-app-capable": "yes",
     "apple-mobile-web-app-status-bar-style": "black-translucent",
     "apple-mobile-web-app-title": "HYDRA",
     // 포맷 감지 비활성화
